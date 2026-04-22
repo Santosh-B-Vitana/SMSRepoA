@@ -1,0 +1,442 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* School Management System Design System - Professional & Mobile-First */
+
+@layer base {
+  :root {
+    /* Professional Color Palette - Clean & Modern */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    /* Primary - Professional Blue */
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    /* Secondary - Subtle Gray */
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    /* Muted - Light Background */
+    --muted: 210 40% 98%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Accent - Complementary */
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    /* Success - Professional Green */
+    --success: 142.1 76.2% 36.3%;
+    --success-foreground: 355.7 100% 97.3%;
+    /* Warning - Professional Orange */
+    --warning: 32.2 95% 44.1%;
+    --warning-foreground: 210 40% 98%;
+    /* Destructive - Professional Red */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    /* Border & Input */
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    /* Sidebar - Professional Dark */
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 221.2 83.2% 53.3%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 221.2 83.2% 53.3%;
+    /* Professional Status Colors */
+    --attendance-present: 142.1 76.2% 36.3%;
+    --attendance-absent: 0 84.2% 60.2%;
+    --fee-paid: 142.1 76.2% 36.3%;
+    --fee-pending: 32.2 95% 44.1%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+/* Professional Typography Scale */
+.text-display {
+  font-size: 1.875rem; /* text-3xl */
+  font-weight: 700; /* font-bold */
+  letter-spacing: -0.015em; /* tracking-tight */
+}
+@media (min-width: 640px) {
+  .text-display {
+    font-size: 2.25rem; /* sm:text-4xl */
+  }
+}
+
+.text-heading {
+  font-size: 1.25rem; /* text-xl */
+  font-weight: 600; /* font-semibold */
+  letter-spacing: -0.015em; /* tracking-tight */
+}
+@media (min-width: 640px) {
+  .text-heading {
+    font-size: 1.5rem; /* sm:text-2xl */
+  }
+}
+
+.text-subheading {
+  font-size: 1rem; /* text-base */
+  font-weight: 500; /* font-medium */
+}
+@media (min-width: 640px) {
+  .text-subheading {
+    font-size: 1.125rem; /* sm:text-lg */
+  }
+}
+
+.text-body {
+  font-size: 0.875rem; /* text-sm */
+  line-height: 1.625;  /* leading-relaxed */
+}
+
+.text-caption {
+  font-size: 0.75rem; /* text-xs */
+  color: hsl(var(--muted-foreground)); /* text-muted-foreground */
+}
+
+/* Professional Status Components */
+.status-present {
+  background-color: #f0fdf4; /* Tailwind bg-green-50 */
+  color: #15803d; /* Tailwind text-green-700 */
+  border: 1px solid #bbf7d0; /* Tailwind border-green-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+.status-absent {
+  background-color: #fef2f2; /* Tailwind bg-red-50 */
+  color: #b91c1c; /* Tailwind text-red-700 */
+  border: 1px solid #fecaca; /* Tailwind border-red-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+.status-late {
+  background-color: #fffbeb; /* Tailwind bg-amber-50 */
+  color: #b45309; /* Tailwind text-amber-700 */
+  border: 1px solid #fde68a; /* Tailwind border-amber-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+.status-paid {
+  background-color: #f0fdf4; /* Tailwind bg-green-50 */
+  color: #15803d; /* Tailwind text-green-700 */
+  border: 1px solid #bbf7d0; /* Tailwind border-green-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+.status-pending {
+  background-color: #fffbeb; /* Tailwind bg-amber-50 */
+  color: #b45309; /* Tailwind text-amber-700 */
+  border: 1px solid #fde68a; /* Tailwind border-amber-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+.status-active {
+  background-color: #eff6ff; /* Tailwind bg-blue-50 */
+  color: #1d4ed8; /* Tailwind text-blue-700 */
+  border: 1px solid #bfdbfe; /* Tailwind border-blue-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+.status-inactive {
+  background-color: #f9fafb; /* Tailwind bg-gray-50 */
+  color: #374151; /* Tailwind text-gray-700 */
+  border: 1px solid #e5e7eb; /* Tailwind border-gray-200 */
+  padding-left: 0.625rem; /* px-2.5 */
+  padding-right: 0.625rem;
+  padding-top: 0.25rem; /* py-1 */
+  padding-bottom: 0.25rem;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500; /* font-medium */
+}
+
+/* Professional Dashboard Cards */
+.dashboard-card {
+  background-color: hsl(var(--card));
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  padding: 1rem;
+  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s;
+}
+@media (min-width: 640px) {
+  .dashboard-card {
+    padding: 1.5rem;
+  }
+}
+.dashboard-card:hover {
+  box-shadow: 0 4px 12px 0 rgba(0,0,0,0.10);
+}
+
+.metric-card {
+  background-color: hsl(var(--card));
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  padding: 1rem;
+  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+@media (min-width: 640px) {
+  .metric-card {
+    padding: 1.5rem;
+  }
+}
+.metric-card:hover {
+  box-shadow: 0 4px 12px 0 rgba(0,0,0,0.10);
+}
+
+/* Professional Forms */
+.academic-form {
+  background-color: hsl(var(--card));
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+}
+@media (min-width: 640px) {
+  .academic-form {
+    padding: 1.5rem;
+  }
+}
+.academic-form > *:not(:last-child) {
+  margin-bottom: 1rem;
+}
+@media (min-width: 640px) {
+  .academic-form > *:not(:last-child) {
+    margin-bottom: 1.5rem;
+  }
+}
+
+/* Professional Tables */
+.academic-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: hsl(var(--card));
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+}
+
+.academic-table th {
+  background-color: hsl(var(--muted));
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.academic-table td {
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+/* Mobile-First Container */
+.container-academic {
+  @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+/* Professional Navigation */
+.nav-link {
+  @apply relative overflow-hidden transition-all duration-200 ease-in-out rounded-md;
+}
+
+.nav-link:hover {
+  @apply bg-accent/50;
+}
+
+.nav-link.active {
+  @apply bg-primary text-primary-foreground;
+}
+
+/* Mobile-First Responsive Grid */
+.grid-responsive {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6;
+}
+
+.grid-responsive-2 {
+  @apply grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6;
+}
+
+.grid-responsive-3 {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6;
+}
+
+/* Professional Animations */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Professional Hover Effects */
+.hover-lift {
+  @apply transition-transform duration-200 hover:-translate-y-0.5;
+}
+
+.hover-glow {
+  @apply transition-shadow duration-200 hover:shadow-lg;
+}
+
+/* High Information Density */
+.compact-spacing {
+  @apply space-y-2 sm:space-y-3;
+}
+
+.dense-grid {
+  @apply grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3;
+}
+
+/* Mobile-First Form Layouts */
+.form-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6;
+}
+
+.form-grid-2 {
+  @apply grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6;
+}
+
+/* Professional Borders */
+.border-professional {
+  @apply border border-border/60;
+}
+
+/* Mobile-Optimized Text */
+/* Use Tailwind utility classes directly in your HTML instead of @apply if your build tool does not support it */
+.text-responsive {
+  font-size: 0.875rem; /* text-sm */
+}
+@media (min-width: 640px) {
+  .text-responsive {
+    font-size: 1rem; /* text-base */
+  }
+}
+
+.text-responsive-lg {
+  @apply text-base sm:text-lg lg:text-xl;
+}
+
+/* Remove any yellow backgrounds and ensure professional appearance */
+.bg-yellow-50,
+.bg-yellow-100,
+.bg-yellow-200,
+.bg-yellow-300,
+.bg-yellow-400,
+.bg-yellow-500 {
+  @apply bg-amber-50 !important;
+}
+
+/* Ensure mobile-first responsive behavior */
+@media (max-width: 640px) {
+  .container-academic {
+    @apply px-4;
+  }
+  
+  .dashboard-card {
+    @apply p-4;
+  }
+  
+  .academic-form {
+    padding: 1rem;
+    /* space-y-4: add margin-bottom to all children except last */
+  }
+  .academic-form > *:not(:last-child) {
+    margin-bottom: 1rem;
+  }
+}

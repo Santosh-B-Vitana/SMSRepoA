@@ -1,0 +1,228 @@
+using SmsApi.Models.Constants;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using SmsApi.Models.DTOs;
+using SmsApi.Services;
+using System;
+using System.Threading.Tasks;
+
+namespace SmsApi.Controllers
+{
+    [Authorize]
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AssignmentsController : ControllerBase
+    {
+        private readonly IAssignmentService _assignmentService;
+        private readonly ITenantContext _tenant;
+
+        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant)
+        {
+            _assignmentService = assignmentService;
+            _tenant = tenant;
+        }
+
+        // Assignment Endpoints
+        [HttpGet]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentListResponse>> GetAssignments(
+            [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? subjectId = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, subjectId, page, pageSize);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        [HttpGet("{id}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentResponse>> GetAssignmentById(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var assignment = await _assignmentService.GetAssignmentByIdAsync(id, schoolId);
+            if (assignment == null)
+            {
+                return NotFound();
+            }
+            return Ok(assignment);
+        }
+
+        [HttpPost]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentResponse>> CreateAssignment([FromBody] CreateAssignmentRequest request)
+        {
+            try
+            {
+                // Inject server-side identity — never trust the client for these security-sensitive fields
+                request.SchoolId = _tenant.GetEffectiveSchoolId();
+                request.AssignedById = _tenant.UserId;
+                var assignment = await _assignmentService.CreateAssignmentAsync(request);
+                return CreatedAtAction(nameof(GetAssignmentById), new { id = assignment.Id, schoolId = assignment.SchoolId }, assignment);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Principal,Teacher")]
+        public async Task<ActionResult<AssignmentResponse>> UpdateAssignment(Guid id, [FromBody] UpdateAssignmentRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var assignment = await _assignmentService.UpdateAssignmentAsync(id, schoolId, request);
+                if (assignment == null)
+                {
+                    return NotFound(new { error = "Assignment not found" });
+                }
+                return Ok(assignment);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Principal,Teacher")]
+        public async Task<ActionResult> DeleteAssignment(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _assignmentService.DeleteAssignmentAsync(id, schoolId);
+            if (!result)
+            {
+                return NotFound();
+            }
+            return NoContent();
+        }
+
+        // Submission Endpoints
+        [HttpGet("{assignmentId}/submissions")]
+        public async Task<ActionResult<SubmissionListResponse>> GetSubmissions(
+            Guid assignmentId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            var result = await _assignmentService.GetSubmissionsAsync(assignmentId, page, pageSize);
+            return Ok(result);
+        }
+
+        [HttpGet("submissions/{id}")]
+        public async Task<ActionResult<SubmissionResponse>> GetSubmissionById(Guid id)
+        {
+            var submission = await _assignmentService.GetSubmissionByIdAsync(id);
+            if (submission == null)
+            {
+                return NotFound();
+            }
+            return Ok(submission);
+        }
+
+        [HttpPost("submissions")]
+        public async Task<ActionResult<SubmissionResponse>> CreateSubmission([FromBody] CreateSubmissionRequest request)
+        {
+            try
+            {
+                var submission = await _assignmentService.CreateSubmissionAsync(request);
+                return CreatedAtAction(nameof(GetSubmissionById), new { id = submission.Id }, submission);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        [HttpPut("submissions/{id}/grade")]
+        public async Task<ActionResult<SubmissionResponse>> GradeSubmission(Guid id, [FromBody] GradeSubmissionRequest request)
+        {
+            try
+            {
+                var submission = await _assignmentService.GradeSubmissionAsync(id, request);
+                if (submission == null)
+                {
+                    return NotFound(new { error = "Submission not found" });
+                }
+                return Ok(submission);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+    }
+}

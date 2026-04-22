@@ -1,0 +1,370 @@
+﻿import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  BadgeIndianRupee, ArrowLeft, Loader2, AlertCircle, CheckCircle,
+  Clock, Receipt, Download, CreditCard, GraduationCap, CalendarDays,
+  ChevronDown, ChevronUp, BookOpen, FlaskConical, Trophy, Bus, Home,
+  Shirt, BookMarked, Wrench, HelpCircle, FileText
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { studentApi, type StudentBasic } from "@/services/api/studentApi";
+import { getFeeRecords, getFeeStructureById, type FeeRecord, type FeeStructure, type PaymentTransaction } from "@/services/api/feeApi";
+import { toast } from "sonner";
+
+const FEE_HEAD_CONFIG: { key: string; label: string; icon: React.ReactNode; category: string }[] = [
+  { key: "tuitionFee",     label: "Tuition Fee",           icon: <GraduationCap className="h-3.5 w-3.5" />, category: "Academic" },
+  { key: "examFee",        label: "Examination Fee",       icon: <FileText className="h-3.5 w-3.5" />,      category: "Academic" },
+  { key: "libraryFee",     label: "Library Fee",           icon: <BookOpen className="h-3.5 w-3.5" />,      category: "Academic" },
+  { key: "labFee",         label: "Lab Fee",               icon: <FlaskConical className="h-3.5 w-3.5" />,  category: "Academic" },
+  { key: "developmentFee", label: "Development Fund",      icon: <Wrench className="h-3.5 w-3.5" />,        category: "Development" },
+  { key: "sportsFee",      label: "Sports / Activity Fee", icon: <Trophy className="h-3.5 w-3.5" />,        category: "Development" },
+  { key: "admissionFee",   label: "Admission Fee",         icon: <FileText className="h-3.5 w-3.5" />,      category: "Other" },
+  { key: "transportFee",   label: "Transport Fee",         icon: <Bus className="h-3.5 w-3.5" />,           category: "Other" },
+  { key: "hostelFee",      label: "Hostel Fee",            icon: <Home className="h-3.5 w-3.5" />,          category: "Other" },
+  { key: "uniformFee",     label: "Uniform Fee",           icon: <Shirt className="h-3.5 w-3.5" />,         category: "Other" },
+  { key: "booksFee",       label: "Books / Stationery",    icon: <BookMarked className="h-3.5 w-3.5" />,    category: "Other" },
+  { key: "miscellaneous",  label: "Miscellaneous",         icon: <HelpCircle className="h-3.5 w-3.5" />,    category: "Other" },
+];
+
+export default function ParentChildFeeDetails() {
+  const { childId } = useParams<{ childId: string }>();
+  const navigate = useNavigate();
+  const [child, setChild] = useState<StudentBasic | null>(null);
+  const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
+  const [feeStructures, setFeeStructures] = useState<Record<string, FeeStructure>>({});
+  const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (childId) loadData();
+  }, [childId]);
+
+  const loadData = async () => {
+    try {
+      const [childrenData, feeData] = await Promise.all([
+        studentApi.getMyChildren(),
+        getFeeRecords(1, 50, childId),
+      ]);
+
+      const found = childrenData.find((c: StudentBasic) => c.id === childId);
+      setChild(found || null);
+      const records = feeData.feeRecords || feeData.items || [];
+      setFeeRecords(records);
+
+      // Load fee structures for each record to show detailed breakdown
+      const structureIds = [...new Set(records.map(r => r.feeStructureId).filter(Boolean))] as string[];
+      const structureMap: Record<string, FeeStructure> = {};
+      await Promise.all(
+        structureIds.map(async (sid) => {
+          try {
+            structureMap[sid] = await getFeeStructureById(sid);
+          } catch { /* structure not found, skip */ }
+        })
+      );
+      setFeeStructures(structureMap);
+    } catch {
+      toast.error("Failed to load fee details");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalAmount = feeRecords.reduce((s, r) => s + r.totalAmount, 0);
+  const paidAmount = feeRecords.reduce((s, r) => s + r.paidAmount, 0);
+  const pendingAmount = totalAmount - paidAmount;
+  const discountAmount = feeRecords.reduce((s, r) => s + (r.discountAmount || 0), 0);
+  const lateFeeAmount = feeRecords.reduce((s, r) => s + (r.lateFeeAmount || 0), 0);
+
+  // Collect all payment transactions across fee records
+  const allPayments: (PaymentTransaction & { feeName?: string })[] = [];
+  feeRecords.forEach(record => {
+    if (record.payments) {
+      record.payments.forEach(p => {
+        allPayments.push({ ...p, feeName: record.feeStructureName || "Fee" });
+      });
+    }
+  });
+  allPayments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground">Loading fee details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/parent-fees")}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back
+        </Button>
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold">Fee Details</h1>
+          {child && (
+            <p className="text-muted-foreground mt-0.5">
+              {child.name} | {child.class} {child.section ? `- ${child.section}` : ""}
+            </p>
+          )}
+        </div>
+        {pendingAmount > 0 && (
+          <Button onClick={() => navigate(`/parent-fees/${childId}/pay`)}>
+            <CreditCard className="h-4 w-4 mr-1.5" />
+            Pay Now
+          </Button>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <SummaryCard label="Total Fee" value={totalAmount} color="blue" icon={<BadgeIndianRupee className="h-4 w-4" />} />
+        <SummaryCard label="Paid" value={paidAmount} color="green" icon={<CheckCircle className="h-4 w-4" />} />
+        <SummaryCard label="Pending" value={pendingAmount} color={pendingAmount > 0 ? "amber" : "green"} icon={<Clock className="h-4 w-4" />} />
+        <SummaryCard label="Discount" value={discountAmount} color="purple" icon={<Receipt className="h-4 w-4" />} />
+        <SummaryCard label="Late Fee" value={lateFeeAmount} color={lateFeeAmount > 0 ? "red" : "green"} icon={<CalendarDays className="h-4 w-4" />} />
+      </div>
+
+      {/* Progress */}
+      {totalAmount > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Payment Progress</span>
+              <span className="text-sm font-bold">{((paidAmount / totalAmount) * 100).toFixed(0)}% paid</span>
+            </div>
+            <Progress value={(paidAmount / totalAmount) * 100} className="h-3" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tabs */}
+      <Tabs defaultValue="breakdown">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="breakdown">
+            <Receipt className="h-4 w-4 mr-1.5" />
+            Fee Breakdown
+          </TabsTrigger>
+          <TabsTrigger value="transactions">
+            <CreditCard className="h-4 w-4 mr-1.5" />
+            Payment History ({allPayments.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="breakdown" className="mt-4">
+          {feeRecords.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-muted-foreground">No fee records found</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {feeRecords.map(record => {
+                const structure = record.feeStructureId ? feeStructures[record.feeStructureId] : null;
+                const isExpanded = expandedRecord === record.id;
+                const feeHeads = structure
+                  ? FEE_HEAD_CONFIG.filter(h => (structure as any)[h.key] > 0)
+                  : [];
+
+                return (
+                <Card key={record.id} className="overflow-hidden">
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="font-semibold">{record.feeStructureName || "Fee Record"}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Academic Year: {record.academicYear} | Due: {new Date(record.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                        </p>
+                      </div>
+                      <Badge variant={record.status === "Paid" ? "default" : record.status === "Overdue" ? "destructive" : "secondary"}>
+                        {record.status}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Total</p>
+                        <p className="font-semibold">{"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Paid</p>
+                        <p className="font-semibold text-green-600">{"\u20B9"}{record.paidAmount.toLocaleString("en-IN")}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Pending</p>
+                        <p className={`font-semibold ${record.pendingAmount > 0 ? "text-amber-600" : "text-green-600"}`}>
+                          {"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Last Payment</p>
+                        <p className="font-semibold">
+                          {record.lastPaymentDate
+                            ? new Date(record.lastPaymentDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                            : "\u2014"}
+                        </p>
+                      </div>
+                    </div>
+                    {record.totalAmount > 0 && (
+                      <Progress value={(record.paidAmount / record.totalAmount) * 100} className="h-1.5 mt-3" />
+                    )}
+
+                    {/* Fee Head Breakdown Toggle */}
+                    {feeHeads.length > 0 && (
+                      <div className="mt-3 pt-3 border-t">
+                        <button
+                          className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                          onClick={() => setExpandedRecord(isExpanded ? null : record.id)}
+                        >
+                          {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          {isExpanded ? "Hide" : "View"} Detailed Fee Breakdown ({feeHeads.length} components)
+                        </button>
+
+                        {isExpanded && structure && (
+                          <div className="mt-3 space-y-3">
+                            {/* Categorised fee breakdown */}
+                            {["Academic", "Development", "Other"].map(cat => {
+                              const catHeads = feeHeads.filter(h => h.category === cat);
+                              if (catHeads.length === 0) return null;
+                              return (
+                                <div key={cat}>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{cat}</p>
+                                  <div className="space-y-1">
+                                    {catHeads.map(h => {
+                                      const amt = (structure as any)[h.key] as number;
+                                      const pct = structure.totalAmount > 0 ? (amt / structure.totalAmount) * 100 : 0;
+                                      return (
+                                        <div key={h.key} className="flex items-center gap-2 text-sm">
+                                          <span className="text-muted-foreground shrink-0">{h.icon}</span>
+                                          <span className="flex-1">{h.label}</span>
+                                          <span className="text-xs text-muted-foreground">{pct.toFixed(0)}%</span>
+                                          <span className="font-semibold tabular-nums min-w-[80px] text-right">
+                                            {"\u20B9"}{amt.toLocaleString("en-IN")}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {/* Total line */}
+                            <div className="flex items-center justify-between pt-2 border-t text-sm font-bold">
+                              <span>Total Fee</span>
+                              <span>{"\u20B9"}{structure.totalAmount.toLocaleString("en-IN")}</span>
+                            </div>
+
+                            {/* Discount & Late fee info */}
+                            {(record.discountAmount > 0 || record.lateFeeAmount > 0) && (
+                              <div className="space-y-1 text-sm">
+                                {record.discountAmount > 0 && (
+                                  <div className="flex items-center justify-between text-green-600">
+                                    <span>Discount Applied</span>
+                                    <span>- {"\u20B9"}{record.discountAmount.toLocaleString("en-IN")}</span>
+                                  </div>
+                                )}
+                                {record.lateFeeAmount > 0 && (
+                                  <div className="flex items-center justify-between text-red-600">
+                                    <span>Late Fee</span>
+                                    <span>+ {"\u20B9"}{record.lateFeeAmount.toLocaleString("en-IN")}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between font-bold pt-1 border-t">
+                                  <span>Net Payable</span>
+                                  <span>{"\u20B9"}{(record.totalAmount).toLocaleString("en-IN")}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );})}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="transactions" className="mt-4">
+          <Card>
+            <CardContent className="p-0">
+              {allPayments.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Receipt className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-muted-foreground">No payment transactions yet</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Fee</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Receipt</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allPayments.map((payment, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">
+                            {new Date(payment.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{payment.feeName}</TableCell>
+                          <TableCell className="font-semibold">{"\u20B9"}{payment.amount.toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="capitalize">{payment.method}</TableCell>
+                          <TableCell>
+                            {payment.receiptNumber ? (
+                              <span className="text-xs font-mono">{payment.receiptNumber}</span>
+                            ) : "\u2014"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={payment.status === "Completed" || payment.status === "completed" ? "default" : "secondary"}>
+                              {payment.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
+  const colorMap: Record<string, string> = {
+    blue: "border-blue-200 bg-blue-50/50 text-blue-700",
+    green: "border-green-200 bg-green-50/50 text-green-700",
+    amber: "border-amber-200 bg-amber-50/50 text-amber-700",
+    red: "border-red-200 bg-red-50/50 text-red-700",
+    purple: "border-purple-200 bg-purple-50/50 text-purple-700",
+  };
+  return (
+    <Card className={`border ${colorMap[color] ?? ""}`}>
+      <CardContent className="p-3">
+        <div className="flex items-center gap-1.5 mb-1 opacity-70">{icon}<span className="text-[10px] font-medium">{label}</span></div>
+        <p className="text-lg font-bold">{"\u20B9"}{value.toLocaleString("en-IN")}</p>
+      </CardContent>
+    </Card>
+  );
+}
