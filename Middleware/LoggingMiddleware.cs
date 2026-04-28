@@ -147,6 +147,28 @@ namespace SmsApi.Middleware
                     timestamp = DateTime.UtcNow
                 });
             }
+            catch (ArgumentException aex)
+            {
+                _logger.LogWarning(aex, "Bad argument: {Message}", aex.Message);
+                context.Response.ContentType = "application/problem+json";
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    type = "https://tools.ietf.org/html/rfc7807",
+                    title = "Bad Request",
+                    status = 400,
+                    detail = aex.Message,
+                    correlationId = context.Items["CorrelationId"]?.ToString(),
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected mid-request — not an error, skip logging
+                if (!context.Response.HasStarted)
+                    context.Response.StatusCode = 499; // Nginx-style "Client Closed Request"
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);

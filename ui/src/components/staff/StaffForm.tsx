@@ -1,635 +1,843 @@
-
+﻿
 import { useState } from "react";
-import { X } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { cn } from "@/lib/utils";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { staffApi } from "@/services/api/staffApi";
-import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import {
+  ChevronLeft,
+  ChevronRight,
+  User,
+  UserRound,
+  Briefcase,
+  CreditCard,
+  HeartPulse,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  staffSchema,
+  STAFF_STEP_SCHEMAS,
+  STAFF_STEP_LABELS,
+  STAFF_STEPS_COUNT,
+  type StaffFormData,
+} from "@/schemas/staffSchema";
+import { staffApi, type Staff } from "@/services/api/staffApi";
 
-// Local form state shape (UI-friendly, mapped to API on submit)
-interface StaffFormData {
-  name?: string; id?: string; designation?: string; department?: string;
-  subjects?: string[]; phone?: string; email?: string; address?: string;
-  joiningDate?: string; status?: 'active' | 'inactive'; dob?: string;
-  gender?: string; nationality?: string; religion?: string; maritalStatus?: string;
-  experience?: number; confirmationDate?: string; employmentType?: string;
-  workingDays?: string; leaveEntitlement?: number; salary?: number;
-  aadharNumber?: string; panNumber?: string; passportNumber?: string; licenseNumber?: string;
-  bloodGroup?: string; allergies?: string; chronicConditions?: string;
-  emergencyContact?: string; emergencyContactPhone?: string;
-  doctorName?: string; doctorPhone?: string;
-  highestQualification?: string; university?: string; passingYear?: number;
-  backgroundVerified?: boolean; policeClearance?: boolean;
-  medicalCheckup?: boolean; documentConsent?: boolean;
-  photoUrl?: string;
-}
+// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const STEP_ICONS = [User, UserRound, Briefcase, CreditCard, HeartPulse, ShieldCheck];
+
+const DEPARTMENTS = [
+  "Mathematics", "Science", "English", "Hindi", "Social Studies",
+  "Physics", "Chemistry", "Biology", "Computer Science", "History",
+  "Geography", "Physical Education", "Arts", "Music", "Commerce",
+  "Accounts", "Administration", "Support Staff", "Library",
+] as const;
+
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"] as const;
+
+// â”€â”€ Props â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface StaffFormProps {
-  staff?: StaffFormData | null;
+  staff?: Staff | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
+// â”€â”€ Step Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function StepIndicator({
+  currentStep,
+  isEditMode,
+  onStepClick,
+}: {
+  currentStep: number;
+  isEditMode: boolean;
+  onStepClick: (step: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto pb-2">
+      {STAFF_STEP_LABELS.map((label, idx) => {
+        const Icon = STEP_ICONS[idx];
+        const isActive    = idx === currentStep;
+        const isCompleted = idx < currentStep;
+        return (
+          <div key={idx} className="flex items-center shrink-0">
+            <button
+              type="button"
+              onClick={() => isEditMode && onStepClick(idx)}
+              disabled={!isEditMode && idx > currentStep}
+              className={cn(
+                "flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-all min-w-[64px]",
+                isActive    && "bg-primary text-primary-foreground",
+                isCompleted && "bg-primary/20 text-primary cursor-pointer hover:bg-primary/30",
+                !isActive && !isCompleted && "text-muted-foreground"
+              )}
+            >
+              <div className={cn(
+                "w-6 h-6 rounded-full flex items-center justify-center",
+                isActive    && "bg-primary-foreground/20",
+                isCompleted && "bg-primary",
+                !isActive && !isCompleted && "bg-muted"
+              )}>
+                {isCompleted ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-primary-foreground" />
+                ) : (
+                  <Icon className="h-3 w-3" />
+                )}
+              </div>
+              <span className="text-[9px] font-medium leading-tight text-center">{label}</span>
+            </button>
+            {idx < STAFF_STEPS_COUNT - 1 && (
+              <div className={cn(
+                "h-0.5 w-4 mx-0.5 rounded transition-colors",
+                idx < currentStep ? "bg-primary" : "bg-muted"
+              )} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
-  const [formData, setFormData] = useState<StaffFormData>({
-    // Basic Info
-    name: staff?.name || "",
-    designation: staff?.designation || "",
-    department: staff?.department || "",
-    subjects: staff?.subjects || [],
-    phone: staff?.phone || "",
-    email: staff?.email || "",
-    address: staff?.address || "",
-    joiningDate: staff?.joiningDate || "",
-    status: staff?.status || "active",
-    // Personal Info
-    dob: staff?.dob || "",
-    gender: staff?.gender || "",
-    nationality: staff?.nationality || "",
-    religion: staff?.religion || "",
-    maritalStatus: staff?.maritalStatus || "",
-    // Professional Info
-    experience: staff?.experience || 0,
-    confirmationDate: staff?.confirmationDate || "",
-    employmentType: staff?.employmentType || "",
-    workingDays: staff?.workingDays || "",
-    leaveEntitlement: staff?.leaveEntitlement || 0,
-    salary: staff?.salary || 0,
-    // Identification
-    aadharNumber: staff?.aadharNumber || "",
-    panNumber: staff?.panNumber || "",
-    passportNumber: staff?.passportNumber || "",
-    licenseNumber: staff?.licenseNumber || "",
-    // Medical Info
-    bloodGroup: staff?.bloodGroup || "",
-    allergies: staff?.allergies || "",
-    chronicConditions: staff?.chronicConditions || "",
-    emergencyContact: staff?.emergencyContact || "",
-    emergencyContactPhone: staff?.emergencyContactPhone || "",
-    doctorName: staff?.doctorName || "",
-    doctorPhone: staff?.doctorPhone || "",
-    // Additional Education
-    highestQualification: staff?.highestQualification || "",
-    university: staff?.university || "",
-    passingYear: staff?.passingYear ? Number(staff.passingYear) : undefined,
-    // Compliance
-    backgroundVerified: staff?.backgroundVerified || false,
-    policeClearance: staff?.policeClearance || false,
-    medicalCheckup: staff?.medicalCheckup || false,
-    documentConsent: staff?.documentConsent || false,
+  const [currentStep, setCurrentStep] = useState(0);
+  const [submitting, setSubmitting]   = useState(false);
+  const isEditMode = !!staff;
+
+  const form = useForm<StaffFormData>({
+    resolver:      zodResolver(staffSchema),
+    mode:          "onChange",
+    defaultValues: {
+      firstName:          staff?.firstName ?? "",
+      lastName:           staff?.lastName  ?? "",
+      designation:        staff?.designation ?? "",
+      department:         staff?.department ?? "",
+      email:              staff?.email ?? "",
+      phone:              staff?.phone ?? "",
+      joiningDate:        staff?.joiningDate ?? "",
+      subjects:           [],
+      status:             (staff?.status as StaffFormData["status"]) ?? "active",
+      address:            staff?.address ?? "",
+      dob:                staff?.dateOfBirth ?? "",
+      gender:             undefined,
+      nationality:        "Indian",
+      religion:           "",
+      maritalStatus:      undefined,
+      experience:         staff?.experience ?? undefined,
+      confirmationDate:   "",
+      employmentType:     undefined,
+      workingDays:        "",
+      leaveEntitlement:   undefined,
+      salary:             undefined,
+      specialization:     "",
+      reportingToId:      "",
+      classes:            [],
+      aadharNumber:       "",
+      panNumber:          "",
+      passportNumber:     "",
+      licenseNumber:      "",
+      permanentAddress:   "",
+      city:               "",
+      state:              "",
+      pincode:            "",
+      bankName:           "",
+      bankAccountNumber:  "",
+      ifscCode:           "",
+      pfNumber:           "",
+      esiNumber:          "",
+      uanNumber:          "",
+      bloodGroup:         undefined,
+      allergies:          "",
+      chronicConditions:  "",
+      emergencyContactName:         "",
+      emergencyContactPhone:        "",
+      emergencyContactRelationship: "",
+      doctorName:         "",
+      doctorPhone:        "",
+      highestQualification: staff?.qualification ?? "",
+      university:         "",
+      passingYear:        undefined,
+      backgroundVerified: false,
+      policeClearance:    false,
+      medicalCheckup:     false,
+      documentConsent:    false,
+    },
   });
-  const [loading, setLoading] = useState(false);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(staff?.photoUrl || null);
-  const [activeTab, setActiveTab] = useState("basic");
-  const { toast } = useToast();
 
-  const handleChange = (field: keyof StaffFormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const { formState: { errors } } = form;
+
+  const stepErrorCount = () => {
+    const stepKeys = Object.keys((STAFF_STEP_SCHEMAS[currentStep] as any).shape ?? {});
+    return stepKeys.filter((k) => k in errors).length;
   };
 
-  const handleArrayChange = (value: string) => {
-    const subjects = value.split(',').map(s => s.trim()).filter(Boolean);
-    setFormData(prev => ({ ...prev, subjects }));
+  const handleNext = async () => {
+    const stepKeys = Object.keys((STAFF_STEP_SCHEMAS[currentStep] as any).shape ?? {}) as (keyof StaffFormData)[];
+    const valid    = await form.trigger(stepKeys);
+    if (valid) setCurrentStep((s) => Math.min(s + 1, STAFF_STEPS_COUNT - 1));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const handleBack = () => setCurrentStep((s) => Math.max(s - 1, 0));
+
+  const onSubmit = async (data: StaffFormData) => {
+    setSubmitting(true);
     try {
-      const nameParts = (formData.name || '').trim().split(/\s+/);
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || firstName;
       const payload = {
-        firstName,
-        lastName,
-        gender: formData.gender || 'Male',
-        dateOfBirth: formData.dob || new Date().toISOString().split('T')[0],
-        designation: formData.designation || '',
-        department: formData.department || '',
-        joiningDate: formData.joiningDate || new Date().toISOString().split('T')[0],
-        phone: formData.phone || '',
-        email: formData.email || '',
-        qualification: formData.highestQualification,
-        experience: formData.experience,
-        address: formData.address,
-        aadharNumber: formData.aadharNumber,
-        panNumber: formData.panNumber,
-        passportNumber: formData.passportNumber,
-        employmentType: formData.employmentType,
-        subjects: formData.subjects?.join(','),
-        bankAccountNumber: formData.phone, // placeholder
-        emergencyContactName: formData.emergencyContact,
-        emergencyContactPhone: formData.emergencyContactPhone,
-        status: formData.status || 'active',
-        salary: formData.salary,
+        firstName:            data.firstName,
+        lastName:             data.lastName,
+        designation:          data.designation,
+        department:           data.department,
+        email:                data.email,
+        phone:                data.phone,
+        joiningDate:          data.joiningDate,
+        gender:               data.gender ?? "Male",
+        dateOfBirth:          data.dob ?? new Date().toISOString().split("T")[0],
+        status:               data.status,
+        address:              data.address,
+        qualification:        data.highestQualification,
+        experience:           data.experience,
+        aadharNumber:         data.aadharNumber,
+        panNumber:            data.panNumber,
+        passportNumber:       data.passportNumber,
+        employmentType:       data.employmentType,
+        subjects:             data.subjects?.join(","),
+        bankAccountNumber:    data.bankAccountNumber,
+        ifscCode:             data.ifscCode,
+        emergencyContactName: data.emergencyContactName,
+        emergencyContactPhone: data.emergencyContactPhone,
+        salary:               data.salary,
+        pfNumber:             data.pfNumber,
+        esiNumber:            data.esiNumber,
+        uanNumber:            data.uanNumber,
+        bloodGroup:           data.bloodGroup,
       };
-      if (staff?.id) {
-        await staffApi.update(staff.id, payload);
-        toast({ title: "Success", description: "Staff member updated successfully" });
+
+      if (isEditMode) {
+        await staffApi.update(staff!.id, payload as any);
+        toast.success("Staff member updated successfully");
       } else {
-        await staffApi.create(payload);
-        toast({ title: "Success", description: "Staff member added successfully" });
+        await staffApi.create(payload as any);
+        toast.success("Staff member added successfully");
       }
       onSuccess();
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to save staff member", variant: "destructive" });
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.message ?? "Failed to save staff member";
+      toast.error(msg);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
+  const progress = ((currentStep + 1) / STAFF_STEPS_COUNT) * 100;
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-6">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white z-10">
-          <CardTitle>
-            {staff ? "Edit Staff Member" : "Add New Staff Member"}
-          </CardTitle>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Photo Upload */}
-            <div className="mb-6">
-              <Label htmlFor="photo">Photo</Label>
-              <div className="flex items-center gap-4 mt-2">
-                <div className="h-20 w-20 rounded-full overflow-hidden bg-muted border">
-                  {photoPreview ? (
-                    <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <img src="/placeholder.svg" alt="No photo" className="w-full h-full object-cover opacity-60" />
-                  )}
-                </div>
-                <Input
-                  id="photo"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setPhotoFile(file);
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = () => setPhotoPreview(reader.result as string);
-                      reader.readAsDataURL(file);
-                    } else {
-                      setPhotoPreview(null);
-                    }
-                  }}
-                />
-              </div>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 overflow-y-auto py-4 px-2">
+      <Card className="w-full max-w-3xl max-h-[95vh] overflow-y-auto">
+        <CardHeader className="pb-4 sticky top-0 bg-card z-10 border-b">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl">
+              {isEditMode ? "Edit Staff Member" : "Add New Staff Member"}
+            </CardTitle>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="space-y-2 mt-3">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Step {currentStep + 1} of {STAFF_STEPS_COUNT} â€” {STAFF_STEP_LABELS[currentStep]}</span>
+              <span>{Math.round(progress)}% complete</span>
             </div>
+            <Progress value={progress} className="h-1.5" />
+          </div>
+          <StepIndicator
+            currentStep={currentStep}
+            isEditMode={isEditMode}
+            onStepClick={setCurrentStep}
+          />
+        </CardHeader>
 
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-              <div className="overflow-x-auto">
-                <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 min-w-fit">
-                  <TabsTrigger value="basic">Basic Info</TabsTrigger>
-                  <TabsTrigger value="personal">Personal</TabsTrigger>
-                  <TabsTrigger value="professional">Professional</TabsTrigger>
-                  <TabsTrigger value="identification">Identification</TabsTrigger>
-                  <TabsTrigger value="medical">Medical</TabsTrigger>
-                  <TabsTrigger value="compliance">Compliance</TabsTrigger>
-                </TabsList>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <CardContent className="space-y-5 pt-5">
+
+              {stepErrorCount() > 0 && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Fix {stepErrorCount()} error{stepErrorCount() > 1 ? "s" : ""} before continuing.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* â”€â”€ STEP 0: Basic Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {currentStep === 0 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Core employment details</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="firstName" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input placeholder="Ramesh" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="lastName" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input placeholder="Kumar" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="designation" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Designation <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input placeholder="Senior Teacher" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="department" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Department <span className="text-destructive">*</span></FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {DEPARTMENTS.map((d) => (
+                              <SelectItem key={d} value={d}>{d}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="email" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input type="email" placeholder="ramesh@school.edu" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="phone" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Mobile <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input placeholder="9876543210" maxLength={10} inputMode="numeric" {...field} />
+                        </FormControl>
+                        <FormDescription>10-digit Indian mobile</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="joiningDate" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Joining Date <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="status" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="inactive">Inactive</SelectItem>
+                            <SelectItem value="on_leave">On Leave</SelectItem>
+                            <SelectItem value="probation">Probation</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                  <FormField control={form.control} name="address" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Current Address</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="House No, Street, Colony, City" rows={2} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              )}
+
+              {/* â”€â”€ STEP 1: Personal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {currentStep === 1 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Personal and demographic details</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="dob" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date of Birth</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="gender" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Gender</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="Male">Male</SelectItem>
+                            <SelectItem value="Female">Female</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                            <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="nationality" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nationality</FormLabel>
+                        <FormControl><Input placeholder="Indian" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="religion" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Religion</FormLabel>
+                        <FormControl><Input placeholder="Optional" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="maritalStatus" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Marital Status</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="Single">Single</SelectItem>
+                            <SelectItem value="Married">Married</SelectItem>
+                            <SelectItem value="Divorced">Divorced</SelectItem>
+                            <SelectItem value="Widowed">Widowed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              )}
+
+              {/* â”€â”€ STEP 2: Professional â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {currentStep === 2 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Employment and work details</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="employmentType" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Employment Type</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="full_time">Full-Time Permanent</SelectItem>
+                            <SelectItem value="part_time">Part-Time</SelectItem>
+                            <SelectItem value="contract">Contract</SelectItem>
+                            <SelectItem value="guest">Guest Faculty</SelectItem>
+                            <SelectItem value="intern">Intern</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="experience" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Total Experience (years)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="5"
+                            min={0}
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="confirmationDate" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Confirmation Date</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="salary" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Monthly Salary (â‚¹)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="30000"
+                            inputMode="numeric"
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="leaveEntitlement" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Annual Leave Days</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="24"
+                            min={0}
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="workingDays" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Working Days</FormLabel>
+                        <FormControl><Input placeholder="Monâ€“Sat" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="specialization" render={({ field }) => (
+                      <FormItem className="sm:col-span-2">
+                        <FormLabel>Subjects / Specialization</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Physics, Chemistry (comma separated)" {...field} />
+                        </FormControl>
+                        <FormDescription>Separate multiple subjects with commas</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              )}
+
+              {/* â”€â”€ STEP 3: ID & Banking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {currentStep === 3 && (
+                <div className="space-y-5">
+                  <p className="text-sm text-muted-foreground">Government IDs and bank account details</p>
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Badge variant="outline">Government IDs</Badge>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="aadharNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Aadhar Number</FormLabel>
+                          <FormControl>
+                            <Input placeholder="12 digits" maxLength={12} inputMode="numeric" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="panNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>PAN Number</FormLabel>
+                          <FormControl>
+                            <Input placeholder="ABCDE1234F" maxLength={10} {...field} style={{ textTransform: "uppercase" }} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="passportNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Passport Number</FormLabel>
+                          <FormControl><Input placeholder="Optional" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                  <Separator />
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Badge variant="outline">Bank Details</Badge>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="bankName" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Bank Name</FormLabel>
+                          <FormControl><Input placeholder="State Bank of India" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="bankAccountNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Account Number</FormLabel>
+                          <FormControl><Input inputMode="numeric" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="ifscCode" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>IFSC Code</FormLabel>
+                          <FormControl>
+                            <Input placeholder="SBIN0001234" maxLength={11} {...field} style={{ textTransform: "uppercase" }} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                  <Separator />
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Badge variant="outline">PF / ESI / UAN</Badge>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="pfNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>PF Number</FormLabel>
+                          <FormControl><Input placeholder="TN/CHE/0123456/001/00001" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="esiNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ESI Number</FormLabel>
+                          <FormControl><Input inputMode="numeric" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="uanNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>UAN Number</FormLabel>
+                          <FormControl><Input inputMode="numeric" maxLength={12} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* â”€â”€ STEP 4: Medical â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {currentStep === 4 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Health details and emergency contact</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="bloodGroup" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Blood Group</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select blood group" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {BLOOD_GROUPS.map((b) => (
+                              <SelectItem key={b} value={b}>{b}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="allergies" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Known Allergies</FormLabel>
+                        <FormControl><Input placeholder="Dust, pollen, etc. (if any)" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="chronicConditions" render={({ field }) => (
+                      <FormItem className="sm:col-span-2">
+                        <FormLabel>Chronic Conditions</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Diabetes, hypertension, etc. (if any)" rows={2} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                  <Separator />
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Badge variant="outline">Emergency Contact</Badge>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="emergencyContactName" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Contact Name</FormLabel>
+                          <FormControl><Input placeholder="Spouse / Parent name" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="emergencyContactPhone" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Contact Mobile</FormLabel>
+                          <FormControl>
+                            <Input placeholder="9876543210" maxLength={10} inputMode="numeric" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="emergencyContactRelationship" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Relationship</FormLabel>
+                          <FormControl><Input placeholder="Spouse, Parent, etc." {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* â”€â”€ STEP 5: Compliance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+              {currentStep === 5 && (
+                <div className="space-y-5">
+                  <p className="text-sm text-muted-foreground">Qualifications and compliance verification</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="highestQualification" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Highest Qualification</FormLabel>
+                        <FormControl><Input placeholder="B.Ed., M.Sc., etc." {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="university" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>University / Institution</FormLabel>
+                        <FormControl><Input placeholder="Osmania University" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="passingYear" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Year of Passing</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="2010"
+                            min={1950}
+                            max={new Date().getFullYear()}
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold">Verification Checklist</h4>
+                    {([
+                      { name: "backgroundVerified", label: "Background verification completed" },
+                      { name: "policeClearance",    label: "Police clearance certificate obtained" },
+                      { name: "medicalCheckup",     label: "Pre-employment medical checkup done" },
+                      { name: "documentConsent",    label: "Document usage consent obtained" },
+                    ] as const).map(({ name, label }) => (
+                      <FormField key={name} control={form.control} name={name} render={({ field }) => (
+                        <FormItem className="flex items-start space-x-3 space-y-0 rounded-md border p-3">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel className="cursor-pointer">{label}</FormLabel>
+                          </div>
+                        </FormItem>
+                      )} />
+                    ))}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="rounded-lg bg-muted/50 p-4 space-y-2 text-sm">
+                    <p className="font-semibold">Staff Summary</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                      <span>Name:</span>
+                      <span className="text-foreground font-medium">
+                        {form.watch("firstName")} {form.watch("lastName")}
+                      </span>
+                      <span>Designation:</span>
+                      <span className="text-foreground font-medium">{form.watch("designation") || "â€”"}</span>
+                      <span>Department:</span>
+                      <span className="text-foreground font-medium">{form.watch("department") || "â€”"}</span>
+                      <span>Email:</span>
+                      <span className="text-foreground font-medium">{form.watch("email") || "â€”"}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </CardContent>
+
+            {/* â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/20 sticky bottom-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={currentStep === 0 ? onClose : handleBack}
+                disabled={submitting}
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                {currentStep === 0 ? "Cancel" : "Back"}
+              </Button>
+              <div className="flex gap-2">
+                {currentStep < STAFF_STEPS_COUNT - 1 ? (
+                  <Button type="button" onClick={handleNext} disabled={submitting}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                ) : (
+                  <Button type="submit" disabled={submitting} className="min-w-[130px]">
+                    {submitting
+                      ? "Savingâ€¦"
+                      : isEditMode
+                      ? "Update Staff Member"
+                      : "Add Staff Member"}
+                  </Button>
+                )}
               </div>
-
-              {/* Basic Info Tab */}
-              <TabsContent value="basic" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name *</Label>
-                    <Input 
-                      id="name"
-                      placeholder="Full Name"
-                      value={formData.name || ""}
-                      onChange={e => handleChange("name", e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="designation">Designation *</Label>
-                    <Input 
-                      id="designation"
-                      placeholder="Job Title"
-                      value={formData.designation || ""}
-                      onChange={e => handleChange("designation", e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="department">Department *</Label>
-                    <Select value={formData.department || ""} onValueChange={value => handleChange("department", value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Mathematics">Mathematics</SelectItem>
-                        <SelectItem value="Science">Science</SelectItem>
-                        <SelectItem value="English">English</SelectItem>
-                        <SelectItem value="History">History</SelectItem>
-                        <SelectItem value="Physical Education">Physical Education</SelectItem>
-                        <SelectItem value="Arts">Arts</SelectItem>
-                        <SelectItem value="Administration">Administration</SelectItem>
-                        <SelectItem value="Support Staff">Support Staff</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <Input 
-                      id="email"
-                      type="email"
-                      placeholder="Email"
-                      value={formData.email || ""}
-                      onChange={e => handleChange("email", e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone *</Label>
-                    <Input 
-                      id="phone"
-                      placeholder="Phone Number"
-                      value={formData.phone || ""}
-                      onChange={e => handleChange("phone", e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="joiningDate">Joining Date</Label>
-                    <Input 
-                      id="joiningDate"
-                      type="date"
-                      value={formData.joiningDate || ""}
-                      onChange={e => handleChange("joiningDate", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="subjects">Subjects (comma-separated)</Label>
-                    <Input 
-                      id="subjects"
-                      placeholder="e.g., Math, Physics, Chemistry"
-                      value={formData.subjects?.join(', ') || ""}
-                      onChange={e => handleArrayChange(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={formData.status || "active"} onValueChange={value => handleChange("status", value as any)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
-                  <Textarea
-                    id="address"
-                    placeholder="Full Address"
-                    value={formData.address || ""}
-                    onChange={e => handleChange("address", e.target.value)}
-                    rows={3}
-                  />
-                </div>
-              </TabsContent>
-
-              {/* Personal Tab */}
-              <TabsContent value="personal" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="dob">Date of Birth</Label>
-                    <Input 
-                      id="dob"
-                      type="date"
-                      value={formData.dob || ""}
-                      onChange={e => handleChange("dob", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="gender">Gender</Label>
-                    <Select value={formData.gender || ""} onValueChange={value => handleChange("gender", value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Gender" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Male">Male</SelectItem>
-                        <SelectItem value="Female">Female</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nationality">Nationality</Label>
-                    <Input 
-                      id="nationality"
-                      placeholder="Nationality"
-                      value={formData.nationality || ""}
-                      onChange={e => handleChange("nationality", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="religion">Religion</Label>
-                    <Input 
-                      id="religion"
-                      placeholder="Religion"
-                      value={formData.religion || ""}
-                      onChange={e => handleChange("religion", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="maritalStatus">Marital Status</Label>
-                    <Select value={formData.maritalStatus || ""} onValueChange={value => handleChange("maritalStatus", value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Unmarried">Unmarried</SelectItem>
-                        <SelectItem value="Married">Married</SelectItem>
-                        <SelectItem value="Divorced">Divorced</SelectItem>
-                        <SelectItem value="Widowed">Widowed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* Professional Tab */}
-              <TabsContent value="professional" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="experience">Experience (Years)</Label>
-                    <Input 
-                      id="experience"
-                      type="number"
-                      placeholder="Years of Experience"
-                      value={formData.experience || ""}
-                      onChange={e => handleChange("experience", parseInt(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirmationDate">Confirmation Date</Label>
-                    <Input 
-                      id="confirmationDate"
-                      type="date"
-                      value={formData.confirmationDate || ""}
-                      onChange={e => handleChange("confirmationDate", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="employmentType">Employment Type</Label>
-                    <Select value={formData.employmentType || ""} onValueChange={value => handleChange("employmentType", value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Full-time Permanent">Full-time Permanent</SelectItem>
-                        <SelectItem value="Full-time Contract">Full-time Contract</SelectItem>
-                        <SelectItem value="Part-time">Part-time</SelectItem>
-                        <SelectItem value="Temporary">Temporary</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="workingDays">Working Days</Label>
-                    <Input 
-                      id="workingDays"
-                      placeholder="e.g., Monday to Friday"
-                      value={formData.workingDays || ""}
-                      onChange={e => handleChange("workingDays", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leaveEntitlement">Leave Entitlement (Days/Year)</Label>
-                    <Input 
-                      id="leaveEntitlement"
-                      type="number"
-                      placeholder="Leave Entitlement"
-                      value={formData.leaveEntitlement || ""}
-                      onChange={e => handleChange("leaveEntitlement", parseInt(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="salary">Salary</Label>
-                    <Input 
-                      id="salary"
-                      type="number"
-                      placeholder="Monthly Salary"
-                      value={formData.salary || ""}
-                      onChange={e => handleChange("salary", parseInt(e.target.value) || 0)}
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* Identification Tab */}
-              <TabsContent value="identification" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="aadhar">Aadhar Number</Label>
-                    <Input 
-                      id="aadhar"
-                      placeholder="Aadhar Number"
-                      value={formData.aadharNumber || ""}
-                      onChange={e => handleChange("aadharNumber", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="pan">PAN Number</Label>
-                    <Input 
-                      id="pan"
-                      placeholder="PAN Number"
-                      value={formData.panNumber || ""}
-                      onChange={e => handleChange("panNumber", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="passport">Passport Number</Label>
-                    <Input 
-                      id="passport"
-                      placeholder="Passport Number"
-                      value={formData.passportNumber || ""}
-                      onChange={e => handleChange("passportNumber", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="license">License Number</Label>
-                    <Input 
-                      id="license"
-                      placeholder="License Number"
-                      value={formData.licenseNumber || ""}
-                      onChange={e => handleChange("licenseNumber", e.target.value)}
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* Medical Tab */}
-              <TabsContent value="medical" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="bloodGroup">Blood Group</Label>
-                    <Input 
-                      id="bloodGroup"
-                      placeholder="Blood Group"
-                      value={formData.bloodGroup || ""}
-                      onChange={e => handleChange("bloodGroup", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyContact">Emergency Contact</Label>
-                    <Input 
-                      id="emergencyContact"
-                      placeholder="Contact Name"
-                      value={formData.emergencyContact || ""}
-                      onChange={e => handleChange("emergencyContact", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyPhone">Emergency Contact Phone</Label>
-                    <Input 
-                      id="emergencyPhone"
-                      placeholder="Phone Number"
-                      value={formData.emergencyContactPhone || ""}
-                      onChange={e => handleChange("emergencyContactPhone", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="doctor">Doctor Name</Label>
-                    <Input 
-                      id="doctor"
-                      placeholder="Doctor Name"
-                      value={formData.doctorName || ""}
-                      onChange={e => handleChange("doctorName", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="doctorPhone">Doctor Phone</Label>
-                    <Input 
-                      id="doctorPhone"
-                      placeholder="Doctor Phone"
-                      value={formData.doctorPhone || ""}
-                      onChange={e => handleChange("doctorPhone", e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="allergies">Allergies</Label>
-                  <Textarea
-                    id="allergies"
-                    placeholder="List any allergies"
-                    value={formData.allergies || ""}
-                    onChange={e => handleChange("allergies", e.target.value)}
-                    rows={2}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="chronicConditions">Chronic Conditions</Label>
-                  <Textarea
-                    id="chronicConditions"
-                    placeholder="List any chronic conditions"
-                    value={formData.chronicConditions || ""}
-                    onChange={e => handleChange("chronicConditions", e.target.value)}
-                    rows={2}
-                  />
-                </div>
-              </TabsContent>
-
-              {/* Compliance Tab */}
-              <TabsContent value="compliance" className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="highestQualification">Highest Qualification</Label>
-                    <Input 
-                      id="highestQualification"
-                      placeholder="e.g., B.Tech, M.Sc"
-                      value={formData.highestQualification || ""}
-                      onChange={e => handleChange("highestQualification", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="university">University</Label>
-                    <Input 
-                      id="university"
-                      placeholder="University Name"
-                      value={formData.university || ""}
-                      onChange={e => handleChange("university", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="passingYear">Passing Year</Label>
-                    <Input 
-                      id="passingYear"
-                      placeholder="Year"
-                      value={formData.passingYear || ""}
-                      onChange={e => handleChange("passingYear", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="border-t pt-4 space-y-3">
-                  <h4 className="font-semibold">Compliance Status</h4>
-                  <label className="flex items-center gap-2">
-                    <input 
-                      type="checkbox"
-                      checked={formData.backgroundVerified || false}
-                      onChange={e => handleChange("backgroundVerified", e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Background Verified</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input 
-                      type="checkbox"
-                      checked={formData.policeClearance || false}
-                      onChange={e => handleChange("policeClearance", e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Police Clearance</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input 
-                      type="checkbox"
-                      checked={formData.medicalCheckup || false}
-                      onChange={e => handleChange("medicalCheckup", e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Medical Checkup Done</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input 
-                      type="checkbox"
-                      checked={formData.documentConsent || false}
-                      onChange={e => handleChange("documentConsent", e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Document Consent</span>
-                  </label>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            <div className="flex gap-2 justify-end pt-4 border-t">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? "Saving..." : staff ? "Update" : "Add"} Staff
-              </Button>
             </div>
           </form>
-        </CardContent>
+        </Form>
       </Card>
     </div>
   );

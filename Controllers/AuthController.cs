@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     private readonly ILogger<AuthController> _logger;
     private readonly AppDbContext _context;
     private readonly ITwoFactorService _twoFactor;
+    private readonly ILoginAttemptService _loginAttempts;
 
     private const int MAX_FAILED_ATTEMPTS = 5;
     private const int LOCKOUT_MINUTES = 15;
@@ -32,13 +33,15 @@ public class AuthController : ControllerBase
         ITokenService tokenService,
         ILogger<AuthController> logger,
         AppDbContext context,
-        ITwoFactorService twoFactor)
+        ITwoFactorService twoFactor,
+        ILoginAttemptService loginAttempts)
     {
         _configuration = configuration;
         _tokenService = tokenService;
         _logger = logger;
         _context = context;
         _twoFactor = twoFactor;
+        _loginAttempts = loginAttempts;
     }
 
     /// <summary>
@@ -50,6 +53,21 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest(new { message = "Username and password are required" });
+
+        // ── Fast-path brute-force check via Redis (no DB hit required) ─────────
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString()
+            ?? HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        var (isLockedOut, remainingLockout) = await _loginAttempts.IsAccountLockedAsync(request.Username, clientIp);
+        if (isLockedOut && remainingLockout.HasValue)
+        {
+            var minutes = (int)Math.Ceiling(remainingLockout.Value.TotalMinutes);
+            _logger.LogWarning("Redis lockout active for {Username} from {IP} — {Minutes}m remaining",
+                request.Username, clientIp, minutes);
+            return StatusCode(429, new { message = $"Too many login attempts. Try again in {minutes} minute(s)." });
+        }
+        // ────────────────────────────────────────────────────────────────────────
 
         var identifier = request.Username.Trim().ToLower();
 
@@ -84,6 +102,10 @@ public class AuthController : ControllerBase
 
         if (!passwordValid)
         {
+            // Record failure in Redis (fast distributed counter)
+            await _loginAttempts.RecordFailedAttemptAsync(request.Username, clientIp);
+
+            // Also persist in DB for audit trail + cross-instance awareness
             userLogin.FailedLoginAttempts++;
             if (userLogin.FailedLoginAttempts >= MAX_FAILED_ATTEMPTS)
             {
@@ -121,6 +143,9 @@ public class AuthController : ControllerBase
         // 2FA not enabled — issue tokens immediately
         var rawRefreshToken = GenerateSecureToken();
         var refreshHash = BCrypt.Net.BCrypt.HashPassword(rawRefreshToken);
+
+        // Clear Redis brute-force counter on successful authentication
+        await _loginAttempts.ClearAttemptsAsync(request.Username, clientIp);
 
         userLogin.FailedLoginAttempts = 0;
         userLogin.LockedUntil = null;

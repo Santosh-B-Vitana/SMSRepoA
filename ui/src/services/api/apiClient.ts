@@ -1,25 +1,46 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 
 // Base API configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092/api';
 const ACADEMIC_YEAR_KEY = 'selectedAcademicYearName';
+const AUTH_SESSION_KEY = 'auth_session';
+const SA_SCHOOL_KEY = 'sa_school_override';
 
-//Extract token from sessionStorage or localStorage
-function getAuthToken(): string | null {
-  // Primary: sessionStorage (where AuthContext stores the full session object)
+interface StoredSession {
+  token?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  user?: { role?: string };
+}
+
+function getStoredSession(): StoredSession | null {
   try {
-    const sessionKey = 'auth_session';
-    const raw = sessionStorage.getItem(sessionKey);
-    if (raw) {
-      const session = JSON.parse(raw);
-      if (session?.token) return session.token;
-    }
+    const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+    if (raw) return JSON.parse(raw) as StoredSession;
   } catch {
     // ignore parsing errors
   }
-  
-  // Fallback: localStorage (where AuthContext also stores the token)
+  return null;
+}
+
+function getAuthToken(): string | null {
+  const session = getStoredSession();
+  if (session?.token) return session.token;
+  // Fallback: localStorage (legacy path)
   return localStorage.getItem('authToken');
+}
+
+function getRefreshToken(): string | null {
+  const session = getStoredSession();
+  return session?.refreshToken ?? null;
+}
+
+/** Wipes all auth state from both storages — used on logout and terminal 401. */
+export function clearAuthSession(): void {
+  sessionStorage.removeItem(AUTH_SESSION_KEY);
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('schoolId');
+  localStorage.removeItem('currentUser');
 }
 
 // Create axios instance with default configuration
@@ -31,18 +52,63 @@ const apiClient = axios.create({
   },
 });
 
-const SA_SCHOOL_KEY = 'sa_school_override'; // super admin active school context
+// Track in-flight token refresh to avoid parallel refresh storms
+let _refreshPromise: Promise<string | null> | null = null;
 
-// Request interceptor - Add auth token and school ID
+async function attemptTokenRefresh(): Promise<string | null> {
+  if (_refreshPromise) return _refreshPromise;
+
+  const accessToken = getAuthToken();
+  const refreshToken = getRefreshToken();
+  if (!refreshToken || !accessToken) return null;
+
+  _refreshPromise = axios
+    .post<{ data?: { token?: string; refreshToken?: string } } | { token?: string; refreshToken?: string }>(
+      `${API_BASE_URL}/auth/refresh`,
+      { accessToken, refreshToken },
+    )
+    .then((res) => {
+      // Backend may return envelope { success, data } or raw
+      const payload =
+        res.data && 'data' in res.data && res.data.data
+          ? res.data.data
+          : (res.data as { token?: string; refreshToken?: string });
+
+      const newToken = payload.token;
+      if (!newToken) return null;
+
+      // Persist updated tokens into session
+      try {
+        const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+        if (raw) {
+          const session: StoredSession = JSON.parse(raw);
+          session.token = newToken;
+          if (payload.refreshToken) session.refreshToken = payload.refreshToken;
+          sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+        }
+        localStorage.setItem('authToken', newToken);
+      } catch {
+        // ignore storage errors
+      }
+
+      return newToken;
+    })
+    .catch(() => null)
+    .finally(() => {
+      _refreshPromise = null;
+    });
+
+  return _refreshPromise;
+}
+
+// ── Request interceptor — attach auth headers ──────────────────────────────
 apiClient.interceptors.request.use(
   (config) => {
-    // Get auth token from sessionStorage or localStorage
     const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Get school ID from localStorage
     const schoolId = localStorage.getItem('schoolId');
     if (schoolId) {
       config.headers['X-School-Id'] = schoolId;
@@ -53,30 +119,21 @@ apiClient.interceptors.request.use(
       config.headers['X-Academic-Year'] = selectedAcademicYear;
     }
 
-    // Super admin school context: send selected school ID so backend scopes queries correctly
-    try {
-      const raw = sessionStorage.getItem('auth_session');
-      if (raw) {
-        const session = JSON.parse(raw);
-        if (session?.user?.role === 'super_admin') {
-          const overrideSchoolId = sessionStorage.getItem(SA_SCHOOL_KEY);
-          if (overrideSchoolId) {
-            config.headers['X-School-Override'] = overrideSchoolId;
-          }
-        }
+    // Super admin school context
+    const session = getStoredSession();
+    if (session?.user?.role === 'super_admin') {
+      const overrideSchoolId = sessionStorage.getItem(SA_SCHOOL_KEY);
+      if (overrideSchoolId) {
+        config.headers['X-School-Override'] = overrideSchoolId;
       }
-    } catch {
-      // ignore
     }
 
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error),
 );
 
-// Response interceptor - Unwrap ApiResponseWrapper envelope + handle errors globally
+// ── Response interceptor — unwrap envelope + auto-refresh on 401 ───────────
 // Backend wraps all success responses: { success: true, data: T, timestamp, correlationId }
 apiClient.interceptors.response.use(
   (response) => {
@@ -86,37 +143,44 @@ apiClient.interceptors.response.use(
       'success' in response.data &&
       'data' in response.data
     ) {
-      response.data = response.data.data;
+      response.data = (response.data as { data: unknown }).data;
     }
     return response;
   },
-  (error) => {
-    if (error.response) {
-      // Server responded with error status
-      const { status } = error.response;
+  async (error) => {
+    const originalConfig = error.config as AxiosRequestConfig & { _retried?: boolean };
 
-      if (status === 401) {
-        // Unauthorized - clear auth and redirect to login
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('schoolId');
-        window.location.href = '/login';
-      } else if (status === 403) {
-        console.error('Access forbidden:', error.response.data);
-      } else if (status === 404) {
-        console.error('Resource not found:', error.response.data);
+    if (error.response?.status === 401 && !originalConfig._retried) {
+      originalConfig._retried = true;
+
+      const newToken = await attemptTokenRefresh();
+      if (newToken) {
+        // Retry with the fresh token
+        if (originalConfig.headers) {
+          (originalConfig.headers as Record<string, string>).Authorization = `Bearer ${newToken}`;
+        }
+        return apiClient(originalConfig);
+      }
+
+      // Refresh failed — clear all auth state and redirect to login
+      clearAuthSession();
+      window.location.href = '/login?expired=true';
+      return Promise.reject(error);
+    }
+
+    if (error.response) {
+      const { status } = error.response as { status: number };
+      if (status === 403) {
+        console.warn('Access forbidden:', (error.response as { data: unknown }).data);
       } else if (status >= 500) {
-        console.error('Server error:', error.response.data);
+        console.error('Server error:', (error.response as { data: unknown }).data);
       }
     } else if (error.request) {
-      // Request made but no response received
-      console.error('No response from server');
-    } else {
-      // Error in request setup
-      console.error('Request error:', error.message);
+      console.error('No response from server — possible network issue');
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;

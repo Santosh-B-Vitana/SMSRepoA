@@ -1,5 +1,5 @@
 ﻿import * as React from "react"
-import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home } from "lucide-react"
+import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, TrendingUp } from "lucide-react"
 import { NavMain } from "@/components/sidebar/nav-main"
 import { TeamSwitcher } from "@/components/sidebar/team-switcher"
 import {
@@ -26,6 +26,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "PEOPLE & ENROLLMENT", isLabel: true },
         { title: t('nav.students'), url: "/students", icon: Users },
         { title: t('nav.staff'), url: "/staff", icon: UserCheck },
+        { title: "Admissions", url: "/admissions", icon: UserPlus },
 
         { title: "ACADEMICS & ASSESSMENT", isLabel: true },
         { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },
@@ -33,6 +34,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('nav.timetable'), url: "/timetable", icon: Clock },
 
         { title: "FINANCE & ADMINISTRATION", isLabel: true },
+        { title: "Finance Dashboard", url: "/finance", icon: TrendingUp },
         { title: t('nav.fees'), url: "/fees", icon: DollarSign },
         { title: t('nav.library'), url: "/library", icon: Library },
         { title: t('nav.roleManagement'), url: "/role-management", icon: Shield },
@@ -60,6 +62,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         { title: "SETTINGS", isLabel: true },
         { title: t('nav.settings'), url: "/settings", icon: Settings },
+        { title: "Security", url: "/security", icon: Shield },
+        { title: "Advanced Analytics", url: "/advanced-analytics", icon: BarChart3 },
       ]
     }
 

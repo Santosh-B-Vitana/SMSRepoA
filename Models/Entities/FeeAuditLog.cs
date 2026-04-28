@@ -50,11 +50,12 @@ namespace SmsApi.Models.Entities
         public Guid? StudentId { get; set; }
 
         /// <summary>JSON snapshot of the entity BEFORE the change. Null for creates.</summary>
-        [Column(TypeName = "jsonb")]
+        /// Column type is configured provider-aware in AppDbContext:
+        ///   PostgreSQL → jsonb (indexed, binary JSON)
+        ///   SQL Server → nvarchar(max)
         public string? OldValues { get; set; }
 
         /// <summary>JSON snapshot of the entity AFTER the change. Null for deletes.</summary>
-        [Column(TypeName = "jsonb")]
         public string? NewValues { get; set; }
 
         /// <summary>Monetary amount involved (payment amount, discount amount, etc.).</summary>

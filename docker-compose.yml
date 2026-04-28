@@ -1,0 +1,80 @@
+version: "3.9"
+
+# Vitana SMS API — local development stack
+# Run: docker-compose up -d
+# API will be available at http://localhost:5000
+# Swagger UI: http://localhost:5000/swagger
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: sms-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: sms_user
+      POSTGRES_PASSWORD: sms_dev_password
+      POSTGRES_DB: sms_dev
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sms_user -d sms_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: sms-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── SMS API ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sms-api
+    restart: unless-stopped
+    ports:
+      - "5000:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:80
+      # DB from env (overrides appsettings.json)
+      DB_HOST: postgres
+      DB_NAME: sms_dev
+      DB_USER: sms_user
+      DB_PASSWORD: sms_dev_password
+      # Redis
+      ConnectionStrings__Redis: redis:6379
+      # JWT — override for production
+      JWT_SECRET_KEY: "change-this-to-a-strong-secret-in-production-min-32-chars"
+    volumes:
+      - uploads:/app/uploads
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  uploads:
+    driver: local

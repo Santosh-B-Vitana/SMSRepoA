@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +19,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { attendanceApi, type MarkAttendanceDto } from "@/services/api/attendanceApi";
+
+const attendanceDateSchema = z.object({
+  date: z.string().min(1, "Date is required").refine(
+    (d) => !isNaN(Date.parse(d)),
+    "Invalid date"
+  ),
+});
+type AttendanceDateForm = z.infer<typeof attendanceDateSchema>;
 
 interface Student {
   id: string;
@@ -44,6 +55,15 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
   const [loading, setLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [hasExistingRecords, setHasExistingRecords] = useState(false);
+
+  const { register, handleSubmit, formState: { errors: dateErrors } } = useForm<AttendanceDateForm>({
+    resolver: zodResolver(attendanceDateSchema),
+    defaultValues: { date: selectedDate },
+  });
+
+  const onDateChange = handleSubmit(({ date }) => {
+    setSelectedDate(date);
+  });
 
   // Load existing attendance for selected date
   useEffect(() => {
@@ -244,13 +264,17 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
           <label className="text-sm font-medium">Select Date</label>
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-auto"
-              disabled={loading}
-            />
+            <form onChange={onDateChange}>
+              <Input
+                type="date"
+                {...register("date")}
+                className="w-auto"
+                disabled={loading}
+              />
+              {dateErrors.date && (
+                <p className="text-xs text-destructive mt-1">{dateErrors.date.message}</p>
+              )}
+            </form>
             {loading && <span className="text-sm text-muted-foreground">Loading...</span>}
             {isEditMode && <Badge variant="secondary" className="animate-pulse">Edit Mode</Badge>}
             {hasExistingRecords && !isEditMode && <Badge variant="outline">Has Records</Badge>}

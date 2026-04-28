@@ -39,11 +39,35 @@ Log.Logger = new LoggerConfiguration()
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} | CorrelationId:{CorrelationId} | {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
+// Runtime Serilog is configured below inside builder.Host.UseSerilog()
+// so that it can read Seq:ServerUrl from appsettings.json
+
 try
 {
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Host.UseSerilog();
+builder.Host.UseSerilog((ctx, services, config) =>
+{
+    config
+        .ReadFrom.Configuration(ctx.Configuration)
+        .ReadFrom.Services(services)
+        .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .Enrich.WithEnvironmentName()
+        .WriteTo.Console(outputTemplate:
+            "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}{NewLine}  {Message:lj}{NewLine}{Exception}")
+        .WriteTo.File("logs/sms-api-.log",
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} | CorrelationId:{CorrelationId} | {Message:lj}{NewLine}{Exception}");
+
+    // Seq: centralized log aggregation (set Seq:ServerUrl in appsettings or env)
+    var seqUrl = ctx.Configuration["Seq:ServerUrl"];
+    if (!string.IsNullOrEmpty(seqUrl))
+        config.WriteTo.Seq(seqUrl);
+});
 
 // ── Kestrel server limits ─────────────────────────────────────────────────
 builder.WebHost.ConfigureKestrel(serverOptions =>
@@ -61,382 +85,43 @@ builder.Configuration
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables()
     .AddUserSecrets<Program>(optional: !builder.Environment.IsProduction());
-// Add DbContext
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString, npgsqlOptions =>
-    {
-        // Automatically retry on transient failures (network blips, connection pool exhaustion)
-        npgsqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 3,
-            maxRetryDelay: TimeSpan.FromSeconds(5),
-            errorCodesToAdd: null);
-        // Command timeout: 30s (prevents runaway queries from blocking the thread pool)
-        npgsqlOptions.CommandTimeout(30);
-    }));
 
-// IHttpContextAccessor required for ITenantContext
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ITenantContext, TenantContextAccessor>();
+// ── Connection string (provider-aware: PostgreSQL default, SQL Server optional) ───
+var connectionString = SmsApi.Extensions.DatabaseExtensions.ResolveConnectionString(builder.Configuration);
+builder.AddDatabase(connectionString);
 
-// Register Core Services
-builder.Services.AddScoped<ITokenService, TokenService>();
-builder.Services.AddScoped<IReceiptService, ReceiptService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
-builder.Services.AddResiliencePatterns();
-builder.Services.AddScoped<IUserManagementService, UserManagementService>();
-builder.Services.AddScoped<ITwoFactorService, TwoFactorService>();
-builder.Services.AddScoped<IResourceAuthorizationService, ResourceAuthorizationService>();
+// ── All business services ────────────────────────────────────────────────────────
+builder.Services.AddApplicationServices(builder.Configuration, builder.Environment);
 
-// Register Services
-builder.Services.AddScoped<IStudentService, StudentService>();
-builder.Services.AddScoped<IStaffService, StaffService>();
-builder.Services.AddScoped<IFeeService, FeeService>();
-builder.Services.AddScoped<IFeeCalculationEngine, FeeCalculationEngine>();
-builder.Services.AddScoped<IAttendanceService, AttendanceService>();
-builder.Services.AddScoped<IExaminationService, ExaminationService>();
-builder.Services.AddScoped<IExaminationReportService, ExaminationReportService>();
-builder.Services.AddScoped<ILibraryService, LibraryService>();
-builder.Services.AddScoped<ITransportService, TransportService>();
-builder.Services.AddScoped<IHostelService, HostelService>();
-builder.Services.AddScoped<IHealthService, HealthService>();
-builder.Services.AddScoped<IPayrollService, PayrollService>();
-builder.Services.AddScoped<IAdmissionService, AdmissionService>();
-// Priority 1 - Core Academic Services
-builder.Services.AddScoped<IAcademicsService, AcademicsService>();
-builder.Services.AddScoped<IAcademicYearContextService, AcademicYearContextService>();
-builder.Services.AddScoped<IBoardConfigurationService, BoardConfigurationService>();
-builder.Services.AddScoped<ITimetableService, TimetableService>();
-builder.Services.AddScoped<IHolidayService, HolidayService>();
-builder.Services.AddScoped<IAssignmentService, AssignmentService>();
-builder.Services.AddScoped<IGradeService, GradeService>();
-builder.Services.AddScoped<INotificationService, NotificationService>();
-// Priority 2 - Communication & Management Services
-builder.Services.AddScoped<IAnnouncementService, AnnouncementService>();
-builder.Services.AddScoped<ICommunicationService, CommunicationService>();
-builder.Services.AddScoped<IDocumentService, DocumentService>();
-// Document access policies — chain-of-responsibility (evaluated in Order sequence)
-builder.Services.AddScoped<IDocumentAccessPolicyService, DocumentAccessPolicyService>();
-builder.Services.AddScoped<IDocumentAccessPolicy, PublicDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, SuperAdminDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, AdminDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, UploaderDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, StaffDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, ClassDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, SectionDocumentAccessPolicy>();
-builder.Services.AddScoped<IDocumentAccessPolicy, DefaultDocumentAccessPolicy>();
 
-// Priority 3 - Administrative
-builder.Services.AddScoped<IReportService, ReportService>();
-builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
-builder.Services.AddScoped<ICertificateService, CertificateService>();
+// ── Caching (Redis in prod, in-memory in dev) ─────────────────────────────────────
+builder.Services.AddCachingInfrastructure(builder.Configuration);
 
-// Priority 4 - Extended Features
-builder.Services.AddScoped<IFinanceService, FinanceService>();
-builder.Services.AddScoped<IStoreService, StoreService>();
-builder.Services.AddScoped<ISchoolConnectService, SchoolConnectService>();
-builder.Services.AddScoped<ILeaveManagementService, LeaveManagementService>();
-builder.Services.AddScoped<IVisitorManagementService, VisitorManagementService>();
-builder.Services.AddScoped<IVisitorService, VisitorService>();
-builder.Services.AddScoped<IAlumniService, AlumniService>();
+// ── Health checks (provider-agnostic EF Core CanConnectAsync + Redis) ────────────
+builder.Services.AddHealthCheckInfrastructure(builder.Configuration);
 
-// Priority 5 - Settings & Compliance
-builder.Services.AddScoped<ISettingsService, SettingsService>();
-builder.Services.AddScoped<IPermissionsService, PermissionsService>();
-builder.Services.AddScoped<ISchoolFeaturePermissionService, SchoolFeaturePermissionService>();
-builder.Services.AddScoped<IFeeConcessionService, FeeConcessionService>();
-// Cashfree Payments India — named HTTP client + scoped client wrapper
-builder.Services.AddHttpClient("Cashfree");
-builder.Services.AddScoped<SmsApi.Services.Cashfree.ICashfreeClient, SmsApi.Services.Cashfree.CashfreeClient>();
-builder.Services.AddScoped<IPaymentGatewayService, PaymentGatewayService>();
-builder.Services.AddScoped<IPFESIManagementService, PFESIManagementService>();
-builder.Services.AddScoped<IOfflineAttendanceService, OfflineAttendanceService>();
+// ── OpenTelemetry distributed tracing + metrics ───────────────────────────────────
+builder.Services.AddObservability(builder.Configuration, builder.Environment);
 
-// Register Security & Validation Services
-builder.Services.AddScoped<IFileValidationService, FileValidationService>();
-builder.Services.AddScoped<IPaymentValidationService, PaymentValidationService>();
-
-// Register Database Seeder for Development
-builder.Services.AddScoped<IDbSeeder, DbSeeder>();
-
-// Register FluentValidation
-builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-
-// Hybrid CQRS setup (additive, does not replace existing controllers/services)
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
-builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-
-// Health Checks — exposes /health endpoint for uptime monitors
-var hcBuilder = builder.Services.AddHealthChecks()
-    .AddNpgSql(connectionString, name: "postgresql", tags: new[] { "db", "ready" })
-    .AddCheck("self", () => HealthCheckResult.Healthy("Application is running"),
-        tags: new[] { "self", "live" });
-
-// Redis health check (only when Redis is configured)
-if (!string.IsNullOrEmpty(builder.Configuration.GetConnectionString("Redis")))
-{
-    hcBuilder.AddRedis(
-        builder.Configuration.GetConnectionString("Redis")!,
-        name: "redis",
-        failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
-        tags: new[] { "cache", "redis", "ready" });
-}
-
-// ── OpenTelemetry: distributed tracing + metrics ──────────────────────────
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(resource => resource.AddService("sms-api"))
-    .WithTracing(tracing => tracing
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddConsoleExporter())
-    .WithMetrics(metrics => metrics
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddConsoleExporter());
-
-// Response compression (Brotli + GZip with optimized levels)
+// ── Response compression (Brotli + GZip) ─────────────────────────────────────────
 builder.Services.AddProductionResponseCompression();
+builder.Services.AddProductionHttpsSecurity(builder.Environment);
 
-// Problem Details RFC 7807 — standardized error body across all error responses
-builder.Services.AddProblemDetails();
+// ── Rate limiting (auth / global / uploads / reports / bulk / search / export) ───
+builder.Services.AddApiRateLimiting();
 
-// Distributed caching: Redis if configured, fallback to in-memory cache (single-instance dev)
-var redisConnection = builder.Configuration.GetConnectionString("Redis");
-if (!string.IsNullOrEmpty(redisConnection))
-{
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = redisConnection;
-        options.InstanceName = builder.Configuration.GetValue<string>("Redis:InstanceName") ?? "sms-api:";
-    });
-    Log.Information("Redis distributed cache configured");
-}
-else
-{
-    builder.Services.AddDistributedMemoryCache(); // IDistributedCache backed by in-memory
-    Log.Information("Using distributed in-memory cache (development only)");
-}
+// ── Controllers + ProblemDetails RFC 7807 ────────────────────────────────────────
+builder.Services.AddControllersInfrastructure();
 
-// HTML Sanitization (XSS prevention)
-builder.Services.AddScoped<IHtmlSanitizer, HtmlSanitizationService>();
+// ── API versioning + Swagger + JWT Swagger support ────────────────────────────────
+builder.Services.AddApiInfrastructure();
 
-// Generic cache-aside helper (injectable by any service)
-builder.Services.AddScoped<SmsApi.Infrastructure.Performance.CachingStrategy>();
+// ── CORS ─────────────────────────────────────────────────────────────────────────
+builder.Services.AddApplicationCors(builder.Configuration, builder.Environment);
 
-// Rate limiting: protect auth endpoints and global API fairness
-builder.Services.AddRateLimiter(options =>
-{
-    // Auth endpoints: 10 req/min per IP (brute-force protection)
-    options.AddFixedWindowLimiter("auth", cfg =>
-    {
-        cfg.PermitLimit = 10;
-        cfg.Window = TimeSpan.FromMinutes(1);
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 0;
-    });
-
-    // Global: 200 req/min per IP (fair use)
-    options.AddFixedWindowLimiter("global", cfg =>
-    {
-        cfg.PermitLimit = 200;
-        cfg.Window = TimeSpan.FromMinutes(1);
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 5;
-    });
-
-    // File uploads: 5 req/min per user (resource protection)
-    options.AddFixedWindowLimiter("uploads", cfg =>
-    {
-        cfg.PermitLimit = 5;
-        cfg.Window = TimeSpan.FromMinutes(1);
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 0;
-    });
-
-    // Reports: 10 req/min per user (DB heavy)
-    options.AddFixedWindowLimiter("reports", cfg =>
-    {
-        cfg.PermitLimit = 10;
-        cfg.Window = TimeSpan.FromMinutes(1);
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 0;
-    });
-
-    // Bulk operations: 10 req/5min per user (burst protection)
-    options.AddSlidingWindowLimiter("bulk", cfg =>
-    {
-        cfg.PermitLimit = 10;
-        cfg.Window = TimeSpan.FromMinutes(5);
-        cfg.SegmentsPerWindow = 5;
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 0;
-    });
-
-    // Search: 30 req/min per user
-    options.AddFixedWindowLimiter("search", cfg =>
-    {
-        cfg.PermitLimit = 30;
-        cfg.Window = TimeSpan.FromMinutes(1);
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 0;
-    });
-
-    // Export: 5 req/min per user (resource intensive)
-    options.AddFixedWindowLimiter("export", cfg =>
-    {
-        cfg.PermitLimit = 5;
-        cfg.Window = TimeSpan.FromMinutes(1);
-        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        cfg.QueueLimit = 0;
-    });
-
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = async (context, token) =>
-    {
-        context.HttpContext.Response.ContentType = "application/problem+json";
-        await context.HttpContext.Response.WriteAsJsonAsync(new
-        {
-            title = "Too Many Requests",
-            status = 429,
-            detail = "Rate limit exceeded. Please slow down.",
-            retryAfter = 60
-        }, token);
-    };
-});
-builder.Services.AddControllers(options =>
-{
-    options.Filters.Add<SmsApi.Middleware.LoggingActionFilter>();
-})
-.AddJsonOptions(options =>
-{
-    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-    options.JsonSerializerOptions.DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-});
-
-// API versioning — all current routes default to v1.0. Clients may pass:
-//   Query param: /api/students?api-version=1.0
-//   Header:      api-version: 1.0
-builder.Services.AddApiVersioning(options =>
-{
-    options.DefaultApiVersion = new Asp.Versioning.ApiVersion(1, 0);
-    options.AssumeDefaultVersionWhenUnspecified = true;
-    options.ReportApiVersions = true; // adds api-supported-versions response header
-});
-
-// Add services to the container.
-
-// Configure CORS
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowSpecificOrigins", policy =>
-    {
-        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
-        policy.WithOrigins(allowedOrigins)
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials()
-              .WithExposedHeaders("Token-Expired");
-    });
-    
-    // Add policy for development/testing
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
-});
-
-// Configure JWT Authentication
-var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secret = builder.Configuration["JwtSettings:Secret"] 
-    ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY")
-    ?? throw new InvalidOperationException("JWT Secret not configured. Set environment variable JWT_SECRET_KEY or add to appsettings.Development.json");
-
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings.GetValue<string>("Issuer"),
-        ValidAudience = jwtSettings.GetValue<string>("Audience"),
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-        ClockSkew = TimeSpan.Zero // No tolerance for token expiration
-    };
-
-    options.Events = new JwtBearerEvents
-    {
-        OnAuthenticationFailed = context =>
-        {
-            if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
-            {
-                context.Response.Headers["Token-Expired"] = "true";
-            }
-            return Task.CompletedTask;
-        }
-    };
-});
-
-// SuperAdmin claims transformer: grants all school-level roles to SuperAdmin so that
-// [Authorize(Roles = "Admin,Principal,...")] checks on every module controller pass.
-builder.Services.AddSingleton<Microsoft.AspNetCore.Authentication.IClaimsTransformation,
-    SmsApi.Services.SuperAdminClaimsTransformer>();
-
-// Authorization Policies
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("SchoolAccess", policy =>
-        policy.RequireClaim("SchoolId"));
-    
-    options.AddPolicy("AdminOnly", policy =>
-        policy.RequireRole("Admin", "SuperAdmin"));
-    
-    options.AddPolicy("TeacherOrAdmin", policy =>
-        policy.RequireRole("Teacher", "Admin", "SuperAdmin"));
-});
-
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    // Add JWT Bearer support to Swagger
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "JWT Authorization header using the Bearer scheme. Enter your token in the text input below (without 'Bearer' prefix). Example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT"
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                },
-                Scheme = "oauth2",
-                Name = "Bearer",
-                In = ParameterLocation.Header
-            },
-            new List<string>()
-        }
-    });
-});
+// ── JWT authentication + SuperAdmin claims transformer + authorization policies ───
+builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddAuthorizationPolicies();
 
 var app = builder.Build();
 
@@ -485,11 +170,10 @@ if (app.Environment.IsDevelopment())
 // Use CORS - must be early in pipeline
 app.UseCors(app.Environment.IsDevelopment() ? "AllowAll" : "AllowSpecificOrigins");
 
-app.UseHttpsRedirection();
-
 // HSTS: tell browsers to always use HTTPS (production only — skip in dev)
 if (!app.Environment.IsDevelopment())
 {
+    app.UseHttpsRedirection();
     app.UseHsts();
 }
 
@@ -552,6 +236,7 @@ static async Task SeedEssentialDataAsync(WebApplication app)
     var db = scope.ServiceProvider.GetRequiredService<SmsApi.Data.AppDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Program>>();
     var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
 
     try
     {
@@ -579,7 +264,12 @@ static async Task SeedEssentialDataAsync(WebApplication app)
 
         // 2. Ensure admin user exists in DB with correct email
         var adminUsername = config.GetValue<string>("DefaultAdmin:Username") ?? "admin";
-        var adminPassword = config.GetValue<string>("DefaultAdmin:Password") ?? "AdminDemo2026!";
+        var adminPassword = config.GetValue<string>("DefaultAdmin:Password")
+            ?? config["DEFAULT_ADMIN_PASSWORD"]
+            ?? (environment.IsDevelopment() ? "admin-dev-change-me" : null);
+
+        if (string.IsNullOrWhiteSpace(adminPassword))
+            throw new InvalidOperationException("Default admin password is required in non-development environments. Set DefaultAdmin:Password or DEFAULT_ADMIN_PASSWORD.");
         var adminEmail = "admin@vitanaschools.edu";
 
         var adminUser = await db.UserLogins.FirstOrDefaultAsync(u =>
@@ -647,7 +337,9 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 Role = "SuperAdmin",
                 Status = "active",
                 SchoolId = platformSchoolId,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("SuperAdmin@123", workFactor: 12),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(
+                    config["SUPERADMIN_PASSWORD"] ?? (environment.IsDevelopment() ? "superadmin-dev-change-me" : throw new InvalidOperationException("SUPERADMIN_PASSWORD is required in non-development environments.")),
+                    workFactor: 12),
                 PasswordChangedAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -671,7 +363,9 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 Role = "Staff",
                 Status = "active",
                 SchoolId = schoolId,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("StaffDemo2026!", workFactor: 12),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(
+                    config["DEMO_STAFF_PASSWORD"] ?? (environment.IsDevelopment() ? "staff-dev-change-me" : throw new InvalidOperationException("DEMO_STAFF_PASSWORD is required in non-development environments.")),
+                    workFactor: 12),
                 PasswordChangedAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -694,7 +388,9 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 Role = "Parent",
                 Status = "active",
                 SchoolId = schoolId,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("ParentDemo2026!", workFactor: 12),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(
+                    config["DEMO_PARENT_PASSWORD"] ?? (environment.IsDevelopment() ? "parent-dev-change-me" : throw new InvalidOperationException("DEMO_PARENT_PASSWORD is required in non-development environments.")),
+                    workFactor: 12),
                 PasswordChangedAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,

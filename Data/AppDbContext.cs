@@ -779,8 +779,13 @@ namespace SmsApi.Data
                 entity.HasIndex(a => new { a.EntityType, a.EntityId });
                 entity.HasIndex(a => a.FeeRecordId);
                 entity.HasIndex(a => a.StudentId);
-                entity.Property(a => a.OldValues).HasColumnType("jsonb");
-                entity.Property(a => a.NewValues).HasColumnType("jsonb");
+                // Provider-aware JSON column type:
+                //   PostgreSQL: jsonb (binary, indexed, supports operators)
+                //   SQL Server: nvarchar(max) (standard JSON storage)
+                var jsonType = Database.ProviderName?.Contains("Npgsql") == true
+                    ? "jsonb" : "nvarchar(max)";
+                entity.Property(a => a.OldValues).HasColumnType(jsonType);
+                entity.Property(a => a.NewValues).HasColumnType(jsonType);
             });
         }
 

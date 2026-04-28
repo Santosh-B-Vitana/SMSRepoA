@@ -1,0 +1,585 @@
+using System;
+using System.Threading.Tasks;
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
+using SmsApi.Models.DTOs;
+using SmsApi.Models.Entities;
+using SmsApi.Services;
+using Xunit;
+using Microsoft.Extensions.Logging;
+using Moq;
+
+namespace SmsApi.Tests.Unit.Health;
+
+public class HealthServiceTests : IDisposable
+{
+    private readonly AppDbContext _context;
+    private readonly HealthService _service;
+    private readonly Guid _schoolId = Guid.NewGuid();
+    private readonly Mock<ILogger<HealthService>> _mockLogger;
+
+    public HealthServiceTests()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        _context = new AppDbContext(options);
+        _mockLogger = new Mock<ILogger<HealthService>>();
+        _service = new HealthService(_context, _mockLogger.Object);
+    }
+
+    public void Dispose() => _context.Dispose();
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    private async Task<Student> SeedStudentAsync(
+        Guid schoolId,
+        int ageYears = 12,
+        string? status = null)
+    {
+        var student = new Student
+        {
+            Id = Guid.NewGuid(),
+            SchoolId = schoolId,
+            Name = $"Student {Guid.NewGuid().ToString("N")[..8]}",
+            FirstName = "Test",
+            LastName = "Student",
+            AdmissionNumber = $"S{Guid.NewGuid().ToString("N")[..8]}",
+            Class = "10",
+            Section = "A",
+            DateOfBirth = DateTime.UtcNow.AddYears(-ageYears),
+            Gender = "male",
+            Status = status ?? "active",
+            AdmissionDate = DateTime.UtcNow.AddYears(-1),
+            Address = "123 Test Street",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _context.Students.Add(student);
+        await _context.SaveChangesAsync();
+        return student;
+    }
+
+    private async Task<HealthRecord> SeedHealthRecordAsync(
+        Guid schoolId,
+        Guid studentId,
+        string? notes = null)
+    {
+        var record = new HealthRecord
+        {
+            Id = Guid.NewGuid(),
+            SchoolId = schoolId,
+            StudentId = studentId,
+            CheckupDate = DateTime.UtcNow.AddDays(-10),
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            VisionLeft = "6/6",
+            VisionRight = "6/6",
+            CheckedBy = "Dr. Test",
+            Notes = notes ?? "{}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _context.HealthRecords.Add(record);
+        await _context.SaveChangesAsync();
+        return record;
+    }
+
+    // ── GetHealthRecordsAsync: Pagination ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetHealthRecordsAsync_NormalizesNegativePage()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var result = await _service.GetHealthRecordsAsync(_schoolId, new HealthFiltersDto(), -5, 10);
+        
+        result.CurrentPage.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetHealthRecordsAsync_NormalizesZeroPageSize()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var result = await _service.GetHealthRecordsAsync(_schoolId, new HealthFiltersDto(), 1, 0);
+        
+        result.PageSize.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetHealthRecordsAsync_ClampsTooLargePageSize()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var result = await _service.GetHealthRecordsAsync(_schoolId, new HealthFiltersDto(), 1, 9999);
+        
+        result.PageSize.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task GetHealthRecordsAsync_ReturnsPaginatedRecords()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        for (int i = 0; i < 5; i++)
+            await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var result = await _service.GetHealthRecordsAsync(_schoolId, new HealthFiltersDto(), 1, 2);
+        
+        result.Items.Should().HaveCount(2);
+        result.TotalCount.Should().Be(5);
+        result.CurrentPage.Should().Be(1);
+        result.PageSize.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetHealthRecordsAsync_EnforcesSchoolIsolation()
+    {
+        var otherSchool = Guid.NewGuid();
+        var student1 = await SeedStudentAsync(_schoolId);
+        var student2 = await SeedStudentAsync(otherSchool);
+        await SeedHealthRecordAsync(_schoolId, student1.Id);
+        await SeedHealthRecordAsync(otherSchool, student2.Id);
+
+        var result = await _service.GetHealthRecordsAsync(_schoolId, new HealthFiltersDto(), 1, 10);
+        
+        result.Items.Should().HaveCount(1);
+        result.Items[0].SchoolId.Should().Be(_schoolId);
+    }
+
+    // ── CreateHealthRecordAsync: Validation ────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_ThrowsWhenStudentInactive()
+    {
+        var student = await SeedStudentAsync(_schoolId, status: "dropped_out");
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 120,
+            BloodPressureDiastolic = 80,
+            HeartRate = 80,
+            Temperature = 98.6m
+        };
+
+        var act = async () => await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not enrolled*");
+    }
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_ThrowsWhenBloodPressureSystolicOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 250, // Invalid: > 200
+            BloodPressureDiastolic = 80,
+            HeartRate = 80,
+            Temperature = 98.6m
+        };
+
+        var act = async () => await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*systolic*out of valid range*");
+    }
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_ThrowsWhenBloodPressureDiastolicOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 120,
+            BloodPressureDiastolic = 150, // Invalid: > 120
+            HeartRate = 80,
+            Temperature = 98.6m
+        };
+
+        var act = async () => await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*diastolic*out of valid range*");
+    }
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_ThrowsWhenHeartRateOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 120,
+            BloodPressureDiastolic = 80,
+            HeartRate = 200, // Invalid: > 150
+            Temperature = 98.6m
+        };
+
+        var act = async () => await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Heart rate*out of valid range*");
+    }
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_ThrowsWhenTemperatureOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 120,
+            BloodPressureDiastolic = 80,
+            HeartRate = 80,
+            Temperature = 110 // Invalid: > 105
+        };
+
+        var act = async () => await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Temperature*out of valid range*");
+    }
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_ThrowsWhenStudentAgeOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId, ageYears: 3); // Too young (< 5)
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 100,
+            Weight = 20,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 100,
+            BloodPressureDiastolic = 60,
+            HeartRate = 100,
+            Temperature = 98.6m
+        };
+
+        var act = async () => await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*outside normal school range*");
+    }
+
+    // ── AddVaccinationAsync: Validation ────────────────────────────────────────
+
+    [Fact]
+    public async Task AddVaccinationAsync_ThrowsWhenVaccineNameNull()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var dto = new CreateVaccinationDto
+        {
+            VaccineName = null,
+            VaccinationDate = DateTime.UtcNow.AddDays(-30)
+        };
+
+        var act = async () => await _service.AddVaccinationAsync(_schoolId, student.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Vaccine name is required*");
+    }
+
+    [Fact]
+    public async Task AddVaccinationAsync_ThrowsWhenVaccineNameEmpty()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var dto = new CreateVaccinationDto
+        {
+            VaccineName = "   ",
+            VaccinationDate = DateTime.UtcNow.AddDays(-30)
+        };
+
+        var act = async () => await _service.AddVaccinationAsync(_schoolId, student.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Vaccine name is required*");
+    }
+
+    [Fact]
+    public async Task AddVaccinationAsync_ThrowsWhenFutureVaccinationDate()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var dto = new CreateVaccinationDto
+        {
+            VaccineName = "Polio",
+            VaccinationDate = DateTime.UtcNow.AddDays(10) // Future
+        };
+
+        var act = async () => await _service.AddVaccinationAsync(_schoolId, student.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*cannot be in the future*");
+    }
+
+    [Fact]
+    public async Task AddVaccinationAsync_ThrowsWhenNextDueDateBeforeVaccinationDate()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var vaccineDate = DateTime.UtcNow.AddDays(-30);
+        var dto = new CreateVaccinationDto
+        {
+            VaccineName = "Polio",
+            VaccinationDate = vaccineDate,
+            NextDueDate = vaccineDate.AddDays(-10) // Before vaccine date
+        };
+
+        var act = async () => await _service.AddVaccinationAsync(_schoolId, student.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Next due date cannot be before vaccination date*");
+    }
+
+    // ── CreateHealthAlertAsync: Validation ────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateHealthAlertAsync_ThrowsWhenAlertTypeNull()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+
+        var dto = new CreateHealthAlertDto
+        {
+            StudentId = student.Id,
+            AlertType = null,
+            Severity = "high",
+            Description = "Test alert"
+        };
+
+        var act = async () => await _service.CreateHealthAlertAsync(_schoolId, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Alert type is required*");
+    }
+
+    [Fact]
+    public async Task CreateHealthAlertAsync_ThrowsWhenSeverityNull()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+
+        var dto = new CreateHealthAlertDto
+        {
+            StudentId = student.Id,
+            AlertType = "medical_condition",
+            Severity = null,
+            Description = "Test alert"
+        };
+
+        var act = async () => await _service.CreateHealthAlertAsync(_schoolId, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Severity is required*");
+    }
+
+    [Fact]
+    public async Task CreateHealthAlertAsync_ThrowsWhenInvalidSeverity()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+
+        var dto = new CreateHealthAlertDto
+        {
+            StudentId = student.Id,
+            AlertType = "medical_condition",
+            Severity = "ultra_critical",
+            Description = "Test alert"
+        };
+
+        var act = async () => await _service.CreateHealthAlertAsync(_schoolId, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Invalid severity*");
+    }
+
+    [Fact]
+    public async Task CreateHealthAlertAsync_ThrowsWhenDescriptionNull()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+
+        var dto = new CreateHealthAlertDto
+        {
+            StudentId = student.Id,
+            AlertType = "medical_condition",
+            Severity = "high",
+            Description = null
+        };
+
+        var act = async () => await _service.CreateHealthAlertAsync(_schoolId, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Description is required*");
+    }
+
+    [Fact]
+    public async Task CreateHealthAlertAsync_ThrowsWhenDescriptionTooLong()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+
+        var dto = new CreateHealthAlertDto
+        {
+            StudentId = student.Id,
+            AlertType = "medical_condition",
+            Severity = "high",
+            Description = new string('x', 501)
+        };
+
+        var act = async () => await _service.CreateHealthAlertAsync(_schoolId, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*cannot exceed 500 characters*");
+    }
+
+    [Fact]
+    public async Task CreateHealthAlertAsync_ThrowsWhenStudentNotFound()
+    {
+        var dto = new CreateHealthAlertDto
+        {
+            StudentId = Guid.NewGuid(),
+            AlertType = "medical_condition",
+            Severity = "high",
+            Description = "Test alert"
+        };
+
+        var act = async () => await _service.CreateHealthAlertAsync(_schoolId, dto);
+        
+        await act.Should().ThrowAsync<KeyNotFoundException>()
+            .WithMessage("*Student not found*");
+    }
+
+    // ── UpdateHealthRecordAsync: Validation ────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateHealthRecordAsync_ThrowsWhenBloodPressureSystolicOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var record = await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var dto = new UpdateHealthRecordDto
+        {
+            BloodPressureSystolic = 250 // Invalid: > 200
+        };
+
+        var act = async () => await _service.UpdateHealthRecordAsync(_schoolId, record.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*systolic*out of valid range*");
+    }
+
+    [Fact]
+    public async Task UpdateHealthRecordAsync_ThrowsWhenHeartRateOutOfRange()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var record = await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var dto = new UpdateHealthRecordDto
+        {
+            HeartRate = 200 // Invalid: > 150
+        };
+
+        var act = async () => await _service.UpdateHealthRecordAsync(_schoolId, record.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Heart rate*out of valid range*");
+    }
+
+    [Fact]
+    public async Task UpdateHealthRecordAsync_ThrowsWhenFutureCheckupDate()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var record = await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var dto = new UpdateHealthRecordDto
+        {
+            CheckupDate = DateTime.UtcNow.AddDays(10) // Future
+        };
+
+        var act = async () => await _service.UpdateHealthRecordAsync(_schoolId, record.Id, dto);
+        
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*cannot be in the future*");
+    }
+
+    [Fact]
+    public async Task UpdateHealthRecordAsync_ThrowsWhenRecordNotFound()
+    {
+        var dto = new UpdateHealthRecordDto();
+
+        var act = async () => await _service.UpdateHealthRecordAsync(_schoolId, Guid.NewGuid(), dto);
+        
+        await act.Should().ThrowAsync<KeyNotFoundException>()
+            .WithMessage("*Health record not found*");
+    }
+
+    // ── Successful Operation Tests ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetHealthRecordsAsync_WithValidParameters_ReturnsRecords()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        await SeedHealthRecordAsync(_schoolId, student.Id);
+
+        var result = await _service.GetHealthRecordsAsync(_schoolId, new HealthFiltersDto(), 1, 10);
+        
+        result.Should().NotBeNull();
+        result.Items.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task CreateHealthRecordAsync_WithValidData_Succeeds()
+    {
+        var student = await SeedStudentAsync(_schoolId);
+        var dto = new CreateHealthRecordDto
+        {
+            StudentId = student.Id,
+            CheckupDate = DateTime.UtcNow,
+            Height = 150,
+            Weight = 45,
+            BloodGroup = "O+",
+            BloodPressureSystolic = 120,
+            BloodPressureDiastolic = 80,
+            HeartRate = 80,
+            Temperature = 98.6m
+        };
+
+        var result = await _service.CreateHealthRecordAsync(_schoolId, dto, Guid.NewGuid());
+        
+        result.Should().NotBeNull();
+        result.StudentId.Should().Be(student.Id);
+    }
+}

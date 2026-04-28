@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -13,6 +14,8 @@ import { NetworkErrorHandler } from "@/components/common/NetworkErrorHandler";
 import { AcademicYearProvider } from "@/contexts/AcademicYearContext";
 import { Loader2 } from "lucide-react";
 import { ModuleGuard } from "@/components/common/ModuleGuard";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 // ── Eagerly load auth pages (always needed on first paint) ────────────────────
 import Login from "@/pages/Login";
@@ -88,6 +91,10 @@ const StudentMarks         = lazy(() => import("@/pages/reports/StudentMarks"));
 const ClassAnalysis        = lazy(() => import("@/pages/reports/ClassAnalysis"));
 const GradeDistribution    = lazy(() => import("@/pages/reports/GradeDistribution"));
 const SubjectPerformance   = lazy(() => import("@/pages/reports/SubjectPerformance"));
+const SecurityDashboardPage = lazy(() => import("@/pages/SecurityDashboard"));
+const AdvancedAnalytics    = lazy(() => import("@/pages/AdvancedAnalytics"));
+const Admissions           = lazy(() => import("@/pages/Admissions"));
+const Finance              = lazy(() => import("@/pages/Finance"));
 
 // ── Fallback shown while a lazy chunk is loading ──────────────────────────────
 function PageLoader() {
@@ -104,6 +111,14 @@ const queryClient = new QueryClient({
       staleTime: 1000 * 60 * 5, // 5 minutes
       retry: 1,
     },
+    mutations: {
+      onError: (error: unknown) => {
+        const message =
+          (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+          (error instanceof Error ? error.message : 'An unexpected error occurred');
+        toast.error(message);
+      },
+    },
   },
 });
 
@@ -118,87 +133,108 @@ function App() {
                 <AcademicYearProvider>
                 <PermissionsProvider>
               <Router>
+                <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                 <Routes>
-                      {/* Default route shows login screen */}
-                      <Route path="/" element={<Login />} />
+                  {/* ── Public routes (no auth required) ──────────────────── */}
+                  <Route path="/" element={<Login />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/super-admin-login" element={<SuperAdminLogin />} />
-                  
-                  {/* Protected routes with layout */}
-                  <Route path="/dashboard" element={<Layout><Dashboard /></Layout>} />
-                  <Route path="/staff-dashboard" element={<Layout><StaffDashboard /></Layout>} />
-                  <Route path="/admin-dashboard" element={<Layout><AdminDashboard /></Layout>} />
-                  <Route path="/parent-dashboard" element={<Layout><ParentDashboard /></Layout>} />
-                  <Route path="/super-admin-dashboard" element={<Layout><SuperAdminDashboard /></Layout>} />
-                  <Route path="/academics" element={<Layout><Academics /></Layout>} />
-                  <Route path="/superadmin/schools" element={<Layout><SchoolManagement /></Layout>} />
-                  <Route path="/superadmin/users" element={<Layout><UserManagement /></Layout>} />
-                   <Route path="/students" element={<Layout><Students /></Layout>} />
-                   <Route path="/students/:id" element={<Layout><StudentProfile /></Layout>} />
-                   <Route path="/students/:id/edit" element={<Layout><StudentEdit /></Layout>} />
-                   <Route path="/staff" element={<Layout><Staff /></Layout>} />
-                   <Route path="/staff/:id" element={<Layout><StaffProfile /></Layout>} />
-                   <Route path="/staff/:id/edit" element={<Layout><StaffEdit /></Layout>} />
-                   <Route path="/attendance" element={<Layout><StaffAttendanceTeacher /></Layout>} />
-                   <Route path="/staff-attendance" element={<Layout><StaffAttendance /></Layout>} />
-                   <Route path="/student-attendance" element={<Layout><StudentAttendance /></Layout>} />
-                   <Route path="/alumni" element={<Layout><Alumni /></Layout>} />
-                  <Route path="/grades" element={<Layout><Grades /></Layout>} />
-                   <Route path="/my-classes" element={<Layout><MyClasses /></Layout>} />
-                   <Route path="/my-classes/:classId" element={<Layout><MyClassDetail /></Layout>} />
-                   <Route path="/assignments" element={<Layout><Assignments /></Layout>} />
-                  <Route path="/examinations" element={<Layout><Examinations /></Layout>} />
-                   <Route path="/reports/exam-summary" element={<Layout><ExamSummary /></Layout>} />
-                   <Route path="/reports/exam-performance" element={<Layout><ExamPerformance /></Layout>} />
-                   <Route path="/reports/student-marks" element={<Layout><StudentMarks /></Layout>} />
-                   <Route path="/reports/class-analysis" element={<Layout><ClassAnalysis /></Layout>} />
-                   <Route path="/reports/grade-distribution" element={<Layout><GradeDistribution /></Layout>} />
-                   <Route path="/reports/subject-performance" element={<Layout><SubjectPerformance /></Layout>} />
-                   <Route path="/cce-management" element={<Layout><CCEManagement /></Layout>} />
-                   <Route path="/fee-concession" element={<Layout><FeeConcession /></Layout>} />
-                   <Route path="/payment-gateway" element={<Layout><PaymentGateway /></Layout>} />
-                   <Route path="/pf-esi" element={<Layout><PFESIManagement /></Layout>} />
-                   <Route path="/offline-attendance" element={<Layout><OfflineAttendance /></Layout>} />
-                  <Route path="/reports" element={<Layout><Reports /></Layout>} />
-                  <Route path="/timetable" element={<Layout><Timetable /></Layout>} />
-                  <Route path="/transport" element={<Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout>} />
-                  <Route path="/library" element={<Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout>} />
-                  <Route path="/configuration-settings" element={<Layout><ConfigurationSettings /></Layout>} />
-                  <Route path="/role-management" element={<Layout><RoleManagement /></Layout>} />
-                   <Route path="/hostel" element={<Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout>} />
-                   <Route path="/health" element={<Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout>} />
-                   <Route path="/visitor-management" element={<Layout><VisitorManagement /></Layout>} />
-                   <Route path="/fees" element={<Layout><Fees /></Layout>} />
-                   <Route path="/wallet" element={<Layout><ModuleGuard module="wallet"><Wallet /></ModuleGuard></Layout>} />
-                   <Route path="/school-connect" element={<Layout><SchoolConnect /></Layout>} />
-                   <Route path="/store" element={<Layout><ModuleGuard module="store"><Store /></ModuleGuard></Layout>} />
-                   <Route path="/communication" element={<Layout><ModuleGuard module="communication"><Communication /></ModuleGuard></Layout>} />
-                   <Route path="/staff-parent-communication" element={<Layout><StaffParentCommunication /></Layout>} />
-                  <Route path="/announcements" element={<Layout><Announcements /></Layout>} />
-                  <Route path="/documents" element={<Layout><Documents /></Layout>} />
-                  <Route path="/id-cards" element={<Layout><IdCards /></Layout>} />
-                  <Route path="/analytics" element={<Layout><Analytics /></Layout>} />
-                  <Route path="/settings" element={<Layout><Settings /></Layout>} />
-                   <Route path="/child-profile" element={<Layout><ChildProfile /></Layout>} />
-                   <Route path="/leave-management" element={<Layout><LeaveManagement /></Layout>} />
-                   <Route path="/admin-leave" element={<Layout><AdminLeaveManagementPage /></Layout>} />
-                    <Route path="/academics/classes/manage" element={<Layout><ClassManager /></Layout>} />
-                    <Route path="/academics/classes/:classId" element={<Layout><ClassDetail /></Layout>} />
-                    <Route path="/academics/classes/:classId/sections/:sectionId" element={<Layout><SectionDetail /></Layout>} />
-                    <Route path="/class/:classId" element={<Layout><ClassProfile /></Layout>} />
-                    <Route path="/staff-class/:assignmentId" element={<Layout><StaffMyClassDetail /></Layout>} />
-                    <Route path="/student-fee-details/:studentId" element={<StudentFeeDetails />} />
-                    <Route path="/my-class-detail/:classId" element={<Layout><MyClassDetail /></Layout>} />
-                     <Route path="/parent-fees" element={<Layout><ParentFees /></Layout>} />
-                     <Route path="/parent-fees/:childId" element={<Layout><ParentChildFeeDetails /></Layout>} />
-                     <Route path="/parent-fees/:childId/pay" element={<Layout><ParentChildFeePayment /></Layout>} />
-                     <Route path="/parent-notifications" element={<Layout><ParentNotifications /></Layout>} />
-                  
-                  {/* 404 route */}
+
+                  {/* ── Protected: admin / super_admin ────────────────────── */}
+                  <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Dashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/admin-dashboard" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/super-admin-dashboard" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SuperAdminDashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/schools" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SchoolManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/users" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><UserManagement /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: staff / admin (teacher-facing) ─────────── */}
+                  <Route path="/staff-dashboard" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/my-classes" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClasses /></Layout></ProtectedRoute>} />
+                  <Route path="/my-classes/:classId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClassDetail /></Layout></ProtectedRoute>} />
+                  <Route path="/my-class-detail/:classId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClassDetail /></Layout></ProtectedRoute>} />
+                  <Route path="/staff-class/:assignmentId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffMyClassDetail /></Layout></ProtectedRoute>} />
+                  <Route path="/staff-parent-communication" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffParentCommunication /></Layout></ProtectedRoute>} />
+                  <Route path="/attendance" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffAttendanceTeacher /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: parent-facing ──────────────────────────── */}
+                  <Route path="/parent-dashboard" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/child-profile" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ChildProfile /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-fees" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentFees /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-fees/:childId" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeeDetails /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeePayment /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-notifications" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentNotifications /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: admin + staff shared ──────────────────── */}
+                  <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Admissions /></Layout></ProtectedRoute>} />
+                  <Route path="/students" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><Students /></Layout></ProtectedRoute>} />
+                  <Route path="/students/:id" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><StudentProfile /></Layout></ProtectedRoute>} />
+                  <Route path="/students/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StudentEdit /></Layout></ProtectedRoute>} />
+                  <Route path="/staff" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Staff /></Layout></ProtectedRoute>} />
+                  <Route path="/staff/:id" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffProfile /></Layout></ProtectedRoute>} />
+                  <Route path="/staff/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffEdit /></Layout></ProtectedRoute>} />
+                  <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffAttendance /></Layout></ProtectedRoute>} />
+                  <Route path="/student-attendance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><StudentAttendance /></Layout></ProtectedRoute>} />
+                  <Route path="/academics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Academics /></Layout></ProtectedRoute>} />
+                  <Route path="/academics/classes/manage" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ClassManager /></Layout></ProtectedRoute>} />
+                  <Route path="/academics/classes/:classId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassDetail /></Layout></ProtectedRoute>} />
+                  <Route path="/academics/classes/:classId/sections/:sectionId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><SectionDetail /></Layout></ProtectedRoute>} />
+                  <Route path="/class/:classId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassProfile /></Layout></ProtectedRoute>} />
+                  <Route path="/grades" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Grades /></Layout></ProtectedRoute>} />
+                  <Route path="/assignments" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Assignments /></Layout></ProtectedRoute>} />
+                  <Route path="/examinations" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Examinations /></Layout></ProtectedRoute>} />
+                  <Route path="/cce-management" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><CCEManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Timetable /></Layout></ProtectedRoute>} />
+                  <Route path="/alumni" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Alumni /></Layout></ProtectedRoute>} />
+                  <Route path="/announcements" element={<ProtectedRoute><Layout><Announcements /></Layout></ProtectedRoute>} />
+                  <Route path="/communication" element={<ProtectedRoute><Layout><ModuleGuard module="communication"><Communication /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/documents" element={<ProtectedRoute><Layout><Documents /></Layout></ProtectedRoute>} />
+                  <Route path="/notifications" element={<ProtectedRoute><Layout><Announcements /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: admin-only finance ────────────────────── */}
+                  <Route path="/finance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Finance /></Layout></ProtectedRoute>} />
+                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Fees /></Layout></ProtectedRoute>} />
+                  <Route path="/student-fee-details/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><StudentFeeDetails /></ProtectedRoute>} />
+                  <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><FeeConcession /></Layout></ProtectedRoute>} />
+                  <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PaymentGateway /></Layout></ProtectedRoute>} />
+                  <Route path="/pf-esi" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PFESIManagement /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: reports ────────────────────────────────── */}
+                  <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Reports /></Layout></ProtectedRoute>} />
+                  <Route path="/reports/exam-summary" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ExamSummary /></Layout></ProtectedRoute>} />
+                  <Route path="/reports/exam-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ExamPerformance /></Layout></ProtectedRoute>} />
+                  <Route path="/reports/student-marks" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><StudentMarks /></Layout></ProtectedRoute>} />
+                  <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassAnalysis /></Layout></ProtectedRoute>} />
+                  <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><GradeDistribution /></Layout></ProtectedRoute>} />
+                  <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><SubjectPerformance /></Layout></ProtectedRoute>} />
+                  <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Analytics /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: optional modules ───────────────────────── */}
+                  <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/library" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/health" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/wallet" element={<ProtectedRoute><Layout><ModuleGuard module="wallet"><Wallet /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/store" element={<ProtectedRoute><Layout><ModuleGuard module="store"><Store /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/school-connect" element={<ProtectedRoute><Layout><SchoolConnect /></Layout></ProtectedRoute>} />
+                  <Route path="/offline-attendance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><OfflineAttendance /></Layout></ProtectedRoute>} />
+
+                  {/* ── Protected: settings / admin config ───────────────── */}
+                  <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
+                  <Route path="/configuration-settings" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ConfigurationSettings /></Layout></ProtectedRoute>} />
+                  <Route path="/role-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><RoleManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/leave-management" element={<ProtectedRoute><Layout><LeaveManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/admin-leave" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdminLeaveManagementPage /></Layout></ProtectedRoute>} />
+                  <Route path="/id-cards" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><IdCards /></Layout></ProtectedRoute>} />
+                  <Route path="/security" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><SecurityDashboardPage /></Layout></ProtectedRoute>} />
+                  <Route path="/advanced-analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdvancedAnalytics /></Layout></ProtectedRoute>} />
+
+                  {/* ── 404 ──────────────────────────────────────────────── */}
                   <Route path="*" element={<Layout><NotFound /></Layout>} />
                 </Routes>
                 </Suspense>
+                </ErrorBoundary>
               </Router>
                 <Toaster />
                 <NetworkErrorHandler />

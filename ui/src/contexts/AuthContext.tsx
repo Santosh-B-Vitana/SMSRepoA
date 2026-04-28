@@ -55,59 +55,6 @@ const SESSION_CONFIG = {
   storageKey: 'auth_session',
 };
 
-// Mock users for demonstration (in production, this would be server-side)
-const mockUsers: Array<User & { passwordHash: string }> = [
-  {
-    id: 'super_admin1',
-    name: 'Super Admin Access',
-    email: 'superadmin@schoolsystem.com',
-    role: 'super_admin',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=center',
-    passwordHash: 'demo_hash_password', // In production, use bcrypt hash
-  },
-  {
-    id: 'admin1',
-    name: 'Dr. Rajesh Sharma',
-    email: 'admin@vitanaschools.edu',
-    role: 'admin',
-    schoolId: 'school1',
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=center',
-    passwordHash: 'demo_hash_password',
-  },
-  {
-    id: 'staff1',
-    name: 'Anil Kumar',
-    email: 'anil.kumar@vitanaschools.edu',
-    role: 'staff',
-    schoolId: 'school1',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=center',
-    staffData: {
-      employeeId: 'STAFF002',
-      department: 'Mathematics',
-      designation: 'Mathematics Teacher',
-    },
-    passwordHash: 'demo_hash_password',
-  },
-  {
-    id: 'parent1',
-    name: 'Suresh Gupta',
-    email: 'suresh.gupta@email.com',
-    role: 'parent',
-    schoolId: 'school1',
-    avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&h=100&fit=crop&crop=center',
-    parentData: {
-      children: ['STU001'],
-    },
-    passwordHash: 'demo_hash_password',
-  },
-];
-
-// Secure password verification (in production, use bcrypt.compare)
-function verifyPassword(inputPassword: string, storedHash: string): boolean {
-  // Demo implementation - in production, use: await bcrypt.compare(inputPassword, storedHash)
-  return inputPassword === 'password' && storedHash === 'demo_hash_password';
-}
-
 // Get session from storage with validation
 function getStoredSession(): AuthSession | null {
   try {
@@ -144,10 +91,11 @@ function storeSession(session: AuthSession): void {
   }
 }
 
-// Clear session
+// Clear session — removes all auth state from both storages
 function clearSession(): void {
   sessionStorage.removeItem(SESSION_CONFIG.storageKey);
-  // Also clear any related data
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('schoolId');
   localStorage.removeItem('currentUser'); // Legacy cleanup
 }
 

@@ -1,82 +1,106 @@
-# sms-api
+# sms-api — School Management System
 
-A simple C# .NET Core API project with CORS and JWT Token Based Authentication.
+> Production-grade ERP for Indian K-12 schools · ASP.NET Core 8 · React 19 · PostgreSQL
+
+[![Tests](https://img.shields.io/badge/tests-724%20passing-brightgreen)](SmsApi.Tests/)
+[![.NET](https://img.shields.io/badge/.NET-8.0-blue)](https://dotnet.microsoft.com)
+[![React](https://img.shields.io/badge/React-19.2.5-61dafb)](ui/)
+
+---
 
 ## Features
 
-- **CORS Support**: Configured to allow cross-origin requests from specified origins
-- **JWT Authentication**: Token-based authentication for secure API access
-- **RESTful API**: Sample SMS endpoints demonstrating authentication usage
-- **Swagger/OpenAPI**: API documentation and testing interface
+### Backend
+- **42+ REST Controllers** covering all school management domains
+- **JWT Authentication** with Redis-backed brute-force protection (5 attempts → 15 min lockout)
+- **Role-Based Access Control**: super_admin, admin, staff, student, parent
+- **PostgreSQL** via Entity Framework Core 8 (soft delete, audit trails)
+- **Redis Cache** via `ICacheService` abstraction (brute-force, session caching)
+- **S3/MinIO File Storage** via `IFileStorageService` abstraction
+- **Cashfree Payment Gateway** (create orders, webhooks, refunds)
+- **OpenTelemetry** (OTLP exporter) + Serilog + Seq structured logging
+- **Health Checks UI** (`/health-ui`)
+- **Docker + docker-compose** for one-command local setup
+- **724 passing unit tests** (xUnit)
 
-## Prerequisites
+### Frontend (React 19 SPA)
+- **60+ lazy-loaded routes** with React Router v6
+- **Production-grade forms**: react-hook-form + Zod + shadcn/ui FormField
+- **Multi-step wizards**: 5-step admission, 6-step staff registration
+- **Finance Dashboard**: income, expenses, petty cash, budget utilization + Recharts
+- **TanStack Query v5** for all data fetching / mutations
+- **Vitest + RTL** unit tests
 
-- .NET 8.0 SDK or later
-- Any IDE that supports .NET development (Visual Studio, VS Code, Rider)
+### India-Specific
+- Aadhaar number validation & masking
+- PAN number validation & masking
+- IFSC code validation
+- RTE fee concession workflow
+- Category fields (General/OBC/SC/ST/EWS)
+- PF, ESI, UAN compliance fields
+- Cashfree (Indian payment methods: UPI, NetBanking, Card, Wallet)
 
-## Getting Started
+---
 
-### Build the Project
+## Quick Start
 
 ```bash
-dotnet build
-```
+# Start infrastructure
+docker-compose up -d
 
-### Run the Application
+# Apply migrations
+dotnet ef database update
 
-```bash
+# Run API
 dotnet run
+
+# Run frontend
+cd ui
+pnpm install
+pnpm dev
 ```
 
-The API will start on `http://localhost:5092` by default.
+API: `http://localhost:5092`  
+Frontend: `http://localhost:5173`  
+Swagger: `http://localhost:5092/swagger`  
+Health UI: `http://localhost:5092/health-ui`  
+Seq Logs: `http://localhost:5341`
 
-## Configuration
+---
 
-### appsettings.json
+## Documentation
 
-Configure JWT settings and CORS origins in `appsettings.json`:
+| Document | Description |
+|---|---|
+| [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md) | Architecture, stack, configuration |
+| [docs/FUNCTIONAL_DOCUMENT.md](docs/FUNCTIONAL_DOCUMENT.md) | Feature reference for all modules |
+| [MODULE_STATUS_SHEET.md](MODULE_STATUS_SHEET.md) | Module completion status |
 
-```json
-{
-  "JwtSettings": {
-    "Secret": "YourSecretKeyHere",
-    "Issuer": "SmsApi",
-    "Audience": "SmsApiClient",
-    "ExpirationInMinutes": 60
-  },
-  "Cors": {
-    "AllowedOrigins": [
-      "http://localhost:3000",
-      "http://localhost:4200"
-    ]
-  }
-}
+---
+
+## Testing
+
+```bash
+# Backend
+dotnet test
+
+# Frontend
+cd ui
+pnpm test
 ```
 
-## API Endpoints
+---
 
-### Authentication
+## Default Credentials
 
-#### POST /api/auth/login
-Authenticate and receive a JWT token.
+| Role | Username | Password |
+|---|---|---|
+| Super Admin | superadmin | Admin@123 |
+| Admin | admin | Admin@123 |
+| Staff | staff1 | Staff@123 |
+| Parent | parent1 | Parent@123 |
+| Student | student1 | Student@123 |
 
-**Request:**
-```json
-{
-  "username": "admin",
-  "password": "password"
-}
-```
-
-**Response:**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiration": "2025-11-09T05:09:35.503Z"
-}
-```
-
-### SMS Endpoints (Requires Authentication)
 
 #### GET /api/sms
 Get all SMS messages.

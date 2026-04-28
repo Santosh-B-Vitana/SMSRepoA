@@ -17,7 +17,8 @@ import { AnimatedBackground } from "@/components/common/AnimatedBackground";
 import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
 import { useAdmissions, useAdmissionStats } from "@/hooks/useAdmissions";
-import type { CreateAdmissionData } from "@/services/admissionService";
+import { AdmissionForm } from "./AdmissionForm";
+import type { Admission } from "@/services/admissionService";
 
 const statusColors: Record<string, string> = {
   pending:    "bg-yellow-100 text-yellow-800",
@@ -37,14 +38,10 @@ export function AdmissionsManager() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [classFilter, setClassFilter]   = useState("all");
   const [page, setPage]                 = useState(1);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen]   = useState(false);
+  const [editAdmission, setEditAdmission]         = useState<Admission | null>(null);
 
-  // Form state
-  const [formData, setFormData] = useState<Partial<CreateAdmissionData>>({
-    gender: "male", academicYear: new Date().getFullYear() + "-" + String(new Date().getFullYear() + 1).slice(2),
-  });
-
-  const { items, totalCount, totalPages, isLoading, error, updateStatus, createAdmission } = useAdmissions({
+  const { items, totalCount, totalPages, isLoading, error, updateStatus, refetch } = useAdmissions({
     filters: {
       searchTerm: searchTerm || undefined,
       status: statusFilter !== "all" ? statusFilter : undefined,
@@ -77,32 +74,18 @@ export function AdmissionsManager() {
     }
   };
 
-  const handleCreate = async () => {
-    try {
-      const required: (keyof CreateAdmissionData)[] = [
-        "firstName","lastName","dateOfBirth","gender","guardianName","guardianRelation","guardianPhone","address","appliedClass","academicYear"
-      ];
-      for (const field of required) {
-        if (!formData[field]) {
-          toast({ title: `${field} is required`, variant: "destructive" });
-          return;
-        }
-      }
-      await createAdmission(formData as CreateAdmissionData);
-      toast({ title: "Application submitted successfully" });
-      setIsAddDialogOpen(false);
-      setFormData({ gender: "male", academicYear: formData.academicYear });
-    } catch (err: any) {
-      toast({
-        title: "Submission Failed",
-        description: err?.response?.data?.message ?? err?.message ?? "Unknown error",
-        variant: "destructive",
-      });
-    }
+  const handleFormSuccess = () => {
+    setIsAddDialogOpen(false);
+    setEditAdmission(null);
+    if (typeof refetch === "function") refetch();
+    toast({ title: editAdmission ? "Application updated" : "Application submitted successfully" });
   };
 
-  const field = (key: keyof CreateAdmissionData, value: string) =>
-    setFormData(prev => ({ ...prev, [key]: value }));
+  const handleFormClose = () => {
+    setIsAddDialogOpen(false);
+    setEditAdmission(null);
+  };
+
 
   return (
     <div className="relative min-h-screen">
@@ -122,96 +105,12 @@ export function AdmissionsManager() {
                   New Application
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>New Admission Application</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>First Name *</Label>
-                      <Input placeholder="First name" onChange={e => field("firstName", e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Last Name *</Label>
-                      <Input placeholder="Last name" onChange={e => field("lastName", e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Date of Birth *</Label>
-                      <Input type="date" onChange={e => field("dateOfBirth", e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Gender *</Label>
-                      <Select defaultValue="male" onValueChange={v => field("gender", v)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="male">Male</SelectItem>
-                          <SelectItem value="female">Female</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Applied Class *</Label>
-                      <Select onValueChange={v => field("appliedClass", v)}>
-                        <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
-                        <SelectContent>
-                          {CLASSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Academic Year *</Label>
-                      <Input placeholder="e.g. 2025-26" defaultValue={formData.academicYear} onChange={e => field("academicYear", e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Guardian Name *</Label>
-                      <Input placeholder="Guardian name" onChange={e => field("guardianName", e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Relation *</Label>
-                      <Input placeholder="e.g. Father, Mother" onChange={e => field("guardianRelation", e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Guardian Phone *</Label>
-                      <Input placeholder="Phone number" onChange={e => field("guardianPhone", e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Guardian Email</Label>
-                      <Input type="email" placeholder="Email" onChange={e => field("guardianEmail", e.target.value)} />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Address *</Label>
-                    <Textarea placeholder="Full address" onChange={e => field("address", e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Previous School</Label>
-                    <Input placeholder="Previous school name" onChange={e => field("previousSchool", e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Category</Label>
-                    <Select onValueChange={v => field("category", v)}>
-                      <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="general">General</SelectItem>
-                        <SelectItem value="obc">OBC</SelectItem>
-                        <SelectItem value="sc">SC</SelectItem>
-                        <SelectItem value="st">ST</SelectItem>
-                        <SelectItem value="ews">EWS</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button className="w-full" onClick={handleCreate}>Submit Application</Button>
-                </div>
+              <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto p-0">
+                <AdmissionForm
+                  admission={editAdmission}
+                  onClose={handleFormClose}
+                  onSuccess={handleFormSuccess}
+                />
               </DialogContent>
             </Dialog>
           </div>

@@ -1,5 +1,7 @@
 
 import { useState, useEffect } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Calendar, FileText, Users, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,8 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 import { assignmentApi, type AssignmentResponse } from "@/services/api/assignmentApi";
 import { academicApi } from "@/services/api/academicApi";
+import { assignmentSchema, type AssignmentFormData } from "@/schemas/assignmentSchema";
 
 interface Assignment {
   id: string;
@@ -55,6 +59,22 @@ export function AssignmentManager() {
   const [selectedClass, setSelectedClass] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [staffClasses, setStaffClasses] = useState<{ id: string; name: string }[]>([]);
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset: resetForm,
+    formState: { errors, isSubmitting },
+  } = useForm<AssignmentFormData>({
+    resolver: zodResolver(assignmentSchema),
+    defaultValues: {
+      assignedDate: new Date().toISOString().split("T")[0],
+      assignmentType: "homework",
+      isPublished: false,
+      allowLateSubmission: false,
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -231,43 +251,85 @@ export function AssignmentManager() {
             <CardTitle>Create New Assignment</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium">Title</label>
-                <Input placeholder="Assignment title" />
+            <form
+              onSubmit={handleSubmit(async (data: AssignmentFormData) => {
+                try {
+                  await assignmentApi.createAssignment({
+                    title: data.title,
+                    description: data.description ?? "",
+                    subjectId: data.subjectId,
+                    classId: data.classId,
+                    sectionId: data.sectionId ?? undefined,
+                    assignedDate: data.assignedDate,
+                    dueDate: data.dueDate,
+                    maxMarks: data.maxMarks,
+                    assignmentType: data.assignmentType,
+                    instructions: data.instructions ?? "",
+                    isPublished: data.isPublished,
+                    allowLateSubmission: data.allowLateSubmission,
+                    latePenaltyPercent: data.latePenaltyPercent,
+                  });
+                  toast.success("Assignment created successfully");
+                  setShowCreateForm(false);
+                  resetForm();
+                  // Re-fetch assignments
+                  const res = await assignmentApi.getAssignments(undefined, undefined, 1, 100);
+                  setAssignments(res.assignments ?? []);
+                  setTotalAssignments(res.total ?? 0);
+                } catch {
+                  toast.error("Failed to create assignment");
+                }
+              })}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Title *</label>
+                  <Input {...register("title")} placeholder="Assignment title" />
+                  {errors.title && <p className="text-xs text-destructive mt-1">{errors.title.message}</p>}
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Class *</label>
+                  <Controller
+                    name="classId"
+                    control={control}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {staffClasses.map(cls => (
+                            <SelectItem key={cls.id} value={cls.id}>{cls.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {errors.classId && <p className="text-xs text-destructive mt-1">{errors.classId.message}</p>}
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Due Date *</label>
+                  <Input type="date" {...register("dueDate")} />
+                  {errors.dueDate && <p className="text-xs text-destructive mt-1">{errors.dueDate.message}</p>}
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Max Points</label>
+                  <Input type="number" {...register("maxMarks")} placeholder="100" />
+                  {errors.maxMarks && <p className="text-xs text-destructive mt-1">{errors.maxMarks.message}</p>}
+                </div>
               </div>
               <div>
-                <label className="text-sm font-medium">Class</label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staffClasses.map(cls => (
-                      <SelectItem key={cls.id} value={cls.id}>{cls.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium">Instructions</label>
+                <Textarea {...register("instructions")} placeholder="Assignment instructions and requirements..." rows={4} />
               </div>
-              <div>
-                <label className="text-sm font-medium">Due Date</label>
-                <Input type="date" />
+              <div className="flex gap-2">
+                <Button type="submit" disabled={isSubmitting}>Create Assignment</Button>
+                <Button type="button" variant="outline" onClick={() => { setShowCreateForm(false); resetForm(); }}>
+                  Cancel
+                </Button>
               </div>
-              <div>
-                <label className="text-sm font-medium">Points</label>
-                <Input type="number" placeholder="100" />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Instructions</label>
-              <Textarea placeholder="Assignment instructions and requirements..." rows={4} />
-            </div>
-            <div className="flex gap-2">
-              <Button>Create Assignment</Button>
-              <Button variant="outline" onClick={() => setShowCreateForm(false)}>
-                Cancel
-              </Button>
-            </div>
+            </form>
           </CardContent>
         </Card>
       )}

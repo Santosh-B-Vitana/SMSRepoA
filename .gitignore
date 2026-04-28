@@ -59,3 +59,10 @@ $RECYCLE.BIN/
 
 # macOS
 .DS_Store
+
+# Runtime logs and local artifacts
+logs/
+artifacts/buildcheck/
+
+#Node Modules
+node_modules/
