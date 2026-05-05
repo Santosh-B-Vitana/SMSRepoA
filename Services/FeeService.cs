@@ -521,6 +521,19 @@ namespace SmsApi.Services
                 if (feeRecord == null)
                     throw new InvalidOperationException("Fee record not found.");
 
+                // ── GUARD: Explicit check for already-paid fee records ──
+                if (feeRecord.Status == "paid")
+                    throw new InvalidOperationException("This fee record is already fully paid. No further payment can be accepted.");
+
+                // ── IDEMPOTENCY: Block duplicate receipt numbers within the same school ──
+                var receiptExists = await _context.PaymentTransactions
+                    .AsNoTracking()
+                    .AnyAsync(p => p.SchoolId == request.SchoolId!.Value &&
+                                   p.ReceiptNumber == request.ReceiptNumber &&
+                                   p.Status != "voided");
+                if (receiptExists)
+                    throw new InvalidOperationException($"A payment with receipt number '{request.ReceiptNumber}' already exists. Duplicate receipt numbers are not allowed.");
+
                 // Snapshot before mutation (for audit)
                 var oldValues = JsonSerializer.Serialize(new
                 {
@@ -533,6 +546,8 @@ namespace SmsApi.Services
 
                 // Validate: payment must not exceed outstanding balance
                 var outstanding = feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount;
+                if (outstanding <= 0)
+                    throw new InvalidOperationException("Outstanding balance is zero. No payment is required.");
                 if (request.Amount > outstanding + 0.01m) // small tolerance for rounding
                     throw new InvalidOperationException($"Payment amount ₹{request.Amount} exceeds outstanding balance ₹{outstanding}.");
 

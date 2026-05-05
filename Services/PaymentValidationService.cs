@@ -64,16 +64,33 @@ namespace SmsApi.Services
             if (!validMethods.Contains(request.Method?.ToLowerInvariant()))
                 return (false, $"Invalid payment method '{request.Method}'. Allowed: cash, cheque, dd, upi, neft, challan, card, netbanking");
 
-            // Verify no duplicate payment (check last 30 seconds)
+            // Verify fee record is not already fully paid
+            if (feeRecord.Status == "paid")
+                return (false, "Fee record is already fully paid");
+
+            // Verify receipt number uniqueness within school (financial audit requirement)
+            if (!string.IsNullOrWhiteSpace(request.ReceiptNumber))
+            {
+                var receiptExists = await context.PaymentTransactions
+                    .AsNoTracking()
+                    .AnyAsync(p => p.SchoolId == schoolId &&
+                                   p.ReceiptNumber == request.ReceiptNumber &&
+                                   p.Status != "voided");
+                if (receiptExists)
+                    return (false, $"Receipt number '{request.ReceiptNumber}' already exists in this school. Use a unique receipt number.");
+            }
+
+            // Verify no duplicate payment (check last 30 seconds - idempotency window)
             var recentPayment = await context.PaymentTransactions
                 .AsNoTracking()
                 .Where(p => p.FeeRecordId == request.FeeRecordId &&
                            p.Amount == request.Amount &&
+                           p.Method == request.Method &&
                            p.CreatedAt > DateTime.UtcNow.AddSeconds(-30))
                 .FirstOrDefaultAsync();
             
             if (recentPayment != null)
-                return (false, "Duplicate payment attempt detected - identical payment just created");
+                return (false, "Duplicate payment attempt detected - identical payment just created (idempotency window: 30s)");
 
             return (true, null);
         }

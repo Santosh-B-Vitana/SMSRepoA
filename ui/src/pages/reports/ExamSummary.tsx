@@ -67,8 +67,8 @@ export default function ExamSummary() {
       }
 
       const data = await response.json();
-      if (data.success && data.data) {
-        setReport(data.data);
+      if (data.success && data.data?.data) {
+        setReport(data.data.data);
       } else {
         throw new Error(data.message || "Failed to load report");
       }

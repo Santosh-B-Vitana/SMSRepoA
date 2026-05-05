@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Calendar, FileText, Award, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { StudentReportCardGenerator } from "./StudentReportCardGenerator";
 import { useToast } from "@/hooks/use-toast";
 import { Student } from "../../services/mockApi";
 import { mockApi } from "../../services/mockApi";
+import { getExams as fetchExamsFromApi, getResults as fetchResultsFromApi } from "@/services/api/examinationApi";
 import { ExportButton, ImportButton, EmptyState, ErrorBoundary } from "@/components/common";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { AnimatedBackground } from "@/components/common/AnimatedBackground";
@@ -39,6 +40,9 @@ interface Result {
   studentName: string;
   marks: number;
   grade: string;
+  subject?: string;
+  maxMarks?: number;
+  percentage?: number;
 }
 
 const mockExams: Exam[] = [
@@ -140,8 +144,46 @@ export function ExaminationManager() {
   const [enteredStudent, setEnteredStudent] = useState<{ name?: string; rollNo?: string; class?: string; section?: string }>({});
   const [dialogSubjects, setDialogSubjects] = useState<string[]>([]);
   const [dialogMarks, setDialogMarks] = useState<Record<string, number>>({});
-  const [exams, setExams] = useState<Exam[]>(mockExams);
-  const [results, setResults] = useState<Result[]>(mockResults);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [results, setResults] = useState<Result[]>([]);
+
+  useEffect(() => {
+    fetchExamsFromApi({}, 1, 200)
+      .then(res => {
+        const mapped = (res.items ?? []).map(e => ({
+          id: e.id,
+          name: e.name,
+          class: e.class,
+          subject: e.subject,
+          date: e.date,
+          time: '',
+          duration: '',
+          maxMarks: e.maxMarks,
+          status: (['scheduled', 'ongoing', 'completed', 'paused'].includes(e.status)
+            ? e.status
+            : 'scheduled') as Exam['status'],
+        }));
+        setExams(mapped);
+      })
+      .catch(() => {});
+
+    fetchResultsFromApi({}, 1, 200)
+      .then(res => {
+        const mapped = (res.items ?? []).map(r => ({
+          id: r.id,
+          examId: '',
+          studentId: r.studentId,
+          studentName: r.studentName,
+          marks: r.marksObtained,
+          grade: r.grade,
+          subject: r.subject,
+          maxMarks: r.maxMarks,
+          percentage: r.percentage,
+        }));
+        setResults(mapped);
+      })
+      .catch(() => {});
+  }, []);
   const [showMarksDialog, setShowMarksDialog] = useState(false);
   const [subjectsByStudent, setSubjectsByStudent] = useState<Record<string, string[]>>({});
   const [marksByStudent, setMarksByStudent] = useState<Record<string, Record<string, number>>>({});
@@ -325,16 +367,17 @@ export function ExaminationManager() {
                 <TableBody>
                   {results.map((result) => {
                     const exam = exams.find(e => e.id === result.examId);
-                    const percentage = exam ? (result.marks / exam.maxMarks) * 100 : 0;
+                    const effectiveMaxMarks = result.maxMarks ?? exam?.maxMarks ?? 100;
+                    const effectivePercentage = result.percentage ?? (exam ? (result.marks / effectiveMaxMarks) * 100 : 0);
                     return (
                       <TableRow key={result.id}>
                         <TableCell className="font-medium">{result.studentName}</TableCell>
-                        <TableCell>{exam?.subject} - {exam?.name}</TableCell>
-                        <TableCell>{result.marks}/{exam?.maxMarks}</TableCell>
+                        <TableCell>{result.subject ?? exam?.subject ?? ''}{exam ? ` - ${exam.name}` : ''}</TableCell>
+                        <TableCell>{result.marks}/{effectiveMaxMarks}</TableCell>
                         <TableCell>
                           <Badge variant="default">{result.grade}</Badge>
                         </TableCell>
-                        <TableCell>{percentage.toFixed(1)}%</TableCell>
+                        <TableCell>{effectivePercentage.toFixed(1)}%</TableCell>
                       </TableRow>
                     );
                   })}

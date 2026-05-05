@@ -1012,6 +1012,18 @@ static async Task SeedOperationalDataAsync(
     }
 
     // ── 14. Exams + Results ───────────────────────────────────────────────
+    // Backfill: exams seeded without AcademicYear won't match any year filter — fix them.
+    var examsWithNullYear = await db.Examinations
+        .Where(e => e.SchoolId == schoolId && e.AcademicYear == null && !e.IsDeleted)
+        .ToListAsync();
+    if (examsWithNullYear.Count > 0)
+    {
+        foreach (var ex in examsWithNullYear)
+            ex.AcademicYear = "2025-2026";
+        await db.SaveChangesAsync();
+        logger.LogInformation("Backfilled AcademicYear on {Count} existing exams", examsWithNullYear.Count);
+    }
+
     if (!await db.Examinations.AnyAsync(e => e.SchoolId == schoolId))
     {
         var subjects = new[] { "Mathematics", "English", "Science", "Social Studies", "Hindi" };
@@ -1034,6 +1046,7 @@ static async Task SeedOperationalDataAsync(
                     ExamDate = examDate.AddDays(subjects.ToList().IndexOf(subject)),
                     TotalMarks = 100,
                     PassingMarks = 35,
+                    AcademicYear = "2025-2026",
                     Description = "Annual examination",
                     Status = "completed",
                     CreatedAt = DateTime.UtcNow,

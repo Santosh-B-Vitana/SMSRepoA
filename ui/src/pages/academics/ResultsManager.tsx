@@ -51,16 +51,30 @@ function cellBg(pct: number, isDirty: boolean) {
   return "border-red-300 bg-red-50/40";
 }
 
+// ─── Props ───────────────────────────────────────────────
+interface ResultsManagerProps {
+  /** Pre-select a class when navigating from ExamEventCard */
+  initialClass?: string;
+  /** Pre-select a section ("all" or a specific section) */
+  initialSection?: string;
+  /** Pre-select an exam name (grouped exam name) */
+  initialExamName?: string;
+}
+
 // ─── Component ───────────────────────────────────────────
-export default function ResultsManager() {
+export default function ResultsManager({
+  initialClass = "",
+  initialSection = "all",
+  initialExamName = "",
+}: ResultsManagerProps = {}) {
   // Global academic year from context
   const { academicYear: globalYear, availableYears, currentYear } = useAcademicYear();
 
-  // Filter state — initialized from global context
+  // Filter state — initialized from global context (or pre-selected props)
   const [selectedYear, setSelectedYear]         = useState(globalYear || "all");
-  const [selectedClass, setSelectedClass]       = useState("");
-  const [selectedSection, setSelectedSection]   = useState("all");
-  const [selectedExamName, setSelectedExamName] = useState("");
+  const [selectedClass, setSelectedClass]       = useState(initialClass);
+  const [selectedSection, setSelectedSection]   = useState(initialSection);
+  const [selectedExamName, setSelectedExamName] = useState(initialExamName);
 
   // Lookup data
   const [allClasses, setAllClasses]       = useState<ClassResponse[]>([]);

@@ -57,9 +57,17 @@ interface ExamTimetable {
 
 interface ExamTimetableCreatorProps {
   openCreateOnMount?: boolean;
+  /** Pre-highlight timetables for this class when navigating from All Exams tab */
+  initialClass?: string;
+  /** Pre-highlight timetables matching this exam name when navigating from All Exams tab */
+  initialExamName?: string;
 }
 
-export default function ExamTimetableCreator({ openCreateOnMount }: ExamTimetableCreatorProps = {}) {
+export default function ExamTimetableCreator({
+  openCreateOnMount,
+  initialClass,
+  initialExamName,
+}: ExamTimetableCreatorProps = {}) {
   const { academicYear } = useAcademicYear();
   const [timetables, setTimetables] = useState<ExamTimetable[]>([]);
   const [allClasses, setAllClasses] = useState<ClassResponse[]>([]);
@@ -798,8 +806,10 @@ export default function ExamTimetableCreator({ openCreateOnMount }: ExamTimetabl
                 ? `${format(new Date(tt.subjects[0].date), "d MMM")} – ${format(new Date(tt.subjects[tt.subjects.length - 1].date), "d MMM yyyy")}`
                 : "";
               const typeLabel = examTypes.find(t => t.value === tt.examType)?.label ?? tt.examType;
+              const isHighlighted = (initialClass && tt.class === initialClass) ||
+                (initialExamName && tt.examName.toLowerCase().includes(initialExamName.toLowerCase()));
               return (
-                <Card key={tt.id} className="hover:shadow-lg transition-all duration-200 flex flex-col overflow-hidden border">
+                <Card key={tt.id} className={`hover:shadow-lg transition-all duration-200 flex flex-col overflow-hidden border ${isHighlighted ? "ring-2 ring-primary shadow-lg" : ""}`}>
                   {/* Coloured top accent by status */}
                   <div className={`h-1 w-full ${
                     tt.status === "completed" ? "bg-emerald-500" :

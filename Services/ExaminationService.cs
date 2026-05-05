@@ -954,44 +954,39 @@ namespace SmsApi.Services
             // Filter by academic year if provided
             if (!string.IsNullOrEmpty(academicYear))
             {
-                var yearTokens = BuildAcademicYearTokens(academicYear);
-                query = query.Where(r => r.Exam != null && 
-                                        r.Exam.Description != null && 
-                                        (r.Exam.Description.Contains($"AY:{yearTokens.Requested}") ||
-                                         r.Exam.Description.Contains($"AY:{yearTokens.ShortForm}") ||
-                                         r.Exam.Description.Contains($"AY:{yearTokens.LongForm}") ||
-                                         r.Exam.Description.Contains(yearTokens.Requested) ||
-                                         r.Exam.Description.Contains(yearTokens.ShortForm) ||
-                                         r.Exam.Description.Contains(yearTokens.LongForm)));
+                query = query.Where(r => r.Exam != null &&
+                                        (r.Exam.AcademicYear == academicYear ||
+                                         r.Exam.AcademicYear == null));
             }
 
             var results = await query.ToListAsync();
 
+            // If we have year-matched results alongside null-year results, prefer year-matched
+            if (!string.IsNullOrEmpty(academicYear) && results.Any(r => r.Exam?.AcademicYear == academicYear))
+                results = results.Where(r => r.Exam?.AcademicYear == academicYear).ToList();
+
+            // Helper: resolve exam type from navigation property name or name heuristic
+            static string ResolveExamType(ExamResult r)
+            {
+                var et = r.Exam?.ExamTypeRef?.Name?.ToLowerInvariant().Trim().Replace("-", "_") ?? "";
+                if (!string.IsNullOrEmpty(et)) return et;
+                var n = r.Exam?.Name?.ToLowerInvariant() ?? "";
+                return n.Contains("unit") ? "unit_test" :
+                       n.Contains("mid")  ? "mid_term"  :
+                       n.Contains("quarter") ? "quarterly" :
+                       n.Contains("half") ? "half_yearly" :
+                       n.Contains("annual") ? "annual" : "practical";
+            }
+
             // Group by exam type
-            var examTypes = results
-                .Select(r => r.Exam?.Name ?? "")
-                .Select(name => name.Contains("Unit") ? "unit_test" : 
-                               name.Contains("Mid") ? "mid_term" :
-                               name.Contains("Quarterly") ? "quarterly" :
-                               name.Contains("Half") ? "half_yearly" :
-                               name.Contains("Annual") ? "annual" : "practical")
-                .Distinct()
-                .ToList();
+            var examTypes = results.Select(ResolveExamType).Distinct().ToList();
 
             var reportCards = new List<ReportCardDto>();
 
             foreach (var examType in examTypes)
             {
                 var examTypeResults = results
-                    .Where(r => {
-                        var name = r.Exam?.Name ?? "";
-                        var type = name.Contains("Unit") ? "unit_test" : 
-                                  name.Contains("Mid") ? "mid_term" :
-                                  name.Contains("Quarterly") ? "quarterly" :
-                                  name.Contains("Half") ? "half_yearly" :
-                                  name.Contains("Annual") ? "annual" : "practical";
-                        return type == examType;
-                    })
+                    .Where(r => ResolveExamType(r) == examType)
                     .ToList();
 
                 if (!examTypeResults.Any()) continue;
@@ -1023,8 +1018,7 @@ namespace SmsApi.Services
                 var (overallGrade, _, overallIsPassing) = await GetBoardGradeAsync(schoolId, percentage);
 
                 var year = !string.IsNullOrEmpty(academicYear) ? academicYear : 
-                          examTypeResults.First().Exam?.Description?.Contains("AY:") == true ?
-                          examTypeResults.First().Exam.Description.Split("AY:")[1].Split('|')[0].Trim() : "";
+                          examTypeResults.First().Exam?.AcademicYear ?? "";
 
                 reportCards.Add(new ReportCardDto
                 {
@@ -1075,28 +1069,34 @@ namespace SmsApi.Services
                 .Where(r => r.SchoolId == schoolId &&
                            r.StudentId == dto.StudentId &&
                            r.Exam != null &&
-                           r.Exam.Description != null)
+                           // Use the proper AcademicYear field — Description encoding is not reliable
+                           (r.Exam.AcademicYear == dto.AcademicYear ||
+                            // Fallback: exams seeded before the AcademicYear field was set have null; include them
+                            // only when no year is explicitly set so old data is not lost
+                            r.Exam.AcademicYear == null))
                 .ToListAsync();
 
-            var reportYearTokens = BuildAcademicYearTokens(dto.AcademicYear);
-            results = results.Where(r => r.Exam?.Description != null &&
-                (r.Exam.Description.Contains($"AY:{reportYearTokens.Requested}") ||
-                 r.Exam.Description.Contains($"AY:{reportYearTokens.ShortForm}") ||
-                 r.Exam.Description.Contains($"AY:{reportYearTokens.LongForm}") ||
-                 r.Exam.Description.Contains(reportYearTokens.Requested) ||
-                 r.Exam.Description.Contains(reportYearTokens.ShortForm) ||
-                 r.Exam.Description.Contains(reportYearTokens.LongForm)))
-                .ToList();
+            // If any results have a known year, prefer those over the null-year fallback
+            if (results.Any(r => r.Exam?.AcademicYear == dto.AcademicYear))
+                results = results.Where(r => r.Exam?.AcademicYear == dto.AcademicYear).ToList();
 
-            // Filter by exam type
+            // Filter by exam type — use the Exam.ExamType field first, fall back to name heuristic
             results = results.Where(r => {
-                var name = r.Exam?.Name ?? "";
-                var type = name.Contains("Unit") ? "unit_test" : 
-                          name.Contains("Mid") ? "mid_term" :
-                          name.Contains("Quarterly") ? "quarterly" :
-                          name.Contains("Half") ? "half_yearly" :
-                          name.Contains("Annual") ? "annual" : "practical";
-                return type == dto.ExamType;
+                var examType = r.Exam?.ExamTypeRef?.Name?.ToLowerInvariant().Trim() ?? "";
+                if (string.IsNullOrEmpty(examType))
+                {
+                    // Heuristic from exam name when ExamTypeRef not populated
+                    var name = r.Exam?.Name?.ToLowerInvariant() ?? "";
+                    examType = name.Contains("unit") ? "unit_test" :
+                               name.Contains("mid") ? "mid_term" :
+                               name.Contains("quarter") ? "quarterly" :
+                               name.Contains("half") ? "half_yearly" :
+                               name.Contains("annual") ? "annual" : "practical";
+                }
+                // Normalize both sides: "half-yearly" == "half_yearly", "annual" == "annual"
+                var requested = dto.ExamType.ToLowerInvariant().Replace("-", "_").Trim();
+                var actual    = examType.Replace("-", "_");
+                return actual == requested || actual.Contains(requested) || requested.Contains(actual);
             }).ToList();
 
             if (!results.Any())
