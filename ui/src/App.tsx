@@ -79,8 +79,6 @@ const PaymentGateway       = lazy(() => import("./pages/PaymentGateway"));
 const PFESIManagement      = lazy(() => import("./pages/PFESIManagement"));
 const OfflineAttendance    = lazy(() => import("./pages/OfflineAttendance"));
 const ChildProfile         = lazy(() => import("./pages/ChildProfile"));
-const LeaveManagement      = lazy(() => import("./pages/LeaveManagement"));
-const AdminLeaveManagementPage = lazy(() => import("./pages/AdminLeaveManagement"));
 const VisitorManagement    = lazy(() => import("./pages/VisitorManagement"));
 const StaffParentCommunication = lazy(() => import("./pages/StaffParentCommunication"));
 const SchoolManagement     = lazy(() => import("@/pages/superadmin/SchoolManagement"));
@@ -224,8 +222,6 @@ function App() {
                   <Route path="/configuration-settings" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ConfigurationSettings /></Layout></ProtectedRoute>} />
                   <Route path="/role-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><RoleManagement /></Layout></ProtectedRoute>} />
                   <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
-                  <Route path="/leave-management" element={<ProtectedRoute><Layout><LeaveManagement /></Layout></ProtectedRoute>} />
-                  <Route path="/admin-leave" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdminLeaveManagementPage /></Layout></ProtectedRoute>} />
                   <Route path="/id-cards" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><IdCards /></Layout></ProtectedRoute>} />
                   <Route path="/security" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><SecurityDashboardPage /></Layout></ProtectedRoute>} />
                   <Route path="/advanced-analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdvancedAnalytics /></Layout></ProtectedRoute>} />

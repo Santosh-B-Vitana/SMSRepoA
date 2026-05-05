@@ -470,6 +470,20 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
+
+                // Apply same academic year context resolution as GetExams
+                var headerYear = (string?)HttpContext.Items["AcademicYearHeaderValue"] ?? "";
+                var effectiveYear = await _yearContextService.GetEffectiveYearAsync(
+                    schoolId,
+                    string.IsNullOrWhiteSpace(headerYear) ? null : headerYear,
+                    filters?.AcademicYear);
+
+                filters ??= new ExamFiltersDto();
+                if (string.IsNullOrWhiteSpace(filters.AcademicYear))
+                {
+                    filters.AcademicYear = effectiveYear;
+                }
+
                 var result = await _service.GetExamStatsAsync(schoolId, filters);
                 return Ok(result);
             }

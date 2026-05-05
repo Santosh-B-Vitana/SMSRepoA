@@ -1211,16 +1211,7 @@ namespace SmsApi.Services
                 if (!string.IsNullOrEmpty(filters.Subject))
                     query = query.Where(e => e.Subject == filters.Subject);
                 if (!string.IsNullOrEmpty(filters.AcademicYear))
-                {
-                    var yearTokens = BuildAcademicYearTokens(filters.AcademicYear);
-                    query = query.Where(e => e.Description != null &&
-                        (e.Description.Contains($"AY:{yearTokens.Requested}") ||
-                         e.Description.Contains($"AY:{yearTokens.ShortForm}") ||
-                         e.Description.Contains($"AY:{yearTokens.LongForm}") ||
-                         e.Description.Contains(yearTokens.Requested) ||
-                         e.Description.Contains(yearTokens.ShortForm) ||
-                         e.Description.Contains(yearTokens.LongForm)));
-                }
+                    query = query.Where(e => e.AcademicYear == filters.AcademicYear);
                 if (filters.DateFrom.HasValue)
                     query = query.Where(e => e.ExamDate >= filters.DateFrom.Value);
                 if (filters.DateTo.HasValue)

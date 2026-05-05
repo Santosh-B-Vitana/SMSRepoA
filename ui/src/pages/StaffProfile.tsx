@@ -25,6 +25,7 @@ import {
   RotateCcw
 } from "lucide-react";
 import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
+import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
 
 // Extended type that merges real API Staff with legacy mockApi fields still rendered in the template
 type Staff = RealStaff & {
@@ -1004,61 +1005,7 @@ export default function StaffProfile() {
         </TabsContent>
 
         <TabsContent value="leaves">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Leave Balance & History
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card>
-                    <CardContent className="p-4">
-                      <p className="text-sm text-muted-foreground">Casual Leave</p>
-                      <p className="text-3xl font-bold mt-2">12</p>
-                      <p className="text-xs text-muted-foreground mt-1">Available days this year</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4">
-                      <p className="text-sm text-muted-foreground">Sick Leave</p>
-                      <p className="text-3xl font-bold mt-2">8</p>
-                      <p className="text-xs text-muted-foreground mt-1">Available days this year</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4">
-                      <p className="text-sm text-muted-foreground">Earned Leave</p>
-                      <p className="text-3xl font-bold mt-2">15</p>
-                      <p className="text-xs text-muted-foreground mt-1">Available days this year</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div>
-                  <h3 className="font-semibold mb-4">Recent Leave Requests</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <p className="font-medium">Casual Leave</p>
-                        <p className="text-sm text-muted-foreground">2025-09-15 to 2025-09-17 (3 days)</p>
-                      </div>
-                      <Badge>Approved</Badge>
-                    </div>
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <p className="font-medium">Sick Leave</p>
-                        <p className="text-sm text-muted-foreground">2025-09-20 (1 day)</p>
-                      </div>
-                      <Badge variant="secondary">Pending</Badge>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StaffLeaveSection staffId={staff?.id || ""} staffName={staff?.name || ""} />
         </TabsContent>
 
         

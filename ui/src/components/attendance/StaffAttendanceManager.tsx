@@ -93,7 +93,7 @@ export function StaffAttendanceManager() {
 
   const filteredStaff = useMemo(() => {
     return staff.filter((s) => {
-      const matchesSearch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch = `${s.firstName ?? ''} ${s.lastName ?? ''}`.toLowerCase().includes(search.toLowerCase());
       const matchesDept = deptFilter === "all" ? true : s.department === deptFilter;
       const entryStatus = entries[s.id]?.status ?? "none";
       const matchesStatus = statusFilter === "all" ? true : entryStatus === statusFilter;

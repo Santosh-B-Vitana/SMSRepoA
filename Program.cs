@@ -170,8 +170,8 @@ if (app.Environment.IsDevelopment())
 // Use CORS - must be early in pipeline
 app.UseCors(app.Environment.IsDevelopment() ? "AllowAll" : "AllowSpecificOrigins");
 
-// HSTS: tell browsers to always use HTTPS (production only — skip in dev)
-if (!app.Environment.IsDevelopment())
+// HSTS: tell browsers to always use HTTPS (production only — skip in dev/test)
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
 {
     app.UseHttpsRedirection();
     app.UseHsts();
@@ -216,6 +216,15 @@ static async Task ApplyDatabaseMigrationsAsync(WebApplication app)
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<SmsApi.Data.AppDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Program>>();
+    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+    // Skip relational migrations when running on an in-memory provider (integration tests)
+    if (config.GetValue<bool>("SkipMigrations", false))
+    {
+        logger.LogInformation("SkipMigrations=true: skipping database migration (in-memory / test mode).");
+        await db.Database.EnsureCreatedAsync();
+        return;
+    }
 
     try
     {
@@ -1077,3 +1086,6 @@ static async Task SeedOperationalDataAsync(
         logger.LogInformation("Seeded {Count} exams and {Results} results", exams.Count, results.Count);
     }
 }
+
+/// <summary>Exposed as a partial class so WebApplicationFactory&lt;Program&gt; can reference it in integration tests.</summary>
+public partial class Program { }

@@ -110,12 +110,17 @@ export default function ExamTimetableCreator({ openCreateOnMount }: ExamTimetabl
     : [];
 
   const loadExams = () => {
-    examinationApi.getExams({}, 1, 500)
+    // Include academicYear in filter to ensure correct results
+    const filter = academicYear ? { academicYear } : {};
+    examinationApi.getExams(filter, 1, 500)
       .then(res => {
         const grouped = groupExamsIntoTimetables(res.items || []);
         setTimetables(grouped);
       })
-      .catch(() => setTimetables([]));
+      .catch((err) => {
+        console.error('Failed to load exams:', err);
+        setTimetables([]);
+      });
   };
 
   const groupExamsIntoTimetables = (exams: any[]): ExamTimetable[] => {
@@ -163,8 +168,11 @@ export default function ExamTimetableCreator({ openCreateOnMount }: ExamTimetabl
       setAcademicYears(yearRes.academicYears || []);
     }).catch(() => {}).finally(() => setLoadingData(false));
 
-    loadExams();
-  }, []);
+    // Call loadExams on mount if academicYear is available
+    if (academicYear) {
+      loadExams();
+    }
+  }, [academicYear]);
 
   // Open create dialog when triggered by parent
   useEffect(() => {
@@ -172,10 +180,6 @@ export default function ExamTimetableCreator({ openCreateOnMount }: ExamTimetabl
       setShowCreateDialog(true);
     }
   }, [openCreateOnMount]);
-
-  useEffect(() => {
-    loadExams();
-  }, [academicYear]);
 
   useEffect(() => {
     setFormData(prev => {

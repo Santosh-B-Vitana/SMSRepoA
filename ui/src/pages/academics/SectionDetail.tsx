@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowLeft,
   Users,
@@ -20,6 +22,10 @@ import {
   Plus,
   Edit,
   Trash2,
+  Search,
+  ArrowRightLeft,
+  UserPlus,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { academicApi, type SectionResponse } from "@/services/api/academicApi";
@@ -92,6 +98,27 @@ export default function SectionDetail() {
   const [visibleRecords, setVisibleRecords] = useState(5);
   const [attendanceDetailsOpen, setAttendanceDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
+
+  // ── Add Students Dialog ──────────────────────────────────────────────────
+  const [addStudentsOpen, setAddStudentsOpen] = useState(false);
+  const [allClassStudents, setAllClassStudents] = useState<StudentInfo[]>([]);
+  const [addSearch, setAddSearch] = useState("");
+  const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
+  const [addLoading, setAddLoading] = useState(false);
+  const [loadingAllStudents, setLoadingAllStudents] = useState(false);
+
+  // ── Transfer Dialog (single / from section) ──────────────────────────────
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferStudent, setTransferStudent] = useState<StudentInfo | null>(null);
+  const [targetSectionId, setTargetSectionId] = useState("");
+  const [allSections, setAllSections] = useState<SectionResponse[]>([]);
+  const [transferLoading, setTransferLoading] = useState(false);
+
+  // ── Bulk Transfer from THIS section ─────────────────────────────────────
+  const [selectedInSection, setSelectedInSection] = useState<Set<string>>(new Set());
+  const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
+  const [bulkTargetSectionId, setBulkTargetSectionId] = useState("");
+  const [bulkTransferLoading, setBulkTransferLoading] = useState(false);
 
   useEffect(() => {
     loadSectionData();
@@ -207,6 +234,133 @@ export default function SectionDetail() {
   const handleLoadMore = () => {
     setVisibleRecords(prev => Math.min(prev + 5, attendanceHistory.length));
   };
+
+  // ── Load all sections in this class (for transfer target dropdown) ────────
+  const loadAllSections = useCallback(async () => {
+    if (allSections.length > 0) return;
+    try {
+      const res = await academicApi.listSections(classId!, 1, 100);
+      setAllSections((res.sections ?? []).filter(s => s.id !== sectionId));
+    } catch {
+      toast.error("Failed to load sections");
+    }
+  }, [classId, sectionId, allSections.length]);
+
+  // ── Open "Add Students" dialog: load all class students not in THIS section
+  const openAddStudents = async () => {
+    setAddStudentsOpen(true);
+    setSelectedToAdd(new Set());
+    setAddSearch("");
+    setLoadingAllStudents(true);
+    try {
+      const [studentsRes, sectionsRes] = await Promise.all([
+        studentApi.list({ classFilter: section?.className, pageSize: 500, status: "active" }),
+        academicApi.listSections(classId!, 1, 100),
+      ]);
+      // Students not already in THIS section
+      const eligible = (studentsRes.students ?? []).filter(
+        (s: StudentInfo) => s.section !== section?.name
+      );
+      setAllClassStudents(eligible);
+      setAllSections((sectionsRes.sections ?? []).filter(s => s.id !== sectionId));
+    } catch {
+      toast.error("Failed to load students");
+    }
+    setLoadingAllStudents(false);
+  };
+
+  // ── Confirm: assign / transfer selected students into THIS section ────────
+  const handleAddStudents = async () => {
+    if (selectedToAdd.size === 0) return;
+    setAddLoading(true);
+    try {
+      await studentApi.bulkUpdate({
+        studentIds: Array.from(selectedToAdd),
+        class: section!.className,
+        section: section!.name,
+      });
+      toast.success(`${selectedToAdd.size} student(s) added to ${section?.name}`);
+      setAddStudentsOpen(false);
+      setSelectedInSection(new Set());
+      await loadSectionData();
+    } catch {
+      toast.error("Failed to add students. Please try again.");
+    }
+    setAddLoading(false);
+  };
+
+  // ── Open single-student transfer dialog ───────────────────────────────────
+  const openTransfer = async (student: StudentInfo) => {
+    setTransferStudent(student);
+    setTargetSectionId("");
+    setTransferDialogOpen(true);
+    await loadAllSections();
+  };
+
+  // ── Confirm single-student transfer ──────────────────────────────────────
+  const handleTransferStudent = async () => {
+    if (!transferStudent || !targetSectionId) return;
+    setTransferLoading(true);
+    try {
+      const target = allSections.find(s => s.id === targetSectionId);
+      await studentApi.update(transferStudent.id, {
+        class: section!.className,
+        section: target!.name,
+      });
+      toast.success(`${transferStudent.name} transferred to ${target?.name}`);
+      setTransferDialogOpen(false);
+      setSelectedInSection(new Set());
+      await loadSectionData();
+    } catch {
+      toast.error("Failed to transfer student. Please try again.");
+    }
+    setTransferLoading(false);
+  };
+
+  // ── Open bulk-transfer dialog ────────────────────────────────────────────
+  const openBulkTransfer = async () => {
+    setBulkTargetSectionId("");
+    setBulkTransferOpen(true);
+    await loadAllSections();
+  };
+
+  // ── Confirm bulk transfer from THIS section ───────────────────────────────
+  const handleBulkTransfer = async () => {
+    if (selectedInSection.size === 0 || !bulkTargetSectionId) return;
+    setBulkTransferLoading(true);
+    try {
+      const target = allSections.find(s => s.id === bulkTargetSectionId);
+      await studentApi.bulkUpdate({
+        studentIds: Array.from(selectedInSection),
+        class: section!.className,
+        section: target!.name,
+      });
+      toast.success(`${selectedInSection.size} student(s) transferred to ${target?.name}`);
+      setBulkTransferOpen(false);
+      setSelectedInSection(new Set());
+      await loadSectionData();
+    } catch {
+      toast.error("Failed to transfer students. Please try again.");
+    }
+    setBulkTransferLoading(false);
+  };
+
+  // ── Select-all helpers ────────────────────────────────────────────────────
+  const toggleSelectAll = () => {
+    if (selectedInSection.size === students.length) {
+      setSelectedInSection(new Set());
+    } else {
+      setSelectedInSection(new Set(students.map(s => s.id)));
+    }
+  };
+
+  const filteredAddStudents = useMemo(() => {
+    if (!addSearch.trim()) return allClassStudents;
+    const q = addSearch.toLowerCase();
+    return allClassStudents.filter(
+      s => s.name.toLowerCase().includes(q) || s.rollNo?.toLowerCase().includes(q)
+    );
+  }, [allClassStudents, addSearch]);
 
   if (loading) {
     return (
@@ -363,52 +517,116 @@ export default function SectionDetail() {
         {/* Students Tab */}
         <TabsContent value="students" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Students in {section.name}</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Students in {section.name}
+                <Badge variant="secondary" className="ml-1">{students.length}</Badge>
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                {selectedInSection.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={openBulkTransfer}
+                    className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
+                  >
+                    <ArrowRightLeft className="h-4 w-4" />
+                    Transfer {selectedInSection.size} Selected
+                  </Button>
+                )}
+                <Button size="sm" onClick={openAddStudents} className="gap-1.5">
+                  <UserPlus className="h-4 w-4" />
+                  Add Students
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {students.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No students assigned to this section yet</p>
+                <div className="text-center py-12 text-muted-foreground">
+                  <Users className="h-12 w-12 mx-auto mb-4 opacity-40" />
+                  <p className="font-medium">No students assigned to this section yet</p>
+                  <p className="text-sm mt-1">Use the "Add Students" button to assign students from {section.className}</p>
+                  <Button size="sm" className="mt-4 gap-1.5" onClick={openAddStudents}>
+                    <UserPlus className="h-4 w-4" />
+                    Add Students
+                  </Button>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={selectedInSection.size === students.length && students.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Select all"
+                        />
+                      </TableHead>
                       <TableHead>Roll No</TableHead>
                       <TableHead>Name</TableHead>
+                      <TableHead>Current Section</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {students.map((student) => (
-                      <TableRow key={student.id}>
-                        <TableCell className="font-medium">{student.rollNo}</TableCell>
+                      <TableRow
+                        key={student.id}
+                        data-state={selectedInSection.has(student.id) ? "selected" : undefined}
+                        className={selectedInSection.has(student.id) ? "bg-muted/50" : undefined}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedInSection.has(student.id)}
+                            onCheckedChange={(checked) => {
+                              const next = new Set(selectedInSection);
+                              if (checked) next.add(student.id);
+                              else next.delete(student.id);
+                              setSelectedInSection(next);
+                            }}
+                            aria-label={`Select ${student.name}`}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{student.rollNo || "—"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                               {student.photoUrl ? (
                                 <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover rounded-full" />
                               ) : (
-                                <span className="text-xs font-medium">{student.name.charAt(0)}</span>
+                                <span className="text-xs font-bold text-primary">{student.name.charAt(0)}</span>
                               )}
                             </div>
-                            {student.name}
+                            <span className="font-medium">{student.name}</span>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="default">Active</Badge>
+                          <Badge variant="outline">{section.className} – {section.name}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className="bg-green-500/10 text-green-700 border-green-200" variant="outline">Active</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => navigate(`/students/${student.id}`)}
-                          >
-                            View Profile
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openTransfer(student)}
+                              className="gap-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                            >
+                              <ArrowRightLeft className="h-3.5 w-3.5" />
+                              Transfer
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => navigate(`/students/${student.id}`)}
+                            >
+                              View Profile
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -622,6 +840,251 @@ export default function SectionDetail() {
         </TabsContent>
       </Tabs>
 
+      {/* ── Add Students Dialog ─────────────────────────────────────────────── */}
+      <Dialog open={addStudentsOpen} onOpenChange={setAddStudentsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Add Students to {section?.className} – {section?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Students from {section?.className} not yet in this section. Select one or more and click "Add to Section".
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search by name or roll number..."
+                value={addSearch}
+                onChange={e => setAddSearch(e.target.value)}
+              />
+            </div>
+
+            {/* Selection summary */}
+            {selectedToAdd.size > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg text-sm">
+                <span className="text-primary font-medium">{selectedToAdd.size} student(s) selected</span>
+                <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setSelectedToAdd(new Set())}>
+                  Clear selection
+                </Button>
+              </div>
+            )}
+
+            {/* Student list */}
+            {loadingAllStudents ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                <span className="text-muted-foreground">Loading students...</span>
+              </div>
+            ) : filteredAddStudents.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <Users className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                {allClassStudents.length === 0
+                  ? <p>All students of {section?.className} are already in a section.</p>
+                  : <p>No students match your search.</p>
+                }
+              </div>
+            ) : (
+              <>
+                {/* Select All row */}
+                <div className="flex items-center gap-3 px-1 pb-1 border-b">
+                  <Checkbox
+                    id="select-all-add"
+                    checked={selectedToAdd.size === filteredAddStudents.length && filteredAddStudents.length > 0}
+                    onCheckedChange={(checked) => {
+                      if (checked) setSelectedToAdd(new Set(filteredAddStudents.map(s => s.id)));
+                      else setSelectedToAdd(new Set());
+                    }}
+                  />
+                  <label htmlFor="select-all-add" className="text-sm font-medium cursor-pointer">
+                    Select all {filteredAddStudents.length} students
+                  </label>
+                </div>
+
+                <ScrollArea className="h-72 pr-2">
+                  <div className="space-y-1">
+                    {filteredAddStudents.map(student => (
+                      <div
+                        key={student.id}
+                        onClick={() => {
+                          const next = new Set(selectedToAdd);
+                          if (next.has(student.id)) next.delete(student.id);
+                          else next.add(student.id);
+                          setSelectedToAdd(next);
+                        }}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                          selectedToAdd.has(student.id)
+                            ? "bg-primary/10 border border-primary/20"
+                            : "hover:bg-muted border border-transparent"
+                        }`}
+                      >
+                        <Checkbox
+                          checked={selectedToAdd.has(student.id)}
+                          onCheckedChange={() => {}}
+                          onClick={e => e.stopPropagation()}
+                        />
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          {student.photoUrl ? (
+                            <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover rounded-full" />
+                          ) : (
+                            <span className="text-xs font-bold text-primary">{student.name.charAt(0)}</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm">{student.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Roll: {student.rollNo || "—"}
+                            {student.section ? (
+                              <span className="ml-2 text-orange-600">
+                                (Currently in {section?.className} – {student.section})
+                              </span>
+                            ) : (
+                              <span className="ml-2 text-green-600">(Unassigned)</span>
+                            )}
+                          </p>
+                        </div>
+                        {student.section && student.section !== section?.name && (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">Transfer</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setAddStudentsOpen(false)} disabled={addLoading}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddStudents}
+                disabled={selectedToAdd.size === 0 || addLoading}
+                className="gap-2"
+              >
+                {addLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {addLoading ? "Adding..." : `Add ${selectedToAdd.size > 0 ? selectedToAdd.size : ""} to ${section?.name}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Single Transfer Dialog ──────────────────────────────────────────── */}
+      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5" />
+              Transfer Student
+            </DialogTitle>
+            <DialogDescription>
+              Move <span className="font-semibold">{transferStudent?.name}</span> from{" "}
+              <span className="font-semibold">{section?.className} – {section?.name}</span> to another section.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label className="mb-1.5 block">Target Section</Label>
+              <Select value={targetSectionId} onValueChange={setTargetSectionId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select target section..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allSections.length === 0 ? (
+                    <SelectItem value="_none" disabled>No other sections available</SelectItem>
+                  ) : (
+                    allSections.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.className} – {s.name}
+                        {s.classTeacherName && (
+                          <span className="text-muted-foreground ml-2">({s.classTeacherName})</span>
+                        )}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setTransferDialogOpen(false)} disabled={transferLoading}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleTransferStudent}
+                disabled={!targetSectionId || transferLoading}
+                className="gap-2"
+              >
+                {transferLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {transferLoading ? "Transferring..." : "Confirm Transfer"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk Transfer Dialog ─────────────────────────────────────────────── */}
+      <Dialog open={bulkTransferOpen} onOpenChange={setBulkTransferOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5" />
+              Bulk Transfer Students
+            </DialogTitle>
+            <DialogDescription>
+              Transfer <span className="font-semibold">{selectedInSection.size} student(s)</span> from{" "}
+              <span className="font-semibold">{section?.className} – {section?.name}</span> to another section.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label className="mb-1.5 block">Target Section</Label>
+              <Select value={bulkTargetSectionId} onValueChange={setBulkTargetSectionId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select target section..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allSections.length === 0 ? (
+                    <SelectItem value="_none" disabled>No other sections available</SelectItem>
+                  ) : (
+                    allSections.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.className} – {s.name}
+                        {s.classTeacherName && (
+                          <span className="text-muted-foreground ml-2">({s.classTeacherName})</span>
+                        )}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setBulkTransferOpen(false)} disabled={bulkTransferLoading}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBulkTransfer}
+                disabled={!bulkTargetSectionId || bulkTransferLoading}
+                className="gap-2"
+              >
+                {bulkTransferLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {bulkTransferLoading ? "Transferring..." : `Transfer ${selectedInSection.size} Student(s)`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Attendance Details Dialog */}
       <Dialog open={attendanceDetailsOpen} onOpenChange={setAttendanceDetailsOpen}>
         <DialogContent className="max-w-4xl">
@@ -667,3 +1130,4 @@ export default function SectionDetail() {
     </div>
   );
 }
+

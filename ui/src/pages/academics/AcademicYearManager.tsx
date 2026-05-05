@@ -6,13 +6,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Plus, Edit, Trash2, Calendar, Loader2 } from "lucide-react";
+import { Plus, Edit, Trash2, Calendar, Loader2, Star } from "lucide-react";
 import { toast } from "sonner";
 import { academicApi, AcademicYearResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 export default function AcademicYearManager() {
-  const { refresh: refreshGlobalYear, availableYears: contextYears } = useAcademicYear();
+  const { refresh: refreshGlobalYear, availableYears: contextYears, setCurrentYear: setContextYear } = useAcademicYear();
   const [academicYears, setAcademicYears] = useState<AcademicYearResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -97,6 +97,20 @@ export default function AcademicYearManager() {
       endDate: year.endDate.split('T')[0]
     });
     setDialogOpen(true);
+  };
+
+  const handleSetCurrent = async (year: AcademicYearResponse) => {
+    try {
+      const updated = await academicApi.setCurrentAcademicYear(year.id);
+      toast.success(`"${year.name}" is now the current academic year`);
+      await fetchAcademicYears();
+      refreshGlobalYear();
+      // Also update the nav dropdown selection to the newly set current year
+      if (updated) setContextYear(updated);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to set current year';
+      toast.error(msg);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -205,13 +219,14 @@ export default function AcademicYearManager() {
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Current</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {academicYears.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     No academic years created yet. Click "Add Academic Year" to get started.
                   </TableCell>
                 </TableRow>
@@ -227,6 +242,22 @@ export default function AcademicYearManager() {
                         <Badge className={getStatusColor(status)}>
                           {status}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {year.isCurrent ? (
+                          <Badge className="bg-green-100 text-green-800 flex items-center gap-1 w-fit">
+                            <Star className="h-3 w-3 fill-current" /> Current
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 px-2"
+                            onClick={() => handleSetCurrent(year)}
+                          >
+                            <Star className="h-3 w-3 mr-1" /> Set Current
+                          </Button>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">

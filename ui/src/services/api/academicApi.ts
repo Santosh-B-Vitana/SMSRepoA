@@ -1,7 +1,7 @@
 /**
  * Academic Setup API — connects to /api/academics backend endpoints
  */
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/apiClient';
+import { apiGet, apiPost, apiPut, apiDelete, apiPatch } from '@/lib/apiClient';
 
 // =========== Classes ===========
 export interface ClassBasic {
@@ -235,6 +235,9 @@ export const academicApi = {
 
   updateAcademicYear: (id: string, data: CreateAcademicYearRequest) =>
     apiPut<AcademicYearResponse>(`/academics/academic-years/${id}`, data),
+
+  setCurrentAcademicYear: (id: string) =>
+    apiPatch<AcademicYearResponse>(`/academics/academic-years/${id}/set-current`, {}),
 
   deleteAcademicYear: (id: string) =>
     apiDelete<void>(`/academics/academic-years/${id}`),

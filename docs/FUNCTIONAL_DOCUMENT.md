@@ -4,6 +4,16 @@
 
 ---
 
+## 🔑 Demo Credentials (Testing & Development)
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | `admin@vitanaschools.edu` | `admin-dev-change-me` |
+
+> ⚠️ **Note**: These credentials are for demonstration, testing, and development purposes only. In production, use secure authentication with encrypted credentials.
+
+---
+
 ## 1. System Overview
 
 **sms-api** is a production-grade School Management System (ERP) designed specifically for Indian K-12 schools. It covers the full student lifecycle from admission through alumni, with deep India-specific compliance (Aadhaar, PAN, RTE, PF/ESI/UAN, Cashfree payments, INR formatting).

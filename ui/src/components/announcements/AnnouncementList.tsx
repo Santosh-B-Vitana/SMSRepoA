@@ -34,8 +34,8 @@ export function AnnouncementList({ announcements, onEdit, onDelete, onView }: An
   const [priorityFilter, setPriorityFilter] = useState("all");
 
   const filteredAnnouncements = announcements.filter(announcement => {
-    const matchesSearch = announcement.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         announcement.content.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (announcement.title ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (announcement.content ?? '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || announcement.status === statusFilter;
     const matchesPriority = priorityFilter === "all" || announcement.priority === priorityFilter;
     

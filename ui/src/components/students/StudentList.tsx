@@ -36,9 +36,9 @@ export function StudentList({ students, onRefresh }: StudentListProps) {
       const lower = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (s) =>
-          s.name.toLowerCase().includes(lower) ||
-          s.admissionNumber.toLowerCase().includes(lower) ||
-          s.rollNumber.toLowerCase().includes(lower)
+          (s.name ?? '').toLowerCase().includes(lower) ||
+          (s.admissionNumber ?? '').toLowerCase().includes(lower) ||
+          (s.rollNumber ?? '').toLowerCase().includes(lower)
       );
     }
 
@@ -72,10 +72,10 @@ export function StudentList({ students, onRefresh }: StudentListProps) {
   };
 
   // Build unique class/section options from data
-  const classes = [...new Set(students.map((s) => s.class))].sort((a, b) =>
-    Number(a) - Number(b) || a.localeCompare(b)
+  const classes = [...new Set(students.map((s) => s.class).filter(Boolean))].sort((a, b) =>
+    Number(a) - Number(b) || (a ?? '').localeCompare(b ?? '')
   );
-  const sections = [...new Set(students.map((s) => s.section))].sort();
+  const sections = [...new Set(students.map((s) => s.section).filter(Boolean))].sort();
 
   return (
     <div className="space-y-4 p-4 sm:p-6">

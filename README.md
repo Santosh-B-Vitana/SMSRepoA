@@ -165,7 +165,8 @@ To add more allowed origins, update the `Cors:AllowedOrigins` array in `appsetti
 
 ## Security Notes
 
-- The default credentials (`admin`/`password`) are for demonstration only
+- Default demo credentials: `admin@vitanaschools.edu` / `admin-dev-change-me`
+- These credentials are for demonstration/testing only
 - In production, implement proper user authentication with hashed passwords and a database
 - Keep your JWT secret key secure and never commit it to source control
 - Use HTTPS in production environments

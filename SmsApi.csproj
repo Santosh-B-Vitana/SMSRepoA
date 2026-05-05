@@ -11,6 +11,15 @@
     <NoWarn>CS8618;CS0168;CS1998;CS0219;ASP0019;SYSLIB0023</NoWarn>
   </PropertyGroup>
 
+  <!-- Exclude integration test projects so the main project doesn't glob their .cs files -->
+  <ItemGroup>
+    <Compile Remove="SmsApi.IntegrationTests\**" />
+    <Compile Remove="SmsApi.Tests\**" />
+    <Compile Remove="apps\**" />
+    <EmbeddedResource Remove="SmsApi.IntegrationTests\**" />
+    <None Remove="SmsApi.IntegrationTests\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- API Versioning -->
     <PackageReference Include="Asp.Versioning.Http" Version="8.1.0" />

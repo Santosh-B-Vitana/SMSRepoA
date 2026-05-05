@@ -71,6 +71,7 @@ namespace SmsApi.Services
         Task<AcademicYearResponse?> GetAcademicYearByIdAsync(Guid id, Guid schoolId);
         Task<AcademicYearResponse> CreateAcademicYearAsync(Guid schoolId, CreateAcademicYearRequest request);
         Task<AcademicYearResponse?> UpdateAcademicYearAsync(Guid id, Guid schoolId, CreateAcademicYearRequest request);
+        Task<AcademicYearResponse?> SetCurrentAcademicYearAsync(Guid id, Guid schoolId);
         Task<bool> DeleteAcademicYearAsync(Guid id, Guid schoolId);
 
         // ExamTypes
@@ -1928,6 +1929,39 @@ namespace SmsApi.Services
                 Status = ay.Status,
                 CreatedAt = ay.CreatedAt,
                 UpdatedAt = ay.UpdatedAt
+            };
+        }
+
+        public async Task<AcademicYearResponse?> SetCurrentAcademicYearAsync(Guid id, Guid schoolId)
+        {
+            EnsureSchoolId(schoolId);
+            var target = await _context.AcademicYears.FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId);
+            if (target == null) return null;
+
+            // Clear isCurrent flag on all other years for this school
+            var others = await _context.AcademicYears
+                .Where(a => a.SchoolId == schoolId && a.Id != id && a.IsCurrent)
+                .ToListAsync();
+            foreach (var other in others)
+            {
+                other.IsCurrent = false;
+                other.UpdatedAt = DateTime.UtcNow;
+            }
+
+            target.IsCurrent = true;
+            target.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return new AcademicYearResponse
+            {
+                Id = target.Id,
+                Name = target.Name,
+                StartDate = target.StartDate,
+                EndDate = target.EndDate,
+                IsCurrent = target.IsCurrent,
+                Status = target.Status,
+                CreatedAt = target.CreatedAt,
+                UpdatedAt = target.UpdatedAt
             };
         }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,6 +26,7 @@ import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
 import { Student, StudentBasic, StudentProfileSummary, studentApi } from "@/services/api/studentApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
+import { StudentLeaveSection } from "@/components/leave-management/StudentLeaveSection";
 
 import { Input } from "@/components/ui/input";
 import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
@@ -86,8 +87,8 @@ export default function StudentProfile() {
     setAwardDesc("");
     setAwardDate("");
   };
-  // State for printable ID card dialog
   const [showIdCardDialog, setShowIdCardDialog] = useState(false);
+  const [showLeaveRequestDialog, setShowLeaveRequestDialog] = useState(false);
   // State for manual add dialog
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [manualDate, setManualDate] = useState("");
@@ -627,12 +628,10 @@ export default function StudentProfile() {
             <TabsTrigger value="health" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Health</TabsTrigger>
             <TabsTrigger value="visitors" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Visitors</TabsTrigger>
             <TabsTrigger value="communication" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.communication')}</TabsTrigger>
-            <TabsTrigger value="documents" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.documents')}</TabsTrigger>
-            <TabsTrigger value="awards" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.awards')}</TabsTrigger>
           </TabsList>
         </div>
+
         <TabsContent value="fee">
-          {/* Fee info and payment for this student */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -845,7 +844,26 @@ export default function StudentProfile() {
         </TabsContent>
 
         <TabsContent value="attendance">
-          <StudentAttendanceView studentId={student?.id || ""} />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Attendance Records</h3>
+              <Dialog open={showLeaveRequestDialog} onOpenChange={setShowLeaveRequestDialog}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Request Leave
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Request Leave for {student?.name}</DialogTitle>
+                  </DialogHeader>
+                  <StudentLeaveSection studentId={student?.id || ""} studentName={student?.name || ""} />
+                </DialogContent>
+              </Dialog>
+            </div>
+            <StudentAttendanceView studentId={student?.id || ""} />
+          </div>
         </TabsContent>
 
         <TabsContent value="siblings">

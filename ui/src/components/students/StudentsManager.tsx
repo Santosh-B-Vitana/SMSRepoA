@@ -77,71 +77,72 @@ export function StudentsManager() {
                 <h1 className="text-display gradient-text">{t("studentMgmt.title")}</h1>
                 <p className="text-muted-foreground mt-2">{t("studentMgmt.subtitle")}</p>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPromotionDialogOpen(true)}
-                >
-                  <ArrowUpCircle className="w-4 h-4 mr-2" />
-                  {t("students.bulkPromotion")}
-                </Button>
-                <ImportButton
-                  columns={[
-                    { key: "name", label: "Name", required: true },
-                    { key: "rollNumber", label: "Roll No", required: true },
-                    { key: "class", label: "Class", required: true },
-                    { key: "section", label: "Section", required: true },
-                    { key: "dateOfBirth", label: "Date of Birth", required: true },
-                    { key: "guardianName", label: "Guardian Name", required: true },
-                    { key: "guardianPhone", label: "Guardian Phone", required: true },
-                    { key: "address", label: "Address", required: false },
-                  ]}
-                  onImport={async (data) => {
-                    toast({
-                      title: "Import Complete",
-                      description: `Successfully imported ${data.length} student records`,
-                    });
-                    await fetchStudents();
-                  }}
-                  templateFilename="students_import_template"
-                />
-                <ExportButton
-                  data={students}
-                  filename="students"
-                  columns={[
-                    { key: "name", label: "Name" },
-                    { key: "admissionNumber", label: "Admission No" },
-                    { key: "rollNumber", label: "Roll No" },
-                    { key: "class", label: "Class" },
-                    { key: "section", label: "Section" },
-                    { key: "status", label: "Status" },
-                  ]}
-                />
-                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button className="w-full sm:w-auto">
-                      <Plus className="w-4 h-4 mr-2" />
-                      {t("studentMgmt.addStudent")}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>{t("studentMgmt.addStudent")}</DialogTitle>
-                    </DialogHeader>
-                    <StudentForm
-                      student={null}
-                      onClose={() => setIsAddDialogOpen(false)}
-                      onSuccess={handleStudentSuccess}
-                    />
-                  </DialogContent>
-                </Dialog>
-              </div>
             </div>
           </AnimatedWrapper>
 
-          {/* Stats Cards */}
-          <AnimatedWrapper variant="fadeInUp" delay={0.2}>
+          <AnimatedWrapper variant="fadeInUp" delay={0.12}>
+            <div className="flex gap-2 w-full sm:w-auto flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPromotionDialogOpen(true)}
+              >
+                <ArrowUpCircle className="w-4 h-4 mr-2" />
+                {t("students.bulkPromotion")}
+              </Button>
+              <ImportButton
+                columns={[
+                  { key: "name", label: "Name", required: true },
+                  { key: "rollNumber", label: "Roll No", required: true },
+                  { key: "class", label: "Class", required: true },
+                  { key: "section", label: "Section", required: true },
+                  { key: "dateOfBirth", label: "Date of Birth", required: true },
+                  { key: "guardianName", label: "Guardian Name", required: true },
+                  { key: "guardianPhone", label: "Guardian Phone", required: true },
+                  { key: "address", label: "Address", required: false },
+                ]}
+                onImport={async (data) => {
+                  toast({
+                    title: "Import Complete",
+                    description: `Successfully imported ${data.length} student records`,
+                  });
+                  await fetchStudents();
+                }}
+                templateFilename="students_import_template"
+              />
+              <ExportButton
+                data={students}
+                filename="students"
+                columns={[
+                  { key: "name", label: "Name" },
+                  { key: "admissionNumber", label: "Admission No" },
+                  { key: "rollNumber", label: "Roll No" },
+                  { key: "class", label: "Class" },
+                  { key: "section", label: "Section" },
+                  { key: "status", label: "Status" },
+                ]}
+              />
+              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="w-full sm:w-auto">
+                    <Plus className="w-4 h-4 mr-2" />
+                    {t("studentMgmt.addStudent")}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>{t("studentMgmt.addStudent")}</DialogTitle>
+                  </DialogHeader>
+                  <StudentForm
+                    student={null}
+                    onClose={() => setIsAddDialogOpen(false)}
+                    onSuccess={handleStudentSuccess}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <ModernCard variant="glass">
                 <CardContent className="p-4">
@@ -196,10 +197,8 @@ export function StudentsManager() {
                 </CardContent>
               </ModernCard>
             </div>
-          </AnimatedWrapper>
 
-          {/* Students List */}
-          <AnimatedWrapper variant="fadeInUp" delay={0.3}>
+            {/* Students List */}
             {students.length === 0 ? (
               <EmptyState
                 title={t("students.noStudentsFound")}

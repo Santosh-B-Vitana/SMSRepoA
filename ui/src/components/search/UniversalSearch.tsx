@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { mockApi } from '@/services/mockApi';
+import { studentApi } from '@/services/api/studentApi';
+import { staffApi } from '@/services/api/staffApi';
 import { useNavigate } from 'react-router-dom';
 
 interface SearchResult {
@@ -84,18 +86,18 @@ export function UniversalSearch({ className }: UniversalSearchProps) {
 
         // Search students
         try {
-          const students = await mockApi.getStudents();
-          students.forEach(student => {
+          const response = await studentApi.list({ pageSize: 1000 });
+          response.students.forEach(student => {
             if (
-              student.name.toLowerCase().includes(term) ||
-              student.guardianName.toLowerCase().includes(term) ||
-              student.rollNo.toLowerCase().includes(term) ||
-              student.class.toLowerCase().includes(term)
+              (student.name ?? '').toLowerCase().includes(term) ||
+              (student.admissionNumber ?? '').toLowerCase().includes(term) ||
+              (student.rollNumber ?? '').toLowerCase().includes(term) ||
+              (student.class ?? '').toLowerCase().includes(term)
             ) {
               searchResults.push({
                 id: `student-${student.id}`,
-                title: student.name,
-                subtitle: `${student.class} • Roll: ${student.rollNo}`,
+                title: student.name || 'Unknown',
+                subtitle: `${student.class} ${student.section} • Roll: ${student.rollNumber}`,
                 type: 'student',
                 icon: Users,
                 path: `/students/${student.id}`,
@@ -109,18 +111,18 @@ export function UniversalSearch({ className }: UniversalSearchProps) {
 
         // Search staff
         try {
-          const staff = await mockApi.getStaff();
-          staff.forEach(member => {
+          const response = await staffApi.list({ pageSize: 1000 });
+          response.staff.forEach(member => {
             if (
-              member.name.toLowerCase().includes(term) ||
-              member.email.toLowerCase().includes(term) ||
-              member.id.toLowerCase().includes(term) ||
-              member.department.toLowerCase().includes(term) ||
-              member.designation.toLowerCase().includes(term)
+              (member.name ?? '').toLowerCase().includes(term) ||
+              (member.email ?? '').toLowerCase().includes(term) ||
+              (member.employeeId ?? '').toLowerCase().includes(term) ||
+              (member.department ?? '').toLowerCase().includes(term) ||
+              (member.designation ?? '').toLowerCase().includes(term)
             ) {
               searchResults.push({
                 id: `staff-${member.id}`,
-                title: member.name,
+                title: member.name || 'Unknown',
                 subtitle: `${member.designation} • ${member.department}`,
                 type: 'staff',
                 icon: UserCheck,

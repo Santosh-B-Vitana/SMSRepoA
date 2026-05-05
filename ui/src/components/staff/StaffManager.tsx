@@ -59,9 +59,9 @@ export function StaffManager() {
 
     if (searchTerm) {
       filtered = filtered.filter(member =>
-        member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        member.id.toLowerCase().includes(searchTerm.toLowerCase())
+        (member.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (member.email ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (member.employeeId ?? '').toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 

@@ -651,6 +651,21 @@ namespace SmsApi.Controllers
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
 
+        [HttpPatch("academic-years/{id}/set-current")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        public async Task<ActionResult<AcademicYearResponse>> SetCurrentAcademicYear(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _academicsService.SetCurrentAcademicYearAsync(id, schoolId);
+                if (result == null) return NotFound();
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
         [HttpDelete("academic-years/{id}")]
         [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
         public async Task<IActionResult> DeleteAcademicYear(Guid id)

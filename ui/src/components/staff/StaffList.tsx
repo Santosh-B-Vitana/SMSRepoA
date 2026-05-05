@@ -88,7 +88,7 @@ export function StaffList({ staff, refreshStaff }: { staff: Staff[]; refreshStaf
         <h1 className="text-3xl font-bold">{t('staffList.title')}</h1>
         <div className="flex gap-2">
           {isAdmin && (
-            <StaffLeaveDialog staffId="" staffName="" adminView />
+            <StaffLeaveDialog staffId="" staffName="" adminView={true} />
           )}
           <Button onClick={() => setShowForm(true)}>
             <Plus className="h-4 w-4 mr-2" />

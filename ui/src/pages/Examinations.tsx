@@ -413,7 +413,9 @@ export default function Examinations() {
   // Load stats
   useEffect(() => {
     setStatsLoading(true);
-    examinationApi.getExamStats()
+    // Include academicYear in filter for correct stats
+    const filter = academicYear ? { academicYear } : {};
+    examinationApi.getExamStats(filter)
       .then(data => setStats(data))
       .catch(() => {})
       .finally(() => setStatsLoading(false));
@@ -422,9 +424,14 @@ export default function Examinations() {
   // Load all exams and group into events
   const loadAllEvents = () => {
     setEventsLoading(true);
-    examinationApi.getExams({}, 1, 1000)
+    // Include academicYear in filter to ensure correct results
+    const filter = academicYear ? { academicYear } : {};
+    examinationApi.getExams(filter, 1, 1000)
       .then(res => setAllEvents(groupExamsIntoEvents(res.items ?? [])))
-      .catch(() => setAllEvents([]))
+      .catch((err) => {
+        console.error('Failed to load exams:', err);
+        setAllEvents([]);
+      })
       .finally(() => setEventsLoading(false));
   };
   useEffect(() => { loadAllEvents(); }, [academicYear]);

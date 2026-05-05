@@ -6,7 +6,7 @@ import {
   Shield, Settings, MessageSquare, BarChart3, Clock,
   ChevronRight, Bell, AlertTriangle, CheckCircle2,
   IndianRupee, School, TrendingUp, TrendingDown,
-  Megaphone, UserCog, Activity,
+  Megaphone, UserCog, Activity, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { AdminLeaveManagementEnhanced } from "@/components/leave-management/AdminLeaveManagementEnhanced";
 
 function inr(n: number) {
   if (n >= 1000000) return "Rs." + (n / 1000000).toFixed(1) + "L";
@@ -146,6 +147,7 @@ export default function AdminDashboard() {
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
   const [attendanceData, setAttendanceData] = useState<AttendanceDayDataPoint[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [showLeaveManagement, setShowLeaveManagement] = useState(false);
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -407,6 +409,38 @@ export default function AdminDashboard() {
           ))}
         </div>
       </div>
+
+      {/* Leave Management Section */}
+      <Card className="border-l-4 border-l-primary/50">
+        <CardHeader 
+          className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors"
+          onClick={() => setShowLeaveManagement(!showLeaveManagement)}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Calendar className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Leave Management</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Approve, reject, and manage staff/student leave requests</p>
+              </div>
+            </div>
+            {showLeaveManagement ? (
+              <ChevronUp className="h-5 w-5 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+        </CardHeader>
+        {showLeaveManagement && (
+          <CardContent className="pt-0">
+            <div className="border-t pt-4">
+              <AdminLeaveManagementEnhanced />
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
     </div>
   );

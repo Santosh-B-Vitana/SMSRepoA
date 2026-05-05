@@ -105,10 +105,12 @@ export function AcademicYearProvider({ children }: Props) {
         return;
       }
 
-      // Preference: restored → isCurrent → latest by startDate
+      // Preference: localStorage saved selection → isCurrent → latest by startDate
+      const savedId = localStorage.getItem(STORAGE_KEY);
       const selected =
+        (savedId ? years.find((y) => y.id === savedId) : null) ??
         years.find((y) => y.isCurrent) ??
-        years.sort(
+        [...years].sort(
           (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
         )[0];
 
@@ -120,25 +122,18 @@ export function AcademicYearProvider({ children }: Props) {
     } catch {
       // Hard fallback so app remains usable even before DB migrations are applied.
       const fallback = buildFallbackYears();
-      const selected = fallback[0];
+      const savedId = localStorage.getItem(STORAGE_KEY);
+      const selected = (savedId ? fallback.find((y) => y.id === savedId) : null) ?? fallback[0];
       setAvailableYears(fallback);
       setCurrentYearState(selected);
-      localStorage.setItem(STORAGE_KEY, selected.id);
-      localStorage.setItem(STORAGE_NAME_KEY, selected.name);
+      if (selected) {
+        localStorage.setItem(STORAGE_KEY, selected.id);
+        localStorage.setItem(STORAGE_NAME_KEY, selected.name);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
-
-  // For admin: restore previously selected year from localStorage after years load
-  useEffect(() => {
-    if (isLocked || availableYears.length === 0) return;
-    const savedId = localStorage.getItem(STORAGE_KEY);
-    const saved = savedId ? availableYears.find((y) => y.id === savedId) : null;
-    if (saved && saved.id !== currentYear?.id) {
-      setCurrentYearState(saved);
-    }
-  }, [isLocked, availableYears]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();

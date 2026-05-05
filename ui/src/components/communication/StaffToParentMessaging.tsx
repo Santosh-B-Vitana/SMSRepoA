@@ -124,9 +124,9 @@ export default function StaffToParentMessaging() {
     return allRows.filter(r => {
       const matchesSection = sectionFilter === 'all' || r.section === sectionFilter;
       const matchesSearch = !q ||
-        r.studentName.toLowerCase().includes(q) ||
-        r.guardian.name.toLowerCase().includes(q) ||
-        r.rollNumber.toLowerCase().includes(q);
+        (r.studentName ?? '').toLowerCase().includes(q) ||
+        (r.guardian?.name ?? '').toLowerCase().includes(q) ||
+        (r.rollNumber ?? '').toLowerCase().includes(q);
       return matchesSection && matchesSearch;
     });
   }, [allRows, rosterSearch, sectionFilter]);
