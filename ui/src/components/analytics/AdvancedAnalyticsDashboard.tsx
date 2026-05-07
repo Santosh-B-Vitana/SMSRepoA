@@ -20,7 +20,7 @@ import {
   AreaChart
 } from 'recharts';
 import { TrendingUp, Users, DollarSign, BookOpen, Calendar } from 'lucide-react';
-import { analyticsApi, type DashboardSummary } from '@/services/api/analyticsApi';
+import { analyticsApi, type DashboardSummaryResponse } from '@/services/api/analyticsApi';
 
 // Mock data for charts
 const enrollmentData = [
@@ -61,7 +61,7 @@ const classDistribution = [
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 export function AdvancedAnalyticsDashboard() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

@@ -19,7 +19,7 @@ import {
   AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { AdminLeaveManagementEnhanced } from "@/components/leave-management/AdminLeaveManagementEnhanced";
+import { AdminLeaveManagementEnhanced } from "@/components/leave/AdminLeaveManagementEnhanced";
 
 function inr(n: number) {
   if (n >= 1000000) return "Rs." + (n / 1000000).toFixed(1) + "L";
@@ -436,7 +436,7 @@ export default function AdminDashboard() {
         {showLeaveManagement && (
           <CardContent className="pt-0">
             <div className="border-t pt-4">
-              <AdminLeaveManagementEnhanced />
+              <AdminLeaveManagementEnhanced defaultRequestType="staff" />
             </div>
           </CardContent>
         )}

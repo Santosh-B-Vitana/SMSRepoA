@@ -104,6 +104,14 @@ export function buildUserSetting(
   return { settingKey: key, settingValue: value, category, dataType };
 }
 
+export interface UpdateSchoolContactRequest {
+  phone?:   string;
+  email?:   string;
+  address?: string;
+  website?: string;
+  tagline?: string;
+}
+
 // ─── API methods ──────────────────────────────────────────────────────────────
 
 const settingsApi = {
@@ -145,6 +153,11 @@ const settingsApi = {
   /** POST bulk save school + user settings in one call */
   bulkUpdate(req: BulkSettingsRequest): Promise<void> {
     return apiClient.post('/settings/bulk', req).then(() => undefined);
+  },
+
+  /** PATCH update contact/operational fields on the School entity (admin + super_admin) */
+  updateSchoolContact(schoolId: string, req: UpdateSchoolContactRequest): Promise<void> {
+    return apiClient.patch(`/settings/school/${schoolId}/contact`, req).then(() => undefined);
   },
 
   /** POST change the authenticated user's password */

@@ -25,6 +25,15 @@ namespace SmsApi.Models.DTOs
     }
 
     // Settings DTOs
+    public class UpdateSchoolContactRequest
+    {
+        public string? Phone   { get; set; }
+        public string? Email   { get; set; }
+        public string? Address { get; set; }
+        public string? Website { get; set; }
+        public string? Tagline { get; set; }
+    }
+
     public class SchoolSettingRequest
     {
         public Guid SchoolId { get; set; }

@@ -19,6 +19,8 @@ export interface LeaveRequest {
   leaveNumber: string;
   applicantId: string;
   applicantName?: string;
+  applicantEmail?: string;
+  applicantDesignation?: string;
   applicantType: string;
   leaveTypeId: string;
   leaveTypeName?: string;
@@ -76,6 +78,22 @@ export interface LeaveRequestListResponse {
   totalPages: number;
 }
 
+export interface StudentLeaveItem extends LeaveRequest {
+  studentName?: string;
+  className?: string;
+  section?: string;
+  guardianName?: string;
+  guardianPhone?: string;
+}
+
+export interface StudentLeaveListResponse {
+  items: StudentLeaveItem[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 const leaveManagementApi = {
   // Get leave types
   async getLeaveTypes(applicableTo?: string): Promise<LeaveType[]> {
@@ -112,15 +130,17 @@ const leaveManagementApi = {
     page: number = 1,
     pageSize: number = 10,
     applicantId?: string,
-    status?: string
+    status?: string,
+    staffEmail?: string
   ): Promise<LeaveRequestListResponse> {
     try {
       const response = await api.get('/LeaveManagement/requests', {
         params: {
           page,
           pageSize,
-          applicantId,
-          status
+          ...(applicantId ? { applicantId } : {}),
+          ...(status ? { status } : {}),
+          ...(staffEmail ? { staffEmail } : {}),
         }
       });
       return response.data;
@@ -205,6 +225,47 @@ const leaveManagementApi = {
       console.error('Error fetching leave balance:', error);
       throw error;
     }
+  },
+
+  // ── Student Leave (parent-initiated, teacher/admin managed) ─────────────
+
+  /** Parent submits leave for their child */
+  async createStudentLeave(studentId: string, data: {
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    reason?: string;
+  }): Promise<StudentLeaveItem> {
+    const response = await api.post('/LeaveManagement/student-leave', { studentId, ...data });
+    return response.data;
+  },
+
+  /** Parent views leave requests for all their children (optionally filtered by studentId) */
+  async getMyChildrenLeaves(page = 1, pageSize = 50, studentId?: string, status?: string): Promise<StudentLeaveListResponse> {
+    const response = await api.get('/LeaveManagement/student-leave/my-children', {
+      params: { page, pageSize, studentId, status }
+    });
+    return response.data;
+  },
+
+  /** Staff/Admin view student leave requests */
+  async getStudentLeaves(page = 1, pageSize = 20, studentId?: string, status?: string): Promise<StudentLeaveListResponse> {
+    const response = await api.get('/LeaveManagement/student-leaves', {
+      params: { page, pageSize, studentId, status }
+    });
+    return response.data;
+  },
+
+  /** Staff/Admin approve a student leave (attendance auto-marked excused) */
+  async approveStudentLeave(id: string, remarks?: string): Promise<StudentLeaveItem> {
+    const response = await api.post(`/LeaveManagement/student-leaves/${id}/approve`, { approverRemarks: remarks });
+    return response.data;
+  },
+
+  /** Staff/Admin reject a student leave (reason required) */
+  async rejectStudentLeave(id: string, remarks: string): Promise<StudentLeaveItem> {
+    const response = await api.post(`/LeaveManagement/student-leaves/${id}/reject`, { approverRemarks: remarks });
+    return response.data;
   }
 };
 

@@ -20,6 +20,7 @@ import {
   ClipboardList, Info,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import roleApi, {
   RoleResponse, PermissionGroupResponse, UserWithRolesResponse,
   RoleStatsResponse, CreateRoleDto, UpdateRoleDto
@@ -137,6 +138,13 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
     iconColor: "text-rose-600", badge: "bg-rose-100 text-rose-700 border-rose-200",
     tierColor: "text-rose-600", scopeBadge: "bg-rose-100 text-rose-700", icon: HeartPulse,
   },
+  "Parent": {
+    tier: "Support", scope: "Limited",
+    keyModules: ["School Connect", "Fees", "Notifications", "Child Profile"],
+    bg: "from-indigo-50 to-indigo-100/50", border: "border-indigo-200",
+    iconColor: "text-indigo-600", badge: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    tierColor: "text-indigo-600", scopeBadge: "bg-indigo-100 text-indigo-700", icon: Users,
+  },
 };
 
 const DEFAULT_CONFIG: RoleConfig = {
@@ -148,6 +156,41 @@ const DEFAULT_CONFIG: RoleConfig = {
 
 function getRoleConfig(name: string): RoleConfig {
   return ROLE_CONFIG[name] ?? DEFAULT_CONFIG;
+}
+
+// Hierarchy rank for sorting the Staff & Access table
+const ROLE_HIERARCHY: Record<string, number> = {
+  "Admin": 0,
+  "Principal": 1,
+  "Vice Principal": 2,
+  "Head of Department": 3,
+  "Class Teacher": 4,
+  "Teacher": 5,
+  "HR Manager": 6,
+  "Accountant": 7,
+  "Librarian": 8,
+  "Transport Manager": 9,
+  "Hostel Warden": 10,
+  "Admissions Officer": 11,
+  "Counselor": 12,
+  "Parent": 13,
+};
+
+const PORTAL_ROLE_RANK: Record<string, number> = {
+  admin: 0, super_admin: -1, principal: 1, vice_principal: 2, teacher: 5, staff: 5, parent: 13, student: 14,
+};
+
+function getUserHierarchyRank(u: UserWithRolesResponse): number {
+  // Users without login accounts sort last (need action taken)
+  const loginBonus = u.hasLoginAccount ? 0 : 1000;
+  // Portal role gives a base rank — use lowercase for case-insensitive match
+  const baseRank = PORTAL_ROLE_RANK[(u.primaryRole ?? "").toLowerCase()] ?? 50;
+  // If they have assigned roles, find the minimum (highest) rank
+  const roleRank = u.assignedRoles.reduce<number>((min, r) => {
+    const rank = ROLE_HIERARCHY[r.name ?? ""] ?? 99;
+    return Math.min(min, rank);
+  }, 99);
+  return loginBonus + Math.min(baseRank, roleRank);
 }
 
 const SCOPE_COLORS: Record<AccessScope, string> = {
@@ -670,6 +713,8 @@ function RoleTierSection({ tier, roles, onEdit, onDelete, onPermissions }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function RoleManagement() {
+  const { user: currentUser } = useAuth();
+  const isCurrentUserSuperAdmin = currentUser?.role === "super_admin";
   const [roles, setRoles] = useState<RoleResponse[]>([]);
   const [stats, setStats] = useState<RoleStatsResponse | null>(null);
   const [users, setUsers] = useState<UserWithRolesResponse[]>([]);
@@ -684,6 +729,20 @@ export default function RoleManagement() {
   const [deleteRole, setDeleteRole] = useState<RoleResponse | null>(null);
   const [showCreateRole, setShowCreateRole] = useState(false);
   const [assignUser, setAssignUser] = useState<UserWithRolesResponse | null>(null);
+  const [provisioningId, setProvisioningId] = useState<string | null>(null);
+
+  async function handleProvision(staffId: string) {
+    setProvisioningId(staffId);
+    try {
+      await roleApi.provisionStaffLogin(staffId);
+      toast.success("Login account created with default role. Temp password: ChangeMe@123");
+      loadUsers(usersPage);
+    } catch {
+      toast.error("Failed to create login account");
+    } finally {
+      setProvisioningId(null);
+    }
+  }
 
   const loadRoles = useCallback(async () => {
     setRolesLoading(true);
@@ -702,12 +761,14 @@ export default function RoleManagement() {
   const loadUsers = useCallback(async (page: number) => {
     setUsersLoading(true);
     try {
-      const r = await roleApi.getUsersWithRoles({ page, pageSize: PAGE_SIZE });
+      const r = await roleApi.getUsersWithRoles({ page, pageSize: PAGE_SIZE, staffOnly: true });
       if (!r || !r.users) {
         toast.error("Invalid response from server");
         return;
       }
-      setUsers(r.users); 
+      // Sort by hierarchy: Admin first, then Principal, VP, etc.
+      const sorted = [...r.users].sort((a, b) => getUserHierarchyRank(a) - getUserHierarchyRank(b));
+      setUsers(sorted);
       setUsersTotal(r.total ?? 0);
     } catch (err: unknown) { 
       const msg = err instanceof Error ? err.message : "Failed to load users";
@@ -935,9 +996,31 @@ export default function RoleManagement() {
                                 }`}>{user.status ?? "—"}</span>
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1" onClick={() => setAssignUser(user)}>
-                                <UserCog className="h-3 w-3" />Manage
-                              </Button>
+                              {user.hasLoginAccount ? (
+                                // Admin row: greyed out — no role changes needed for the system admin
+                                (user.primaryRole ?? "").toLowerCase() === "admin" ? (
+                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 opacity-40 cursor-not-allowed" disabled>
+                                    <UserCog className="h-3 w-3" />Manage
+                                  </Button>
+                                ) : (
+                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1" onClick={() => setAssignUser(user)}>
+                                    <UserCog className="h-3 w-3" />Manage
+                                  </Button>
+                                )
+                              ) : (
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 px-2 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                                  disabled={provisioningId === user.staffId}
+                                  onClick={() => user.staffId && handleProvision(user.staffId)}
+                                >
+                                  {provisioningId === user.staffId
+                                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                                    : <Key className="h-3 w-3" />
+                                  }
+                                  Create Login
+                                </Button>
+                              )}
                             </TableCell>
                           </TableRow>
                         );

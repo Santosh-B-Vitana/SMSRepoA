@@ -49,7 +49,9 @@ namespace SmsApi.Models.DTOs
         public Guid Id { get; set; }
         public Guid SchoolId { get; set; }
         public Guid ClassId { get; set; }
+        public string? ClassName { get; set; }
         public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
         public string AcademicYear { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
@@ -116,12 +118,41 @@ namespace SmsApi.Models.DTOs
         public TimeSpan StartTime { get; set; }
         public TimeSpan EndTime { get; set; }
         public Guid? SubjectId { get; set; }
+        public string? SubjectName { get; set; }
+        public string? SubjectCode { get; set; }
         public Guid? TeacherId { get; set; }
+        public string? TeacherName { get; set; }
         public string? PeriodType { get; set; }
         public string? Room { get; set; }
         public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+    }
+
+    public class TeacherScheduleResponse
+    {
+        public Guid TeacherId { get; set; }
+        public string TeacherName { get; set; } = string.Empty;
+        public List<TeacherPeriodEntry> Schedule { get; set; } = new();
+        public int TotalPeriods { get; set; }
+    }
+
+    public class TeacherPeriodEntry
+    {
+        public Guid PeriodId { get; set; }
+        public string DayOfWeek { get; set; } = string.Empty;
+        public int PeriodNumber { get; set; }
+        public TimeSpan StartTime { get; set; }
+        public TimeSpan EndTime { get; set; }
+        public Guid? SubjectId { get; set; }
+        public string? SubjectName { get; set; }
+        public Guid TimetableId { get; set; }
+        public Guid ClassId { get; set; }
+        public string? ClassName { get; set; }
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
+        public string? PeriodType { get; set; }
+        public string? Room { get; set; }
     }
 
     public class TimetablePeriodListResponse

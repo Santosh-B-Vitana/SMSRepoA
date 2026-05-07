@@ -15,11 +15,13 @@ import { useAuth } from "@/contexts/AuthContext";
 interface StaffLeaveDialogProps {
   staffId: string;
   staffName: string;
+  staffEmail?: string;
+  staffDesignation?: string;
   /** When true (admin/super_admin viewing staff list) show the admin approval panel */
   adminView?: boolean;
 }
 
-export function StaffLeaveDialog({ staffId, staffName, adminView = false }: StaffLeaveDialogProps) {
+export function StaffLeaveDialog({ staffId, staffName, staffEmail, staffDesignation, adminView = false }: StaffLeaveDialogProps) {
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
@@ -48,14 +50,20 @@ export function StaffLeaveDialog({ staffId, staffName, adminView = false }: Staf
             </SheetTitle>
             <SheetDescription>
               {isAdmin && adminView
-                ? `Review and approve leave requests — all staff`
+                ? staffEmail
+                  ? `Leave history for ${staffName}`
+                  : `Review and approve leave requests — all staff`
                 : `Leave requests for ${staffName}`}
             </SheetDescription>
           </SheetHeader>
 
           <div className="pt-4">
             {isAdmin && adminView ? (
-              <AdminLeaveManagement />
+              <AdminLeaveManagement
+                staffEmail={staffEmail}
+                staffName={staffName}
+                staffDesignation={staffDesignation}
+              />
             ) : (
               <StaffLeaveManager />
             )}

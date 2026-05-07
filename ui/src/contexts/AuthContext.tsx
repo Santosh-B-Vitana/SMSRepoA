@@ -10,13 +10,62 @@ import axios from 'axios';
 
 export type UserRole = 'super_admin' | 'admin' | 'staff' | 'parent';
 
+/**
+ * Canonical role designations. The `role` field holds the portal type
+ * (admin / staff / parent), while `designation` holds the specific role
+ * exactly as configured in Role Management (e.g. "Principal", "Class Teacher").
+ */
+export const STAFF_DESIGNATIONS = [
+  'Principal', 'Vice Principal', 'Head of Department',
+  'Class Teacher', 'Teacher', 'Accountant', 'HR Manager',
+  'Librarian', 'Transport Manager', 'Hostel Warden',
+  'Admissions Officer', 'Counselor', 'Staff',
+] as const;
+
+export type StaffDesignation = typeof STAFF_DESIGNATIONS[number];
+
+/** Normalize a raw role string from the backend into a canonical designation. */
+export function normalizeDesignation(rawRole: string): string {
+  const map: Record<string, string> = {
+    admin:               'Admin',
+    principal:           'Principal',
+    'vice principal':    'Vice Principal',
+    viceprincipal:       'Vice Principal',
+    'head of department':'Head of Department',
+    hod:                 'Head of Department',
+    'class teacher':     'Class Teacher',
+    classteacher:        'Class Teacher',
+    teacher:             'Teacher',
+    accountant:          'Accountant',
+    'hr manager':        'HR Manager',
+    hrmanager:           'HR Manager',
+    librarian:           'Librarian',
+    'transport manager': 'Transport Manager',
+    transportmanager:    'Transport Manager',
+    'hostel warden':     'Hostel Warden',
+    warden:              'Hostel Warden',
+    'admissions officer':'Admissions Officer',
+    counselor:           'Counselor',
+    parent:              'Parent',
+    student:             'Student',
+    staff:               'Staff',
+  };
+  const lower = rawRole?.toLowerCase() ?? '';
+  return map[lower] ?? (rawRole
+    ? rawRole.charAt(0).toUpperCase() + rawRole.slice(1)
+    : 'Staff');
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  /** Specific role designation e.g. "Principal", "Class Teacher", "Librarian" */
+  designation?: string;
   avatar?: string;
   schoolId?: string;
+  requirePasswordChange?: boolean;
   staffData?: {
     employeeId: string;
     department: string;
@@ -190,22 +239,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Map backend UserInfo → our User type
       const backendUser = data.user;
-      const roleMap: Record<string, UserRole> = {
-        super_admin: 'super_admin',
-        superadmin: 'super_admin',
-        admin: 'admin',
-        staff: 'staff',
-        teacher: 'staff',
-        parent: 'parent',
-      };
-      const mappedRole: UserRole = roleMap[backendUser.role?.toLowerCase()] ?? 'staff';
+      // Determine portal type from role
+      const rawRole: string = backendUser.role ?? '';
+      const rawLower = rawRole.toLowerCase();
+      const ADMIN_ROLES = new Set(['admin', 'administrator']);
+      const PARENT_ROLES = new Set(['parent', 'guardian']);
+      const SUPER_ROLES  = new Set(['super_admin', 'superadmin']);
+
+      let mappedRole: UserRole;
+      if (SUPER_ROLES.has(rawLower)) mappedRole = 'super_admin';
+      else if (ADMIN_ROLES.has(rawLower)) mappedRole = 'admin';
+      else if (PARENT_ROLES.has(rawLower)) mappedRole = 'parent';
+      else mappedRole = 'staff'; // Principal, Teacher, Warden, Accountant, etc.
 
       const userWithoutPassword: User = {
         id: String(backendUser.id),
         name: `${backendUser.firstName ?? ''} ${backendUser.lastName ?? ''}`.trim() || backendUser.email,
         email: backendUser.email,
         role: mappedRole,
+        designation: normalizeDesignation(rawRole),
         schoolId: backendUser.schoolId ? String(backendUser.schoolId) : undefined,
+        requirePasswordChange: backendUser.requirePasswordChange === true,
       };
 
       // Create session — include token so apiClient.ts can read it

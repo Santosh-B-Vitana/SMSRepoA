@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { ParentPortalAccountSection } from "@/components/parent/ParentPortalAccountSection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -26,7 +29,7 @@ import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
 import { Student, StudentBasic, StudentProfileSummary, studentApi } from "@/services/api/studentApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
-import { StudentLeaveSection } from "@/components/leave-management/StudentLeaveSection";
+import { StudentLeaveRequests } from "@/components/leave-management/StudentLeaveRequests";
 
 import { Input } from "@/components/ui/input";
 import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
@@ -42,6 +45,9 @@ import { PdfPreviewModal } from "@/components/common/PdfPreviewModal";
 import { generateProfessionalReportCard, SchoolInfo } from "@/utils/professionalPdfGenerator";
 
 export default function StudentProfile() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const { academicYear: contextYear } = useAcademicYear();
   // Photo upload state
   const [photoPreview, setPhotoPreview] = useState<string | undefined>(undefined);
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -88,7 +94,6 @@ export default function StudentProfile() {
     setAwardDate("");
   };
   const [showIdCardDialog, setShowIdCardDialog] = useState(false);
-  const [showLeaveRequestDialog, setShowLeaveRequestDialog] = useState(false);
   // State for manual add dialog
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [manualDate, setManualDate] = useState("");
@@ -467,6 +472,8 @@ export default function StudentProfile() {
                     </div>
                   </div>
                 </div>
+
+
               </div>
             </div>
           </div>
@@ -628,6 +635,7 @@ export default function StudentProfile() {
             <TabsTrigger value="health" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Health</TabsTrigger>
             <TabsTrigger value="visitors" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Visitors</TabsTrigger>
             <TabsTrigger value="communication" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.communication')}</TabsTrigger>
+            {isAdmin && <TabsTrigger value="portal" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Portal</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -844,25 +852,17 @@ export default function StudentProfile() {
         </TabsContent>
 
         <TabsContent value="attendance">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Attendance Records</h3>
-              <Dialog open={showLeaveRequestDialog} onOpenChange={setShowLeaveRequestDialog}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Request Leave
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Request Leave for {student?.name}</DialogTitle>
-                  </DialogHeader>
-                  <StudentLeaveSection studentId={student?.id || ""} studentName={student?.name || ""} />
-                </DialogContent>
-              </Dialog>
-            </div>
+          <div className="space-y-6">
+            {/* Attendance Records */}
             <StudentAttendanceView studentId={student?.id || ""} />
+            {/* Student Leave Requests — visible to admin/staff for approval */}
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                Leave Requests
+              </h3>
+              <StudentLeaveRequests studentId={student?.id} compact />
+            </div>
           </div>
         </TabsContent>
 
@@ -1252,7 +1252,7 @@ export default function StudentProfile() {
                       className={`${student.class}-${student.section}`}
                       schoolName="St. Mary's Senior Secondary School"
                       principalName="Dr. John Smith"
-                      academicYear="2024-25"
+                      academicYear={contextYear || "2024-25"}
                       rollNumber={student.rollNumber}
                       purpose="Higher Education"
                       certificateNumber={`BC${Date.now().toString().slice(-6)}`}
@@ -1265,7 +1265,7 @@ export default function StudentProfile() {
                       className={`${student.class}-${student.section}`}
                       schoolName="St. Mary's Senior Secondary School"
                       principalName="Dr. John Smith"
-                      academicYear="2024-25"
+                      academicYear={contextYear || "2024-25"}
                       conduct="Excellent"
                       issueDate={new Date().toLocaleDateString()}
                       certificateNumber={`CC${Date.now().toString().slice(-6)}`}
@@ -1289,7 +1289,7 @@ export default function StudentProfile() {
                       className={`${student.class}-${student.section}`}
                       schoolName="St. Mary's Senior Secondary School"
                       principalName="Dr. John Smith"
-                      academicYear="2024-25"
+                      academicYear={contextYear || "2024-25"}
                       dateOfBirth={student.dateOfBirth?.split('T')[0]}
                       dateOfAdmission={student.admissionDate}
                       dateOfLeaving={new Date().toLocaleDateString()}
@@ -1507,6 +1507,12 @@ export default function StudentProfile() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {isAdmin && student?.id && (
+          <TabsContent value="portal">
+            <ParentPortalAccountSection studentId={student.id} />
+          </TabsContent>
+        )}
 
       </Tabs>
       

@@ -9,8 +9,12 @@
           "value": "550e8400-e29b-41d4-a716-446655440000"
         },
         {
+          "name": "pw_e2e_auth",
+          "value": "{\"user\":{\"id\":\"ad900ba6-9779-4886-9456-952a2dc3b425\",\"name\":\"Admin User\",\"email\":\"admin@vitanaschools.edu\",\"role\":\"admin\",\"schoolId\":\"550e8400-e29b-41d4-a716-446655440000\",\"requirePasswordChange\":false},\"sessionId\":\"5f253221dbb8061574fce1e5b007131ef0a948a91e93da3c908035d02dd198aa\",\"expiresAt\":1778156494556,\"createdAt\":1778152894587,\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImFkOTAwYmE2LTk3NzktNDg4Ni05NDU2LTk1MmEyZGMzYjQyNSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiZmE5NDdlOTktODA5MS00MzE1LWFkNzAtZjM0NDIwYzQ2MzQ5IiwiaWF0IjoiMTc3ODE1Mjg5NCIsImV4cCI6MTc3ODE1NjQ5NCwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.g8xaQYxjfz473b6z_MRtoPKw1ALbx9aHH46TDgZ2uaQ\",\"refreshToken\":\"7RatyYmsrKJSVLo+gWjAksLnmnPrzqjSBUSOrvhAIDqPgKgV2nWCkhlFXcvyaMsTkm/rV+rpLBQO4I2A3wV42g==\"}"
+        },
+        {
           "name": "authToken",
-          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImFkOTAwYmE2LTk3NzktNDg4Ni05NDU2LTk1MmEyZGMzYjQyNSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiNjQ4ZTQ0M2UtNjYxOS00MGNiLWFlNjctM2M1YWM2ZWEyM2ZjIiwiaWF0IjoiMTc3NzkwNjU5MiIsImV4cCI6MTc3NzkxMDE5MiwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.qCD0nRvyvt6DliWqm97iKp4y6kHahlgtpJ6wOJ1Src4"
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImFkOTAwYmE2LTk3NzktNDg4Ni05NDU2LTk1MmEyZGMzYjQyNSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiZmE5NDdlOTktODA5MS00MzE1LWFkNzAtZjM0NDIwYzQ2MzQ5IiwiaWF0IjoiMTc3ODE1Mjg5NCIsImV4cCI6MTc3ODE1NjQ5NCwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.g8xaQYxjfz473b6z_MRtoPKw1ALbx9aHH46TDgZ2uaQ"
         },
         {
           "name": "language",
@@ -18,11 +22,11 @@
         },
         {
           "name": "selectedAcademicYearId",
-          "value": "fallback-2026"
+          "value": "a1000000-0000-0000-0000-000000000002"
         },
         {
           "name": "selectedAcademicYearName",
-          "value": "2026-2027"
+          "value": "2025-2026"
         }
       ]
     }

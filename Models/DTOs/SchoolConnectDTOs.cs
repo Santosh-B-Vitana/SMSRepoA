@@ -162,7 +162,8 @@ namespace SmsApi.Models.DTOs
 
         public Guid AuthorId { get; set; }
 
-        [Required]
+        // AuthorName, AuthorRole, and AuthorAvatar are set server-side from JWT claims
+        // in the controller — they must NOT be validated from the request body.
         [MaxLength(100)]
         public string AuthorName { get; set; } = string.Empty;
 

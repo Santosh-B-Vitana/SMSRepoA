@@ -35,7 +35,8 @@ namespace SmsApi.Services
         Task<CheckPermissionResponse> CheckUserPermissionAsync(CheckPermissionRequest request);
 
         // Users with roles
-        Task<UserListWithRolesResponse> GetUsersWithRolesAsync(Guid schoolId, int page = 1, int pageSize = 50);
+        Task<UserListWithRolesResponse> GetUsersWithRolesAsync(Guid schoolId, int page = 1, int pageSize = 50, bool staffOnly = false);
+        Task<UserWithRolesResponse> ProvisionStaffLoginAsync(Guid staffId, Guid schoolId);
 
         // Stats
         Task<RoleStatsResponse> GetRoleStatsAsync(Guid schoolId);
@@ -927,42 +928,128 @@ namespace SmsApi.Services
 
         // --- Users with Roles -----------------------------------------------------
 
-        public async Task<UserListWithRolesResponse> GetUsersWithRolesAsync(Guid schoolId, int page = 1, int pageSize = 50)
+        /// <summary>
+        /// Maps a staff designation string to a UserLogin.Role portal-type string.
+        /// </summary>
+        private static string DesignationToLoginRole(string designation)
         {
-            // Normalize pagination bounds
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Principal"]           = "principal",
+                ["Vice Principal"]      = "vice principal",
+                ["Head of Department"]  = "head of department",
+                ["HOD"]                 = "head of department",
+                ["Class Teacher"]       = "class teacher",
+                ["Teacher"]             = "teacher",
+                ["Subject Teacher"]     = "teacher",
+                ["Accountant"]          = "accountant",
+                ["HR Manager"]          = "hr manager",
+                ["Librarian"]           = "librarian",
+                ["Transport Manager"]   = "transport manager",
+                ["Hostel Warden"]       = "hostel warden",
+                ["Warden"]              = "hostel warden",
+                ["Admissions Officer"]  = "admissions officer",
+                ["Counselor"]           = "counselor",
+            };
+            return map.TryGetValue(designation ?? "", out var r) ? r : "staff";
+        }
+
+        /// <summary>
+        /// Maps a designation to the system Role.Name used in the Roles table.
+        /// Falls back to null if no matching system role exists.
+        /// </summary>
+        private static string? DesignationToRoleName(string designation)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Principal"]           = "Principal",
+                ["Vice Principal"]      = "Vice Principal",
+                ["Head of Department"]  = "Head of Department",
+                ["HOD"]                 = "Head of Department",
+                ["Class Teacher"]       = "Class Teacher",
+                ["Teacher"]             = "Teacher",
+                ["Subject Teacher"]     = "Teacher",
+                ["Accountant"]          = "Accountant",
+                ["HR Manager"]          = "HR Manager",
+                ["Librarian"]           = "Librarian",
+                ["Transport Manager"]   = "Transport Manager",
+                ["Hostel Warden"]       = "Hostel Warden",
+                ["Warden"]              = "Hostel Warden",
+                ["Admissions Officer"]  = "Admissions Officer",
+                ["Counselor"]           = "Counselor",
+            };
+            return map.TryGetValue(designation ?? "", out var r) ? r : null;
+        }
+
+        public async Task<UserListWithRolesResponse> GetUsersWithRolesAsync(Guid schoolId, int page = 1, int pageSize = 50, bool staffOnly = false)
+        {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 1;
             if (pageSize > 200) pageSize = 200;
 
-            var query = _context.UserLogins
-                .Where(u => u.SchoolId == schoolId && !u.IsDeleted);
-
-            var total = await query.CountAsync();
-
-            var users = await query
-                .OrderBy(u => u.FirstName)
-                .ThenBy(u => u.LastName)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
+            // ── Step 1: All staff members (authoritative staff registry) ──────
+            var allStaff = await _context.StaffMembers
+                .Where(s => s.SchoolId == schoolId && !s.IsDeleted)
+                .OrderBy(s => s.FirstName).ThenBy(s => s.LastName)
                 .ToListAsync();
 
-            var userIds = users.Select(u => u.Id).ToList();
+            var staffEmails = allStaff.Select(s => s.Email.ToLower()).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Get all user-role assignments with role details
+            // ── Step 2: Admin/system logins not in StaffMembers (e.g. Admin user) ──
+            var nonStaffRoles = new[] { "parent", "student" };
+            var adminLogins = await _context.UserLogins
+                .Where(u => u.SchoolId == schoolId && !u.IsDeleted
+                    && !nonStaffRoles.Contains((u.Role ?? "").ToLower())
+                    && !staffEmails.Contains(u.Email.ToLower()))
+                .ToListAsync();
+
+            // ── Step 3: UserLogins for the staff members ──────────────────────
+            var staffLoginList = await _context.UserLogins
+                .Where(u => u.SchoolId == schoolId && !u.IsDeleted
+                    && staffEmails.Contains(u.Email.ToLower()))
+                .ToListAsync();
+            var loginByEmail = staffLoginList.ToDictionary(u => u.Email.ToLower(), u => u, StringComparer.OrdinalIgnoreCase);
+
+            // ── Step 4: Role assignments for all known login IDs ──────────────
+            var allLoginIds = staffLoginList.Select(u => u.Id)
+                .Concat(adminLogins.Select(u => u.Id)).ToList();
             var userRoles = await _context.UserRoles
-                .Where(ur => userIds.Contains(ur.UserId) && ur.SchoolId == schoolId && !ur.IsDeleted)
-                .Include(ur => ur.Role)
-                .AsNoTracking()
-                .ToListAsync();
-
+                .Where(ur => allLoginIds.Contains(ur.UserId) && ur.SchoolId == schoolId && !ur.IsDeleted)
+                .Include(ur => ur.Role).AsNoTracking().ToListAsync();
             var rolesByUser = userRoles
-                .Where(ur => ur.Role != null)  // Filter out any with null roles
+                .Where(ur => ur.Role != null)
                 .GroupBy(ur => ur.UserId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var result = users.Select(u =>
+            // ── Step 5: Build combined list ───────────────────────────────────
+            // Staff members first
+            var staffEntries = allStaff.Select(s =>
             {
-                var assignedRoles = rolesByUser.TryGetValue(u.Id, out var roles) ? roles : new List<UserRole>();
+                loginByEmail.TryGetValue(s.Email.ToLower(), out var login);
+                var roles = login != null && rolesByUser.TryGetValue(login.Id, out var r) ? r : new List<UserRole>();
+                return new UserWithRolesResponse
+                {
+                    Id = login?.Id ?? s.Id,
+                    Username = login?.Username ?? s.EmployeeId ?? "",
+                    Email = s.Email,
+                    FirstName = s.FirstName,
+                    LastName = s.LastName,
+                    PrimaryRole = login?.Role ?? DesignationToLoginRole(s.Designation),
+                    Status = s.Status ?? "active",
+                    LastLogin = login?.LastLogin,
+                    CreatedAt = s.CreatedAt,
+                    HasLoginAccount = login != null,
+                    StaffId = s.Id,
+                    AssignedRoles = roles.Where(ur => ur.Role != null)
+                        .Select(ur => new RoleBasicDto { Id = ur.Role!.Id, Name = ur.Role.Name, DisplayName = ur.Role.DisplayName, IsActive = !ur.Role.IsDeleted })
+                        .ToList(),
+                };
+            }).ToList();
+
+            // Admin/system logins not in StaffMembers
+            var adminEntries = adminLogins.Select(u =>
+            {
+                var roles = rolesByUser.TryGetValue(u.Id, out var r) ? r : new List<UserRole>();
                 return new UserWithRolesResponse
                 {
                     Id = u.Id,
@@ -970,29 +1057,119 @@ namespace SmsApi.Services
                     Email = u.Email ?? "",
                     FirstName = u.FirstName ?? "",
                     LastName = u.LastName ?? "",
-                    PrimaryRole = u.Role ?? "Staff",
-                    Status = u.Status ?? "Active",
+                    PrimaryRole = u.Role ?? "Admin",
+                    Status = u.Status ?? "active",
                     LastLogin = u.LastLogin,
                     CreatedAt = u.CreatedAt,
-                    AssignedRoles = assignedRoles
-                        .Where(ur => ur.Role != null)
-                        .Select(ur => new RoleBasicDto
-                        {
-                            Id = ur.Role!.Id,
-                            Name = ur.Role.Name,
-                            DisplayName = ur.Role.DisplayName,
-                            IsActive = !ur.Role.IsDeleted,
-                        })
+                    HasLoginAccount = true,
+                    StaffId = null,
+                    AssignedRoles = roles.Where(ur => ur.Role != null)
+                        .Select(ur => new RoleBasicDto { Id = ur.Role!.Id, Name = ur.Role.Name, DisplayName = ur.Role.DisplayName, IsActive = !ur.Role.IsDeleted })
                         .ToList(),
                 };
             }).ToList();
 
-            return new UserListWithRolesResponse
+            // Combine: admin first, then staff sorted by name
+            var combined = adminEntries
+                .Concat(staffEntries.OrderBy(s => s.FirstName).ThenBy(s => s.LastName))
+                .ToList();
+
+            var total = combined.Count;
+            var result = combined.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            return new UserListWithRolesResponse { Users = result, Total = total, Page = page, PageSize = pageSize };
+        }
+
+        public async Task<UserWithRolesResponse> ProvisionStaffLoginAsync(Guid staffId, Guid schoolId)
+        {
+            var staff = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.Id == staffId && s.SchoolId == schoolId && !s.IsDeleted)
+                ?? throw new InvalidOperationException("Staff member not found.");
+
+            // Check if login already exists
+            var existing = await _context.UserLogins
+                .FirstOrDefaultAsync(u => u.SchoolId == schoolId && u.Email.ToLower() == staff.Email.ToLower() && !u.IsDeleted);
+
+            Guid loginId;
+            if (existing != null)
             {
-                Users = result,
-                Total = total,
-                Page = page,
-                PageSize = pageSize,
+                loginId = existing.Id;
+            }
+            else
+            {
+                // Create UserLogin with designation-based role and a forced-change temp password
+                var username = staff.Email.Split('@')[0].ToLower().Replace(".", "");
+                var usernameExists = await _context.UserLogins.AnyAsync(u => u.Username == username && u.SchoolId == schoolId);
+                if (usernameExists) username = username + staff.EmployeeId?.ToLower().Replace("-", "");
+
+                var login = new UserLogin
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    Email = staff.Email,
+                    Username = username,
+                    FirstName = staff.FirstName,
+                    LastName = staff.LastName,
+                    Role = DesignationToLoginRole(staff.Designation),
+                    Status = staff.Status ?? "active",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("ChangeMe@123", workFactor: 12),
+                    RequirePasswordChange = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+                _context.UserLogins.Add(login);
+                await _context.SaveChangesAsync();
+                loginId = login.Id;
+            }
+
+            // Auto-assign matching system role based on designation
+            var roleName = DesignationToRoleName(staff.Designation);
+            if (roleName != null)
+            {
+                var role = await _context.Roles
+                    .FirstOrDefaultAsync(r => r.SchoolId == schoolId && r.Name == roleName && r.IsSystemRole && !r.IsDeleted);
+                if (role != null)
+                {
+                    var alreadyAssigned = await _context.UserRoles
+                        .AnyAsync(ur => ur.UserId == loginId && ur.RoleId == role.Id && ur.SchoolId == schoolId && !ur.IsDeleted);
+                    if (!alreadyAssigned)
+                    {
+                        _context.UserRoles.Add(new UserRole
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = loginId,
+                            RoleId = role.Id,
+                            SchoolId = schoolId,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+
+            // Return the updated entry
+            var updatedLogin = await _context.UserLogins.FirstAsync(u => u.Id == loginId);
+            var assignedRoles = await _context.UserRoles
+                .Where(ur => ur.UserId == loginId && ur.SchoolId == schoolId && !ur.IsDeleted)
+                .Include(ur => ur.Role).AsNoTracking().ToListAsync();
+
+            return new UserWithRolesResponse
+            {
+                Id = loginId,
+                Username = updatedLogin.Username ?? "",
+                Email = staff.Email,
+                FirstName = staff.FirstName,
+                LastName = staff.LastName,
+                PrimaryRole = updatedLogin.Role ?? "staff",
+                Status = staff.Status ?? "active",
+                LastLogin = updatedLogin.LastLogin,
+                CreatedAt = staff.CreatedAt,
+                HasLoginAccount = true,
+                StaffId = staffId,
+                AssignedRoles = assignedRoles.Where(ur => ur.Role != null)
+                    .Select(ur => new RoleBasicDto { Id = ur.Role!.Id, Name = ur.Role.Name, DisplayName = ur.Role.DisplayName, IsActive = !ur.Role.IsDeleted })
+                    .ToList(),
             };
         }
 

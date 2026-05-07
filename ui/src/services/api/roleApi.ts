@@ -62,6 +62,8 @@ export interface UserWithRolesResponse {
     displayName?: string;
     isActive: boolean;
   }>;
+  hasLoginAccount: boolean;
+  staffId?: string;
 }
 
 export interface UserListWithRolesResponse {
@@ -150,10 +152,11 @@ const setRolePermissions = async (roleId: string, permissionIds: string[]): Prom
 
 // ─── User-Role assignments ────────────────────────────────────────────────────
 
-const getUsersWithRoles = async (params?: { page?: number; pageSize?: number }): Promise<UserListWithRolesResponse> => {
+const getUsersWithRoles = async (params?: { page?: number; pageSize?: number; staffOnly?: boolean }): Promise<UserListWithRolesResponse> => {
   const q = new URLSearchParams();
   if (params?.page) q.set('page', String(params.page));
   if (params?.pageSize) q.set('pageSize', String(params.pageSize));
+  if (params?.staffOnly) q.set('staffOnly', 'true');
   const r = await apiClient.get<UserListWithRolesResponse>(`${BASE}/users-with-roles?${q}`);
   return r.data;
 };
@@ -185,6 +188,11 @@ const seedDefaults = async (): Promise<void> => {
   await apiClient.post(`${BASE}/seed`);
 };
 
+const provisionStaffLogin = async (staffId: string): Promise<UserWithRolesResponse> => {
+  const r = await apiClient.post<UserWithRolesResponse>(`${BASE}/provision-staff-login/${staffId}`);
+  return r.data;
+};
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 const roleApi = {
@@ -200,6 +208,7 @@ const roleApi = {
   getUserRoles,
   assignRoleToUser,
   removeRoleFromUser,
+  provisionStaffLogin,
   getStats,
   seedDefaults,
 };

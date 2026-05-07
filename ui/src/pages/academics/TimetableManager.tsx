@@ -6,13 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Plus, Loader2, Trash2, AlertTriangle, Printer, MapPin, X, LayoutGrid, CalendarClock, RefreshCw, BookOpen
+  Plus, Loader2, Trash2, AlertTriangle, Printer, MapPin, X, LayoutGrid, CalendarClock, RefreshCw, BookOpen, Download
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { timetableApi, TimetableRecord, TimetablePeriod } from "@/services/api/timetableApi";
-import { academicApi, ClassResponse, AcademicYearResponse, ClassSubjectResponse } from "@/services/api/academicApi";
+import { academicApi, ClassResponse, AcademicYearResponse, ClassSubjectResponse, SubjectResponse } from "@/services/api/academicApi";
 import { staffApi, StaffBasic } from "@/services/api/staffApi";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -60,9 +61,13 @@ const SUBJECT_COLORS = [
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export default function TimetableManager() {
+  // Global academic year context — drives the year selector
+  const { academicYear: globalYear } = useAcademicYear();
+
   // Lookup data
   const [allClasses, setAllClasses]     = useState<ClassResponse[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYearResponse[]>([]);
+  const [allSubjects, setAllSubjects]   = useState<SubjectResponse[]>([]);
   const [classSubjects, setClassSubjects] = useState<ClassSubjectResponse[]>([]);
   const [teachers, setTeachers]         = useState<StaffBasic[]>([]);
 
@@ -116,7 +121,9 @@ export default function TimetableManager() {
     SUBJECT_COLORS[subjectColorIdx[subjectId] ?? 0];
 
   const getSubjectName = (subjectId?: string) =>
-    classSubjects.find(s => s.subjectId === subjectId)?.subjectName ?? subjectId ?? "";
+    classSubjects.find(s => s.subjectId === subjectId)?.subjectName
+    ?? allSubjects.find(s => s.id === subjectId)?.name
+    ?? subjectId ?? "";
 
   const getTeacherShortName = (teacherId?: string) => {
     const t = teachers.find(t => t.id === teacherId);
@@ -136,16 +143,46 @@ export default function TimetableManager() {
   // ─── Initial data load ───────────────────────────────────────────────────
   useEffect(() => {
     setLoadingFilters(true);
-    Promise.all([
+    Promise.allSettled([
       academicApi.listClasses(1, 500),
       academicApi.listAcademicYears(1, 50),
       staffApi.list(),
-    ]).then(([c, y, s]) => {
-      setAllClasses(c.classes || []);
-      setAcademicYears(y.academicYears || []);
-      setTeachers(s.staff || []);
-    }).catch(() => {}).finally(() => setLoadingFilters(false));
+      academicApi.listSubjects(1, 500),
+    ]).then(([classResult, yearResult, staffResult, subjectResult]) => {
+      if (classResult.status === 'fulfilled') {
+        setAllClasses(classResult.value.classes || []);
+      } else {
+        toast.error('Failed to load classes');
+      }
+      if (yearResult.status === 'fulfilled') {
+        const years = yearResult.value.academicYears || [];
+        setAcademicYears(years);
+        // Auto-select the current academic year
+        const current = years.find(y => y.isCurrent);
+        if (current) setSelectedYear(current.name);
+        else if (years.length > 0) setSelectedYear(years[0].name);
+      } else {
+        toast.error('Failed to load academic years');
+      }
+      if (staffResult.status === 'fulfilled') {
+        setTeachers(staffResult.value.staff || []);
+      }
+      if (subjectResult.status === 'fulfilled') {
+        setAllSubjects(subjectResult.value.subjects || []);
+      }
+    }).finally(() => setLoadingFilters(false));
   }, []);
+
+  // ─── Sync selected year from global context when it changes ─────────────
+  // Allows the header dropdown to drive the timetable year filter.
+  // If the selected year is still the default (empty or matches old global),
+  // snap it to the new global year.
+  useEffect(() => {
+    if (!globalYear || academicYears.length === 0) return;
+    const normalizeYear = (y: string) => y.replace(/\//g, '-').trim();
+    const match = academicYears.find(y => normalizeYear(y.name) === normalizeYear(globalYear));
+    if (match) setSelectedYear(match.name);
+  }, [globalYear, academicYears]);
 
   // ─── Load class subjects when class changes ──────────────────────────────
   useEffect(() => {
@@ -172,7 +209,11 @@ export default function TimetableManager() {
     setLoadingTimetable(true);
     try {
       const res = await timetableApi.list(selectedClassObj.id, 1, 50);
-      const tt = (res.timetables || []).find(t => t.academicYear === selectedYear) ?? null;
+      // Normalize year format: both "2025/2026" and "2025-2026" are treated as equal
+      const normalizeYear = (y: string) => y.replace(/\//g, '-').trim();
+      const tt = (res.timetables || []).find(
+        t => normalizeYear(t.academicYear) === normalizeYear(selectedYear)
+      ) ?? null;
       if (!tt) { setActiveTimetable(null); setPeriodsMap({}); return; }
       setActiveTimetable(tt);
       const periodsRes = await timetableApi.getPeriods(tt.id);
@@ -285,6 +326,49 @@ export default function TimetableManager() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (!activeTimetable) return;
+
+    // Header row: Period, Time, Mon, Tue, Wed, Thu, Fri, Sat
+    const header = ["Period", "Time", ...DAYS];
+
+    const rows: string[][] = [];
+    PERIOD_SLOTS.forEach(slot => {
+      const row: string[] = [
+        slot.label,
+        `${slot.startTime}-${slot.endTime}`,
+      ];
+      DAYS.forEach(day => {
+        const period = periodsMap[`${day}-${slot.periodNumber}`];
+        if (period?.subjectId) {
+          const subName = getSubjectName(period.subjectId);
+          const teacher = period.teacherId ? teachers.find(t => t.id === period.teacherId) : null;
+          const teacherName = teacher ? (teacher.name ?? `${teacher.firstName} ${teacher.lastName}`).trim() : "";
+          row.push(teacherName ? `${subName} (${teacherName})` : subName);
+        } else {
+          row.push("");
+        }
+      });
+      rows.push(row);
+    });
+
+    const csvLines = [header, ...rows]
+      .map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const filename = `Timetable_Class${selectedStandard}-${selectedSection}_${selectedYear.replace(/\/|-/g, "-")}.csv`;
+    const blob = new Blob([csvLines], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Timetable exported as ${filename}`);
+  };
+
   const handleDeleteTimetable = async () => {
     if (!activeTimetable) return;
     if (!confirm(`Delete the entire timetable for Class ${selectedStandard}-${selectedSection} (${selectedYear})? This cannot be undone.`)) return;
@@ -335,7 +419,7 @@ export default function TimetableManager() {
                 </SelectTrigger>
                 <SelectContent>
                   {availableStandards.map(s => (
-                    <SelectItem key={s} value={s}>Class {s}</SelectItem>
+                    <SelectItem key={s} value={s}>{/^class\s+/i.test(s) ? s : `Class ${s}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -379,6 +463,14 @@ export default function TimetableManager() {
                   onClick={loadTimetableData}
                 >
                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  onClick={handleExportCSV}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1.5" />Export
                 </Button>
                 <Button
                   variant="outline"
@@ -660,14 +752,14 @@ export default function TimetableManager() {
                 Teacher
               </Label>
               <Select
-                value={editForm.teacherId}
-                onValueChange={v => setEditForm(f => ({ ...f, teacherId: v }))}
+                value={editForm.teacherId || "__none__"}
+                onValueChange={v => setEditForm(f => ({ ...f, teacherId: v === "__none__" ? "" : v }))}
               >
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue placeholder="Select teacher (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">— None —</SelectItem>
+                  <SelectItem value="__none__">— None —</SelectItem>
                   {teachers.map(t => (
                     <SelectItem key={t.id} value={t.id}>
                       {(t.name ?? `${t.firstName} ${t.lastName}`).trim()}

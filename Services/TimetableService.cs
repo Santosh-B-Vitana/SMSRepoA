@@ -11,7 +11,7 @@ namespace SmsApi.Services
 {
     public interface ITimetableService
     {
-        Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, int page = 1, int pageSize = 10);
+        Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, int page = 1, int pageSize = 10, string? academicYear = null);
         Task<TimetableResponse?> GetTimetableByIdAsync(Guid id, Guid schoolId);
         Task<TimetableDetailResponse?> GetTimetableWithPeriodsAsync(Guid id, Guid schoolId);
         Task<TimetableResponse> CreateTimetableAsync(CreateTimetableRequest request);
@@ -22,6 +22,8 @@ namespace SmsApi.Services
         Task<TimetablePeriodResponse> CreatePeriodAsync(CreateTimetablePeriodRequest request);
         Task<TimetablePeriodResponse?> UpdatePeriodAsync(Guid id, UpdateTimetablePeriodRequest request);
         Task<bool> DeletePeriodAsync(Guid id);
+
+        Task<TeacherScheduleResponse?> GetTeacherScheduleAsync(Guid teacherId, Guid schoolId);
     }
 
     public class TimetableService : ITimetableService
@@ -36,18 +38,26 @@ namespace SmsApi.Services
             _context = context;
         }
 
-        public async Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, int page = 1, int pageSize = 10)
+        public async Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, int page = 1, int pageSize = 10, string? academicYear = null)
         {
             // VALIDATION: Normalize pagination bounds
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 10;
             if (pageSize > 100) pageSize = 100;
 
-            var query = _context.Timetables.Where(t => t.SchoolId == schoolId);
+            var query = _context.Timetables
+                .Include(t => t.Class)
+                .Include(t => t.Section)
+                .Where(t => t.SchoolId == schoolId);
 
             if (classId.HasValue)
             {
                 query = query.Where(t => t.ClassId == classId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(academicYear))
+            {
+                query = query.Where(t => t.AcademicYear == academicYear);
             }
 
             var total = await query.CountAsync();
@@ -67,6 +77,8 @@ namespace SmsApi.Services
         public async Task<TimetableResponse?> GetTimetableByIdAsync(Guid id, Guid schoolId)
         {
             var timetable = await _context.Timetables
+                .Include(t => t.Class)
+                .Include(t => t.Section)
                 .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId);
 
             return timetable == null ? null : MapToResponse(timetable);
@@ -75,11 +87,15 @@ namespace SmsApi.Services
         public async Task<TimetableDetailResponse?> GetTimetableWithPeriodsAsync(Guid id, Guid schoolId)
         {
             var timetable = await _context.Timetables
+                .Include(t => t.Class)
+                .Include(t => t.Section)
                 .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
 
             if (timetable == null) return null;
 
             var periods = await _context.TimetablePeriods
+                .Include(tp => tp.Subject)
+                .Include(tp => tp.Teacher)
                 .Where(tp => tp.TimetableId == id && !tp.IsDeleted)
                 .OrderBy(tp => tp.DayOfWeek)
                 .ThenBy(tp => tp.PeriodNumber)
@@ -195,6 +211,8 @@ namespace SmsApi.Services
         public async Task<TimetablePeriodListResponse> GetPeriodsAsync(Guid timetableId)
         {
             var periods = await _context.TimetablePeriods
+                .Include(tp => tp.Subject)
+                .Include(tp => tp.Teacher)
                 .Where(tp => tp.TimetableId == timetableId && !tp.IsDeleted)
                 .OrderBy(tp => tp.DayOfWeek)
                 .ThenBy(tp => tp.PeriodNumber)
@@ -414,6 +432,51 @@ namespace SmsApi.Services
             return true;
         }
 
+        public async Task<TeacherScheduleResponse?> GetTeacherScheduleAsync(Guid teacherId, Guid schoolId)
+        {
+            var teacher = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.Id == teacherId && s.SchoolId == schoolId && !s.IsDeleted);
+
+            if (teacher == null) return null;
+
+            var periods = await _context.TimetablePeriods
+                .Include(tp => tp.Timetable)
+                    .ThenInclude(t => t!.Class)
+                .Include(tp => tp.Timetable)
+                    .ThenInclude(t => t!.Section)
+                .Include(tp => tp.Subject)
+                .Where(tp => tp.TeacherId == teacherId && !tp.IsDeleted && tp.Timetable != null && tp.Timetable.SchoolId == schoolId)
+                .OrderBy(tp => tp.DayOfWeek)
+                .ThenBy(tp => tp.PeriodNumber)
+                .ToListAsync();
+
+            var teacherName = teacher.Name ?? $"{teacher.FirstName} {teacher.LastName}".Trim();
+
+            return new TeacherScheduleResponse
+            {
+                TeacherId = teacherId,
+                TeacherName = teacherName,
+                Schedule = periods.Select(p => new TeacherPeriodEntry
+                {
+                    PeriodId = p.Id,
+                    DayOfWeek = p.DayOfWeek,
+                    PeriodNumber = p.PeriodNumber,
+                    StartTime = p.StartTime,
+                    EndTime = p.EndTime,
+                    SubjectId = p.SubjectId,
+                    SubjectName = p.Subject?.Name,
+                    TimetableId = p.TimetableId,
+                    ClassId = p.Timetable!.ClassId,
+                    ClassName = p.Timetable.Class?.Name,
+                    SectionId = p.Timetable.SectionId,
+                    SectionName = p.Timetable.Section?.Name,
+                    PeriodType = p.PeriodType,
+                    Room = p.Room
+                }).ToList(),
+                TotalPeriods = periods.Count
+            };
+        }
+
         private static TimetableResponse MapToResponse(Timetable timetable)
         {
             return new TimetableResponse
@@ -421,7 +484,9 @@ namespace SmsApi.Services
                 Id = timetable.Id,
                 SchoolId = timetable.SchoolId,
                 ClassId = timetable.ClassId,
+                ClassName = timetable.Class?.Name,
                 SectionId = timetable.SectionId,
+                SectionName = timetable.Section?.Name,
                 AcademicYear = timetable.AcademicYear,
                 Status = timetable.Status,
                 CreatedAt = timetable.CreatedAt,
@@ -440,7 +505,10 @@ namespace SmsApi.Services
                 StartTime = period.StartTime,
                 EndTime = period.EndTime,
                 SubjectId = period.SubjectId,
+                SubjectName = period.Subject?.Name,
+                SubjectCode = period.Subject?.Code,
                 TeacherId = period.TeacherId,
+                TeacherName = period.Teacher != null ? (period.Teacher.Name ?? $"{period.Teacher.FirstName} {period.Teacher.LastName}".Trim()) : null,
                 PeriodType = period.PeriodType,
                 Room = period.Room,
                 Notes = period.Notes,

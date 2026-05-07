@@ -111,6 +111,24 @@ namespace SmsApi.Models.Entities
         public bool IsDeleted { get; set; } = false;
 
         /// <summary>
+        /// When true the user must change their password before using the system.
+        /// Set to true when an admin generates/resets a password on their behalf.
+        /// </summary>
+        public bool RequirePasswordChange { get; set; } = false;
+
+        /// <summary>
+        /// For parent accounts: stores the type of linked entity ("parent" | "staff").
+        /// Kept nullable for backward-compatibility with older records.
+        /// </summary>
+        [MaxLength(50)]
+        public string? LinkedEntityType { get; set; }
+
+        /// <summary>
+        /// For parent accounts: the StudentGuardian.Id (or Staff.Id) this login belongs to.
+        /// </summary>
+        public Guid? LinkedEntityId { get; set; }
+
+        /// <summary>
         /// Foreign key to School
         /// </summary>
         public virtual School? School { get; set; }

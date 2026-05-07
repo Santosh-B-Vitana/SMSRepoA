@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -657,6 +657,40 @@ function PostCard({
 
 // --- Compose Box -------------------------------------------------------------
 
+// Role → allowed visibility options
+const VISIBILITY_OPTIONS: Record<string, Array<{ value: string; label: string; icon: React.ReactNode }>> = {
+  admin: [
+    { value: "public",  label: "Everyone",        icon: <Globe  className="h-3 w-3" /> },
+    { value: "staff",   label: "Staff Only",       icon: <Users  className="h-3 w-3" /> },
+    { value: "parent",  label: "Parents Only",     icon: <Users  className="h-3 w-3" /> },
+    { value: "class",   label: "Specific Class",   icon: <Users  className="h-3 w-3" /> },
+    { value: "group",   label: "Group",            icon: <Users  className="h-3 w-3" /> },
+    { value: "private", label: "Private (admins)", icon: <Lock   className="h-3 w-3" /> },
+  ],
+  super_admin: [
+    { value: "public",  label: "Everyone",        icon: <Globe  className="h-3 w-3" /> },
+    { value: "staff",   label: "Staff Only",       icon: <Users  className="h-3 w-3" /> },
+    { value: "parent",  label: "Parents Only",     icon: <Users  className="h-3 w-3" /> },
+    { value: "class",   label: "Specific Class",   icon: <Users  className="h-3 w-3" /> },
+    { value: "private", label: "Private (admins)", icon: <Lock   className="h-3 w-3" /> },
+  ],
+  staff: [
+    { value: "public",  label: "Everyone",      icon: <Globe  className="h-3 w-3" /> },
+    { value: "staff",   label: "Staff Only",     icon: <Users  className="h-3 w-3" /> },
+    { value: "class",   label: "My Class",       icon: <Users  className="h-3 w-3" /> },
+  ],
+  parent: [
+    { value: "public",  label: "Everyone",      icon: <Globe  className="h-3 w-3" /> },
+    { value: "parent",  label: "Parents Only",   icon: <Users  className="h-3 w-3" /> },
+  ],
+};
+
+// Default visibility per role
+function defaultVisibility(role: string): string {
+  if (role === "parent") return "parent";
+  return "public";
+}
+
 function ComposeBox({
   authorName,
   authorRole,
@@ -670,7 +704,8 @@ function ComposeBox({
 }) {
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState("");
-  const [visibility, setVisibility] = useState<"public" | "class" | "group" | "private">("public");
+  const visOpts = VISIBILITY_OPTIONS[authorRole] ?? VISIBILITY_OPTIONS["staff"];
+  const [visibility, setVisibility] = useState<string>(() => defaultVisibility(authorRole));
   const [mediaUrl, setMediaUrl] = useState("");
   const [mediaType, setMediaType] = useState<"image" | "link">("image");
   const [tags, setTags] = useState("");
@@ -731,32 +766,19 @@ function ComposeBox({
               </Avatar>
               <Select
                 value={visibility}
-                onValueChange={(v) => setVisibility(v as typeof visibility)}
+                onValueChange={setVisibility}
               >
-                <SelectTrigger className="h-7 w-[130px] text-xs">
+                <SelectTrigger className="h-7 w-[150px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="public">
-                    <span className="flex items-center gap-1">
-                      <Globe className="h-3 w-3" /> Everyone
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="class">
-                    <span className="flex items-center gap-1">
-                      <Users className="h-3 w-3" /> My Class
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="group">
-                    <span className="flex items-center gap-1">
-                      <Users className="h-3 w-3" /> Group
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="private">
-                    <span className="flex items-center gap-1">
-                      <Lock className="h-3 w-3" /> Private
-                    </span>
-                  </SelectItem>
+                  {visOpts.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <span className="flex items-center gap-1">
+                        {opt.icon} {opt.label}
+                      </span>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1116,19 +1138,28 @@ function PostFeed({
       if (pg === 1) setLoading(true);
       else setLoadingMore(true);
       try {
-        const params: Record<string, unknown> = {
-          page: pg,
-          pageSize: PAGE_SIZE,
-        };
-        if (filterAuthorId) params.authorId = filterAuthorId;
-        if (search) params.searchTerm = search;
-        if (roleFilter === "pinned") params.isPinned = true;
-        else if (roleFilter !== "all") params.authorRole = roleFilter;
-        if (activeTag) params.tag = activeTag;
-
-        const res = await schoolConnectApi.getPosts(
-          params as Parameters<typeof schoolConnectApi.getPosts>[0]
-        );
+        let res;
+        if (filterAuthorId) {
+          // Use the /posts/mine endpoint so the server resolves the author from JWT,
+          // never relying on the frontend-supplied authorId (avoids stale-user-id mismatches).
+          res = await schoolConnectApi.getMyPosts({
+            page: pg,
+            pageSize: PAGE_SIZE,
+            searchTerm: search || undefined,
+          });
+        } else {
+          const params: Record<string, unknown> = {
+            page: pg,
+            pageSize: PAGE_SIZE,
+          };
+          if (search) params.searchTerm = search;
+          if (roleFilter === "pinned") params.isPinned = true;
+          else if (roleFilter !== "all") params.authorRole = roleFilter;
+          if (activeTag) params.tag = activeTag;
+          res = await schoolConnectApi.getPosts(
+            params as Parameters<typeof schoolConnectApi.getPosts>[0]
+          );
+        }
         setPosts((prev) => (replace ? res.posts : [...prev, ...res.posts]));
         setHasMore(pg < res.totalPages);
       } catch {
@@ -1268,7 +1299,17 @@ function PostFeed({
 
       {!filterAuthorId && (
         <div className="flex flex-wrap gap-1.5">
-          {(["all", "pinned", "staff", "student", "parent", "alumni"] as FeedFilter[]).map(
+          {((): FeedFilter[] => {
+            const base: FeedFilter[] = ["all", "pinned"];
+            const role = currentUserRole?.toLowerCase();
+            if (role === "admin" || role === "super_admin")
+              return [...base, "staff", "student", "parent", "alumni"];
+            if (role === "staff")
+              return [...base, "staff"];
+            if (role === "parent")
+              return [...base, "parent"];
+            return base;
+          })().map(
             (f) => (
               <button
                 key={f}
@@ -1284,6 +1325,10 @@ function PostFeed({
                   ? "All"
                   : f === "pinned"
                   ? "Pinned"
+                  : f === "staff"
+                  ? "Staff Posts"
+                  : f === "parent"
+                  ? "Parent Posts"
                   : f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             )
@@ -1378,23 +1423,43 @@ function PostFeed({
 
 const SchoolConnectManager = () => {
   const { user } = useAuth();
+  // Tracks how many times My Posts tab has been activated so the PostFeed
+  // remounts (fresh API fetch) every time the user switches to the tab.
+  const [myPostsKey, setMyPostsKey] = useState(0);
 
   if (!user) return null;
 
   const isAdmin = ["super_admin", "admin"].includes(user.role);
+  const isStaff = user.role === "staff";
+  const isParent = user.role === "parent";
+
+  const headerDesc = isAdmin
+    ? "Manage and participate in your school community. You have full moderation access."
+    : isStaff
+    ? "Connect with colleagues, parents, and share updates with your classes."
+    : isParent
+    ? "Stay updated with school news and connect with other parents and teachers."
+    : "Stay connected with everyone in your school community.";
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">School Connect</h1>
-          <p className="text-sm text-muted-foreground">
-            Stay connected with everyone in your school community
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            School Connect
+            {isAdmin && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Admin</Badge>}
+            {isStaff && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-800">Staff</Badge>}
+            {isParent && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-800">Parent</Badge>}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{headerDesc}</p>
         </div>
       </div>
 
-      <Tabs defaultValue="feed" className="space-y-4">
+      <Tabs
+        defaultValue="feed"
+        className="space-y-4"
+        onValueChange={(v) => { if (v === "myposts") setMyPostsKey((k) => k + 1); }}
+      >
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="feed" className="gap-1.5 text-xs">
             <Globe className="h-3.5 w-3.5" /> Feed
@@ -1424,6 +1489,7 @@ const SchoolConnectManager = () => {
 
         <TabsContent value="myposts">
           <PostFeed
+            key={myPostsKey}
             filterAuthorId={user.id}
             currentUserId={user.id}
             currentUserName={user.name}

@@ -93,6 +93,7 @@ const SecurityDashboardPage = lazy(() => import("@/pages/SecurityDashboard"));
 const AdvancedAnalytics    = lazy(() => import("@/pages/AdvancedAnalytics"));
 const Admissions           = lazy(() => import("@/pages/Admissions"));
 const Finance              = lazy(() => import("@/pages/Finance"));
+const LeaveManagement      = lazy(() => import("@/pages/LeaveManagement"));
 
 // ── Fallback shown while a lazy chunk is loading ──────────────────────────────
 function PageLoader() {
@@ -148,6 +149,7 @@ function App() {
 
                   {/* ── Protected: staff / admin (teacher-facing) ─────────── */}
                   <Route path="/staff-dashboard" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/leave-management" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><LeaveManagement /></Layout></ProtectedRoute>} />
                   <Route path="/my-classes" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClasses /></Layout></ProtectedRoute>} />
                   <Route path="/my-classes/:classId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClassDetail /></Layout></ProtectedRoute>} />
                   <Route path="/my-class-detail/:classId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClassDetail /></Layout></ProtectedRoute>} />

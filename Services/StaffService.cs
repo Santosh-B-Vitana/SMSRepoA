@@ -198,6 +198,12 @@ namespace SmsApi.Services
             if (staff == null)
                 return null;
 
+            // Resolve UserLogin.Id via email match — leave requests are stored with UserLogin.Id as ApplicantId
+            var userLoginId = await _context.UserLogins
+                .Where(u => u.SchoolId == schoolId && u.Email.ToLower() == staff.Email.ToLower() && !u.IsDeleted)
+                .Select(u => (Guid?)u.Id)
+                .FirstOrDefaultAsync();
+
             return new StaffResponse
             {
                 Id = staff.Id,
@@ -268,11 +274,109 @@ namespace SmsApi.Services
                 }).ToList(),
 
                 CreatedAt = staff.CreatedAt,
-                UpdatedAt = staff.UpdatedAt
+                UpdatedAt = staff.UpdatedAt,
+                UserLoginId = userLoginId
             };
         }
 
         // ========== PRIVATE HELPER METHODS FOR AUTO-GENERATION ==========
+
+        /// <summary>
+        /// Creates a UserLogin (and assigns the matching system role) for a staff member
+        /// if one does not already exist. Called during staff creation.
+        /// </summary>
+        private async Task AutoProvisionUserLoginAsync(Staff staff)
+        {
+            if (string.IsNullOrWhiteSpace(staff.Email)) return;
+
+            var existing = await _context.UserLogins
+                .AnyAsync(u => u.SchoolId == staff.SchoolId && u.Email.ToLower() == staff.Email.ToLower() && !u.IsDeleted);
+            if (existing) return;
+
+            // Map designation → portal-role string
+            var roleMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Principal"]           = "principal",
+                ["Vice Principal"]      = "vice principal",
+                ["Head of Department"]  = "head of department",
+                ["HOD"]                 = "head of department",
+                ["Class Teacher"]       = "class teacher",
+                ["Teacher"]             = "teacher",
+                ["Subject Teacher"]     = "teacher",
+                ["Accountant"]          = "accountant",
+                ["HR Manager"]          = "hr manager",
+                ["Librarian"]           = "librarian",
+                ["Transport Manager"]   = "transport manager",
+                ["Hostel Warden"]       = "hostel warden",
+                ["Warden"]              = "hostel warden",
+                ["Admissions Officer"]  = "admissions officer",
+                ["Counselor"]           = "counselor",
+            };
+            var loginRole = roleMap.TryGetValue(staff.Designation ?? "", out var r) ? r : "staff";
+
+            // Derive a unique username
+            var username = staff.Email.Split('@')[0].ToLower().Replace(".", "");
+            var usernameExists = await _context.UserLogins.AnyAsync(u => u.Username == username && u.SchoolId == staff.SchoolId);
+            if (usernameExists) username += (staff.EmployeeId ?? "").ToLower().Replace("-", "");
+
+            var login = new UserLogin
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = staff.SchoolId,
+                Email = staff.Email,
+                Username = username,
+                FirstName = staff.FirstName,
+                LastName = staff.LastName,
+                Role = loginRole,
+                Status = staff.Status ?? "active",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("ChangeMe@123", workFactor: 12),
+                RequirePasswordChange = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            _context.UserLogins.Add(login);
+            await _context.SaveChangesAsync();
+
+            // Auto-assign matching system role
+            var systemRoleNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Principal"]           = "Principal",
+                ["Vice Principal"]      = "Vice Principal",
+                ["Head of Department"]  = "Head of Department",
+                ["HOD"]                 = "Head of Department",
+                ["Class Teacher"]       = "Class Teacher",
+                ["Teacher"]             = "Teacher",
+                ["Subject Teacher"]     = "Teacher",
+                ["Accountant"]          = "Accountant",
+                ["HR Manager"]          = "HR Manager",
+                ["Librarian"]           = "Librarian",
+                ["Transport Manager"]   = "Transport Manager",
+                ["Hostel Warden"]       = "Hostel Warden",
+                ["Warden"]              = "Hostel Warden",
+                ["Admissions Officer"]  = "Admissions Officer",
+                ["Counselor"]           = "Counselor",
+            };
+
+            if (systemRoleNameMap.TryGetValue(staff.Designation ?? "", out var roleName))
+            {
+                var role = await _context.Roles
+                    .FirstOrDefaultAsync(ro => ro.SchoolId == staff.SchoolId && ro.Name == roleName && ro.IsSystemRole && !ro.IsDeleted);
+                if (role != null)
+                {
+                    _context.UserRoles.Add(new UserRole
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = login.Id,
+                        RoleId = role.Id,
+                        SchoolId = staff.SchoolId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation("Auto-assigned role '{Role}' to new staff {EmployeeId}", roleName, staff.EmployeeId);
+                }
+            }
+        }
 
         private async Task CreateSalaryBreakdownAsync(Staff staff, decimal totalSalary)
         {
@@ -558,6 +662,9 @@ namespace SmsApi.Services
                     await CreateSalaryBreakdownAsync(staff, totalSalary);
                     await CreateInitialPayrollRecordAsync(staff, totalSalary);
                     await SetupPFESIComplianceAsync(staff, totalSalary);
+
+                    // Auto-create UserLogin for the new staff member
+                    await AutoProvisionUserLoginAsync(staff);
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();

@@ -12,7 +12,7 @@ namespace SmsApi.Services
     public interface ISchoolConnectService
     {
         // Posts
-        Task<SchoolConnectPostListResponse> GetPostsAsync(Guid schoolId, Guid currentUserId, int page = 1, int pageSize = 10, SchoolConnectPostFilters? filters = null);
+        Task<SchoolConnectPostListResponse> GetPostsAsync(Guid schoolId, Guid currentUserId, string viewerRole, int page = 1, int pageSize = 10, SchoolConnectPostFilters? filters = null);
         Task<SchoolConnectPostResponse?> GetPostByIdAsync(Guid postId, Guid schoolId, Guid currentUserId);
         Task<SchoolConnectPostResponse> CreatePostAsync(CreateSchoolConnectPostRequest request);
         Task<SchoolConnectPostResponse?> UpdatePostAsync(Guid postId, UpdateSchoolConnectPostRequest request, Guid schoolId, Guid authorId);
@@ -57,10 +57,25 @@ namespace SmsApi.Services
 
         #region Posts
 
-        public async Task<SchoolConnectPostListResponse> GetPostsAsync(Guid schoolId, Guid currentUserId, int page = 1, int pageSize = 10, SchoolConnectPostFilters? filters = null)
+        public async Task<SchoolConnectPostListResponse> GetPostsAsync(Guid schoolId, Guid currentUserId, string viewerRole, int page = 1, int pageSize = 10, SchoolConnectPostFilters? filters = null)
         {
             var query = _context.SchoolConnectPosts
                 .Where(p => p.SchoolId == schoolId && p.IsActive && !p.IsHidden && p.IsPublished);
+
+            // ── Role-based visibility gate ─────────────────────────────────────────
+            // Admins see everything. Other roles only see posts they are entitled to.
+            var role = viewerRole?.ToLower() ?? "";
+            var isAdmin = role == "admin" || role == "super_admin";
+
+            if (!isAdmin)
+            {
+                query = query.Where(p =>
+                    p.Visibility == "public" ||                              // public: all roles
+                    p.AuthorId == currentUserId ||                           // own private posts
+                    (role == "staff"  && (p.Visibility == "staff"  || p.Visibility == "class")) ||
+                    (role == "parent" && p.Visibility == "parent")
+                );
+            }
 
             // Apply filters
             if (filters != null)
@@ -145,7 +160,7 @@ namespace SmsApi.Services
             if (request.Content.Length > 5000)
                 throw new InvalidOperationException("Post content cannot exceed 5000 characters");
 
-            var validVisibilities = new[] { "public", "class", "group", "private" };
+            var validVisibilities = new[] { "public", "class", "group", "staff", "parent", "private" };
             if (!validVisibilities.Contains(request.Visibility))
                 throw new InvalidOperationException("Invalid visibility type");
 

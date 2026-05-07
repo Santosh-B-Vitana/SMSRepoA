@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Edit, Trash2, GraduationCap, Settings, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { boardApi, BoardConfigurationResponse } from "@/services/api/boardApi";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 interface GroupedClass {
   standard: string;
@@ -22,6 +23,7 @@ interface GroupedClass {
 
 export default function ClassManager() {
   const navigate = useNavigate();
+  const { academicYear: globalYear, availableYears } = useAcademicYear();
   const [classes, setClasses] = useState<ClassResponse[]>([]);
   const [groupedClasses, setGroupedClasses] = useState<GroupedClass[]>([]);
   const [boards, setBoards] = useState<BoardConfigurationResponse[]>([]);
@@ -32,9 +34,16 @@ export default function ClassManager() {
   const [formData, setFormData] = useState({
     standard: "",
     section: "",
-    academicYear: "2025-2026",
+    academicYear: globalYear || "2025-2026",
     boardConfigurationId: ""
   });
+
+  // Keep form default in sync with global year when it changes
+  useEffect(() => {
+    if (globalYear && !editingClass) {
+      setFormData(prev => ({ ...prev, academicYear: globalYear }));
+    }
+  }, [globalYear, editingClass]);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -47,7 +56,7 @@ export default function ClassManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [globalYear]); // re-fetch when year changes — X-Academic-Year header is set automatically
 
   const fetchBoards = useCallback(async () => {
     try {
@@ -120,7 +129,7 @@ export default function ClassManager() {
       }
       setDialogOpen(false);
       setEditingClass(null);
-      setFormData({ standard: "", section: "", academicYear: "2025-2026", boardConfigurationId: "__school_default__" });
+      setFormData({ standard: "", section: "", academicYear: globalYear || "2025-2026", boardConfigurationId: "__school_default__" });
       await fetchClasses();
     } catch (error: any) {
       toast.error(error?.message || "Failed to save class");
@@ -167,7 +176,7 @@ export default function ClassManager() {
             <Button
               onClick={() => {
                 setEditingClass(null);
-                setFormData({ standard: "", section: "", academicYear: "2025-2026", boardConfigurationId: "" });
+                setFormData({ standard: "", section: "", academicYear: globalYear || "2025-2026", boardConfigurationId: "" });
               }}
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -208,9 +217,19 @@ export default function ClassManager() {
                     <SelectValue placeholder="Select academic year" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2024-2025">2024-2025</SelectItem>
-                    <SelectItem value="2025-2026">2025-2026</SelectItem>
-                    <SelectItem value="2026-2027">2026-2027</SelectItem>
+                    {availableYears.length > 0
+                      ? availableYears.map(y => (
+                          <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>
+                        ))
+                      : (
+                          // Fallback if context hasn't loaded yet
+                          <>
+                            <SelectItem value="2024-2025">2024-2025</SelectItem>
+                            <SelectItem value="2025-2026">2025-2026</SelectItem>
+                            <SelectItem value="2026-2027">2026-2027</SelectItem>
+                          </>
+                        )
+                    }
                   </SelectContent>
                 </Select>
               </div>

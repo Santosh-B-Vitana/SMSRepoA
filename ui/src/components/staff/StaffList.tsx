@@ -150,6 +150,8 @@ export function StaffList({ staff, refreshStaff }: { staff: Staff[]; refreshStaf
                           <StaffLeaveDialog
                             staffId={member.id}
                             staffName={member.name}
+                            staffEmail={member.email}
+                            staffDesignation={member.designation}
                             adminView={isAdmin}
                           />
                         </div>

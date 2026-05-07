@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Users, UserPlus, GraduationCap, ArrowUpCircle } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -17,6 +18,7 @@ import { ModernCard } from "@/components/common/ModernCard";
 export function StudentsManager() {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const { academicYear } = useAcademicYear();
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export function StudentsManager() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, academicYear]); // academicYear in deps so we re-fetch when year changes
 
   useEffect(() => {
     fetchStudents();

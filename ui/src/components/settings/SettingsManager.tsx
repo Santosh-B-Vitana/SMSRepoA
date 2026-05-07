@@ -4,7 +4,6 @@ import { useLocation } from "react-router-dom";
 import {
   Settings,
   User,
-  Bell,
   Shield,
   Palette,
   Building,
@@ -260,7 +259,8 @@ function ProfileTab({ userId }: { userId: string }) {
 
 // ─── School Tab ───────────────────────────────────────────────────────────────
 
-function SchoolTab({ schoolId }: { schoolId: string }) {
+function SchoolTab({ schoolId, role }: { schoolId: string; role: string }) {
+  const isSuperAdmin = role === "super_admin";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -275,15 +275,23 @@ function SchoolTab({ schoolId }: { schoolId: string }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await settingsApi.getSchoolSettings(schoolId, "school_profile");
-      const s = res.settings ?? [];
-      setName(getSetting(s, "school_name", ""));
+      // Step 1: load canonical School entity data (name, address, phone, email, logo)
+      const [info, kvRes] = await Promise.all([
+        settingsApi.getSchoolInfo(),
+        settingsApi.getSchoolSettings(schoolId, "school_profile"),
+      ]);
+      const s = kvRes.settings ?? [];
+
+      // School entity is the authoritative source for identity + contact fields
+      setName(info.name ?? "");
+      setAddress(info.address ?? "");
+      setPhone(info.phone ?? "");
+      setEmail(info.email ?? "");
+      setLogoUrl(info.logoUrl ?? "");
+
+      // KV settings hold additional fields not on the entity
       setTagline(getSetting(s, "school_tagline", ""));
-      setAddress(getSetting(s, "school_address", ""));
-      setPhone(getSetting(s, "school_phone", ""));
-      setEmail(getSetting(s, "school_email", ""));
       setWebsite(getSetting(s, "school_website", ""));
-      setLogoUrl(getSetting(s, "school_logo_url", ""));
       setEstablishedYear(getSetting(s, "school_established_year", ""));
       setSchoolType(getSetting(s, "school_type", "private"));
     } catch {
@@ -299,20 +307,28 @@ function SchoolTab({ schoolId }: { schoolId: string }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await settingsApi.bulkUpdate({
-        schoolSettings: [
-          buildSchoolSetting("school_name", name, "school_profile"),
-          buildSchoolSetting("school_tagline", tagline, "school_profile"),
-          buildSchoolSetting("school_address", address, "school_profile"),
-          buildSchoolSetting("school_phone", phone, "school_profile"),
-          buildSchoolSetting("school_email", email, "school_profile"),
-          buildSchoolSetting("school_website", website, "school_profile"),
-          buildSchoolSetting("school_logo_url", logoUrl, "school_profile"),
-          buildSchoolSetting("school_established_year", establishedYear, "school_profile"),
-          buildSchoolSetting("school_type", schoolType, "school_profile"),
-        ],
+      // Update School entity contact fields (phone, email, address) + website/tagline KV
+      await settingsApi.updateSchoolContact(schoolId, {
+        phone,
+        email,
+        address,
+        website,
+        tagline: isSuperAdmin ? tagline : undefined,
       });
-      toast.success("School profile saved");
+
+      // Super admin also updates identity KV fields
+      if (isSuperAdmin) {
+        await settingsApi.bulkUpdate({
+          schoolSettings: [
+            buildSchoolSetting("school_name", name, "school_profile"),
+            buildSchoolSetting("school_logo_url", logoUrl, "school_profile"),
+            buildSchoolSetting("school_established_year", establishedYear, "school_profile"),
+            buildSchoolSetting("school_type", schoolType, "school_profile"),
+          ],
+        });
+      }
+
+      toast.success("School settings saved");
     } catch {
       toast.error("Failed to save school settings");
     } finally {
@@ -337,69 +353,100 @@ function SchoolTab({ schoolId }: { schoolId: string }) {
             School Profile
           </CardTitle>
           <CardDescription>
-            Basic information about your school shown across the system
+            {isSuperAdmin
+              ? "Full school profile — only super administrators can change identity fields."
+              : "Contact and operational details. School name and type can only be changed by a super administrator."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {logoUrl && (
-            <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/30">
-              <img
-                src={logoUrl}
-                alt="School logo"
-                className="h-12 w-12 rounded object-contain"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-              <p className="text-sm text-muted-foreground">Current logo preview</p>
+          {/* Identity section */}
+          {isSuperAdmin ? (
+            <>
+              {logoUrl && (
+                <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/30">
+                  <img
+                    src={logoUrl}
+                    alt="School logo"
+                    className="h-12 w-12 rounded object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                  <p className="text-sm text-muted-foreground">Current logo preview</p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="logoUrl">School Logo URL</Label>
+                <Input
+                  id="logoUrl"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://cdn.example.com/logo.png"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="schoolName">School Name *</Label>
+                  <Input
+                    id="schoolName"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Greenwood Academy"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="schoolType">School Type</Label>
+                  <Select value={schoolType} onValueChange={setSchoolType}>
+                    <SelectTrigger id="schoolType">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">Public</SelectItem>
+                      <SelectItem value="private">Private</SelectItem>
+                      <SelectItem value="charter">Charter</SelectItem>
+                      <SelectItem value="international">International</SelectItem>
+                      <SelectItem value="religious">Religious / Faith-Based</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="tagline">Tagline / Motto</Label>
+                  <Input
+                    id="tagline"
+                    value={tagline}
+                    onChange={(e) => setTagline(e.target.value)}
+                    placeholder="Empowering minds, shaping futures"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="establishedYear">Established Year</Label>
+                  <Input
+                    id="establishedYear"
+                    value={establishedYear}
+                    onChange={(e) => setEstablishedYear(e.target.value)}
+                    placeholder="1985"
+                    maxLength={4}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">School Identity</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                <div><span className="text-muted-foreground">Name: </span><span className="font-medium">{name || "—"}</span></div>
+                <div><span className="text-muted-foreground">Type: </span><span className="font-medium capitalize">{schoolType || "—"}</span></div>
+                {tagline && <div className="col-span-2"><span className="text-muted-foreground">Tagline: </span><span className="font-medium">{tagline}</span></div>}
+              </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1 pt-1">
+                <Shield className="w-3 h-3" /> Contact your super administrator to change these fields.
+              </p>
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="logoUrl">School Logo URL</Label>
-            <Input
-              id="logoUrl"
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              placeholder="https://cdn.example.com/logo.png"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="schoolName">School Name *</Label>
-              <Input
-                id="schoolName"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Greenwood Academy"
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="schoolType">School Type</Label>
-              <Select value={schoolType} onValueChange={setSchoolType}>
-                <SelectTrigger id="schoolType">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="public">Public</SelectItem>
-                  <SelectItem value="private">Private</SelectItem>
-                  <SelectItem value="charter">Charter</SelectItem>
-                  <SelectItem value="international">International</SelectItem>
-                  <SelectItem value="religious">Religious / Faith-Based</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="tagline">Tagline / Motto</Label>
-            <Input
-              id="tagline"
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-              placeholder="Empowering minds, shaping futures"
-            />
-          </div>
+          <Separator />
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact &amp; Operations</p>
 
           <div className="space-y-1.5">
             <Label htmlFor="schoolAddress">Address</Label>
@@ -434,224 +481,15 @@ function SchoolTab({ schoolId }: { schoolId: string }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="schoolWebsite">Website</Label>
-              <Input
-                id="schoolWebsite"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                placeholder="https://www.school.edu"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="establishedYear">Established Year</Label>
-              <Input
-                id="establishedYear"
-                value={establishedYear}
-                onChange={(e) => setEstablishedYear(e.target.value)}
-                placeholder="1985"
-                maxLength={4}
-              />
-            </div>
-          </div>
-
-          <SaveButton saving={saving} />
-        </CardContent>
-      </Card>
-    </form>
-  );
-}
-
-// ─── Notifications Tab ────────────────────────────────────────────────────────
-
-interface NotifState {
-  attendance_email: boolean;
-  attendance_sms: boolean;
-  attendance_push: boolean;
-  fees_email: boolean;
-  fees_sms: boolean;
-  fees_push: boolean;
-  results_email: boolean;
-  results_sms: boolean;
-  results_push: boolean;
-  announcements_email: boolean;
-  announcements_push: boolean;
-  assignments_email: boolean;
-  assignments_push: boolean;
-  digest_weekly: boolean;
-}
-
-function NotificationsTab({ userId }: { userId: string }) {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [prefs, setPrefs] = useState<NotifState>({
-    attendance_email: true,
-    attendance_sms: false,
-    attendance_push: true,
-    fees_email: true,
-    fees_sms: true,
-    fees_push: true,
-    results_email: true,
-    results_sms: false,
-    results_push: true,
-    announcements_email: true,
-    announcements_push: true,
-    assignments_email: true,
-    assignments_push: true,
-    digest_weekly: false,
-  });
-
-  const load = useCallback(async () => {
-    try {
-      const res = await settingsApi.getUserSettings(userId);
-      const s = res.userSettings ?? [];
-      const b = (key: string, def: boolean) =>
-        getSetting(s, key, def ? "true" : "false") === "true";
-      setPrefs({
-        attendance_email: b("notif_attendance_email", true),
-        attendance_sms: b("notif_attendance_sms", false),
-        attendance_push: b("notif_attendance_push", true),
-        fees_email: b("notif_fees_email", true),
-        fees_sms: b("notif_fees_sms", true),
-        fees_push: b("notif_fees_push", true),
-        results_email: b("notif_results_email", true),
-        results_sms: b("notif_results_sms", false),
-        results_push: b("notif_results_push", true),
-        announcements_email: b("notif_announcements_email", true),
-        announcements_push: b("notif_announcements_push", true),
-        assignments_email: b("notif_assignments_email", true),
-        assignments_push: b("notif_assignments_push", true),
-        digest_weekly: b("notif_digest_weekly", false),
-      });
-    } catch {
-      // keep defaults
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  function set(key: keyof NotifState, val: boolean) {
-    setPrefs((p) => ({ ...p, [key]: val }));
-  }
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await settingsApi.bulkUpdate({
-        userSettings: (Object.entries(prefs) as [keyof NotifState, boolean][]).map(
-          ([key, val]) =>
-            buildUserSetting(`notif_${key}`, val ? "true" : "false", "notifications", "boolean")
-        ),
-      });
-      toast.success("Notification preferences saved");
-    } catch {
-      toast.error("Failed to save notification preferences");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  const notifGroups = [
-    {
-      label: "Attendance",
-      icon: "📋",
-      rows: [
-        { key: "attendance_email" as const, label: "Email", desc: "Daily attendance report" },
-        { key: "attendance_sms" as const, label: "SMS", desc: "Instant absence alert" },
-        { key: "attendance_push" as const, label: "Push", desc: "In-app notification" },
-      ],
-    },
-    {
-      label: "Fees & Payments",
-      icon: "💳",
-      rows: [
-        { key: "fees_email" as const, label: "Email", desc: "Invoice & due date reminders" },
-        { key: "fees_sms" as const, label: "SMS", desc: "Payment confirmation" },
-        { key: "fees_push" as const, label: "Push", desc: "Overdue alerts" },
-      ],
-    },
-    {
-      label: "Exam Results",
-      icon: "📊",
-      rows: [
-        { key: "results_email" as const, label: "Email", desc: "Result published" },
-        { key: "results_sms" as const, label: "SMS", desc: "Quick score update" },
-        { key: "results_push" as const, label: "Push", desc: "In-app notification" },
-      ],
-    },
-    {
-      label: "Announcements",
-      icon: "📣",
-      rows: [
-        { key: "announcements_email" as const, label: "Email", desc: "School-wide notices" },
-        { key: "announcements_push" as const, label: "Push", desc: "Real-time alerts" },
-      ],
-    },
-    {
-      label: "Assignments",
-      icon: "📝",
-      rows: [
-        { key: "assignments_email" as const, label: "Email", desc: "New assignment & due dates" },
-        { key: "assignments_push" as const, label: "Push", desc: "Deadline reminders" },
-      ],
-    },
-  ];
-
-  return (
-    <form onSubmit={handleSave} className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" />
-            Notification Preferences
-          </CardTitle>
-          <CardDescription>
-            Choose how and when you want to be notified
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {notifGroups.map((group) => (
-            <div key={group.label}>
-              <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5">
-                <span>{group.icon}</span>
-                {group.label}
-              </h3>
-              <div className="rounded-lg border divide-y">
-                {group.rows.map((row) => (
-                  <SettingRow key={row.key} title={row.label} description={row.desc}>
-                    <Switch
-                      checked={prefs[row.key]}
-                      onCheckedChange={(v) => set(row.key, v)}
-                    />
-                  </SettingRow>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <Separator />
-
-          <SettingRow
-            title="Weekly Digest"
-            description="Receive a weekly summary email every Monday morning"
-          >
-            <Switch
-              checked={prefs.digest_weekly}
-              onCheckedChange={(v) => set("digest_weekly", v)}
+          <div className="space-y-1.5">
+            <Label htmlFor="schoolWebsite">Website</Label>
+            <Input
+              id="schoolWebsite"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://www.school.edu"
             />
-          </SettingRow>
+          </div>
 
           <SaveButton saving={saving} />
         </CardContent>
@@ -1361,14 +1199,10 @@ export function SettingsManager() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className={`grid w-full h-auto ${adminTabs ? "grid-cols-3 md:grid-cols-6" : "grid-cols-2 md:grid-cols-4"}`}>
+        <TabsList className={`grid w-full h-auto ${adminTabs ? "grid-cols-3 md:grid-cols-5" : "grid-cols-3"}`}>
           <TabsTrigger value="profile" className="flex items-center gap-1.5 py-2.5">
             <User className="w-4 h-4" />
             <span className="hidden sm:inline">Profile</span>
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-1.5 py-2.5">
-            <Bell className="w-4 h-4" />
-            <span className="hidden sm:inline">Notifications</span>
           </TabsTrigger>
           <TabsTrigger value="security" className="flex items-center gap-1.5 py-2.5">
             <Shield className="w-4 h-4" />
@@ -1396,10 +1230,6 @@ export function SettingsManager() {
           <ProfileTab userId={userId} />
         </TabsContent>
 
-        <TabsContent value="notifications">
-          <NotificationsTab userId={userId} />
-        </TabsContent>
-
         <TabsContent value="security">
           <SecurityTab />
         </TabsContent>
@@ -1410,7 +1240,7 @@ export function SettingsManager() {
 
         {adminTabs && (
           <TabsContent value="school">
-            <SchoolTab schoolId={schoolId} />
+            <SchoolTab schoolId={schoolId} role={user.role ?? "admin"} />
           </TabsContent>
         )}
 

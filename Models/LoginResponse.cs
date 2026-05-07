@@ -16,6 +16,10 @@ public class UserInfo
     public string LastName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public Guid SchoolId { get; set; }
+    /// <summary>
+    /// When true, the client must redirect the user to the change-password screen before continuing.
+    /// </summary>
+    public bool RequirePasswordChange { get; set; } = false;
 }
 
 public class RefreshTokenRequest

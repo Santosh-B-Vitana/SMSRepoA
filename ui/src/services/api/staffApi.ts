@@ -81,6 +81,8 @@ export interface Staff extends StaffBasic {
   documents?: StaffDocumentDto[];
   createdAt: string;
   updatedAt: string;
+  /** UserLogin.Id — used for leave management APIs */
+  userLoginId?: string;
 }
 
 export interface StaffListResponse {

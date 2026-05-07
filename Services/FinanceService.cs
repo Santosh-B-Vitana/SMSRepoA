@@ -739,12 +739,12 @@ namespace SmsApi.Services
         {
             try
             {
-                // Get asset accounts (cash on hand)
+                // Get asset accounts balance (cash on hand from Finance accounts)
                 var cashAccounts = await _context.FinanceAccounts
                     .Where(a => a.SchoolId == schoolId && a.Type == "ASSET" && a.IsActive)
                     .SumAsync(a => a.Balance);
 
-                // Get transactions with filters
+                // Get Finance module transactions with filters
                 var query = _context.FinanceTransactions.Where(t => t.SchoolId == schoolId);
 
                 if (filters.DateFrom.HasValue)
@@ -755,23 +755,69 @@ namespace SmsApi.Services
 
                 var transactions = await query.ToListAsync();
 
-                var totalIncome = transactions.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
+                var financeIncome = transactions.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
                 var totalExpenses = transactions.Where(t => t.Type == "DEBIT").Sum(t => t.Amount);
 
                 var today = DateTime.UtcNow.Date;
-                var todayIncome = transactions.Where(t => t.Type == "CREDIT" && t.Date.Date == today).Sum(t => t.Amount);
+                var finTodayIncome = transactions.Where(t => t.Type == "CREDIT" && t.Date.Date == today).Sum(t => t.Amount);
                 var todayExpenses = transactions.Where(t => t.Type == "DEBIT" && t.Date.Date == today).Sum(t => t.Amount);
+
+                // ── Cross-module: bridge fee payments from PaymentTransactions ──────────
+                var feePayQuery = _context.PaymentTransactions
+                    .Where(pt => pt.SchoolId == schoolId && pt.Status == "success");
+
+                if (filters.DateFrom.HasValue)
+                    feePayQuery = feePayQuery.Where(pt => pt.Date >= filters.DateFrom.Value);
+                if (filters.DateTo.HasValue)
+                    feePayQuery = feePayQuery.Where(pt => pt.Date <= filters.DateTo.Value);
+
+                var collectedFees = await feePayQuery.SumAsync(pt => pt.Amount);
+                var feeTodayIncome = await feePayQuery
+                    .Where(pt => pt.Date.Date == today)
+                    .SumAsync(pt => pt.Amount);
+
+                // Pending + overdue fees from FeeRecords
+                var pendingFees = await _context.FeeRecords
+                    .Where(fr => fr.SchoolId == schoolId
+                        && (fr.Status == "pending" || fr.Status == "partial" || fr.Status == "overdue"))
+                    .SumAsync(fr => fr.PendingAmount);
+
+                var overdueFees = await _context.FeeRecords
+                    .Where(fr => fr.SchoolId == schoolId && fr.Status == "overdue")
+                    .SumAsync(fr => fr.PendingAmount);
+
+                var totalFeesBilled = await _context.FeeRecords
+                    .Where(fr => fr.SchoolId == schoolId)
+                    .SumAsync(fr => fr.TotalAmount);
+
+                // Fee payments grouped by payment method
+                var feesByMethod = await _context.PaymentTransactions
+                    .Where(pt => pt.SchoolId == schoolId && pt.Status == "success")
+                    .GroupBy(pt => pt.Method)
+                    .Select(g => new { Method = g.Key, Total = g.Sum(pt => pt.Amount) })
+                    .ToDictionaryAsync(x => x.Method, x => x.Total);
+
+                // ── Combined totals ───────────────────────────────────────────────────
+                var totalIncome = financeIncome + collectedFees;
+                var todayIncome = finTodayIncome + feeTodayIncome;
 
                 var pendingPettyCash = await _context.PettyCashEntries
                     .CountAsync(pc => pc.SchoolId == schoolId && pc.Status == "PENDING");
 
-                // Group by category
+                // Group by category (Finance module)
                 var incomeByCategory = await (from t in _context.FinanceTransactions
                                              join c in _context.FinanceCategories on t.CategoryId equals c.Id
                                              where t.SchoolId == schoolId && t.Type == "CREDIT" && c.Type == "INCOME"
                                              group t by c.Name into g
                                              select new { Category = g.Key, Amount = g.Sum(t => t.Amount) })
                                              .ToDictionaryAsync(x => x.Category, x => x.Amount);
+
+                // Always include fee collections in IncomeByCategory from PaymentTransactions
+                if (collectedFees > 0)
+                {
+                    incomeByCategory.Remove("fee Collections");
+                    incomeByCategory["Fee Collections"] = collectedFees;
+                }
 
                 var expenseByCategory = await (from t in _context.FinanceTransactions
                                               join c in _context.FinanceCategories on t.CategoryId equals c.Id
@@ -780,17 +826,32 @@ namespace SmsApi.Services
                                               select new { Category = g.Key, Amount = g.Sum(t => t.Amount) })
                                               .ToDictionaryAsync(x => x.Category, x => x.Amount);
 
+                var feeCollectionRate = totalFeesBilled > 0
+                    ? Math.Round((collectedFees / totalFeesBilled) * 100, 1)
+                    : 0m;
+
+                // CashOnHand: Finance ASSET accounts + cash fee payments
+                var cashFeePayments = await _context.PaymentTransactions
+                    .Where(pt => pt.SchoolId == schoolId && pt.Status == "success" && pt.Method == "cash")
+                    .SumAsync(pt => pt.Amount);
+
                 return new FinanceStatsDto
                 {
-                    CashOnHand = cashAccounts,
+                    CashOnHand = cashAccounts + cashFeePayments,
                     TotalIncome = totalIncome,
                     TotalExpenses = totalExpenses,
                     NetIncome = totalIncome - totalExpenses,
                     TodayIncome = todayIncome,
                     TodayExpenses = todayExpenses,
                     PendingPettyCash = pendingPettyCash,
+                    CollectedFees = collectedFees,
+                    PendingFees = pendingFees,
+                    TotalFeesBilled = totalFeesBilled,
+                    OverdueFees = overdueFees,
+                    FeeCollectionRate = feeCollectionRate,
                     IncomeByCategory = incomeByCategory,
-                    ExpenseByCategory = expenseByCategory
+                    ExpenseByCategory = expenseByCategory,
+                    FeesByPaymentMethod = feesByMethod
                 };
             }
             catch (Exception ex)
@@ -810,7 +871,7 @@ namespace SmsApi.Services
                     .Where(t => t.SchoolId == schoolId && t.Date >= dateFrom && t.Date <= dateTo)
                     .ToListAsync();
 
-                var totalIncome = transactions.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
+                var financeIncome = transactions.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
                 var totalExpenses = transactions.Where(t => t.Type == "DEBIT").Sum(t => t.Amount);
                 var storeSalesTotal = transactions.Where(t => t.Source == "STORE").Sum(t => t.Amount);
                 var pettyCashTotal = await _context.PettyCashEntries
@@ -818,14 +879,38 @@ namespace SmsApi.Services
                         && pc.Date >= dateFrom && pc.Date <= dateTo)
                     .SumAsync(pc => pc.Amount);
 
-                // Monthly trend
-                var monthlyTrend = transactions
+                // ── Cross-module: fee collections from PaymentTransactions ─────────────
+                var feePayments = await _context.PaymentTransactions
+                    .Where(pt => pt.SchoolId == schoolId && pt.Status == "success"
+                        && pt.Date >= dateFrom && pt.Date <= dateTo)
+                    .ToListAsync();
+
+                var feeCollections = feePayments.Sum(pt => pt.Amount);
+                var totalIncome = financeIncome + feeCollections;
+
+                // Monthly trend: merge Finance transactions + fee payments by month
+                var financeMonths = transactions
                     .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                    .Select(g => new
+                    {
+                        g.Key.Year, g.Key.Month,
+                        Inc = g.Where(t => t.Type == "CREDIT").Sum(t => t.Amount),
+                        Exp = g.Where(t => t.Type == "DEBIT").Sum(t => t.Amount)
+                    });
+
+                var feeMonths = feePayments
+                    .GroupBy(pt => new { pt.Date.Year, pt.Date.Month })
+                    .Select(g => new { g.Key.Year, g.Key.Month, FeeInc = g.Sum(pt => pt.Amount) });
+
+                var allMonths = financeMonths
+                    .Select(f => new { f.Year, f.Month, f.Inc, f.Exp })
+                    .Concat(feeMonths.Select(f => new { f.Year, f.Month, Inc = f.FeeInc, Exp = 0m }))
+                    .GroupBy(x => new { x.Year, x.Month })
                     .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
                     .Select(g =>
                     {
-                        var inc = g.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
-                        var exp = g.Where(t => t.Type == "DEBIT").Sum(t => t.Amount);
+                        var inc = g.Sum(x => x.Inc);
+                        var exp = g.Sum(x => x.Exp);
                         return new MonthlyTrendDto
                         {
                             Month = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMM yyyy"),
@@ -870,7 +955,8 @@ namespace SmsApi.Services
                     NetSurplus = totalIncome - totalExpenses,
                     StoreSalesTotal = storeSalesTotal,
                     PettyCashTotal = pettyCashTotal,
-                    MonthlyTrend = monthlyTrend,
+                    FeeCollections = feeCollections,
+                    MonthlyTrend = allMonths,
                     BudgetSummary = budgetSummary
                 };
             }
@@ -880,7 +966,6 @@ namespace SmsApi.Services
                 throw;
             }
         }
-
         public async Task<FinanceCategoryDto> UpdateCategoryAsync(Guid schoolId, Guid categoryId, UpdateFinanceCategoryDto dto)
         {
             try
@@ -930,38 +1015,37 @@ namespace SmsApi.Services
 
                 var sources = new List<IncomeSourceDto>();
 
-                // 1. FEE COLLECTIONS (via PaymentTransaction records)
+                // 1. FEE COLLECTIONS (direct from PaymentTransactions — the authoritative source)
                 try
                 {
-                    var feeThisMonth = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
-                          WHERE ft.SchoolId = {0} AND ft.Source = 'FEE' AND ft.Type = 'CREDIT' 
-                          AND ft.Date >= {1} AND ft.Date < {2}",
-                        schoolId, thisMonthStart, thisMonthStart.AddMonths(1)
-                    ).FirstOrDefaultAsync();
+                    var feeThisMonth = await _context.PaymentTransactions
+                        .Where(pt => pt.SchoolId == schoolId && pt.Status == "success"
+                            && pt.Date >= thisMonthStart && pt.Date < thisMonthStart.AddMonths(1))
+                        .SumAsync(pt => pt.Amount);
 
-                    var feeLastMonth = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
-                          WHERE ft.SchoolId = {0} AND ft.Source = 'FEE' AND ft.Type = 'CREDIT' 
-                          AND ft.Date >= {1} AND ft.Date < {2}",
-                        schoolId, lastMonthStart, lastMonthEnd.AddDays(1)
-                    ).FirstOrDefaultAsync();
+                    var feeLastMonth = await _context.PaymentTransactions
+                        .Where(pt => pt.SchoolId == schoolId && pt.Status == "success"
+                            && pt.Date >= lastMonthStart && pt.Date < lastMonthEnd.AddDays(1))
+                        .SumAsync(pt => pt.Amount);
 
-                    var feeYTD = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
-                          WHERE ft.SchoolId = {0} AND ft.Source = 'FEE' AND ft.Type = 'CREDIT' 
-                          AND ft.Date >= {1}",
-                        schoolId, yearStart
-                    ).FirstOrDefaultAsync();
+                    var feeYTD = await _context.PaymentTransactions
+                        .Where(pt => pt.SchoolId == schoolId && pt.Status == "success"
+                            && pt.Date >= yearStart)
+                        .SumAsync(pt => pt.Amount);
 
-                    var feeCount = await _context.FinanceTransactions
-                        .Where(t => t.SchoolId == schoolId && t.Source == "FEE" && t.Type == "CREDIT")
+                    var feePending = await _context.FeeRecords
+                        .Where(fr => fr.SchoolId == schoolId
+                            && (fr.Status == "pending" || fr.Status == "partial" || fr.Status == "overdue"))
+                        .SumAsync(fr => fr.PendingAmount);
+
+                    var feeCount = await _context.PaymentTransactions
+                        .Where(pt => pt.SchoolId == schoolId && pt.Status == "success")
                         .CountAsync();
 
-                    var lastFeeDate = await _context.FinanceTransactions
-                        .Where(t => t.SchoolId == schoolId && t.Source == "FEE" && t.Type == "CREDIT")
-                        .OrderByDescending(t => t.Date)
-                        .Select(t => t.Date)
+                    var lastFeeDate = await _context.PaymentTransactions
+                        .Where(pt => pt.SchoolId == schoolId && pt.Status == "success")
+                        .OrderByDescending(pt => pt.Date)
+                        .Select(pt => pt.Date)
                         .FirstOrDefaultAsync();
 
                     sources.Add(new IncomeSourceDto
@@ -971,7 +1055,7 @@ namespace SmsApi.Services
                         ThisMonth = feeThisMonth,
                         LastMonth = feeLastMonth,
                         YearToDate = feeYTD,
-                        Pending = 0, // TODO: Query from FeeRecord for due amounts
+                        Pending = feePending,
                         TransactionCount = feeCount,
                         LastTransactionDate = lastFeeDate == default ? null : lastFeeDate
                     });

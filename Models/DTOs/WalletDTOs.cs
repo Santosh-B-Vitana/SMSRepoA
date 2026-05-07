@@ -208,8 +208,15 @@ namespace SmsApi.Models.DTOs
         public decimal TodayIncome { get; set; }
         public decimal TodayExpenses { get; set; }
         public int PendingPettyCash { get; set; }
+        // Cross-module fee data (from Fees module PaymentTransactions)
+        public decimal CollectedFees { get; set; }
+        public decimal PendingFees { get; set; }
+        public decimal TotalFeesBilled { get; set; }
+        public decimal OverdueFees { get; set; }
+        public decimal FeeCollectionRate { get; set; }  // 0-100 percentage
         public Dictionary<string, decimal> IncomeByCategory { get; set; } = new();
         public Dictionary<string, decimal> ExpenseByCategory { get; set; } = new();
+        public Dictionary<string, decimal> FeesByPaymentMethod { get; set; } = new();
     }
 
     public class FinanceFiltersDto
@@ -250,6 +257,8 @@ namespace SmsApi.Models.DTOs
         public decimal NetSurplus { get; set; }
         public decimal StoreSalesTotal { get; set; }
         public decimal PettyCashTotal { get; set; }
+        // Cross-module fee data
+        public decimal FeeCollections { get; set; }
         public List<MonthlyTrendDto> MonthlyTrend { get; set; } = new();
         public List<BudgetSummaryDto> BudgetSummary { get; set; } = new();
     }

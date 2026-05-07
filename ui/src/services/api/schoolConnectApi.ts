@@ -140,6 +140,9 @@ export const schoolConnectApi = {
   getPosts: (params?: PostFilters) =>
     apiClient.get<PostListResponse>(`${BASE}/posts`, { params }).then(r => r.data),
 
+  getMyPosts: (params?: { page?: number; pageSize?: number; searchTerm?: string }) =>
+    apiClient.get<PostListResponse>(`${BASE}/posts/mine`, { params }).then(r => r.data),
+
   getPost: (id: string) =>
     apiClient.get<PostResponse>(`${BASE}/posts/${id}`).then(r => r.data),
 

@@ -41,7 +41,9 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var result = await _timetableService.GetTimetablesAsync(schoolId, classId, page, pageSize);
+                var headerYear = HttpContext.Items["AcademicYearHeaderValue"] as string;
+                var effectiveYear = !string.IsNullOrWhiteSpace(academicYear) ? academicYear : headerYear;
+                var result = await _timetableService.GetTimetablesAsync(schoolId, classId, page, pageSize, effectiveYear);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException)
@@ -336,6 +338,40 @@ namespace SmsApi.Controllers
             catch (Exception)
             {
                 return StatusCode(500, new { message = "An error occurred while deleting the period." });
+            }
+        }
+
+        // Teacher Schedule Endpoint
+        /// <summary>
+        /// Get timetable/schedule for a specific teacher. Accessible by all staff roles.
+        /// Staff can only view their own schedule; Admin/Principal can view any teacher's schedule.
+        /// </summary>
+        [HttpGet("teacher/{teacherId}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<TeacherScheduleResponse>> GetTeacherSchedule(Guid teacherId)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var schedule = await _timetableService.GetTeacherScheduleAsync(teacherId, schoolId);
+                if (schedule == null)
+                {
+                    return NotFound(new { message = "Teacher not found" });
+                }
+                return Ok(schedule);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, new { message = "An error occurred while fetching teacher schedule." });
             }
         }
     }

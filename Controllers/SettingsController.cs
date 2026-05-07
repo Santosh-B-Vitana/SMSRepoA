@@ -276,6 +276,62 @@ namespace SmsApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Update the school's contact/operational fields (phone, email, address, website).
+        /// Accessible to both Admin and SuperAdmin.
+        /// Identity fields (name, type, logo) are managed via the SuperAdmin panel.
+        /// </summary>
+        [HttpPatch("school/{schoolId}/contact")]
+        [Authorize(Roles = "SuperAdmin,Admin")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(typeof(object), 400)]
+        [ProducesResponseType(typeof(object), 403)]
+        [ProducesResponseType(typeof(object), 404)]
+        public async Task<ActionResult> UpdateSchoolContact(Guid schoolId, [FromBody] UpdateSchoolContactRequest request)
+        {
+            try
+            {
+                if (!_tenant.CanAccessSchool(schoolId))
+                    return Forbid();
+
+                var school = await _db.Schools
+                    .Where(s => s.Id == schoolId && !s.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                if (school == null)
+                    return NotFound(new { message = "School not found" });
+
+                // Only update fields that were explicitly provided (null = skip)
+                if (request.Phone != null) school.Phone = request.Phone.Trim();
+                if (request.Email != null) school.Email = request.Email.Trim();
+                if (request.Address != null) school.Address = request.Address.Trim();
+
+                await _db.SaveChangesAsync();
+
+                // Also mirror website and tagline (KV-only fields) via bulk settings
+                var kvSettings = new List<SchoolSettingRequest>();
+                if (request.Website != null)
+                    kvSettings.Add(new SchoolSettingRequest { SchoolId = schoolId, SettingKey = "school_website", SettingValue = request.Website, Category = "school_profile", DataType = "string" });
+                if (request.Tagline != null)
+                    kvSettings.Add(new SchoolSettingRequest { SchoolId = schoolId, SettingKey = "school_tagline", SettingValue = request.Tagline, Category = "school_profile", DataType = "string" });
+
+                foreach (var kv in kvSettings)
+                    await _settingsService.SetSchoolSettingAsync(kv);
+
+                return Ok(new {
+                    phone   = school.Phone,
+                    email   = school.Email,
+                    address = school.Address,
+                    website = request.Website,
+                    tagline = request.Tagline,
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
         [HttpPost("bulk")]
         [Authorize]
         [ProducesResponseType(typeof(BulkSettingsRequest), 200)]

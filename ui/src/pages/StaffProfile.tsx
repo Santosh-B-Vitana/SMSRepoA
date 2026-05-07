@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
+import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Extended type that merges real API Staff with legacy mockApi fields still rendered in the template
 type Staff = RealStaff & {
@@ -54,6 +56,8 @@ import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function StaffProfile() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   // Late dialog state
   const [lateDialog, setLateDialog] = useState<{ open: boolean; index?: number }>({ open: false });
   const [lateReason, setLateReason] = useState("");
@@ -726,13 +730,14 @@ export default function StaffProfile() {
       {/* Tabs for detailed information */}
       <Tabs defaultValue="classes" className="space-y-4">
         <div className="tabs-list-container overflow-x-auto">
-            <TabsList className="tabs-list grid w-full grid-cols-3 lg:grid-cols-6 min-w-[600px] md:min-w-[720px]">
+            <TabsList className="tabs-list grid w-full min-w-[700px] md:min-w-[840px]" style={{ gridTemplateColumns: isAdmin ? 'repeat(7, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))' }}>
             <TabsTrigger value="classes" className="tabs-trigger">{t('staffProfilePage.classes')}</TabsTrigger>
             <TabsTrigger value="attendance" className="tabs-trigger">{t('staffProfilePage.attendance')}</TabsTrigger>
             <TabsTrigger value="payroll" className="tabs-trigger">{t('staffProfilePage.payroll')}</TabsTrigger>
             <TabsTrigger value="leaves" className="tabs-trigger">Leaves</TabsTrigger>
             <TabsTrigger value="documents" className="tabs-trigger">{t('staffProfilePage.documents')}</TabsTrigger>
             <TabsTrigger value="certificates" className="tabs-trigger">{t('staffProfilePage.certificates')}</TabsTrigger>
+            {isAdmin && <TabsTrigger value="portal" className="tabs-trigger">Portal</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -1005,10 +1010,16 @@ export default function StaffProfile() {
         </TabsContent>
 
         <TabsContent value="leaves">
-          <StaffLeaveSection staffId={staff?.id || ""} staffName={staff?.name || ""} />
+          <StaffLeaveSection staffId={staff?.id || ""} staffName={staff?.name || ""} userLoginId={staff?.userLoginId} canApprove={true} />
         </TabsContent>
 
-        
+        {isAdmin && (
+          <TabsContent value="portal">
+            <div className="space-y-4">
+              {staff?.id && <StaffPortalAccountSection staffId={staff.id} />}
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Edit Attendance Dialog */}

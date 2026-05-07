@@ -60,8 +60,9 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                // Year resolver integrated: accepts X-Academic-Year header + query params for future use
-                var structures = await _feeService.GetFeeStructuresAsync(schoolId, classFilter);
+                var headerYear = HttpContext.Items["AcademicYearHeaderValue"] as string;
+                var effectiveYear = !string.IsNullOrWhiteSpace(academicYear) ? academicYear : headerYear;
+                var structures = await _feeService.GetFeeStructuresAsync(schoolId, classFilter, effectiveYear);
                 return Ok(structures);
             }
             catch (UnauthorizedAccessException ex)

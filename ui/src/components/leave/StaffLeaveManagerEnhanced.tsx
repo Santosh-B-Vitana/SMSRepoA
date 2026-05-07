@@ -10,9 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import {
   Calendar, Clock, CheckCircle, XCircle, FileText, Plus, Loader2,
   ChevronDown, ChevronUp, AlertCircle, CalendarDays, TrendingDown,
-  ArrowRight, Info, BarChart3, AlertTriangle
+  ArrowRight, Info, BarChart3, AlertTriangle, X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import leaveManagementApi, { LeaveRequest, LeaveType } from "../../services/api/leaveManagementApi";
@@ -126,10 +129,10 @@ export function StaffLeaveManagerEnhanced() {
       return;
     }
 
-    if (previewDays > (selectedBalance?.remainingDays ?? 0)) {
+    if (selectedBalance && previewDays > selectedBalance.remainingDays) {
       toast({
         title: "Insufficient Balance",
-        description: `You have only ${selectedBalance?.remainingDays} days available`,
+        description: `You have only ${selectedBalance.remainingDays} day${selectedBalance.remainingDays !== 1 ? "s" : ""} of ${selectedBalance.leaveTypeName} available`,
         variant: "destructive"
       });
       return;
@@ -198,13 +201,138 @@ export function StaffLeaveManagerEnhanced() {
           <h1 className="text-3xl font-bold tracking-tight">Leave Management</h1>
           <p className="text-muted-foreground mt-1">Apply for leave and track your requests</p>
         </div>
-        <Button onClick={() => setShowForm(v => !v)} className="gap-2 w-fit">
-          {showForm ? <ChevronUp className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {showForm ? "Cancel" : "Apply for Leave"}
+        <Button onClick={() => setShowForm(true)} className="gap-2 w-fit">
+          <Plus className="h-4 w-4" />
+          Apply for Leave
         </Button>
       </div>
 
-      {/* Leave Balance Overview */}
+      {/* Apply Leave Dialog */}
+      <Dialog open={showForm} onOpenChange={(open) => {
+        if (!open) {
+          setShowForm(false);
+          setForm({ leaveTypeId: "", startDate: "", endDate: "", reason: "" });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5" />
+              New Leave Request
+            </DialogTitle>
+            <DialogDescription>
+              Fill in the details below to submit your leave request for approval.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 pt-2">
+            {/* Leave Type Pills */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Leave Type *</Label>
+              <div className="flex flex-wrap gap-2">
+                {leaveTypes.map(type => {
+                  const balance = leaveBalances.find(b => b.leaveTypeId === type.id);
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setForm(p => ({ ...p, leaveTypeId: type.id }))}
+                      className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
+                        form.leaveTypeId === type.id
+                          ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                          : "bg-background border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <span>{type.name}</span>
+                      <span className="ml-2 opacity-70 text-xs">
+                        {balance?.remainingDays ?? 0} available
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Date Picker */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="startDate" className="text-sm font-medium">Start Date *</Label>
+                <Input
+                  id="startDate"
+                  type="date"
+                  min={new Date().toISOString().split('T')[0]}
+                  value={form.startDate}
+                  onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="endDate" className="text-sm font-medium">End Date *</Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  min={form.startDate || new Date().toISOString().split('T')[0]}
+                  value={form.endDate}
+                  onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Duration & Balance Check */}
+            {previewDays > 0 && (
+              <Alert className={selectedBalance && previewDays <= selectedBalance.remainingDays ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}>
+                <Info className={selectedBalance && previewDays <= selectedBalance.remainingDays ? "h-4 w-4 text-green-600" : "h-4 w-4 text-red-600"} />
+                <AlertDescription className={selectedBalance && previewDays <= selectedBalance.remainingDays ? "text-green-800" : "text-red-800"}>
+                  {previewDays} day{previewDays !== 1 ? "s" : ""} requested.
+                  {selectedBalance ? (
+                    <>
+                      {" "}Remaining balance: <strong>{selectedBalance.remainingDays}</strong> days.
+                      {previewDays > selectedBalance.remainingDays && " (Insufficient balance)"}
+                    </>
+                  ) : " Select a leave type to check balance"}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Reason */}
+            <div>
+              <Label htmlFor="reason" className="text-sm font-medium">
+                Reason for Leave *
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({form.reason.trim().length}/10 characters minimum)
+                </span>
+              </Label>
+              <Textarea
+                id="reason"
+                placeholder="Provide a detailed reason for your leave request..."
+                value={form.reason}
+                onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
+                className="h-20"
+              />
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex gap-3 pt-2 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowForm(false);
+                  setForm({ leaveTypeId: "", startDate: "", endDate: "", reason: "" });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={submitting || !form.leaveTypeId || previewDays === 0}
+                className="flex-1"
+              >
+                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Submit Request
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {leaveBalances.map(balance => (
           <Card key={balance.leaveTypeId} className="border-l-4 border-l-blue-500">
@@ -273,124 +401,6 @@ export function StaffLeaveManagerEnhanced() {
           </Card>
         ))}
       </div>
-
-      {/* Apply Leave Form */}
-      {showForm && (
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5" />
-              New Leave Request
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Leave Type Pills */}
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold">Leave Type *</Label>
-              <div className="flex flex-wrap gap-2">
-                {leaveTypes.map(type => {
-                  const balance = leaveBalances.find(b => b.leaveTypeId === type.id);
-                  return (
-                    <button
-                      key={type.id}
-                      type="button"
-                      onClick={() => setForm(p => ({ ...p, leaveTypeId: type.id }))}
-                      className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
-                        form.leaveTypeId === type.id
-                          ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                          : "bg-background border-border hover:border-primary/50"
-                      }`}
-                    >
-                      <span>{type.name}</span>
-                      <span className="ml-2 opacity-70 text-xs">
-                        {balance?.remainingDays ?? 0} available
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Date Picker */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="startDate" className="text-sm font-medium">Start Date *</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  min={new Date().toISOString().split('T')[0]}
-                  value={form.startDate}
-                  onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="endDate" className="text-sm font-medium">End Date *</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  min={form.startDate || new Date().toISOString().split('T')[0]}
-                  value={form.endDate}
-                  onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
-                />
-              </div>
-            </div>
-
-            {/* Duration & Balance Check */}
-            {previewDays > 0 && (
-              <Alert className={selectedBalance && previewDays <= selectedBalance.remainingDays ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}>
-                <Info className={selectedBalance && previewDays <= selectedBalance.remainingDays ? "h-4 w-4 text-green-600" : "h-4 w-4 text-red-600"} />
-                <AlertDescription className={selectedBalance && previewDays <= selectedBalance.remainingDays ? "text-green-800" : "text-red-800"}>
-                  {previewDays} day{previewDays !== 1 ? "s" : ""} requested.
-                  {selectedBalance ? (
-                    <>
-                      {" "}Remaining balance: <strong>{selectedBalance.remainingDays}</strong> days.
-                      {previewDays > selectedBalance.remainingDays && " (Insufficient balance)"}
-                    </>
-                  ) : "Select a leave type to check balance"}
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* Reason */}
-            <div>
-              <Label htmlFor="reason" className="text-sm font-medium">
-                Reason for Leave *
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  ({form.reason.trim().length}/10 characters minimum)
-                </span>
-              </Label>
-              <Textarea
-                id="reason"
-                placeholder="Provide a detailed reason for your leave request..."
-                value={form.reason}
-                onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
-                className="h-20"
-              />
-            </div>
-
-            {/* Submit Buttons */}
-            <div className="flex gap-3 pt-4 border-t">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowForm(false);
-                  setForm({ leaveTypeId: "", startDate: "", endDate: "", reason: "" });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={submitting || !form.leaveTypeId || previewDays === 0}
-                className="flex-1"
-              >
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Submit Request
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -15,12 +15,17 @@ namespace SmsApi.Services
         Task<List<LeaveTypeResponse>> GetLeaveTypesAsync(Guid schoolId, string? applicableTo = null);
         Task<LeaveTypeResponse> CreateLeaveTypeAsync(CreateLeaveTypeRequest request);
         Task<LeaveTypeResponse?> UpdateLeaveTypeAsync(Guid id, UpdateLeaveTypeRequest request, Guid schoolId);
-        Task<LeaveRequestListResponse> GetLeaveRequestsAsync(Guid schoolId, int page = 1, int pageSize = 10, Guid? applicantId = null, string? status = null);
+        Task<LeaveRequestListResponse> GetLeaveRequestsAsync(Guid schoolId, int page = 1, int pageSize = 10, Guid? applicantId = null, string? status = null, string? staffEmail = null);
         Task<LeaveRequestResponse?> GetLeaveRequestByIdAsync(Guid id, Guid schoolId);
         Task<LeaveRequestResponse> CreateLeaveRequestAsync(CreateLeaveRequestRequest request);
         Task<LeaveRequestResponse?> ApproveLeaveAsync(Guid id, ApproveLeaveRequest request, Guid schoolId);
         Task<LeaveRequestResponse?> RejectLeaveAsync(Guid id, RejectLeaveRequest request, Guid schoolId);
         Task<List<LeaveBalanceResponse>> GetLeaveBalanceAsync(Guid userId, string userType, Guid schoolId);
+        // Student leave (parent-initiated)
+        Task<StudentLeaveResponse> CreateStudentLeaveAsync(string parentEmail, CreateStudentLeaveRequest request, Guid schoolId);
+        Task<StudentLeaveListResponse> GetStudentLeaveRequestsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, Guid? callerUserId = null, string? callerRole = null);
+        Task<StudentLeaveResponse?> ApproveStudentLeaveAsync(Guid id, ApproveLeaveRequest request, Guid schoolId, Guid? callerUserId = null, string? callerRole = null);
+        Task<StudentLeaveResponse?> RejectStudentLeaveAsync(Guid id, RejectLeaveRequest request, Guid schoolId, Guid? callerUserId = null, string? callerRole = null);
     }
 
     public class LeaveManagementService : ILeaveManagementService
@@ -135,10 +140,21 @@ namespace SmsApi.Services
             return MapToLeaveTypeResponse(leaveType);
         }
 
-        public async Task<LeaveRequestListResponse> GetLeaveRequestsAsync(Guid schoolId, int page = 1, int pageSize = 10, Guid? applicantId = null, string? status = null)
+        public async Task<LeaveRequestListResponse> GetLeaveRequestsAsync(Guid schoolId, int page = 1, int pageSize = 10, Guid? applicantId = null, string? status = null, string? staffEmail = null)
         {
             page = page < 1 ? 1 : page;
             pageSize = pageSize < 1 ? 10 : Math.Min(pageSize, 200);
+
+            // If staffEmail provided, resolve to UserLogin.Id and use as applicantId filter
+            if (!string.IsNullOrWhiteSpace(staffEmail) && !applicantId.HasValue)
+            {
+                var loginId = await _context.UserLogins
+                    .Where(u => u.Email == staffEmail && u.SchoolId == schoolId && !u.IsDeleted)
+                    .Select(u => (Guid?)u.Id)
+                    .FirstOrDefaultAsync();
+                if (loginId.HasValue)
+                    applicantId = loginId;
+            }
 
             var query = _context.LeaveRequests
                 .Include(lr => lr.LeaveType)
@@ -163,15 +179,54 @@ namespace SmsApi.Services
                 .Take(pageSize)
                 .ToListAsync();
 
-            // Load staff names for all applicants
+            // Load applicant names: ApplicantId is UserLogin.Id.
+            // First try UserLogins (which store FirstName/LastName), then fall back to StaffMembers (for legacy records).
             var applicantIds = requests.Select(r => r.ApplicantId).Distinct().ToList();
-            var staffNames = await _context.StaffMembers
+
+            var loginData = await _context.UserLogins
+                .Where(u => applicantIds.Contains(u.Id) && u.SchoolId == schoolId && !u.IsDeleted)
+                .Select(u => new { u.Id, Name = (u.FirstName + " " + u.LastName).Trim(), u.Email })
+                .ToDictionaryAsync(u => u.Id);
+
+            var staffData = await _context.StaffMembers
                 .Where(s => applicantIds.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted)
-                .ToDictionaryAsync(s => s.Id, s => $"{s.FirstName} {s.LastName}".Trim());
+                .Select(s => new { s.Id, Name = (s.FirstName + " " + s.LastName).Trim(), s.Email, s.Designation })
+                .ToDictionaryAsync(s => s.Id);
+
+            // Also try to match UserLogin -> StaffMember by email (for name, designation lookup)
+            var loginEmails = loginData.Values.Where(l => !string.IsNullOrEmpty(l.Email)).Select(l => l.Email!).ToList();
+            var staffByEmail = await _context.StaffMembers
+                .Where(s => loginEmails.Contains(s.Email) && s.SchoolId == schoolId && !s.IsDeleted)
+                .Select(s => new { s.Email, s.Id, Name = (s.FirstName + " " + s.LastName).Trim(), s.Designation })
+                .ToDictionaryAsync(s => s.Email);
+
+            // Merge: UserLogin name takes priority; fall back to StaffMember name
+            var resolvedNames = new Dictionary<Guid, string?>();
+            var resolvedEmails = new Dictionary<Guid, string?>();
+            var resolvedDesignations = new Dictionary<Guid, string?>();
+            foreach (var id in applicantIds)
+            {
+                var login = loginData.GetValueOrDefault(id);
+                var staff = staffData.GetValueOrDefault(id);
+                var staffViaEmail = login != null && !string.IsNullOrEmpty(login.Email)
+                    ? staffByEmail.GetValueOrDefault(login.Email)
+                    : null;
+
+                resolvedNames[id] = !string.IsNullOrWhiteSpace(login?.Name) ? login!.Name
+                    : !string.IsNullOrWhiteSpace(staffViaEmail?.Name) ? staffViaEmail!.Name
+                    : !string.IsNullOrWhiteSpace(staff?.Name) ? staff!.Name
+                    : null;
+
+                resolvedEmails[id] = login?.Email ?? staff?.Email;
+                resolvedDesignations[id] = staffViaEmail?.Designation ?? staff?.Designation;
+            }
 
             return new LeaveRequestListResponse
             {
-                Items = requests.Select(r => MapToLeaveRequestResponse(r, staffNames.GetValueOrDefault(r.ApplicantId))).ToList(),
+                Items = requests.Select(r => MapToLeaveRequestResponse(r,
+                    resolvedNames.GetValueOrDefault(r.ApplicantId),
+                    resolvedEmails.GetValueOrDefault(r.ApplicantId),
+                    resolvedDesignations.GetValueOrDefault(r.ApplicantId))).ToList(),
                 TotalCount = total,
                 Page = page,
                 PageSize = pageSize,
@@ -391,14 +446,23 @@ namespace SmsApi.Services
 
             if (balance == null)
             {
-                throw new InvalidOperationException("Leave balance is not configured for this leave type.");
+                // Self-heal: create balance record so admin approval can always proceed
+                balance = new LeaveBalance
+                {
+                    SchoolId = schoolId,
+                    UserId = leaveRequest.ApplicantId,
+                    UserType = leaveRequest.ApplicantType ?? "Staff",
+                    LeaveTypeId = leaveRequest.LeaveTypeId,
+                    AcademicYear = currentYear,
+                    TotalAllowed = leaveRequest.LeaveType?.MaxDaysPerYear ?? 30,
+                    Used = 0,
+                    Available = leaveRequest.LeaveType?.MaxDaysPerYear ?? 30,
+                    CarriedForward = 0,
+                };
+                _context.LeaveBalances.Add(balance);
             }
 
-            if (balance.Available < leaveRequest.TotalDays)
-            {
-                throw new InvalidOperationException("Insufficient leave balance to approve this request.");
-            }
-
+            // Admin can approve even with insufficient balance (tracks deficit)
             balance.Used += leaveRequest.TotalDays;
             balance.Available = balance.TotalAllowed - balance.Used;
             balance.UpdatedAt = DateTime.UtcNow;
@@ -517,7 +581,357 @@ namespace SmsApi.Services
             };
         }
 
-        private LeaveRequestResponse MapToLeaveRequestResponse(StaffLeaveRequest leaveRequest, string? applicantName = null)
+        // ── Student Leave Methods ─────────────────────────────────────────────────
+
+        public async Task<StudentLeaveResponse> CreateStudentLeaveAsync(string parentEmail, CreateStudentLeaveRequest request, Guid schoolId)
+        {
+            // Validate the parent is a guardian of the student
+            var guardian = await _context.StudentGuardians
+                .FirstOrDefaultAsync(g => g.StudentId == request.StudentId
+                                       && g.SchoolId == schoolId
+                                       && g.Email != null
+                                       && g.Email.ToLower() == parentEmail.ToLower()
+                                       && !g.IsDeleted);
+            if (guardian == null)
+                throw new InvalidOperationException("You are not authorised to request leave for this student.");
+
+            // Load student
+            var student = await _context.Students
+                .FirstOrDefaultAsync(s => s.Id == request.StudentId && s.SchoolId == schoolId && !s.IsDeleted);
+            if (student == null)
+                throw new InvalidOperationException("Student not found.");
+
+            // Validate leave type
+            var leaveType = await _context.LeaveTypes
+                .FirstOrDefaultAsync(lt => lt.Id == request.LeaveTypeId && lt.SchoolId == schoolId && lt.IsActive
+                                        && (lt.ApplicableTo == "Student" || lt.ApplicableTo == "All"));
+            if (leaveType == null)
+                throw new InvalidOperationException("Leave type does not exist or is not applicable to students.");
+
+            var startDate = request.StartDate.Date;
+            var endDate = request.EndDate.Date;
+
+            if (endDate < startDate)
+                throw new InvalidOperationException("End date must be on or after start date.");
+
+            var totalDays = (endDate - startDate).Days + 1;
+
+            // Duplicate check
+            var overlap = await _context.LeaveRequests.AnyAsync(lr =>
+                lr.SchoolId == schoolId &&
+                lr.ApplicantId == request.StudentId &&
+                lr.ApplicantType == "Student" &&
+                (lr.Status.ToLower() == "approved" || lr.Status.ToLower() == "pending") &&
+                lr.StartDate.Date <= endDate &&
+                lr.EndDate.Date >= startDate);
+            if (overlap)
+                throw new InvalidOperationException("An overlapping leave request already exists for this student.");
+
+            var reason = string.IsNullOrWhiteSpace(request.Reason) ? "Leave requested by parent/guardian" : request.Reason.Trim();
+
+            // Self-heal leave balance for student
+            var currentYear = DateTime.UtcNow.Year.ToString();
+            var balance = await _context.LeaveBalances.FirstOrDefaultAsync(lb =>
+                lb.UserId == request.StudentId &&
+                lb.UserType == "Student" &&
+                lb.LeaveTypeId == request.LeaveTypeId &&
+                lb.AcademicYear == currentYear &&
+                lb.SchoolId == schoolId);
+
+            if (balance == null)
+            {
+                balance = new LeaveBalance
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    UserId = request.StudentId,
+                    UserType = "Student",
+                    LeaveTypeId = request.LeaveTypeId,
+                    AcademicYear = currentYear,
+                    TotalAllowed = leaveType.MaxDaysPerYear,
+                    Used = 0,
+                    Available = leaveType.MaxDaysPerYear,
+                    CarriedForward = 0,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.LeaveBalances.Add(balance);
+            }
+
+            var leaveRequest = new StaffLeaveRequest
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                LeaveNumber = GenerateLeaveNumber(),
+                ApplicantId = request.StudentId,
+                ApplicantType = "Student",
+                LeaveTypeId = request.LeaveTypeId,
+                StartDate = startDate,
+                EndDate = endDate,
+                TotalDays = totalDays,
+                Reason = reason,
+                Status = "Pending",
+                ApplicationDate = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.LeaveRequests.Add(leaveRequest);
+            await _context.SaveChangesAsync();
+
+            return MapToStudentLeaveResponse(leaveRequest, student, guardian);
+        }
+
+        public async Task<StudentLeaveListResponse> GetStudentLeaveRequestsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, Guid? callerUserId = null, string? callerRole = null)
+        {
+            page = page < 1 ? 1 : page;
+            pageSize = pageSize < 1 ? 10 : Math.Min(pageSize, 200);
+
+            var query = _context.LeaveRequests
+                .Include(lr => lr.LeaveType)
+                .Where(lr => lr.SchoolId == schoolId && lr.ApplicantType == "Student");
+
+            if (studentId.HasValue)
+                query = query.Where(lr => lr.ApplicantId == studentId.Value);
+
+            if (!string.IsNullOrWhiteSpace(status))
+                query = query.Where(lr => lr.Status.ToLower() == status.Trim().ToLower());
+
+            // Class-teacher scoping: Teacher/Staff can only see leaves for students in their assigned classes.
+            // Admin, Principal, HRManager see all.
+            if (callerUserId.HasValue && !IsPrivilegedRole(callerRole))
+            {
+                var classIds = await GetClassTeacherClassIdsAsync(callerUserId.Value, schoolId);
+                if (classIds.Count == 0)
+                {
+                    // Not a class teacher for any class — return empty
+                    return new StudentLeaveListResponse { Items = new(), TotalCount = 0, Page = page, PageSize = pageSize, TotalPages = 0 };
+                }
+                // Get class names that this teacher manages, then filter by student.Class
+                var classNames = await _context.Classes
+                    .Where(c => classIds.Contains(c.Id) && c.SchoolId == schoolId)
+                    .Select(c => c.Name)
+                    .ToListAsync();
+                // Student.Class stores the raw class number (e.g. "1") while Class.Name is "Class 1"
+                var classNumbers = classNames
+                    .Select(n => n.Replace("Class ", "").Trim())
+                    .ToList();
+                // Combine both forms so matching works regardless of format
+                var allClassKeys = classNames.Concat(classNumbers).Distinct().ToList();
+                var allowedStudentIds = await _context.Students
+                    .Where(s => s.SchoolId == schoolId && !s.IsDeleted && allClassKeys.Contains(s.Class))
+                    .Select(s => s.Id)
+                    .ToListAsync();
+                query = query.Where(lr => allowedStudentIds.Contains(lr.ApplicantId));
+            }
+
+            var total = await query.CountAsync();
+            var requests = await query
+                .OrderByDescending(lr => lr.ApplicationDate)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            // Load student + guardian info
+            var studentIds = requests.Select(r => r.ApplicantId).Distinct().ToList();
+            var students = await _context.Students
+                .Where(s => studentIds.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted)
+                .ToDictionaryAsync(s => s.Id);
+
+            var guardians = await _context.StudentGuardians
+                .Where(g => studentIds.Contains(g.StudentId) && g.SchoolId == schoolId && !g.IsDeleted)
+                .ToListAsync();
+            var guardianByStudent = guardians
+                .GroupBy(g => g.StudentId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Relation == "father" ? 0 : x.Relation == "mother" ? 1 : 2).First());
+
+            var items = requests.Select(r =>
+            {
+                var s = students.GetValueOrDefault(r.ApplicantId);
+                var g = guardianByStudent.GetValueOrDefault(r.ApplicantId);
+                return MapToStudentLeaveResponse(r, s, g);
+            }).ToList();
+
+            return new StudentLeaveListResponse { Items = items, TotalCount = total, Page = page, PageSize = pageSize, TotalPages = (int)Math.Ceiling(total / (double)pageSize) };
+        }
+
+        public async Task<StudentLeaveResponse?> ApproveStudentLeaveAsync(Guid id, ApproveLeaveRequest request, Guid schoolId, Guid? callerUserId = null, string? callerRole = null)
+        {
+            var leaveRequest = await _context.LeaveRequests
+                .Include(lr => lr.LeaveType)
+                .FirstOrDefaultAsync(lr => lr.Id == id && lr.SchoolId == schoolId && lr.ApplicantType == "Student");
+            if (leaveRequest == null) throw new KeyNotFoundException("Student leave request not found.");
+            if (!string.Equals(leaveRequest.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Leave request is already {leaveRequest.Status}.");
+
+            // Verify caller is the class teacher for this student's class (unless privileged)
+            if (callerUserId.HasValue && !IsPrivilegedRole(callerRole))
+                await AssertClassTeacherForStudentAsync(callerUserId.Value, leaveRequest.ApplicantId, schoolId);
+
+            leaveRequest.Status = "Approved";
+            leaveRequest.ApprovedByStaffId = request.ApprovedBy;
+            leaveRequest.ApprovedDate = DateTime.UtcNow;
+            leaveRequest.ApproverRemarks = request.ApproverRemarks?.Trim();
+            leaveRequest.UpdatedAt = DateTime.UtcNow;
+
+            // Auto-mark attendance as excused for each calendar day of leave
+            for (var day = leaveRequest.StartDate.Date; day <= leaveRequest.EndDate.Date; day = day.AddDays(1))
+            {
+                var existing = await _context.AttendanceRecords
+                    .FirstOrDefaultAsync(a => a.StudentId == leaveRequest.ApplicantId && a.Date.Date == day);
+                if (existing != null)
+                {
+                    existing.Status = "excused";
+                    existing.IsManualOverride = true;
+                    existing.Remarks = $"Leave approved – {leaveRequest.LeaveType?.Name ?? "Leave"}";
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _context.AttendanceRecords.Add(new AttendanceRecord
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        StudentId = leaveRequest.ApplicantId,
+                        Date = day,
+                        Status = "excused",
+                        IsManualOverride = true,
+                        Remarks = $"Leave approved – {leaveRequest.LeaveType?.Name ?? "Leave"}",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            var student = await _context.Students.FirstOrDefaultAsync(s => s.Id == leaveRequest.ApplicantId && s.SchoolId == schoolId);
+            var guardian = student == null ? null : await _context.StudentGuardians
+                .Where(g => g.StudentId == student.Id && g.SchoolId == schoolId && !g.IsDeleted)
+                .OrderBy(g => g.Relation == "father" ? 0 : g.Relation == "mother" ? 1 : 2)
+                .FirstOrDefaultAsync();
+
+            return MapToStudentLeaveResponse(leaveRequest, student, guardian);
+        }
+
+        public async Task<StudentLeaveResponse?> RejectStudentLeaveAsync(Guid id, RejectLeaveRequest request, Guid schoolId, Guid? callerUserId = null, string? callerRole = null)
+        {
+            var leaveRequest = await _context.LeaveRequests
+                .Include(lr => lr.LeaveType)
+                .FirstOrDefaultAsync(lr => lr.Id == id && lr.SchoolId == schoolId && lr.ApplicantType == "Student");
+            if (leaveRequest == null) throw new KeyNotFoundException("Student leave request not found.");
+            if (!string.Equals(leaveRequest.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Leave request is already {leaveRequest.Status}.");
+
+            if (string.IsNullOrWhiteSpace(request.ApproverRemarks))
+                throw new InvalidOperationException("A reason is required when denying a leave request.");
+
+            // Verify caller is the class teacher for this student's class (unless privileged)
+            if (callerUserId.HasValue && !IsPrivilegedRole(callerRole))
+                await AssertClassTeacherForStudentAsync(callerUserId.Value, leaveRequest.ApplicantId, schoolId);
+
+            leaveRequest.Status = "Rejected";
+            leaveRequest.ApprovedByStaffId = request.RejectedBy;
+            leaveRequest.ApprovedDate = DateTime.UtcNow;
+            leaveRequest.ApproverRemarks = request.ApproverRemarks.Trim();
+            leaveRequest.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            var student = await _context.Students.FirstOrDefaultAsync(s => s.Id == leaveRequest.ApplicantId && s.SchoolId == schoolId);
+            var guardian = student == null ? null : await _context.StudentGuardians
+                .Where(g => g.StudentId == student.Id && g.SchoolId == schoolId && !g.IsDeleted)
+                .OrderBy(g => g.Relation == "father" ? 0 : g.Relation == "mother" ? 1 : 2)
+                .FirstOrDefaultAsync();
+
+            return MapToStudentLeaveResponse(leaveRequest, student, guardian);
+        }
+
+        private StudentLeaveResponse MapToStudentLeaveResponse(StaffLeaveRequest leaveRequest, Student? student, StudentGuardian? guardian)
+        {
+            var base_ = MapToLeaveRequestResponse(leaveRequest, student != null ? $"{student.FirstName} {student.LastName}".Trim() : null);
+            return new StudentLeaveResponse
+            {
+                Id = base_.Id, SchoolId = base_.SchoolId, LeaveNumber = base_.LeaveNumber,
+                ApplicantId = base_.ApplicantId, ApplicantType = base_.ApplicantType, ApplicantName = base_.ApplicantName,
+                LeaveTypeId = base_.LeaveTypeId, LeaveTypeName = base_.LeaveTypeName,
+                StartDate = base_.StartDate, EndDate = base_.EndDate, TotalDays = base_.TotalDays,
+                Reason = base_.Reason, DocumentUrl = base_.DocumentUrl, EmergencyContact = base_.EmergencyContact,
+                Status = base_.Status, ApplicationDate = base_.ApplicationDate,
+                ApprovedByStaffId = base_.ApprovedByStaffId, ApprovedDate = base_.ApprovedDate, ApproverRemarks = base_.ApproverRemarks,
+                CreatedAt = base_.CreatedAt, UpdatedAt = base_.UpdatedAt,
+                StudentName = student != null ? $"{student.FirstName} {student.LastName}".Trim() : null,
+                ClassName = student?.Class, Section = student?.Section,
+                GuardianName = guardian?.Name ?? student?.GuardianName,
+                GuardianPhone = guardian?.Phone ?? student?.GuardianPhone
+            };
+        }
+
+        // ── Helpers ────────────────────────────────────────────────────────────
+
+        /// <summary>Returns true if the role is Admin, Principal, or HRManager — these bypass class-teacher restrictions.</summary>
+        private static bool IsPrivilegedRole(string? role)
+            => role != null && (role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+                             || role.Equals("Principal", StringComparison.OrdinalIgnoreCase)
+                             || role.Equals("HRManager", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Returns the ClassIds where the given user (identified by UserLogin.Id) is a class teacher.
+        /// Resolves: UserLogin.Id → UserLogin.Email → Staff.Email → TeacherAssignment (IsClassTeacher=true).
+        /// </summary>
+        private async Task<List<Guid>> GetClassTeacherClassIdsAsync(Guid userLoginId, Guid schoolId)
+        {
+            var email = await _context.UserLogins
+                .Where(u => u.Id == userLoginId && u.SchoolId == schoolId)
+                .Select(u => u.Email)
+                .FirstOrDefaultAsync();
+            if (string.IsNullOrWhiteSpace(email)) return new List<Guid>();
+
+            var staffId = await _context.StaffMembers
+                .Where(s => s.SchoolId == schoolId && !s.IsDeleted
+                         && s.Email.ToLower() == email.ToLower())
+                .Select(s => s.Id)
+                .FirstOrDefaultAsync();
+            if (staffId == Guid.Empty) return new List<Guid>();
+
+            return await _context.TeacherAssignments
+                .Where(ta => ta.SchoolId == schoolId
+                          && ta.StaffId == staffId
+                          && ta.IsClassTeacher
+                          && ta.Status == "active")
+                .Select(ta => ta.ClassId)
+                .Distinct()
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Throws UnauthorizedAccessException if the caller is not the class teacher for the given student's class.
+        /// </summary>
+        private async Task AssertClassTeacherForStudentAsync(Guid callerUserId, Guid studentId, Guid schoolId)
+        {
+            var student = await _context.Students
+                .FirstOrDefaultAsync(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted);
+            if (student == null) throw new KeyNotFoundException("Student not found.");
+
+            var classIds = await GetClassTeacherClassIdsAsync(callerUserId, schoolId);
+            if (classIds.Count == 0)
+                throw new UnauthorizedAccessException("Only the assigned class teacher can approve or deny this leave request.");
+
+            // Match: student.Class (e.g. "1") against Class.Name (e.g. "Class 1") or Class.Name == student.Class directly
+            var classes = await _context.Classes
+                .Where(c => classIds.Contains(c.Id) && c.SchoolId == schoolId)
+                .ToListAsync();
+
+            bool isClassTeacher = classes.Any(c =>
+                string.Equals(c.Name, student.Class, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Name.Replace("Class ", "").Trim(), student.Class.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(c.Name, $"Class {student.Class}".Trim(), StringComparison.OrdinalIgnoreCase));
+
+            if (!isClassTeacher)
+                throw new UnauthorizedAccessException("Only the assigned class teacher can approve or deny this leave request.");
+        }
+
+        private LeaveRequestResponse MapToLeaveRequestResponse(StaffLeaveRequest leaveRequest, string? applicantName = null, string? applicantEmail = null, string? applicantDesignation = null)
         {
             return new LeaveRequestResponse
             {
@@ -527,6 +941,8 @@ namespace SmsApi.Services
                 ApplicantId = leaveRequest.ApplicantId,
                 ApplicantType = leaveRequest.ApplicantType,
                 ApplicantName = applicantName,
+                ApplicantEmail = applicantEmail,
+                ApplicantDesignation = applicantDesignation,
                 LeaveTypeId = leaveRequest.LeaveTypeId,
                 LeaveTypeName = leaveRequest.LeaveType?.Name,
                 StartDate = leaveRequest.StartDate,
@@ -535,7 +951,9 @@ namespace SmsApi.Services
                 Reason = leaveRequest.Reason,
                 DocumentUrl = leaveRequest.DocumentUrl,
                 EmergencyContact = leaveRequest.EmergencyContact,
-                Status = leaveRequest.Status,
+                Status = string.IsNullOrEmpty(leaveRequest.Status)
+                    ? "Pending"
+                    : char.ToUpper(leaveRequest.Status[0]) + leaveRequest.Status.Substring(1).ToLower(),
                 ApplicationDate = leaveRequest.ApplicationDate,
                 ApprovedByStaffId = leaveRequest.ApprovedByStaffId,
                 ApprovedDate = leaveRequest.ApprovedDate,

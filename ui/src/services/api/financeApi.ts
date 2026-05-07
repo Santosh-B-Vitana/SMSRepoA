@@ -144,8 +144,15 @@ export interface FinanceStatsDto {
   todayIncome: number;
   todayExpenses: number;
   pendingPettyCash: number;
+  // Cross-module fee data (from Fees module PaymentTransactions)
+  collectedFees: number;
+  pendingFees: number;
+  totalFeesBilled: number;
+  overdueFees: number;
+  feeCollectionRate: number;
   incomeByCategory: Record<string, number>;
   expenseByCategory: Record<string, number>;
+  feesByPaymentMethod: Record<string, number>;
 }
 
 export interface MonthlyTrendDto {
@@ -174,6 +181,7 @@ export interface FinanceReportDto {
   netSurplus: number;
   storeSalesTotal: number;
   pettyCashTotal: number;
+  feeCollections: number;
   monthlyTrend: MonthlyTrendDto[];
   budgetSummary: BudgetSummaryDto[];
 }

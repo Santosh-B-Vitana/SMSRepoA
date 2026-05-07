@@ -175,7 +175,8 @@ public class AuthController : ControllerBase
                 FirstName = userLogin.FirstName,
                 LastName = userLogin.LastName,
                 Role = userLogin.Role,
-                SchoolId = userLogin.SchoolId
+                SchoolId = userLogin.SchoolId,
+                RequirePasswordChange = userLogin.RequirePasswordChange
             }
         });
     }
@@ -231,7 +232,8 @@ public class AuthController : ControllerBase
                     FirstName = userLogin.FirstName,
                     LastName = userLogin.LastName,
                     Role = userLogin.Role,
-                    SchoolId = userLogin.SchoolId
+                    SchoolId = userLogin.SchoolId,
+                    RequirePasswordChange = userLogin.RequirePasswordChange
                 }
             });
         }
@@ -289,7 +291,8 @@ public class AuthController : ControllerBase
             FirstName = userLogin.FirstName,
             LastName = userLogin.LastName,
             Role = userLogin.Role,
-            SchoolId = userLogin.SchoolId
+            SchoolId = userLogin.SchoolId,
+            RequirePasswordChange = userLogin.RequirePasswordChange
         });
     }
 
@@ -321,6 +324,7 @@ public class AuthController : ControllerBase
 
         userLogin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, workFactor: 12);
         userLogin.PasswordChangedAt = DateTime.UtcNow;
+        userLogin.RequirePasswordChange = false; // Clear forced-change flag
         userLogin.RefreshTokenHash = null; // Force re-login on all devices
         userLogin.RefreshTokenExpiry = null;
         userLogin.UpdatedAt = DateTime.UtcNow;
@@ -401,7 +405,8 @@ public class AuthController : ControllerBase
                 FirstName = userLogin.FirstName,
                 LastName = userLogin.LastName,
                 Role = userLogin.Role,
-                SchoolId = userLogin.SchoolId
+                SchoolId = userLogin.SchoolId,
+                RequirePasswordChange = userLogin.RequirePasswordChange
             }
         });
     }

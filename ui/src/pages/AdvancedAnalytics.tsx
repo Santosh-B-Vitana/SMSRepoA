@@ -1,4 +1,4 @@
-import { AdvancedAnalyticsDashboard } from '@/components/analytics/AdvancedAnalyticsDashboard';
+import { AdvancedAnalytics as AdvancedAnalyticsWidget } from '@/components/analytics/AdvancedAnalytics';
 import { SEO } from '@/components/common/SEO';
 
 export default function AdvancedAnalytics() {
@@ -8,7 +8,7 @@ export default function AdvancedAnalytics() {
         title="Advanced Analytics"
         description="Comprehensive analytics dashboard with insights into student enrollment, fee collection, attendance trends, and class distribution"
       />
-      <AdvancedAnalyticsDashboard />
+      <AdvancedAnalyticsWidget />
     </>
   );
 }

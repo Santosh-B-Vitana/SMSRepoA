@@ -1,338 +1,209 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Calendar, CheckCircle, Clock, Plus, MoreVertical, Check, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle, Clock, Check, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import leaveManagementApi from "@/services/api/leaveManagementApi";
-import { LoadingState, ErrorBoundary } from "@/components/common";
-import { StaffLeaveRequestForm } from "./StaffLeaveRequestForm";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import leaveManagementApi, { LeaveRequest, LeaveBalance, LeaveType } from "@/services/api/leaveManagementApi";
 import { useToast } from "@/hooks/use-toast";
 
 interface StaffLeaveSectionProps {
+  /** Staff entity ID — used for identification only */
   staffId: string;
   staffName: string;
+  /** UserLogin.Id — required to fetch leave requests (leave requests are stored with UserLogin.Id as applicantId) */
+  userLoginId?: string;
+  /** When true (admin/principal context) show approve/deny controls */
+  canApprove?: boolean;
 }
 
-interface LeaveBalance {
-  allocatedDays: number;
-  usedDays: number;
-  pendingDays: number;
-  remainingDays: number;
-  leaveTypeId: string;
-  leaveType: string;
+type ActionDialog =
+  | { type: "approve"; leaveId: string; remarks: string }
+  | { type: "reject"; leaveId: string; remarks: string }
+  | null;
+
+function StatusBadge({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  if (s === "approved") return (
+    <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 gap-1 inline-flex items-center">
+      <CheckCircle className="w-3 h-3" />Approved
+    </Badge>
+  );
+  if (s === "rejected") return (
+    <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 gap-1 inline-flex items-center">
+      <X className="w-3 h-3" />Rejected
+    </Badge>
+  );
+  return (
+    <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 gap-1 inline-flex items-center">
+      <Clock className="w-3 h-3" />Pending
+    </Badge>
+  );
 }
 
-interface LeaveRequest {
-  id: string;
-  startDate: string;
-  endDate: string;
-  days: number;
-  reason: string;
-  status: "Pending" | "Approved" | "Rejected";
-  leaveType: string;
-  createdAt: string;
-}
-
-export function StaffLeaveSection({ staffId, staffName }: StaffLeaveSectionProps) {
+export function StaffLeaveSection({ staffId, staffName, userLoginId, canApprove = false }: StaffLeaveSectionProps) {
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [approveDialog, setApproveDialog] = useState<{ open: boolean; requestId: string | null; remarks: string }>({ open: false, requestId: null, remarks: "" });
+  const [actionLoading, setActionLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [actionDialog, setActionDialog] = useState<ActionDialog>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchLeaveData();
-  }, [staffId]);
+  // Use userLoginId when available (correct ID for leave requests), fall back to staffId
+  const effectiveId = userLoginId || staffId;
 
-  const fetchLeaveData = async () => {
+  useEffect(() => {
+    load();
+  }, [effectiveId]);
+
+  const load = async () => {
     try {
       setLoading(true);
-      // Fetch leave requests for this staff member
-      const requests = await leaveManagementApi.getLeaveRequests(
-        1,
-        100,
-        staffId
-      );
-      setLeaveRequests(requests.items || []);
-
-      // Calculate balances from requests
-      calculateBalances(requests.items || []);
-    } catch (error) {
-      console.error("Failed to fetch leave data:", error);
+      const [typesRes, leavesRes, balanceRes] = await Promise.allSettled([
+        leaveManagementApi.getLeaveTypes("Staff"),
+        leaveManagementApi.getLeaveRequests(1, 100, effectiveId, undefined),
+        leaveManagementApi.getLeaveBalance(effectiveId, "Staff"),
+      ]);
+      const types = typesRes.status === "fulfilled" ? typesRes.value : [];
+      const leaveItems = leavesRes.status === "fulfilled" ? leavesRes.value.items : [];
+      const bal = balanceRes.status === "fulfilled" ? balanceRes.value : [];
+      setLeaveTypes(types);
+      setLeaves(leaveItems);
+      setBalances(bal);
+    } catch (e) {
+      console.error("StaffLeaveSection load error", e);
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateBalances = (requests: LeaveRequest[]) => {
-    const leaveTypeMap = new Map<string, LeaveBalance>();
-
-    requests.forEach((req) => {
-      if (!leaveTypeMap.has(req.leaveType)) {
-        leaveTypeMap.set(req.leaveType, {
-          allocatedDays: 20, // Staff typically get more days
-          usedDays: 0,
-          pendingDays: 0,
-          remainingDays: 20,
-          leaveTypeId: req.id,
-          leaveType: req.leaveType,
-        });
-      }
-
-      const balance = leaveTypeMap.get(req.leaveType)!;
-      if (req.status === "Approved") {
-        balance.usedDays += req.days;
-      } else if (req.status === "Pending") {
-        balance.pendingDays += req.days;
-      }
-      balance.remainingDays = balance.allocatedDays - balance.usedDays - balance.pendingDays;
-    });
-
-    setBalances(Array.from(leaveTypeMap.values()));
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Approved":
-        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
-      case "Rejected":
-        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
-      case "Pending":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "Approved":
-        return <CheckCircle className="w-4 h-4" />;
-      case "Rejected":
-        return <AlertCircle className="w-4 h-4" />;
-      case "Pending":
-        return <Clock className="w-4 h-4" />;
-      default:
-        return null;
-    }
-  };
-
-  const handleApprove = async (requestId: string) => {
+  const handleApprove = async (leaveId: string, remarks: string) => {
     try {
-      setActionLoading(requestId);
-      await leaveManagementApi.approveLeave(requestId, approveDialog.remarks);
-      toast({
-        title: "Success",
-        description: "Leave request approved",
-      });
-      setApproveDialog({ open: false, requestId: null, remarks: "" });
-      fetchLeaveData();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to approve leave",
-        variant: "destructive",
-      });
+      setActionLoading(true);
+      await leaveManagementApi.approveLeave(leaveId, remarks || undefined);
+      toast({ title: "Approved", description: "Leave request has been approved." });
+      setActionDialog(null);
+      await load();
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.response?.data?.message || "Failed to approve", variant: "destructive" });
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
-  const handleReject = async (requestId: string) => {
+  const handleReject = async (leaveId: string, remarks: string) => {
+    if (!remarks.trim()) {
+      toast({ title: "Reason required", description: "Please provide a rejection reason", variant: "destructive" });
+      return;
+    }
     try {
-      setActionLoading(requestId);
-      await leaveManagementApi.rejectLeave(requestId, "Rejected by staff");
-      toast({
-        title: "Success",
-        description: "Leave request rejected",
-      });
-      fetchLeaveData();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to reject leave",
-        variant: "destructive",
-      });
+      setActionLoading(true);
+      await leaveManagementApi.rejectLeave(leaveId, remarks);
+      toast({ title: "Rejected", description: "Leave request has been rejected." });
+      setActionDialog(null);
+      await load();
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.response?.data?.message || "Failed to reject", variant: "destructive" });
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
+
+  // Compute display balances from API data or fall back to calculating from leave requests
+  const displayBalances = leaveTypes.map((lt) => {
+    const apiBalance = balances.find((b) => b.leaveTypeId === lt.id);
+    if (apiBalance) return { leaveTypeId: lt.id, leaveTypeName: lt.name, totalAllowed: apiBalance.totalAllowed, used: apiBalance.used, available: apiBalance.available, carriedForward: apiBalance.carriedForward };
+    const typeLeaves = leaves.filter((l) => l.leaveTypeId === lt.id);
+    const used = typeLeaves.filter((l) => l.status === "Approved").reduce((s, l) => s + l.totalDays, 0);
+    const pending = typeLeaves.filter((l) => l.status === "Pending").reduce((s, l) => s + l.totalDays, 0);
+    return { leaveTypeId: lt.id, leaveTypeName: lt.name, totalAllowed: lt.maxDaysPerYear, used, available: Math.max(0, lt.maxDaysPerYear - used - pending), carriedForward: 0 };
+  });
+
+  const pendingLeaves = leaves.filter((l) => l.status === "Pending");
 
   if (loading) {
-    return <LoadingState />;
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
-    <ErrorBoundary>
-      <div className="space-y-6">
-        <Tabs defaultValue="balance" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="balance">Leave Balance</TabsTrigger>
-            <TabsTrigger value="history">Leave History</TabsTrigger>
-          </TabsList>
+    <div className="space-y-4">
+      <Tabs defaultValue={canApprove && pendingLeaves.length > 0 ? "pending" : "history"} className="w-full">
+        <TabsList className={`grid w-full ${canApprove ? "grid-cols-3" : "grid-cols-2"}`}>
+          {canApprove && (
+            <TabsTrigger value="pending">
+              Pending
+              {pendingLeaves.length > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold bg-amber-500 text-white rounded-full">
+                  {pendingLeaves.length}
+                </span>
+              )}
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="history">All Leaves</TabsTrigger>
+          <TabsTrigger value="balance">Balance</TabsTrigger>
+        </TabsList>
 
-          {/* Leave Balance Tab */}
-          <TabsContent value="balance" className="space-y-4">
-            {balances.length === 0 ? (
+        {/* Pending approvals — admin/principal only */}
+        {canApprove && (
+          <TabsContent value="pending" className="mt-4">
+            {pendingLeaves.length === 0 ? (
               <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>No leave types configured for this staff member.</AlertDescription>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>No pending leave requests from {staffName}.</AlertDescription>
               </Alert>
             ) : (
-              <>
-                <div className="space-y-4">
-                  {balances.map((balance) => {
-                    const usedPercentage = (balance.usedDays / balance.allocatedDays) * 100;
-                    const pendingPercentage = ((balance.usedDays + balance.pendingDays) / balance.allocatedDays) * 100;
-
-                    return (
-                      <Card key={balance.leaveTypeId} className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10">
-                        <CardContent className="p-4">
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-start">
-                              <h3 className="font-semibold text-sm">{balance.leaveType}</h3>
-                              <Badge variant="outline">{balance.allocatedDays} days</Badge>
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div className="space-y-1">
-                              <Progress value={pendingPercentage} className="h-2" />
-                              <div className="flex text-xs gap-2">
-                                <span className="text-red-600 font-medium">Used: {balance.usedDays}</span>
-                                <span className="text-yellow-600 font-medium">Pending: {balance.pendingDays}</span>
-                                <span className="text-green-600 font-medium">Remaining: {Math.max(0, balance.remainingDays)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-
-                <Dialog open={isRequestDialogOpen} onOpenChange={setIsRequestDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button className="w-full md:w-auto">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Request Leave
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>Request Leave</DialogTitle>
-                    </DialogHeader>
-                    <StaffLeaveRequestForm
-                      staffId={staffId}
-                      staffName={staffName}
-                      onSuccess={() => {
-                        setIsRequestDialogOpen(false);
-                        fetchLeaveData();
-                      }}
-                      onClose={() => setIsRequestDialogOpen(false)}
-                    />
-                  </DialogContent>
-                </Dialog>
-              </>
-            )}
-          </TabsContent>
-
-          {/* Leave History Tab */}
-          <TabsContent value="history" className="space-y-4">
-            {leaveRequests.length === 0 ? (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>No leave requests found.</AlertDescription>
-              </Alert>
-            ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="rounded-lg border overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Leave Type</TableHead>
                       <TableHead>Duration</TableHead>
+                      <TableHead>Days</TableHead>
                       <TableHead>Reason</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead>Applied</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {leaveRequests.map((request) => (
-                      <TableRow key={request.id}>
-                        <TableCell className="font-medium">{request.leaveType}</TableCell>
-                        <TableCell className="text-sm">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {new Date(request.startDate).toLocaleDateString()} - {new Date(request.endDate).toLocaleDateString()}
-                            <span className="text-muted-foreground">({request.days}d)</span>
+                    {pendingLeaves.map((leave) => (
+                      <TableRow key={leave.id}>
+                        <TableCell className="font-medium">{leave.leaveTypeName ?? "Leave"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {new Date(leave.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                          {" – "}
+                          {new Date(leave.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                        </TableCell>
+                        <TableCell><Badge variant="outline">{leave.totalDays}d</Badge></TableCell>
+                        <TableCell className="max-w-[180px]">
+                          <span className="text-sm text-muted-foreground truncate block cursor-pointer hover:text-foreground" onClick={() => setExpandedId(expandedId === leave.id ? null : leave.id)}>
+                            {leave.reason}
+                          </span>
+                          {expandedId === leave.id && <p className="text-sm mt-1 text-muted-foreground">{leave.reason}</p>}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {new Date(leave.applicationDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2 justify-end">
+                            <Button size="sm" className="h-8 gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => setActionDialog({ type: "approve", leaveId: leave.id, remarks: "" })}>
+                              <Check className="w-3 h-3" />Approve
+                            </Button>
+                            <Button size="sm" variant="destructive" className="h-8 gap-1" onClick={() => setActionDialog({ type: "reject", leaveId: leave.id, remarks: "" })}>
+                              <X className="w-3 h-3" />Deny
+                            </Button>
                           </div>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{request.reason}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(request.status)}>
-                            <span className="mr-1">{getStatusIcon(request.status)}</span>
-                            {request.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {request.status === "Pending" ? (
-                            <div className="flex gap-2">
-                              <Dialog open={approveDialog.open && approveDialog.requestId === request.id} onOpenChange={(open) => {
-                                if (!open) setApproveDialog({ open: false, requestId: null, remarks: "" });
-                              }}>
-                                <DialogTrigger asChild>
-                                  <Button 
-                                    size="sm" 
-                                    className="gap-1 h-8"
-                                    disabled={actionLoading === request.id}
-                                    onClick={() => setApproveDialog({ open: true, requestId: request.id, remarks: "" })}
-                                  >
-                                    <Check className="w-3 h-3" />
-                                    Approve
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent className="max-w-sm">
-                                  <DialogHeader>
-                                    <DialogTitle>Approve Leave Request</DialogTitle>
-                                  </DialogHeader>
-                                  <div className="space-y-4">
-                                    <Textarea 
-                                      placeholder="Add remarks (optional)"
-                                      value={approveDialog.remarks}
-                                      onChange={(e) => setApproveDialog({ ...approveDialog, remarks: e.target.value })}
-                                    />
-                                    <div className="flex gap-2 justify-end">
-                                      <Button variant="outline" onClick={() => setApproveDialog({ open: false, requestId: null, remarks: "" })}>
-                                        Cancel
-                                      </Button>
-                                      <Button onClick={() => handleApprove(request.id)} disabled={actionLoading === request.id}>
-                                        {actionLoading === request.id ? "Approving..." : "Approve"}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
-                              <Button 
-                                size="sm" 
-                                variant="destructive" 
-                                className="gap-1 h-8"
-                                disabled={actionLoading === request.id}
-                                onClick={() => handleReject(request.id)}
-                              >
-                                <X className="w-3 h-3" />
-                                Deny
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
-                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -341,8 +212,120 @@ export function StaffLeaveSection({ staffId, staffName }: StaffLeaveSectionProps
               </div>
             )}
           </TabsContent>
-        </Tabs>
-      </div>
-    </ErrorBoundary>
+        )}
+
+        {/* All leaves */}
+        <TabsContent value="history" className="mt-4">
+          {leaves.length === 0 ? (
+            <Alert><AlertCircle className="h-4 w-4" /><AlertDescription>No leave requests found for {staffName}.</AlertDescription></Alert>
+          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Leave Type</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Days</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Status</TableHead>
+                    {canApprove && <TableHead>Remarks</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {leaves.map((leave) => (
+                    <TableRow key={leave.id}>
+                      <TableCell className="font-medium">{leave.leaveTypeName ?? "Leave"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(leave.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                        {" – "}
+                        {new Date(leave.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{leave.totalDays}d</Badge></TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{leave.reason}</TableCell>
+                      <TableCell><StatusBadge status={leave.status} /></TableCell>
+                      {canApprove && <TableCell className="text-sm text-muted-foreground italic">{leave.approverRemarks ?? "—"}</TableCell>}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Leave balance */}
+        <TabsContent value="balance" className="mt-4">
+          {displayBalances.length === 0 ? (
+            <Alert><AlertCircle className="h-4 w-4" /><AlertDescription>No leave balance information available.</AlertDescription></Alert>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {displayBalances.map((b) => {
+                const pct = b.totalAllowed > 0 ? Math.round((b.used / b.totalAllowed) * 100) : 0;
+                return (
+                  <Card key={b.leaveTypeId} className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10">
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex justify-between items-start">
+                        <p className="font-semibold text-sm">{b.leaveTypeName}</p>
+                        <Badge variant="outline">{b.totalAllowed} days</Badge>
+                      </div>
+                      <Progress value={pct} className="h-2" />
+                      <div className="flex justify-between text-xs">
+                        <span className="text-red-600 font-medium">Used: {b.used}</span>
+                        <span className="text-green-600 font-medium">Left: {b.available}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Approve dialog */}
+      <Dialog open={actionDialog?.type === "approve"} onOpenChange={(o) => !o && setActionDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Approve Leave</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Optional remarks for the staff member..."
+              value={actionDialog?.type === "approve" ? actionDialog.remarks : ""}
+              onChange={(e) => actionDialog?.type === "approve" && setActionDialog({ ...actionDialog, remarks: e.target.value })}
+            />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setActionDialog(null)}>Cancel</Button>
+              <Button className="bg-green-600 hover:bg-green-700 text-white" disabled={actionLoading}
+                onClick={() => actionDialog?.type === "approve" && handleApprove(actionDialog.leaveId, actionDialog.remarks)}>
+                {actionLoading ? "Approving…" : "Approve"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject dialog */}
+      <Dialog open={actionDialog?.type === "reject"} onOpenChange={(o) => !o && setActionDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Deny Leave Request</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Reason for denial <span className="text-red-500">*</span></Label>
+              <Textarea
+                className="mt-1.5"
+                placeholder="Required — reason is mandatory when denying a leave request..."
+                value={actionDialog?.type === "reject" ? actionDialog.remarks : ""}
+                onChange={(e) => actionDialog?.type === "reject" && setActionDialog({ ...actionDialog, remarks: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setActionDialog(null)}>Cancel</Button>
+              <Button variant="destructive" disabled={actionLoading || (actionDialog?.type === "reject" ? !actionDialog.remarks.trim() : true)}
+                onClick={() => actionDialog?.type === "reject" && handleReject(actionDialog.leaveId, actionDialog.remarks)}>
+                {actionLoading ? "Denying…" : "Deny"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

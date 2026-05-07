@@ -60,7 +60,7 @@ namespace SmsApi.Controllers
                     TargetClassId = targetClassId
                 };
 
-                var result = await _schoolConnectService.GetPostsAsync(GetSchoolId(), GetUserId(), page, pageSize, filters);
+                var result = await _schoolConnectService.GetPostsAsync(GetSchoolId(), GetUserId(), GetUserRole(), page, pageSize, filters);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -159,6 +159,32 @@ namespace SmsApi.Controllers
             {
                 _logger.LogError(ex, "Error deleting post {PostId}", id);
                 return StatusCode(500, new { message = "An error occurred while deleting the post" });
+            }
+        }
+
+        /// <summary>
+        /// Get posts authored by the currently authenticated user (uses JWT — no authorId param needed).
+        /// </summary>
+        [HttpGet("posts/mine")]
+        public async Task<ActionResult<SchoolConnectPostListResponse>> GetMyPosts(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? searchTerm = null)
+        {
+            try
+            {
+                var filters = new SchoolConnectPostFilters
+                {
+                    AuthorId = GetUserId(),
+                    SearchTerm = searchTerm,
+                };
+                var result = await _schoolConnectService.GetPostsAsync(GetSchoolId(), GetUserId(), GetUserRole(), page, pageSize, filters);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting my posts");
+                return StatusCode(500, new { message = "An error occurred while fetching posts" });
             }
         }
 

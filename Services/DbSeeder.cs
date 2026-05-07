@@ -27,6 +27,7 @@ namespace SmsApi.Services
         Task SeedClassSubjectsAsync();
         Task SeedTeacherAssignmentsAsync();
         Task SeedTimetableAsync();
+        Task SeedTimetablePeriodsAsync();
     }
 
     public class DbSeeder : IDbSeeder
@@ -58,6 +59,7 @@ namespace SmsApi.Services
                     _logger.LogInformation("✅ Mock data already exists, skipping bulk seeding");
                     // Still run incremental seeders that have their own guards
                     await SeedLeaveTypesAsync();
+                    await SeedTimetablePeriodsAsync();
                     return;
                 }
 
@@ -69,6 +71,7 @@ namespace SmsApi.Services
                 await SeedClassSubjectsAsync();
                 await SeedTeacherAssignmentsAsync();
                 await SeedTimetableAsync();
+                await SeedTimetablePeriodsAsync();
                 await SeedFeeStructuresAsync();
                 await SeedFeeRecordsAsync();
                 await SeedLibraryBooksAsync();
@@ -399,7 +402,7 @@ namespace SmsApi.Services
 
         public async Task SeedTimetableAsync()
         {
-            _logger.LogInformation("⏰ Seeding timetable...");
+            _logger.LogInformation("⏰ Seeding timetables (legacy entries)...");
 
             var sections = await _context.Sections.Take(2).ToListAsync();
             var subjects = await _context.Subjects.ToListAsync();
@@ -438,7 +441,194 @@ namespace SmsApi.Services
 
             _context.Timetable.AddRange(timetableEntries);
             await _context.SaveChangesAsync();
-            _logger.LogInformation("✅ {Count} timetable entries seeded", timetableEntries.Count);
+            _logger.LogInformation("✅ {Count} legacy timetable entries seeded", timetableEntries.Count);
+        }
+
+        public async Task SeedTimetablePeriodsAsync()
+        {
+            _logger.LogInformation("📅 Seeding structured timetables for all classes...");
+
+            // Skip if already seeded
+            if (await _context.Timetables.AnyAsync(t => t.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Structured timetables already seeded, skipping");
+                return;
+            }
+
+            var classes = await _context.Classes
+                .Where(c => c.SchoolId == _schoolId)
+                .ToListAsync();
+
+            var subjects = await _context.Subjects
+                .Where(s => s.SchoolId == _schoolId)
+                .ToListAsync();
+
+            var teachers = await _context.StaffMembers
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .ToListAsync();
+
+            if (!subjects.Any() || !classes.Any())
+            {
+                _logger.LogWarning("⚠️ No classes or subjects found. Skipping structured timetable seeding.");
+                return;
+            }
+
+            // Use the current academic year from DB (isCurrent=true), fallback to date-based
+            var academicYear = await _context.AcademicYears
+                .Where(y => y.SchoolId == _schoolId && y.IsCurrent)
+                .Select(y => y.Name)
+                .FirstOrDefaultAsync();
+            if (string.IsNullOrEmpty(academicYear))
+            {
+                var now = DateTime.UtcNow;
+                var startYear = now.Month >= 4 ? now.Year : now.Year - 1;
+                academicYear = $"{startYear}-{startYear + 1}";
+            }
+            _logger.LogInformation("📅 Creating timetables for academic year: {Year}", academicYear);
+            var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
+
+            // Structured period schedule: 8 periods per day
+            var periodSchedule = new[]
+            {
+                (1, new TimeSpan(8,  0, 0), new TimeSpan(8,  45, 0), "lecture"),
+                (2, new TimeSpan(8,  45, 0), new TimeSpan(9,  30, 0), "lecture"),
+                (3, new TimeSpan(9,  30, 0), new TimeSpan(9,  45, 0), "break"),    // short break
+                (4, new TimeSpan(9,  45, 0), new TimeSpan(10, 30, 0), "lecture"),
+                (5, new TimeSpan(10, 30, 0), new TimeSpan(11, 15, 0), "lecture"),
+                (6, new TimeSpan(11, 15, 0), new TimeSpan(12, 0,  0), "lecture"),
+                (7, new TimeSpan(12, 0,  0), new TimeSpan(12, 45, 0), "lunch"),    // lunch break
+                (8, new TimeSpan(12, 45, 0), new TimeSpan(13, 30, 0), "lecture"),
+            };
+
+            int teacherIndex = 0;
+            int subjectIndex = 0;
+
+            foreach (var cls in classes)
+            {
+                // Create one timetable per class (no section)
+                var timetable = new Timetable
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    ClassId = cls.Id,
+                    SectionId = null,
+                    AcademicYear = academicYear,
+                    Status = "active",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    IsDeleted = false
+                };
+
+                _context.Timetables.Add(timetable);
+
+                // Create periods for each day
+                foreach (var day in days)
+                {
+                    foreach (var (periodNum, startTime, endTime, periodType) in periodSchedule)
+                    {
+                        bool isBreak = periodType is "break" or "lunch";
+                        Guid? subjectId = isBreak ? null : subjects[subjectIndex % subjects.Count].Id;
+                        Guid? teacherId = isBreak ? null : (teachers.Any() ? teachers[teacherIndex % teachers.Count].Id : (Guid?)null);
+
+                        var period = new TimetablePeriod
+                        {
+                            Id = Guid.NewGuid(),
+                            TimetableId = timetable.Id,
+                            DayOfWeek = day,
+                            PeriodNumber = periodNum,
+                            StartTime = startTime,
+                            EndTime = endTime,
+                            SubjectId = subjectId,
+                            TeacherId = teacherId,
+                            PeriodType = periodType,
+                            Room = isBreak ? null : $"Room-{(periodNum % 5) + 101}",
+                            Notes = null,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                            IsDeleted = false
+                        };
+
+                        _context.TimetablePeriods.Add(period);
+
+                        if (!isBreak)
+                        {
+                            subjectIndex++;
+                            if (teachers.Any()) teacherIndex++;
+                        }
+                    }
+                }
+
+                // Also create per-section timetables if sections exist
+                var classSections = await _context.Sections
+                    .Where(s => s.ClassId == cls.Id && !s.IsDeleted)
+                    .ToListAsync();
+
+                foreach (var section in classSections)
+                {
+                    // Check uniqueness: skip if timetable already created for this class+section+year
+                    var sectionTimetable = new Timetable
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = _schoolId,
+                        ClassId = cls.Id,
+                        SectionId = section.Id,
+                        AcademicYear = academicYear,
+                        Status = "active",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                        IsDeleted = false
+                    };
+
+                    _context.Timetables.Add(sectionTimetable);
+
+                    foreach (var day in days)
+                    {
+                        foreach (var (periodNum, startTime, endTime, periodType) in periodSchedule)
+                        {
+                            bool isBreak = periodType is "break" or "lunch";
+                            Guid? subjectId = isBreak ? null : subjects[subjectIndex % subjects.Count].Id;
+                            Guid? teacherId = isBreak ? null : (teachers.Any() ? teachers[teacherIndex % teachers.Count].Id : (Guid?)null);
+
+                            var period = new TimetablePeriod
+                            {
+                                Id = Guid.NewGuid(),
+                                TimetableId = sectionTimetable.Id,
+                                DayOfWeek = day,
+                                PeriodNumber = periodNum,
+                                StartTime = startTime,
+                                EndTime = endTime,
+                                SubjectId = subjectId,
+                                TeacherId = teacherId,
+                                PeriodType = periodType,
+                                Room = isBreak ? null : $"Room-{(periodNum % 5) + 101}",
+                                Notes = null,
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow,
+                                IsDeleted = false
+                            };
+
+                            _context.TimetablePeriods.Add(period);
+
+                            if (!isBreak)
+                            {
+                                subjectIndex++;
+                                if (teachers.Any()) teacherIndex++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            var timetableCount = await _context.Timetables.CountAsync(t => t.SchoolId == _schoolId);
+            var schoolTimetableIds = await _context.Timetables
+                .Where(t => t.SchoolId == _schoolId)
+                .Select(t => t.Id)
+                .ToListAsync();
+            var periodCount = await _context.TimetablePeriods
+                .CountAsync(tp => schoolTimetableIds.Contains(tp.TimetableId));
+            _logger.LogInformation("✅ Structured timetables seeded: {Timetables} timetables, {Periods} periods", timetableCount, periodCount);
         }
 
         public async Task SeedClassSubjectsAsync()
@@ -746,26 +936,47 @@ namespace SmsApi.Services
         // ─────────────────────────────────────────────────────────────────────
         public async Task SeedLeaveTypesAsync()
         {
-            if (await _context.LeaveTypes.AnyAsync(l => l.SchoolId == _schoolId))
+            // Seed staff leave types if none exist
+            if (!await _context.LeaveTypes.AnyAsync(l => l.SchoolId == _schoolId && l.ApplicableTo == "Staff"))
             {
-                _logger.LogInformation("Leave types already seeded");
-                return;
+                var staffLeaveTypes = new List<LeaveType>
+                {
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Casual Leave",     Description = "For personal or family matters",                 ApplicableTo = "Staff", MaxDaysPerYear = 12, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Sick Leave",       Description = "Medical leave with doctor's certificate",         ApplicableTo = "Staff", MaxDaysPerYear = 10, RequiresApproval = true,  RequiresDocument = true,  MinNoticeDays = 0, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Earned Leave",     Description = "Leave earned through service",                    ApplicableTo = "Staff", MaxDaysPerYear = 15, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 3, IsCarryForward = true,  IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Maternity Leave",  Description = "Maternity leave as per Maternity Benefit Act",    ApplicableTo = "Staff", MaxDaysPerYear = 180, RequiresApproval = true, RequiresDocument = true,  MinNoticeDays = 30, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Paternity Leave",  Description = "Paternity leave for new fathers",                 ApplicableTo = "Staff", MaxDaysPerYear = 15,  RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 7,  IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Compensatory Off", Description = "Leave in lieu of working on holidays or weekends", ApplicableTo = "Staff", MaxDaysPerYear = 12, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Loss of Pay",      Description = "Unpaid leave when all paid leaves are exhausted", ApplicableTo = "Staff", MaxDaysPerYear = 30,  RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 2,  IsCarryForward = false, IsPaid = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                };
+                _context.LeaveTypes.AddRange(staffLeaveTypes);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ {Count} staff leave types seeded", staffLeaveTypes.Count);
+            }
+            else
+            {
+                _logger.LogInformation("Staff leave types already seeded");
             }
 
-            var leaveTypes = new List<LeaveType>
+            // Seed student leave types if none exist — separate from staff types
+            if (!await _context.LeaveTypes.AnyAsync(l => l.SchoolId == _schoolId && (l.ApplicableTo == "Student" || l.ApplicableTo == "All")))
             {
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Casual Leave",     Description = "For personal or family matters",                 ApplicableTo = "Staff", MaxDaysPerYear = 12, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Sick Leave",       Description = "Medical leave with doctor's certificate",         ApplicableTo = "Staff", MaxDaysPerYear = 10, RequiresApproval = true,  RequiresDocument = true,  MinNoticeDays = 0, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Earned Leave",     Description = "Leave earned through service",                    ApplicableTo = "Staff", MaxDaysPerYear = 15, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 3, IsCarryForward = true,  IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Maternity Leave",  Description = "Maternity leave as per Maternity Benefit Act",    ApplicableTo = "Staff", MaxDaysPerYear = 180, RequiresApproval = true, RequiresDocument = true,  MinNoticeDays = 30, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Paternity Leave",  Description = "Paternity leave for new fathers",                 ApplicableTo = "Staff", MaxDaysPerYear = 15,  RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 7,  IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Compensatory Off", Description = "Leave in lieu of working on holidays or weekends", ApplicableTo = "Staff", MaxDaysPerYear = 12, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Loss of Pay",      Description = "Unpaid leave when all paid leaves are exhausted", ApplicableTo = "Staff", MaxDaysPerYear = 30,  RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 2,  IsCarryForward = false, IsPaid = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
-            };
-
-            _context.LeaveTypes.AddRange(leaveTypes);
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("✅ {Count} leave types seeded", leaveTypes.Count);
+                var studentLeaveTypes = new List<LeaveType>
+                {
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Medical Leave",   Description = "Student is unwell and needs rest (medical certificate may be required)", ApplicableTo = "Student", MaxDaysPerYear = 15, RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 0, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Casual Leave",    Description = "For personal or family matters",                                         ApplicableTo = "Student", MaxDaysPerYear = 10, RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 1, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Emergency Leave", Description = "Urgent personal or family emergency",                                    ApplicableTo = "Student", MaxDaysPerYear = 5,  RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 0, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Festival Leave",  Description = "Religious or cultural festival observance",                              ApplicableTo = "Student", MaxDaysPerYear = 5,  RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 2, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                    new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Sports Leave",    Description = "Participating in school/district/state level sports events",             ApplicableTo = "Student", MaxDaysPerYear = 10, RequiresApproval = true, RequiresDocument = false, MinNoticeDays = 3, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                };
+                _context.LeaveTypes.AddRange(studentLeaveTypes);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ {Count} student leave types seeded", studentLeaveTypes.Count);
+            }
+            else
+            {
+                _logger.LogInformation("Student leave types already seeded");
+            }
         }
     }
 }

@@ -619,10 +619,45 @@ export function WalletManager() {
           ) : (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <KpiCard title="Cash on Hand" value={fmt(stats.cashOnHand)} sub="All asset accounts" icon={Wallet} color="bg-blue-500" />
-                <KpiCard title="MTD Income" value={fmt(stats.totalIncome)} sub="Month to date" icon={TrendingUp} color="bg-emerald-500" trend="up" />
+                <KpiCard title="Cash on Hand" value={fmt(stats.cashOnHand)} sub="Cash + asset accounts" icon={Wallet} color="bg-blue-500" />
+                <KpiCard title="Total Income" value={fmt(stats.totalIncome)} sub="Fees + all sources" icon={TrendingUp} color="bg-emerald-500" trend="up" />
                 <KpiCard title="MTD Expenses" value={fmt(stats.totalExpenses)} sub="Month to date" icon={TrendingDown} color="bg-red-500" trend="down" />
                 <KpiCard title="Net Surplus" value={fmt(stats.netIncome)} sub={stats.netIncome >= 0 ? "Surplus" : "Deficit"} icon={DollarSign} color={stats.netIncome >= 0 ? "bg-teal-500" : "bg-orange-500"} />
+              </div>
+
+              {/* ── Fee Collection Summary ── */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="border-emerald-200 bg-emerald-50/40">
+                  <CardContent className="pt-5">
+                    <p className="text-xs text-muted-foreground">Fees Collected</p>
+                    <p className="text-xl font-bold text-emerald-700">{fmt(stats.collectedFees ?? 0)}</p>
+                    <p className="text-xs text-emerald-600 mt-1">Collection rate: {stats.feeCollectionRate ?? 0}%</p>
+                    <div className="w-full bg-emerald-100 rounded-full h-1.5 mt-2">
+                      <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.min(stats.feeCollectionRate ?? 0, 100)}%` }} />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-amber-200 bg-amber-50/40">
+                  <CardContent className="pt-5">
+                    <p className="text-xs text-muted-foreground">Pending Fees</p>
+                    <p className="text-xl font-bold text-amber-700">{fmt(stats.pendingFees ?? 0)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Due but unpaid</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-red-200 bg-red-50/40">
+                  <CardContent className="pt-5">
+                    <p className="text-xs text-muted-foreground">Overdue Fees</p>
+                    <p className="text-xl font-bold text-red-700">{fmt(stats.overdueFees ?? 0)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Past due date</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-blue-200 bg-blue-50/40">
+                  <CardContent className="pt-5">
+                    <p className="text-xs text-muted-foreground">Total Billed</p>
+                    <p className="text-xl font-bold text-blue-700">{fmt(stats.totalFeesBilled ?? 0)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">All fee records</p>
+                  </CardContent>
+                </Card>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1209,9 +1244,10 @@ export function WalletManager() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
                 {[
                   { label: "Total Income", value: report.totalIncome, color: "text-emerald-600" },
+                  { label: "Fee Collections", value: report.feeCollections ?? 0, color: "text-blue-600" },
                   { label: "Total Expenses", value: report.totalExpenses, color: "text-red-600" },
                   { label: "Net Surplus", value: report.netSurplus, color: report.netSurplus >= 0 ? "text-teal-600" : "text-orange-600" },
                   { label: "Store Sales", value: report.storeSalesTotal, color: "text-violet-600" },

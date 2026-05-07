@@ -337,6 +337,9 @@ namespace SmsApi.Models.DTOs
 
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+
+        /// <summary>UserLogin.Id for this staff member — used by leave management (leave requests use UserLogin.Id as ApplicantId)</summary>
+        public Guid? UserLoginId { get; set; }
     }
 
     public class StaffListResponse

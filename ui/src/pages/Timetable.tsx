@@ -1,21 +1,38 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Clock, Calendar, Users, BookOpen, Plus, Sun, Download } from "lucide-react";
+import { Clock, Users, BookOpen, Sun } from "lucide-react";
 import TimetableManager from "./academics/TimetableManager";
 import HolidayManager from "@/components/timetable/HolidayManager";
+import { academicApi } from "@/services/api/academicApi";
+import { staffApi } from "@/services/api/staffApi";
+import { timetableApi } from "@/services/api/timetableApi";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 export default function Timetable() {
-  const [stats] = useState({
-    totalClasses: 45,
-    activeTeachers: 28,
+  const { academicYear } = useAcademicYear();
+  const [stats, setStats] = useState({
+    totalClasses: 0,
+    activeTeachers: 0,
     periodsPerDay: 8,
     workingDays: 5,
-    totalSubjects: 12,
-    upcomingHolidays: 3
+    upcomingHolidays: 0
   });
+
+  useEffect(() => {
+    Promise.allSettled([
+      academicApi.listClasses(1, 500),
+      staffApi.list(),
+      timetableApi.list(undefined, 1, 1),
+    ]).then(([classRes, staffRes, ttRes]) => {
+      setStats(prev => ({
+        ...prev,
+        totalClasses: classRes.status === 'fulfilled' ? (classRes.value.total ?? 0) : prev.totalClasses,
+        activeTeachers: staffRes.status === 'fulfilled' ? (staffRes.value.total ?? staffRes.value.staff?.length ?? 0) : prev.activeTeachers,
+      }));
+    });
+  }, [academicYear]); // re-fetch KPI stats when year changes
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -29,16 +46,6 @@ export default function Timetable() {
           <p className="text-muted-foreground mt-2">
             Manage class schedules, teacher assignments, and holidays
           </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-          <Button size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Period
-          </Button>
         </div>
       </div>
 

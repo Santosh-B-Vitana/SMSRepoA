@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   User, Calendar, Award, Bell, BadgeIndianRupee, TrendingUp,
   BookOpen, GraduationCap, CheckCircle, XCircle, Timer, ArrowRight,
-  Loader2, AlertCircle, ChevronRight
+  Loader2, AlertCircle, ChevronRight, KeyRound, MessageSquare
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/services/api/studentApi";
 import { notificationApi, type NotificationItem } from "@/services/api/notificationApi";
 import { toast } from "sonner";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 
 interface ChildDashboardData {
   child: StudentBasic;
@@ -21,7 +22,7 @@ interface ChildDashboardData {
 }
 
 export default function ParentDashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [children, setChildren] = useState<StudentBasic[]>([]);
   const [childData, setChildData] = useState<Map<string, ChildDashboardData>>(new Map());
@@ -29,6 +30,17 @@ export default function ParentDashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedChildId, setSelectedChildId] = useState<string>("");
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+
+  // Detect forced password change — set by backend when admin provisions / resets password
+  const requirePasswordChange = !!(user as any)?.requirePasswordChange;
+
+  // Auto-open the forced change dialog
+  useEffect(() => {
+    if (requirePasswordChange) {
+      setChangePasswordOpen(true);
+    }
+  }, [requirePasswordChange]);
 
   useEffect(() => {
     loadDashboard();
@@ -109,7 +121,26 @@ export default function ParentDashboard() {
 
   return (
     <div className="space-y-6">
-      <WelcomeHeader name={user?.name} />
+      <div className="flex items-start justify-between gap-4">
+        <WelcomeHeader name={user?.name} />
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-shrink-0 gap-2"
+          onClick={() => setChangePasswordOpen(true)}
+        >
+          <KeyRound className="h-4 w-4" />
+          Change Password
+        </Button>
+      </div>
+
+      {/* Forced password change dialog */}
+      <ChangePasswordDialog
+        open={changePasswordOpen}
+        onOpenChange={setChangePasswordOpen}
+        forced={requirePasswordChange}
+        onSuccess={logout}
+      />
 
       {children.length > 1 ? (
         <div className="flex items-center gap-3 pb-2 overflow-x-auto">
@@ -385,6 +416,7 @@ export default function ParentDashboard() {
                     <QuickLink icon={<BookOpen className="h-4 w-4" />} label="Academic Results" onClick={() => navigate("/child-profile")} />
                     <QuickLink icon={<BadgeIndianRupee className="h-4 w-4" />} label="Fee Payments" onClick={() => navigate("/parent-fees")} />
                     <QuickLink icon={<Bell className="h-4 w-4" />} label="All Notifications" onClick={() => navigate("/parent-notifications")} />
+                    <QuickLink icon={<MessageSquare className="h-4 w-4" />} label="School Connect" onClick={() => navigate("/school-connect")} />
                   </div>
                 </CardContent>
               </Card>

@@ -70,7 +70,7 @@ interface FilterState {
   searchTerm: string;
 }
 
-export function AdminLeaveManagementEnhanced() {
+export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { defaultRequestType?: "all" | "staff" | "student" }) {
   // State Management
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
@@ -84,7 +84,7 @@ export function AdminLeaveManagementEnhanced() {
   const [processing, setProcessing] = useState(false);
   
   const [filters, setFilters] = useState<FilterState>({
-    requestType: "all", status: "all", leaveType: "", dateRange: "all", searchTerm: ""
+    requestType: defaultRequestType, status: "all", leaveType: "", dateRange: "all", searchTerm: ""
   });
 
   const [approvalDialog, setApprovalDialog] = useState<ApprovalDialogState>({
@@ -106,7 +106,7 @@ export function AdminLeaveManagementEnhanced() {
         setLoading(true);
         const [types, response] = await Promise.all([
           leaveManagementApi.getLeaveTypes("All"),
-          leaveManagementApi.getLeaveRequests(1, 500, undefined, "all"),
+          leaveManagementApi.getLeaveRequests(1, 500, undefined, undefined), // undefined = no status filter = all
         ]);
         setLeaveTypes(types);
         setLeaves(response.items);
@@ -125,15 +125,20 @@ export function AdminLeaveManagementEnhanced() {
     fetchData();
   }, [toast]);
 
-  // Calculate Statistics
+  // Calculate Statistics — always scoped to the locked requestType to avoid mixing students into staff stats
   const calculateStats = (leaveData: LeaveRequest[]) => {
-    const pending = leaveData.filter(l => l.status === "Pending").length;
-    const approved = leaveData.filter(l => l.status === "Approved").length;
-    const rejected = leaveData.filter(l => l.status === "Rejected").length;
-    const staff = leaveData.filter(l => l.applicantType === "Staff").length;
-    const students = leaveData.filter(l => l.applicantType === "Student").length;
-    const approvalRate = total === 0 ? 0 : ((approved / (approved + rejected)) * 100 || 0);
+    const scoped = defaultRequestType === "staff"
+      ? leaveData.filter(l => l.applicantType === "Staff")
+      : defaultRequestType === "student"
+        ? leaveData.filter(l => l.applicantType === "Student")
+        : leaveData;
+    const pending = scoped.filter(l => l.status?.toLowerCase() === "pending").length;
+    const approved = scoped.filter(l => l.status?.toLowerCase() === "approved").length;
+    const rejected = scoped.filter(l => l.status?.toLowerCase() === "rejected").length;
+    const staff = scoped.filter(l => l.applicantType === "Staff").length;
+    const students = scoped.filter(l => l.applicantType === "Student").length;
     const total = approved + rejected + pending;
+    const approvalRate = total === 0 ? 0 : Math.round((approved / Math.max(1, approved + rejected)) * 100);
 
     setStats({
       totalPending: pending,
@@ -141,8 +146,8 @@ export function AdminLeaveManagementEnhanced() {
       totalRejected: rejected,
       staffLeaveRequests: staff,
       studentLeaveRequests: students,
-      approvalRate: Math.round(approvalRate),
-      avgApprovalTime: 3, // placeholder - should be calculated from actual data
+      approvalRate,
+      avgApprovalTime: 3,
     });
   };
 
@@ -153,8 +158,8 @@ export function AdminLeaveManagementEnhanced() {
       if (filters.requestType === "staff" && leave.applicantType !== "Staff") return false;
       if (filters.requestType === "student" && leave.applicantType !== "Student") return false;
 
-      // Status filter
-      if (filters.status !== "all" && leave.status !== filters.status) return false;
+      // Status filter (case-insensitive — backend normalizes to Title Case but be defensive)
+      if (filters.status !== "all" && leave.status?.toLowerCase() !== filters.status.toLowerCase()) return false;
 
       // Leave type filter
       if (filters.leaveType && leave.leaveTypeId !== filters.leaveType) return false;
@@ -188,19 +193,24 @@ export function AdminLeaveManagementEnhanced() {
   const handleApprovalSubmit = async (action: "approve" | "reject") => {
     if (!approvalDialog.leaveId) return;
 
+    if (action === "reject" && !approvalDialog.remarks.trim()) {
+      toast({ title: "Reason required", description: "Please provide a reason for rejection", variant: "destructive" });
+      return;
+    }
+
     try {
       setProcessing(true);
       
       if (action === "approve") {
-        await leaveManagementApi.approveLeave(approvalDialog.leaveId, approvalDialog.remarks);
-        toast({ title: "Success", description: "Leave request approved successfully" });
+        await leaveManagementApi.approveLeave(approvalDialog.leaveId, approvalDialog.remarks || undefined);
+        toast({ title: "Leave Approved", description: "The staff member has been notified." });
       } else {
         await leaveManagementApi.rejectLeave(approvalDialog.leaveId, approvalDialog.remarks);
-        toast({ title: "Success", description: "Leave request rejected successfully" });
+        toast({ title: "Leave Rejected", description: "The staff member has been notified with the reason." });
       }
 
       // Refresh data
-      const response = await leaveManagementApi.getLeaveRequests(1, 500, undefined, "all");
+      const response = await leaveManagementApi.getLeaveRequests(1, 500, undefined, undefined);
       setLeaves(response.items);
       calculateStats(response.items);
 
@@ -242,7 +252,7 @@ export function AdminLeaveManagementEnhanced() {
       toast({ title: "Success", description: `Leave marked for ${directMarkingDialog.form.staffId}` });
 
       // Refresh
-      const response = await leaveManagementApi.getLeaveRequests(1, 500, undefined, "all");
+      const response = await leaveManagementApi.getLeaveRequests(1, 500, undefined, undefined);
       setLeaves(response.items);
       calculateStats(response.items);
 
@@ -313,17 +323,26 @@ export function AdminLeaveManagementEnhanced() {
     <Card className="mb-6">
       <CardContent className="pt-6">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {/* Request Type Filter */}
-          <Select value={filters.requestType} onValueChange={(v: any) => setFilters({ ...filters, requestType: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Request Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Requests</SelectItem>
-              <SelectItem value="staff">Staff Leave</SelectItem>
-              <SelectItem value="student">Student Leave</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Request Type Filter — locked when a specific type is enforced */}
+          {defaultRequestType === "all" ? (
+            <Select value={filters.requestType} onValueChange={(v: any) => setFilters({ ...filters, requestType: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Request Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Requests</SelectItem>
+                <SelectItem value="staff">Staff Leave</SelectItem>
+                <SelectItem value="student">Student Leave</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/40">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                {defaultRequestType === "staff" ? "Staff Leaves" : "Student Leaves"}
+              </span>
+            </div>
+          )}
 
           {/* Status Filter */}
           <Select value={filters.status} onValueChange={(v: any) => setFilters({ ...filters, status: v })}>
@@ -339,12 +358,12 @@ export function AdminLeaveManagementEnhanced() {
           </Select>
 
           {/* Leave Type Filter */}
-          <Select value={filters.leaveType} onValueChange={(v) => setFilters({ ...filters, leaveType: v })}>
+          <Select value={filters.leaveType || "__all__"} onValueChange={(v) => setFilters({ ...filters, leaveType: v === "__all__" ? "" : v })}>
             <SelectTrigger>
               <SelectValue placeholder="Leave Type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Types</SelectItem>
+              <SelectItem value="__all__">All Types</SelectItem>
               {leaveTypes.map(type => (
                 <SelectItem key={type.id} value={type.id}>{type.name}</SelectItem>
               ))}
@@ -392,8 +411,8 @@ export function AdminLeaveManagementEnhanced() {
         <Badge
           variant="outline"
           className={
-            leave.status === "Pending" ? "bg-amber-50 text-amber-700 border-amber-200" :
-              leave.status === "Approved" ? "bg-green-50 text-green-700 border-green-200" :
+            leave.status?.toLowerCase() === "pending" ? "bg-amber-50 text-amber-700 border-amber-200" :
+              leave.status?.toLowerCase() === "approved" ? "bg-green-50 text-green-700 border-green-200" :
                 "bg-red-50 text-red-700 border-red-200"
           }
         >
@@ -401,27 +420,29 @@ export function AdminLeaveManagementEnhanced() {
         </Badge>
       </TableCell>
       <TableCell>
-        {leave.status === "Pending" && (
+        {leave.status?.toLowerCase() === "pending" && (
           <div className="flex gap-2">
             <Button
               size="sm"
               variant="outline"
-              className="h-8 w-8 p-0"
+              className="h-8 gap-1 px-2 text-green-700 border-green-300 hover:bg-green-50"
               onClick={() => setApprovalDialog({ open: true, leaveId: leave.id, isRejecting: false, remarks: "", selectedLeave: leave })}
             >
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-3.5 w-3.5" />
+              Approve
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="h-8 w-8 p-0"
+              className="h-8 gap-1 px-2 text-red-700 border-red-300 hover:bg-red-50"
               onClick={() => setApprovalDialog({ open: true, leaveId: leave.id, isRejecting: true, remarks: "", selectedLeave: leave })}
             >
-              <XCircle className="h-4 w-4 text-red-600" />
+              <XCircle className="h-3.5 w-3.5" />
+              Reject
             </Button>
           </div>
         )}
-        {leave.status !== "Pending" && (
+        {leave.status?.toLowerCase() !== "pending" && (
           <Button
             size="sm"
             variant="ghost"
@@ -596,7 +617,7 @@ export function AdminLeaveManagementEnhanced() {
               <Alert className="bg-blue-50 border-blue-200">
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-blue-800">
-                  <strong>{approvalDialog.selectedLeave.applicantName}</strong> - {approvalDialog.selectedLeave.leaveTypeName}
+                  <strong>{approvalDialog.selectedLeave.applicantName || approvalDialog.selectedLeave.applicantEmail?.split("@")[0].replace(/[._-]/g, " ") || "Staff Member"}</strong> — {approvalDialog.selectedLeave.leaveTypeName}
                   <br />
                   {new Date(approvalDialog.selectedLeave.startDate).toLocaleDateString()} to {new Date(approvalDialog.selectedLeave.endDate).toLocaleDateString()}
                   <br />

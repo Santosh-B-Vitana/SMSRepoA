@@ -13,7 +13,7 @@ namespace SmsApi.Services
 {
     public interface IFeeService
     {
-        Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter);
+        Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null);
         Task<FeeStructureResponse?> GetFeeStructureByIdAsync(Guid id, Guid schoolId);
         Task<FeeStructureResponse> CreateFeeStructureAsync(CreateFeeStructureRequest request);
         Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status);
@@ -66,13 +66,18 @@ namespace SmsApi.Services
             _logger = logger;
         }
 
-        public async Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter)
+        public async Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null)
         {
             var query = _context.FeeStructures.Where(f => f.SchoolId == schoolId);
 
             if (!string.IsNullOrWhiteSpace(classFilter))
             {
                 query = query.Where(f => f.Class == classFilter);
+            }
+
+            if (!string.IsNullOrWhiteSpace(academicYear))
+            {
+                query = query.Where(f => f.AcademicYear == academicYear);
             }
 
             var structures = await query

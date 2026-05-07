@@ -33,9 +33,12 @@ namespace SmsApi.Controllers
             return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
         }
 
+        private string? GetCallerRole()
+            => User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
+
         // Leave Types
         [HttpGet("types")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager,Parent")]
         public async Task<ActionResult<LeaveTypeListResponse>> GetLeaveTypes([FromQuery] string? applicableTo = null)
         {
             var schoolId = GetSchoolId();
@@ -102,13 +105,14 @@ namespace SmsApi.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] Guid? applicantId = null,
-            [FromQuery] string? status = null)
+            [FromQuery] string? status = null,
+            [FromQuery] string? staffEmail = null)
         {
             var schoolId = GetSchoolId();
             if (schoolId == Guid.Empty)
                 return Unauthorized();
 
-            var response = await _leaveManagementService.GetLeaveRequestsAsync(schoolId, page, pageSize, applicantId, status);
+            var response = await _leaveManagementService.GetLeaveRequestsAsync(schoolId, page, pageSize, applicantId, status, staffEmail);
             return Ok(response);
         }
 
@@ -246,6 +250,101 @@ namespace SmsApi.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        // ── Student Leave Endpoints (parent-initiated, teacher/admin managed) ─────
+
+        /// <summary>Parent submits a leave request for their child.</summary>
+        [HttpPost("student-leave")]
+        [Authorize(Roles = "Parent")]
+        public async Task<ActionResult<StudentLeaveResponse>> CreateStudentLeave([FromBody] CreateStudentLeaveRequest request)
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty) return Unauthorized();
+
+            var parentEmail = User.FindFirst(ClaimTypes.Email)?.Value;
+            if (string.IsNullOrWhiteSpace(parentEmail)) return Unauthorized();
+
+            try
+            {
+                var result = await _leaveManagementService.CreateStudentLeaveAsync(parentEmail, request, schoolId);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>Parent views their child's leave requests.</summary>
+        [HttpGet("student-leave/my-children")]
+        [Authorize(Roles = "Parent")]
+        public async Task<ActionResult<StudentLeaveListResponse>> GetMyChildrenLeaves(
+            [FromQuery] Guid? studentId,
+            [FromQuery] string? status,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty) return Unauthorized();
+
+            var result = await _leaveManagementService.GetStudentLeaveRequestsAsync(schoolId, page, pageSize, studentId, status);
+            return Ok(result);
+        }
+
+        /// <summary>Staff/Admin view student leave requests. Teachers see only their assigned classes.</summary>
+        [HttpGet("student-leaves")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager")]
+        public async Task<ActionResult<StudentLeaveListResponse>> GetStudentLeaves(
+            [FromQuery] Guid? studentId,
+            [FromQuery] string? status,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty) return Unauthorized();
+
+            var userId = GetUserId();
+            var role = GetCallerRole();
+            var result = await _leaveManagementService.GetStudentLeaveRequestsAsync(schoolId, page, pageSize, studentId, status, userId, role);
+            return Ok(result);
+        }
+
+        /// <summary>Staff/Admin approves a student leave request (attendance auto-marked). Class teachers can only approve for their class.</summary>
+        [HttpPost("student-leaves/{id}/approve")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager")]
+        public async Task<ActionResult<StudentLeaveResponse>> ApproveStudentLeave(Guid id, [FromBody] ApproveLeaveRequest request)
+        {
+            var schoolId = GetSchoolId();
+            var userId = GetUserId();
+            if (schoolId == Guid.Empty) return Unauthorized();
+
+            request.ApprovedBy = userId;
+            try
+            {
+                var result = await _leaveManagementService.ApproveStudentLeaveAsync(id, request, schoolId, userId, GetCallerRole());
+                return Ok(result);
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>Staff/Admin rejects a student leave request. Class teachers can only deny for their class.</summary>
+        [HttpPost("student-leaves/{id}/reject")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager")]
+        public async Task<ActionResult<StudentLeaveResponse>> RejectStudentLeave(Guid id, [FromBody] RejectLeaveRequest request)
+        {
+            var schoolId = GetSchoolId();
+            var userId = GetUserId();
+            if (schoolId == Guid.Empty) return Unauthorized();
+
+            request.RejectedBy = userId;
+            try
+            {
+                var result = await _leaveManagementService.RejectStudentLeaveAsync(id, request, schoolId, userId, GetCallerRole());
+                return Ok(result);
+            }
+            catch (KeyNotFoundException) { return NotFound(); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         }
     }
 }

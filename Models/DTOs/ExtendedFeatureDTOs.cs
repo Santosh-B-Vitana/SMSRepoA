@@ -85,6 +85,8 @@ namespace SmsApi.Models.DTOs
         public Guid ApplicantId { get; set; }
         public string ApplicantType { get; set; } = string.Empty;
         public string? ApplicantName { get; set; }
+        public string? ApplicantEmail { get; set; }
+        public string? ApplicantDesignation { get; set; }
         public Guid LeaveTypeId { get; set; }
         public string? LeaveTypeName { get; set; }
         public DateTime StartDate { get; set; }
@@ -726,6 +728,35 @@ namespace SmsApi.Models.DTOs
     {
         public string? ApproverRemarks { get; set; }
         public Guid RejectedBy { get; set; }
+    }
+
+    // ── Student Leave DTOs (parent-initiated, teacher/admin managed) ──────────
+    public class CreateStudentLeaveRequest
+    {
+        public Guid StudentId { get; set; }
+        public Guid LeaveTypeId { get; set; }
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        /// <summary>Optional reason (not mandatory for parent portal).</summary>
+        public string? Reason { get; set; }
+    }
+
+    public class StudentLeaveResponse : LeaveRequestResponse
+    {
+        public string? StudentName { get; set; }
+        public string? ClassName { get; set; }
+        public string? Section { get; set; }
+        public string? GuardianName { get; set; }
+        public string? GuardianPhone { get; set; }
+    }
+
+    public class StudentLeaveListResponse
+    {
+        public List<StudentLeaveResponse> Items { get; set; } = new();
+        public int TotalCount { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public int TotalPages { get; set; }
     }
 
     public class CheckInVisitorRequest

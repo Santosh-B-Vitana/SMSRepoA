@@ -265,15 +265,34 @@ namespace SmsApi.Controllers
         [HttpGet("users-with-roles")]
         public async Task<ActionResult<UserListWithRolesResponse>> GetUsersWithRoles(
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 50)
+            [FromQuery] int pageSize = 50,
+            [FromQuery] bool staffOnly = false)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var result = await _permissionsService.GetUsersWithRolesAsync(schoolId, page, pageSize);
+                var result = await _permissionsService.GetUsersWithRolesAsync(schoolId, page, pageSize, staffOnly);
                 return Ok(result);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Creates a UserLogin for a staff member who doesn't have one yet, and auto-assigns
+        /// their matching system role based on their designation. Temp password = ChangeMe@123.
+        /// </summary>
+        [Authorize]
+        [HttpPost("provision-staff-login/{staffId:guid}")]
+        public async Task<ActionResult<UserWithRolesResponse>> ProvisionStaffLogin(Guid staffId)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _permissionsService.ProvisionStaffLoginAsync(staffId, schoolId);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 

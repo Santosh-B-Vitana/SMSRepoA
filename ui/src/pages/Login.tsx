@@ -41,8 +41,8 @@ export default function Login() {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [rateLimitWarning, setRateLimitWarning] = useState<string | null>(null);
-  const [loginType, setLoginType] = useState<'admin' | 'staff'>('admin');
-  const loginTypeRef = useRef<'admin' | 'staff'>('admin');
+  const [loginType, setLoginType] = useState<'admin' | 'staff' | 'parent'>('admin');
+  const loginTypeRef = useRef<'admin' | 'staff' | 'parent'>('admin');
   loginTypeRef.current = loginType;
   
   const { login, logout, loading, isAuthenticated, user } = useAuth();
@@ -65,15 +65,22 @@ export default function Login() {
       const role = user.role?.toLowerCase() ?? '';
       const staffRoles = ['staff', 'teacher'];
       const isStaffRole = staffRoles.includes(role);
+      const isParentRole = role === 'parent';
       const currentPortal = loginTypeRef.current;
 
+      if (currentPortal === 'parent' && !isParentRole) {
+        setError('This portal is for parents/guardians only. Please use the Administration or Staff login.');
+        logout();
+        return;
+      }
       if (currentPortal === 'staff' && !isStaffRole) {
         setError('This portal is for teaching and non-teaching staff only. Please use the Administration login.');
         logout();
         return;
       }
-      if (currentPortal === 'admin' && isStaffRole) {
-        setError('Staff members must use the Staff Login portal.');
+      if (currentPortal === 'admin' && (isStaffRole || isParentRole)) {
+        const hint = isStaffRole ? 'Staff members must use the Staff Login portal.' : 'Parents must use the Parent Portal.';
+        setError(hint);
         logout();
         return;
       }
@@ -146,7 +153,7 @@ export default function Login() {
   const demoUsers = [
     { email: 'admin@vitanaschools.edu', role: 'Admin', password: 'admin-dev-change-me', name: 'Admin User', portal: 'admin' },
     { email: 'suresh.n@demo.edu', role: 'Staff', password: 'StaffDemo2026!', name: 'Suresh Nair', portal: 'staff' },
-    { email: 'parent@demo.edu', role: 'Parent', password: 'ParentDemo2026!', name: 'Arjun Sharma', portal: 'admin' }
+    { email: 'parent@demo.edu', role: 'Parent', password: 'ParentDemo2026!', name: 'Arjun Sharma', portal: 'parent' }
   ];
 
   const fillDemoCredentials = (demoEmail: string, demoPassword: string) => {
@@ -301,30 +308,42 @@ export default function Login() {
         <div className="flex-1 flex items-center justify-center px-6 pb-10 lg:px-16">
           <div className="w-full max-w-[400px] space-y-8">
             {/* Portal Type Selector */}
-            <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-muted/50 border border-border">
+            <div className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-muted/50 border border-border">
               <button
                 type="button"
                 onClick={() => { setLoginType('admin'); setError(''); }}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                className={`flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
                   loginType === 'admin'
                     ? 'bg-background text-foreground shadow-sm border border-border'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <Shield className="h-4 w-4" />
-                Administration
+                <Shield className="h-4 w-4 flex-shrink-0" />
+                Admin
               </button>
               <button
                 type="button"
                 onClick={() => { setLoginType('staff'); setError(''); }}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                className={`flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
                   loginType === 'staff'
                     ? 'bg-background text-foreground shadow-sm border border-border'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <GraduationCap className="h-4 w-4" />
-                Staff Portal
+                <GraduationCap className="h-4 w-4 flex-shrink-0" />
+                Staff
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLoginType('parent'); setError(''); }}
+                className={`flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  loginType === 'parent'
+                    ? 'bg-background text-foreground shadow-sm border border-border'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Users className="h-4 w-4 flex-shrink-0" />
+                Parent
               </button>
             </div>
 
@@ -341,11 +360,13 @@ export default function Login() {
               )}
               <div className="space-y-2">
                 <h2 className="text-2xl lg:text-3xl font-bold text-foreground tracking-tight">
-                  {loginType === 'staff' ? 'Staff Login' : 'Admin Login'}
+                  {loginType === 'staff' ? 'Staff Login' : loginType === 'parent' ? 'Parent Portal' : 'Admin Login'}
                 </h2>
                 <p className="text-muted-foreground text-sm">
                   {loginType === 'staff'
-                    ? 'Sign in to access your staff dashboard'
+                    ? 'Principal, Teacher, Warden & all school staff'
+                    : loginType === 'parent'
+                    ? 'Sign in with your registered email and password'
                     : <>Sign in to <span className="font-medium text-foreground">{schoolInfo?.name || 'your account'}</span></>
                   }
                 </p>
@@ -451,7 +472,7 @@ export default function Login() {
                 disabled={loading}
               >
                 {loading && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-                {loginType === 'staff' ? 'Sign in to Staff Portal' : 'Sign In'}
+                {loginType === 'staff' ? 'Sign in to Staff Portal' : loginType === 'parent' ? 'Sign in to Parent Portal' : 'Sign In'}
               </Button>
             </form>
 
@@ -462,7 +483,7 @@ export default function Login() {
                 <span className="text-sm font-semibold text-foreground">Demo Credentials</span>
               </div>
               <div className="space-y-2.5">
-                {demoUsers.filter(d => d.portal === loginType || (loginType === 'admin' && d.portal === 'admin')).map((demoUser, index) => (
+                {demoUsers.filter(d => d.portal === loginType).map((demoUser, index) => (
                   <div 
                     key={index} 
                     className="flex items-center justify-between py-1"

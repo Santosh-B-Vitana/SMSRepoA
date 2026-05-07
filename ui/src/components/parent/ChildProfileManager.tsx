@@ -2,7 +2,7 @@
 import {
   User, Calendar, Award, BookOpen, Loader2, AlertCircle,
   CheckCircle, XCircle, Timer, GraduationCap, TrendingUp,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, CalendarDays
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/services/api/studentApi";
 import { attendanceApi } from "@/services/api/attendanceApi";
 import { getResults, type ResultBasic } from "@/services/api/examinationApi";
+import { ParentLeaveTab } from "@/components/leave-management/ParentLeaveTab";
 import { toast } from "sonner";
 
 interface AttendanceRecord {
@@ -265,7 +266,7 @@ export function ChildProfileManager() {
           if (val === "attendance" && attendanceRecords.length === 0) loadAttendance();
           if (val === "academics" && examResults.length === 0) loadAcademics();
         }}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="attendance" onClick={() => { if (attendanceRecords.length === 0) loadAttendance(); }}>
               <Calendar className="h-4 w-4 mr-1.5" />
               Attendance
@@ -273,6 +274,10 @@ export function ChildProfileManager() {
             <TabsTrigger value="academics" onClick={() => { if (examResults.length === 0) loadAcademics(); }}>
               <Award className="h-4 w-4 mr-1.5" />
               Academic Performance
+            </TabsTrigger>
+            <TabsTrigger value="leave">
+              <CalendarDays className="h-4 w-4 mr-1.5" />
+              Leave
             </TabsTrigger>
             <TabsTrigger value="overview">
               <User className="h-4 w-4 mr-1.5" />
@@ -576,6 +581,11 @@ export function ChildProfileManager() {
                 </Card>
               )}
             </div>
+          </TabsContent>
+
+          {/* ── Leave Tab ── */}
+          <TabsContent value="leave">
+            <ParentLeaveTab studentId={selectedChildId} studentName={currentChild.name} />
           </TabsContent>
         </Tabs>
       )}

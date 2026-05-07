@@ -195,6 +195,10 @@ namespace SmsApi.Models.DTOs
         public DateTime? LastLogin { get; set; }
         public DateTime CreatedAt { get; set; }
         public List<RoleBasicDto> AssignedRoles { get; set; } = new();
+        /// <summary>True when the staff member has a UserLogin account (can be assigned roles)</summary>
+        public bool HasLoginAccount { get; set; } = true;
+        /// <summary>Staff.Id — used to provision a login for staff members who don't have one yet</summary>
+        public Guid? StaffId { get; set; }
     }
 
     public class UserListWithRolesResponse

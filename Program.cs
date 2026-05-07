@@ -499,6 +499,38 @@ static async Task SeedEssentialDataAsync(WebApplication app)
 
         // 6. Seed Fees, Hostel, Transport, Grades (separate idempotent guards)
         await SeedOperationalDataAsync(db, schoolId, logger);
+
+        // 7. Seed timetable periods (idempotent: skipped if timetables already exist)
+        var seeder = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IDbSeeder>();
+        await seeder.SeedAllAsync();
+
+        // 8. Seed leave types for the Demo School (idempotent)
+        if (!await db.LeaveTypes.AnyAsync(l => l.SchoolId == schoolId && l.ApplicableTo == "Staff"))
+        {
+            db.LeaveTypes.AddRange(new[]
+            {
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Casual Leave",     Description = "For personal or family matters",                  ApplicableTo = "Staff",    MaxDaysPerYear = 12,  RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1,  IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Sick Leave",       Description = "Medical leave with doctor's certificate",          ApplicableTo = "Staff",    MaxDaysPerYear = 10,  RequiresApproval = true,  RequiresDocument = true,  MinNoticeDays = 0,  IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Earned Leave",     Description = "Leave earned through service",                     ApplicableTo = "Staff",    MaxDaysPerYear = 15,  RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 3,  IsCarryForward = true,  IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Maternity Leave",  Description = "Maternity leave as per Maternity Benefit Act",     ApplicableTo = "Staff",    MaxDaysPerYear = 180, RequiresApproval = true,  RequiresDocument = true,  MinNoticeDays = 30, IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Paternity Leave",  Description = "Paternity leave for new fathers",                  ApplicableTo = "Staff",    MaxDaysPerYear = 15,  RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 7,  IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Compensatory Off", Description = "Leave in lieu of working on holidays or weekends",  ApplicableTo = "Staff",    MaxDaysPerYear = 12,  RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1,  IsCarryForward = false, IsPaid = true,  IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Loss of Pay",      Description = "Unpaid leave when all paid leaves are exhausted",   ApplicableTo = "Staff",    MaxDaysPerYear = 30,  RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 2,  IsCarryForward = false, IsPaid = false, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            });
+            await db.SaveChangesAsync();
+            logger.LogInformation("Seeded staff leave types for Demo School");
+        }
+        if (!await db.LeaveTypes.AnyAsync(l => l.SchoolId == schoolId && (l.ApplicableTo == "Student" || l.ApplicableTo == "All")))
+        {
+            db.LeaveTypes.AddRange(new[]
+            {
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Medical Leave",   Description = "Student is unwell and needs rest",      ApplicableTo = "Student", MaxDaysPerYear = 15, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 0, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Casual Leave",    Description = "For personal or family matters",        ApplicableTo = "Student", MaxDaysPerYear = 10, RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 1, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new SmsApi.Models.Entities.LeaveType { Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Family Function", Description = "Leave for family events or ceremonies",  ApplicableTo = "Student", MaxDaysPerYear = 5,  RequiresApproval = true,  RequiresDocument = false, MinNoticeDays = 2, IsCarryForward = false, IsPaid = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            });
+            await db.SaveChangesAsync();
+            logger.LogInformation("Seeded student leave types for Demo School");
+        }
     }
     catch (Exception ex)
     {
