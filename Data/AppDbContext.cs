@@ -48,6 +48,12 @@ namespace SmsApi.Data
         public DbSet<Student> Students { get; set; }
         public DbSet<StudentGuardian> StudentGuardians { get; set; }
         public DbSet<StudentDocument> StudentDocuments { get; set; }
+        public DbSet<StudentSibling> StudentSiblings { get; set; }
+        public DbSet<StudentAnnualHealth> StudentAnnualHealthRecords { get; set; }
+        public DbSet<Hobby> Hobbies { get; set; }
+        public DbSet<StudentHobbyEnrollment> StudentHobbyEnrollments { get; set; }
+        public DbSet<StudentPermissionSlip> StudentPermissionSlips { get; set; }
+        public DbSet<TransferCertificate> TransferCertificates { get; set; }
         public DbSet<PromotionHistory> PromotionHistories { get; set; } // CRITICAL: Promotion audit trail
         public DbSet<Staff> StaffMembers { get; set; }
         public DbSet<StaffDocument> StaffDocuments { get; set; }
@@ -639,6 +645,81 @@ namespace SmsApi.Data
                     .WithMany(s => s.Documents)
                     .HasForeignKey(d => d.StudentId)
                     .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.StudentId, e.DocumentType });
+            });
+
+            // StudentSibling — bidirectional links; unique constraint prevents duplicates.
+            modelBuilder.Entity<StudentSibling>(entity =>
+            {
+                entity.HasOne(ss => ss.Student)
+                    .WithMany(s => s.Siblings)
+                    .HasForeignKey(ss => ss.StudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(ss => ss.Sibling)
+                    .WithMany()
+                    .HasForeignKey(ss => ss.SiblingId)
+                    .OnDelete(DeleteBehavior.Restrict);  // No cascade on sibling side
+
+                // One direction only per row; (StudentId,SiblingId) must be unique.
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.SiblingId }).IsUnique();
+            });
+
+            // StudentAnnualHealth — one health record per student per academic year.
+            modelBuilder.Entity<StudentAnnualHealth>(entity =>
+            {
+                entity.HasOne(h => h.Student)
+                    .WithMany(s => s.AnnualHealthRecords)
+                    .HasForeignKey(h => h.StudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.AcademicYear }).IsUnique();
+            });
+
+            // Hobby master list — unique per school.
+            modelBuilder.Entity<Hobby>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+            });
+
+            // StudentHobbyEnrollment — one enrollment per student per hobby per year.
+            modelBuilder.Entity<StudentHobbyEnrollment>(entity =>
+            {
+                entity.HasOne(e => e.Student)
+                    .WithMany(s => s.HobbyEnrollments)
+                    .HasForeignKey(e => e.StudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Hobby)
+                    .WithMany()
+                    .HasForeignKey(e => e.HobbyId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.HobbyId, e.AcademicYear }).IsUnique();
+            });
+
+            // StudentPermissionSlip.
+            modelBuilder.Entity<StudentPermissionSlip>(entity =>
+            {
+                entity.HasOne(p => p.Student)
+                    .WithMany(s => s.PermissionSlips)
+                    .HasForeignKey(p => p.StudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.OutDate });
+            });
+
+            // TransferCertificate — one TC per student.
+            modelBuilder.Entity<TransferCertificate>(entity =>
+            {
+                entity.HasOne(tc => tc.Student)
+                    .WithOne(s => s.TransferCertificate)
+                    .HasForeignKey<TransferCertificate>(tc => tc.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);  // Don't delete TC when student is soft-deleted
+
+                entity.HasIndex(e => new { e.SchoolId, e.TCNumber }).IsUnique();
+                entity.HasIndex(e => new { e.SchoolId, e.AutoTCNumber });
             });
         }
 

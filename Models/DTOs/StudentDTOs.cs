@@ -9,13 +9,26 @@ namespace SmsApi.Models.DTOs
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public string Relation { get; set; } = string.Empty; // father, mother, guardian, other
+        public string? Surname { get; set; }
+        public string Relation { get; set; } = string.Empty;
+        public string? Qualification { get; set; }
         public string? Occupation { get; set; }
+        public string? EmploymentType { get; set; }
         public string? Employer { get; set; }
+        public string? OfficeAddress { get; set; }
+        public string? OfficePhone { get; set; }
+        public string? OfficeEmail { get; set; }
+        public string? AnnualIncome { get; set; }
+        public DateTime? DateOfBirth { get; set; }
+        public string? ResidentialAddress { get; set; }
         public string Phone { get; set; } = string.Empty;
+        public string? HomePhone { get; set; }
         public string? Email { get; set; }
         public string? AadharNumber { get; set; }
         public string? PanNumber { get; set; }
+        public string? PassportNumber { get; set; }
+        public string? PhotoUrl { get; set; }
+        public bool HasPortalAccess { get; set; }
     }
     
     // Document DTO
@@ -25,6 +38,12 @@ namespace SmsApi.Models.DTOs
         public string DocumentType { get; set; } = string.Empty;
         public string FileUrl { get; set; } = string.Empty;
         public string? FileName { get; set; }
+        public string? DocumentNumber { get; set; }
+        public string? IssuingAuthority { get; set; }
+        public DateTime? IssueDate { get; set; }
+        public DateTime? ExpiryDate { get; set; }
+        public string VerificationStatus { get; set; } = "none";
+        public DateTime? VerifiedAt { get; set; }
         public DateTime UploadedAt { get; set; }
     }
 
@@ -74,6 +93,20 @@ namespace SmsApi.Models.DTOs
         public string? PassportNumber { get; set; }
         public string? VisaType { get; set; }
         public DateTime? VisaExpiry { get; set; }
+        public string? RationCardNumber { get; set; }
+        
+        // Government / UDISE identifiers
+        public string? PenNumber { get; set; }
+        public string? UDISENumber { get; set; }
+        public string? BoardRollNumber { get; set; }
+        
+        // Admission / Registration
+        public string? RegistrationNumber { get; set; }
+        public string? EnrollmentNumber { get; set; }
+        public string? LedgerNumber { get; set; }
+        public string? ApplicationFormNumber { get; set; }
+        public string? ReasonToApply { get; set; }
+        public string? KnownAboutSchoolBy { get; set; }
         
         // Contact Information
         public string Address { get; set; } = string.Empty;
@@ -89,8 +122,26 @@ namespace SmsApi.Models.DTOs
         // Academic History
         public string? PreviousSchool { get; set; }
         public string? PreviousClass { get; set; }
+        public string? PreviousSchoolPlace { get; set; }
+        public string? PreviousSchoolBoard { get; set; }
+        public string? PreviousSchoolYearOfPassing { get; set; }
+        public string? PreviousSchoolPercentage { get; set; }
+        public string? PreviousSchoolMedium { get; set; }
         public string? TransferReason { get; set; }
         public string Category { get; set; } = string.Empty;
+        public string? SubCaste { get; set; }
+        
+        // DISE demographic flags
+        public bool IsMinority { get; set; }
+        public bool IsBPL { get; set; }
+        public bool IsDifferentlyAbled { get; set; }
+        public string? DifferentlyAbledType { get; set; }
+        public string? DifferentlyAbledPercentage { get; set; }
+        
+        // Cultural
+        public string? Religion { get; set; }
+        public string? Caste { get; set; }
+        public string? MotherTongue { get; set; }
         
         // Medical Information
         public string? BloodGroup { get; set; }
@@ -108,15 +159,31 @@ namespace SmsApi.Models.DTOs
         public bool MedicalConsent { get; set; }
         
         // Additional
-        public string? LanguageProficiency { get; set; } // JSON array
+        public string? LanguageProficiency { get; set; }
         public string? SpecialNeeds { get; set; }
         public bool TransportRequired { get; set; }
         public bool HostelRequired { get; set; }
-        public string? SiblingIds { get; set; } // JSON array
+        public string? CommunicationMode { get; set; }
+        
+        // Extracurricular
+        public bool IsNCCCadet { get; set; }
+        public string? NCCDetails { get; set; }
+        public string? ExtraCurricularActivities { get; set; }
+        
+        // Report Card
+        public string? ProgressReportRemarks { get; set; }
+        public string? ProgressReportRemarksCBSE { get; set; }
+        
+        // Character Certificate
+        public bool IsCharacterCertificateIssued { get; set; }
+        public string? CharacterCertificateNumber { get; set; }
+        
+        public string? SiblingIds { get; set; } // legacy JSON; prefer Siblings collection
         
         // Relations
         public List<GuardianDto>? Guardians { get; set; }
         public List<StudentDocumentDto>? Documents { get; set; }
+        public List<StudentSiblingDto>? Siblings { get; set; }
         
         // Audit
         public DateTime CreatedAt { get; set; }
@@ -194,6 +261,38 @@ namespace SmsApi.Models.DTOs
         
         public DateTime? VisaExpiry { get; set; }
         
+        [MaxLength(20)]
+        public string? RationCardNumber { get; set; }
+        
+        // Government / UDISE
+        [MaxLength(20)]
+        public string? PenNumber { get; set; }
+        
+        [MaxLength(20)]
+        public string? UDISENumber { get; set; }
+        
+        [MaxLength(30)]
+        public string? BoardRollNumber { get; set; }
+        
+        // Admission / Registration
+        [MaxLength(50)]
+        public string? RegistrationNumber { get; set; }
+        
+        [MaxLength(50)]
+        public string? EnrollmentNumber { get; set; }
+        
+        [MaxLength(30)]
+        public string? LedgerNumber { get; set; }
+        
+        [MaxLength(50)]
+        public string? ApplicationFormNumber { get; set; }
+        
+        [MaxLength(500)]
+        public string? ReasonToApply { get; set; }
+        
+        [MaxLength(200)]
+        public string? KnownAboutSchoolBy { get; set; }
+        
         // Contact Information
         [Required]
         public string Address { get; set; } = string.Empty;
@@ -226,11 +325,40 @@ namespace SmsApi.Models.DTOs
         [MaxLength(20)]
         public string? PreviousClass { get; set; }
         
+        [MaxLength(100)]
+        public string? PreviousSchoolPlace { get; set; }
+        
+        [MaxLength(100)]
+        public string? PreviousSchoolBoard { get; set; }
+        
+        [MaxLength(10)]
+        public string? PreviousSchoolYearOfPassing { get; set; }
+        
+        [MaxLength(20)]
+        public string? PreviousSchoolPercentage { get; set; }
+        
+        [MaxLength(100)]
+        public string? PreviousSchoolMedium { get; set; }
+        
         public string? TransferReason { get; set; }
         
         /// <summary>Allowed: General, OBC, SC, ST, EWS, Minority, Other</summary>
         [MaxLength(20)]
         public string Category { get; set; } = "General";
+        
+        [MaxLength(100)]
+        public string? SubCaste { get; set; }
+        
+        // DISE flags
+        public bool IsMinority { get; set; } = false;
+        public bool IsBPL { get; set; } = false;
+        public bool IsDifferentlyAbled { get; set; } = false;
+        
+        [MaxLength(100)]
+        public string? DifferentlyAbledType { get; set; }
+        
+        [MaxLength(10)]
+        public string? DifferentlyAbledPercentage { get; set; }
         
         // Cultural Information
         [MaxLength(50)]
@@ -273,6 +401,22 @@ namespace SmsApi.Models.DTOs
         public string? SpecialNeeds { get; set; }
         public bool TransportRequired { get; set; } = false;
         public bool HostelRequired { get; set; } = false;
+        
+        [MaxLength(50)]
+        public string? CommunicationMode { get; set; }
+        
+        // Extracurricular
+        public bool IsNCCCadet { get; set; } = false;
+        
+        [MaxLength(500)]
+        public string? NCCDetails { get; set; }
+        
+        public string? ExtraCurricularActivities { get; set; }
+        
+        // Report card
+        public string? ProgressReportRemarks { get; set; }
+        public string? ProgressReportRemarksCBSE { get; set; }
+        
         public string? SiblingIds { get; set; }
         
         [MaxLength(20)]
@@ -325,6 +469,9 @@ namespace SmsApi.Models.DTOs
         
         public DateTime? VisaExpiry { get; set; }
         
+        [MaxLength(20)]
+        public string? RationCardNumber { get; set; }
+        
         // Contact
         public string? Address { get; set; }
         public string? PermanentAddress { get; set; }
@@ -357,6 +504,54 @@ namespace SmsApi.Models.DTOs
         [MaxLength(20)]
         public string? Category { get; set; }
         
+        [MaxLength(100)]
+        public string? SubCaste { get; set; }
+        
+        public bool? IsMinority { get; set; }
+        public bool? IsBPL { get; set; }
+        public bool? IsDifferentlyAbled { get; set; }
+        
+        [MaxLength(100)]
+        public string? DifferentlyAbledType { get; set; }
+        
+        [MaxLength(10)]
+        public string? DifferentlyAbledPercentage { get; set; }
+        
+        // Government / UDISE
+        [MaxLength(20)]
+        public string? PenNumber { get; set; }
+        
+        [MaxLength(20)]
+        public string? UDISENumber { get; set; }
+        
+        [MaxLength(30)]
+        public string? BoardRollNumber { get; set; }
+        
+        [MaxLength(50)]
+        public string? RegistrationNumber { get; set; }
+        
+        [MaxLength(50)]
+        public string? EnrollmentNumber { get; set; }
+        
+        [MaxLength(30)]
+        public string? LedgerNumber { get; set; }
+        
+        // Previous school details
+        [MaxLength(100)]
+        public string? PreviousSchoolPlace { get; set; }
+        
+        [MaxLength(100)]
+        public string? PreviousSchoolBoard { get; set; }
+        
+        [MaxLength(10)]
+        public string? PreviousSchoolYearOfPassing { get; set; }
+        
+        [MaxLength(20)]
+        public string? PreviousSchoolPercentage { get; set; }
+        
+        [MaxLength(100)]
+        public string? PreviousSchoolMedium { get; set; }
+        
         // Medical
         [MaxLength(5)]
         public string? BloodGroup { get; set; }
@@ -387,6 +582,19 @@ namespace SmsApi.Models.DTOs
         public string? SpecialNeeds { get; set; }
         public bool? TransportRequired { get; set; }
         public bool? HostelRequired { get; set; }
+        
+        [MaxLength(50)]
+        public string? CommunicationMode { get; set; }
+        
+        public bool? IsNCCCadet { get; set; }
+        
+        [MaxLength(500)]
+        public string? NCCDetails { get; set; }
+        
+        public string? ExtraCurricularActivities { get; set; }
+        public string? ProgressReportRemarks { get; set; }
+        public string? ProgressReportRemarksCBSE { get; set; }
+        
         public string? SiblingIds { get; set; }
         
         [MaxLength(20)]
@@ -490,19 +698,49 @@ namespace SmsApi.Models.DTOs
         [MaxLength(200)]
         public string Name { get; set; } = string.Empty;
         
+        [MaxLength(100)]
+        public string? Surname { get; set; }
+        
         [Required]
         [MaxLength(20)]
-        public string Relation { get; set; } = string.Empty; // father, mother, guardian, other
+        public string Relation { get; set; } = string.Empty;
+        
+        [MaxLength(100)]
+        public string? Qualification { get; set; }
         
         [MaxLength(100)]
         public string? Occupation { get; set; }
         
+        [MaxLength(50)]
+        public string? EmploymentType { get; set; }
+        
         [MaxLength(200)]
         public string? Employer { get; set; }
+        
+        [MaxLength(200)]
+        public string? OfficeAddress { get; set; }
+        
+        [MaxLength(20)]
+        public string? OfficePhone { get; set; }
+        
+        [MaxLength(255)]
+        [EmailAddress]
+        public string? OfficeEmail { get; set; }
+        
+        [MaxLength(100)]
+        public string? AnnualIncome { get; set; }
+        
+        public DateTime? DateOfBirth { get; set; }
+        
+        [MaxLength(200)]
+        public string? ResidentialAddress { get; set; }
         
         [Required]
         [MaxLength(20)]
         public string Phone { get; set; } = string.Empty;
+        
+        [MaxLength(20)]
+        public string? HomePhone { get; set; }
         
         [MaxLength(255)]
         [EmailAddress]
@@ -513,6 +751,12 @@ namespace SmsApi.Models.DTOs
         
         [MaxLength(10)]
         public string? PanNumber { get; set; }
+        
+        [MaxLength(20)]
+        public string? PassportNumber { get; set; }
+        
+        [MaxLength(500)]
+        public string? PhotoUrl { get; set; }
     }
     
     public class UpdateGuardianDto
@@ -520,17 +764,47 @@ namespace SmsApi.Models.DTOs
         [MaxLength(200)]
         public string? Name { get; set; }
         
+        [MaxLength(100)]
+        public string? Surname { get; set; }
+        
         [MaxLength(20)]
         public string? Relation { get; set; }
         
         [MaxLength(100)]
+        public string? Qualification { get; set; }
+        
+        [MaxLength(100)]
         public string? Occupation { get; set; }
+        
+        [MaxLength(50)]
+        public string? EmploymentType { get; set; }
         
         [MaxLength(200)]
         public string? Employer { get; set; }
         
+        [MaxLength(200)]
+        public string? OfficeAddress { get; set; }
+        
+        [MaxLength(20)]
+        public string? OfficePhone { get; set; }
+        
+        [MaxLength(255)]
+        [EmailAddress]
+        public string? OfficeEmail { get; set; }
+        
+        [MaxLength(100)]
+        public string? AnnualIncome { get; set; }
+        
+        public DateTime? DateOfBirth { get; set; }
+        
+        [MaxLength(200)]
+        public string? ResidentialAddress { get; set; }
+        
         [MaxLength(20)]
         public string? Phone { get; set; }
+        
+        [MaxLength(20)]
+        public string? HomePhone { get; set; }
         
         [MaxLength(255)]
         [EmailAddress]
@@ -541,6 +815,307 @@ namespace SmsApi.Models.DTOs
         
         [MaxLength(10)]
         public string? PanNumber { get; set; }
+        
+        [MaxLength(20)]
+        public string? PassportNumber { get; set; }
+        
+        [MaxLength(500)]
+        public string? PhotoUrl { get; set; }
+    }
+
+    // ─── Student Document Create DTO ──────────────────────────────────────────
+    public class CreateStudentDocumentDto
+    {
+        [Required]
+        [MaxLength(50)]
+        public string DocumentType { get; set; } = string.Empty;
+        
+        [MaxLength(100)]
+        public string? DocumentNumber { get; set; }
+        
+        [MaxLength(200)]
+        public string? IssuingAuthority { get; set; }
+        
+        public DateTime? IssueDate { get; set; }
+        
+        public DateTime? ExpiryDate { get; set; }
+    }
+
+    public class VerifyDocumentDto
+    {
+        // verified | rejected
+        [Required]
+        [MaxLength(20)]
+        public string VerificationStatus { get; set; } = string.Empty;
+    }
+
+    // ─── StudentSibling DTOs ──────────────────────────────────────────────────
+    public class StudentSiblingDto
+    {
+        public Guid SiblingId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? AdmissionNumber { get; set; }
+        public string Class { get; set; } = string.Empty;
+        public string Section { get; set; } = string.Empty;
+        public string? PhotoUrl { get; set; }
+    }
+
+    public class AddSiblingRequest
+    {
+        [Required]
+        public Guid SiblingStudentId { get; set; }
+    }
+
+    // ─── StudentAnnualHealth DTOs ─────────────────────────────────────────────
+    public class StudentAnnualHealthDto
+    {
+        public Guid Id { get; set; }
+        public string AcademicYear { get; set; } = string.Empty;
+        public string? Weight { get; set; }
+        public string? Height { get; set; }
+        public string? VisionLeft { get; set; }
+        public string? VisionRight { get; set; }
+        public string? DentalHygiene { get; set; }
+        public string? Remarks { get; set; }
+        public DateTime ExaminedOn { get; set; }
+        public string? ExaminedBy { get; set; }
+    }
+
+    public class UpsertAnnualHealthRequest
+    {
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+        
+        [MaxLength(10)]
+        public string? Weight { get; set; }
+        
+        [MaxLength(10)]
+        public string? Height { get; set; }
+        
+        [MaxLength(20)]
+        public string? VisionLeft { get; set; }
+        
+        [MaxLength(20)]
+        public string? VisionRight { get; set; }
+        
+        [MaxLength(50)]
+        public string? DentalHygiene { get; set; }
+        
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+        
+        public DateTime? ExaminedOn { get; set; }
+        
+        [MaxLength(200)]
+        public string? ExaminedBy { get; set; }
+    }
+
+    // ─── Hobby / Club DTOs ────────────────────────────────────────────────────
+    public class HobbyDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Category { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public class CreateHobbyRequest
+    {
+        [Required]
+        [MaxLength(100)]
+        public string Name { get; set; } = string.Empty;
+        
+        [MaxLength(50)]
+        public string? Category { get; set; }
+    }
+
+    public class StudentHobbyEnrollmentDto
+    {
+        public Guid Id { get; set; }
+        public Guid HobbyId { get; set; }
+        public string HobbyName { get; set; } = string.Empty;
+        public string? HobbyCategory { get; set; }
+        public string AcademicYear { get; set; } = string.Empty;
+        public string? Remarks { get; set; }
+    }
+
+    public class EnrollHobbyRequest
+    {
+        [Required]
+        public Guid HobbyId { get; set; }
+        
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+        
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+    }
+
+    public class BulkEnrollHobbiesRequest
+    {
+        [Required]
+        public List<Guid> HobbyIds { get; set; } = new();
+        
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+    }
+
+    // ─── StudentPermissionSlip DTOs ───────────────────────────────────────────
+    public class StudentPermissionSlipDto
+    {
+        public Guid Id { get; set; }
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+        public string? OutWith { get; set; }
+        public string? OutWithRelation { get; set; }
+        public string? Reason { get; set; }
+        public DateTime OutDate { get; set; }
+        public string? OutTime { get; set; }
+        public string Status { get; set; } = "pending";
+        public string? ReviewRemarks { get; set; }
+        public DateTime? ReviewedAt { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class CreatePermissionSlipRequest
+    {
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+        
+        [MaxLength(200)]
+        public string? OutWith { get; set; }
+        
+        [MaxLength(50)]
+        public string? OutWithRelation { get; set; }
+        
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+        
+        [Required]
+        public DateTime OutDate { get; set; }
+        
+        [MaxLength(10)]
+        public string? OutTime { get; set; }
+    }
+
+    public class ReviewPermissionSlipRequest
+    {
+        // approved | rejected
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = string.Empty;
+        
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+    }
+
+    // ─── Transfer Certificate DTOs ────────────────────────────────────────────
+    public class TransferCertificateDto
+    {
+        public Guid Id { get; set; }
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? AdmissionNumber { get; set; }
+        public string? TCNumber { get; set; }
+        public int? AutoTCNumber { get; set; }
+        public string? TCNumberPrefix { get; set; }
+        public DateTime? ApplicationDate { get; set; }
+        public DateTime? IssuedDate { get; set; }
+        public string? ExitAcademicYear { get; set; }
+        public string? ExitClass { get; set; }
+        public string? ExitSection { get; set; }
+        public string? ReasonForLeaving { get; set; }
+        public string? Conduct { get; set; }
+        public bool IsTCIssued { get; set; }
+        public bool IsFailedInLastClass { get; set; }
+        public string? LastAnnualExamResult { get; set; }
+        public bool IsQualifiedForHigherClass { get; set; }
+        public string? QualifiedToClass { get; set; }
+        public string? DetainedInSameClass { get; set; }
+        public string? DatePupilStruck { get; set; }
+        public string? AdditionalRemarks { get; set; }
+        public bool IsCharacterCertificateIssued { get; set; }
+        public string? CharacterCertificateNumber { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class CreateTransferCertificateRequest
+    {
+        [MaxLength(30)]
+        public string? TCNumber { get; set; }
+        
+        [MaxLength(10)]
+        public string? TCNumberPrefix { get; set; }
+        
+        public DateTime? ApplicationDate { get; set; }
+        
+        [MaxLength(20)]
+        public string? ExitAcademicYear { get; set; }
+        
+        [MaxLength(100)]
+        public string? ExitClass { get; set; }
+        
+        [MaxLength(20)]
+        public string? ExitSection { get; set; }
+        
+        [MaxLength(500)]
+        public string? ReasonForLeaving { get; set; }
+        
+        [MaxLength(100)]
+        public string? Conduct { get; set; }
+        
+        public bool IsFailedInLastClass { get; set; } = false;
+        
+        [MaxLength(100)]
+        public string? LastAnnualExamResult { get; set; }
+        
+        public bool IsQualifiedForHigherClass { get; set; } = false;
+        
+        [MaxLength(100)]
+        public string? QualifiedToClass { get; set; }
+        
+        public string? AdditionalRemarks { get; set; }
+    }
+
+    public class IssueTCRequest
+    {
+        public DateTime IssuedDate { get; set; } = DateTime.UtcNow;
+        
+        [MaxLength(30)]
+        public string? TCNumber { get; set; }
+        
+        public bool IssueCharacterCertificate { get; set; } = false;
+    }
+
+    // ─── Roll Number Assignment ────────────────────────────────────────────────
+    public class RollNumberAssignmentRequest
+    {
+        [Required]
+        [MaxLength(20)]
+        public string Class { get; set; } = string.Empty;
+        
+        [Required]
+        [MaxLength(10)]
+        public string Section { get; set; } = string.Empty;
+        
+        // Map of StudentId → RollNumber
+        [Required]
+        public Dictionary<Guid, string> Assignments { get; set; } = new();
+    }
+
+    public class RollNumberStudentDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? AdmissionNumber { get; set; }
+        public string? Gender { get; set; }
+        public string? RollNumber { get; set; }
     }
 
     // ========== STUDENT PROMOTION ==========

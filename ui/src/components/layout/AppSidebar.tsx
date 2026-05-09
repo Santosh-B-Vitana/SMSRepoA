@@ -74,7 +74,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
         { title: "LEAVE & ANNOUNCEMENTS", isLabel: true },
         { title: "My Leave", url: "/leave-management", icon: Calendar },
-        { title: "Announcements", url: "/announcements", icon: Bell },
         { title: "School Connect", url: "/school-connect", icon: School },
       ]
 
@@ -83,20 +82,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return [
           { title: "OVERVIEW", isLabel: true },
           { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
-          { title: "SCHOOL MANAGEMENT", isLabel: true },
-          { title: t('nav.students'), url: "/students", icon: Users },
-          { title: t('nav.staff'), url: "/staff", icon: UserCheck },
+          { title: "TEACHING", isLabel: true },
+          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
           { title: "Attendance", url: "/attendance", icon: UserCheck },
-          { title: "ACADEMICS", isLabel: true },
-          { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },
-          { title: t('nav.examinations'), url: "/examinations", icon: Award },
           { title: t('nav.timetable'), url: "/timetable", icon: Clock },
-          { title: "Grades", url: "/grades", icon: GraduationCap },
+          { title: "Grades", url: "/grades", icon: BookOpen },
+          { title: "Assignments", url: "/assignments", icon: ClipboardList },
           { title: "ADMINISTRATION", isLabel: true },
           { title: "Leave Management", url: "/leave-management", icon: Calendar },
           { title: "Communication", url: "/communication", icon: MessageSquare },
           { title: "Announcements", url: "/announcements", icon: Bell },
-          { title: "Reports", url: "/reports", icon: BarChart3 },
           { title: "School Connect", url: "/school-connect", icon: School },
         ]
       }
@@ -140,7 +135,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: "Fees", url: "/fees", icon: DollarSign },
           { title: "Wallet / Finance", url: "/wallet", icon: Wallet },
           { title: "Store", url: "/store", icon: ShoppingBag },
-          { title: "Reports", url: "/reports", icon: BarChart3 },
         ]
       }
 
@@ -150,7 +144,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           ...shared,
           { title: "HR MANAGEMENT", isLabel: true },
           { title: "Staff", url: "/staff", icon: UserCheck },
-          { title: "Reports", url: "/reports", icon: BarChart3 },
         ]
       }
 

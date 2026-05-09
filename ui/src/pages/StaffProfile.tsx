@@ -25,6 +25,8 @@ import {
   RotateCcw
 } from "lucide-react";
 import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
+import { academicApi, MyClassAssignment } from "@/services/api/academicApi";
+import { attendanceApi, StaffAttendanceResponse } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
 import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
 import { useAuth } from "@/contexts/AuthContext";
@@ -71,15 +73,8 @@ export default function StaffProfile() {
   const [leaveReason, setLeaveReason] = useState("");
   // Attendance tab state
   const [calendarDate, setCalendarDate] = useState("");
-  const [editDialog, setEditDialog] = useState<{ open: boolean; index?: number }>({ open: false });
-  const [editStatus, setEditStatus] = useState("Present");
-  const [editComment, setEditComment] = useState("");
-  const [mockAttendance, setMockAttendance] = useState([
-    { date: "2025-09-01", status: "Present", method: "manual", comment: "" },
-    { date: "2025-09-02", status: "Absent", method: "manual", comment: "Sick leave" },
-    { date: "2025-09-03", status: "Late", method: "manual", comment: "Traffic" },
-    { date: "2025-09-04", status: "Present", method: "manual", comment: "" },
-  ]);
+  const [staffAttendance, setStaffAttendance] = useState<StaffAttendanceResponse[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
   
   const { id } = useParams();
   const navigate = useNavigate();
@@ -87,6 +82,8 @@ export default function StaffProfile() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
+  const [assignedClasses, setAssignedClasses] = useState<MyClassAssignment[]>([]);
+  const [classesLoading, setClassesLoading] = useState(false);
   const { toast } = useToast();
   const { t } = useLanguage();
 
@@ -108,33 +105,10 @@ export default function StaffProfile() {
     }
   };
 
-  // Mock data for additional tabs
-  const mockClasses = [
-    { class: "10-A", subject: "Mathematics", students: 32 },
-    { class: "10-B", subject: "Mathematics", students: 30 },
-    { class: "9-A", subject: "Algebra", students: 35 },
-  ];
-
-  const mockSchedule = [
-    { day: "Monday", time: "09:00-10:00", class: "10-A", subject: "Mathematics" },
-    { day: "Monday", time: "11:00-12:00", class: "10-B", subject: "Mathematics" },
-    { day: "Tuesday", time: "10:00-11:00", class: "9-A", subject: "Algebra" },
-    { day: "Wednesday", time: "09:00-10:00", class: "10-A", subject: "Mathematics" },
-  ];
-
-  const mockDocuments = [
-    { name: "Resume", type: "PDF", uploadDate: "2024-01-01" },
-    { name: "Teaching Certificate", type: "PDF", uploadDate: "2024-01-01" },
-    { name: "ID Proof", type: "PDF", uploadDate: "2024-01-01" },
-  ];
-
   // State for document dialogs
   const [showIdCardDialog, setShowIdCardDialog] = useState(false);
   const [showExperienceCertDialog, setShowExperienceCertDialog] = useState(false);
   const [showSalaryCertDialog, setShowSalaryCertDialog] = useState(false);
-  // Class details dialog
-  const [classDialogOpen, setClassDialogOpen] = useState(false);
-  const [selectedClassInfo, setSelectedClassInfo] = useState<{ class: string; subject: string; students: number } | null>(null);
 
   const handleDocumentGeneration = (type: string) => {
     if (type === "ID Card") {
@@ -149,8 +123,36 @@ export default function StaffProfile() {
   useEffect(() => {
     if (id) {
       fetchStaff();
+      fetchAssignedClasses();
+      fetchStaffAttendance();
     }
   }, [id]);
+
+  const fetchStaffAttendance = async () => {
+    if (!id) return;
+    setAttendanceLoading(true);
+    try {
+      const records = await attendanceApi.getStaffAttendances({ staffId: id });
+      setStaffAttendance(Array.isArray(records) ? records : []);
+    } catch {
+      setStaffAttendance([]);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
+  const fetchAssignedClasses = async () => {
+    if (!id) return;
+    setClassesLoading(true);
+    try {
+      const result = await academicApi.getTeacherAssignmentsForStaff(id);
+      setAssignedClasses(result.assignments ?? []);
+    } catch {
+      // Non-fatal: classes tab will show empty state
+    } finally {
+      setClassesLoading(false);
+    }
+  };
 
   const fetchStaff = async () => {
     if (!id) return;
@@ -750,39 +752,40 @@ export default function StaffProfile() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('staffProfilePage.class')}</TableHead>
-                      <TableHead>{t('staffProfilePage.subject')}</TableHead>
-                      <TableHead>{t('staffProfilePage.students')}</TableHead>
-                      <TableHead>{t('common.actions')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockClasses.map((classInfo, index) => (
-                      <TableRow key={index}>
-                        <TableCell className="font-medium">{classInfo.class}</TableCell>
-                        <TableCell>{classInfo.subject}</TableCell>
-                        <TableCell>{classInfo.students}</TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setSelectedClassInfo(classInfo as any);
-                                  setClassDialogOpen(true);
-                                }}
-                              >
-                                View Details
-                              </Button>
-                            </TableCell>
+              {classesLoading ? (
+                <div className="text-center py-6 text-muted-foreground">Loading classes…</div>
+              ) : assignedClasses.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">No class assignments found for this staff member.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('staffProfilePage.class')}</TableHead>
+                        <TableHead>Section</TableHead>
+                        <TableHead>{t('staffProfilePage.subject')}</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Academic Year</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {assignedClasses.map((a) => (
+                        <TableRow key={a.assignmentId}>
+                          <TableCell className="font-medium">{a.className}</TableCell>
+                          <TableCell>{a.sectionName ?? '—'}</TableCell>
+                          <TableCell>{a.subjectName ?? '—'}</TableCell>
+                          <TableCell>
+                            <Badge variant={a.isClassTeacher ? 'default' : 'secondary'}>
+                              {a.isClassTeacher ? 'Class Teacher' : 'Subject Teacher'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{a.academicYear}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -796,50 +799,44 @@ export default function StaffProfile() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {attendanceLoading ? (
+                <div className="text-center py-6 text-muted-foreground">Loading attendance…</div>
+              ) : staffAttendance.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">No attendance records found.</div>
+              ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Comment</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead>Check In</TableHead>
+                      <TableHead>Check Out</TableHead>
+                      <TableHead>Remarks</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mockAttendance.map((record, index) => (
-                      <TableRow key={index}>
-                        <TableCell>{record.date}</TableCell>
+                    {staffAttendance.map((record) => (
+                      <TableRow key={record.id}>
+                        <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <Badge variant={
-                            record.status === 'Present' ? 'default' :
-                            record.status === 'Late' ? 'secondary' :
+                            record.status === 'present' ? 'default' :
+                            record.status === 'late' ? 'secondary' :
                             'destructive'
-                          }>
+                          } className="capitalize">
                             {record.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>{record.method}</TableCell>
-                        <TableCell>{record.comment || '-'}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setEditDialog({ open: true, index });
-                              setEditStatus(record.status);
-                              setEditComment(record.comment || '');
-                            }}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
+                        <TableCell>{record.checkInTime ?? '—'}</TableCell>
+                        <TableCell>{record.checkOutTime ?? '—'}</TableCell>
+                        <TableCell>{record.remarks ?? '—'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -966,22 +963,30 @@ export default function StaffProfile() {
               {/* Uploaded Documents Section */}
               <div className="border-t pt-4">
                 <h4 className="font-medium mb-3">Uploaded Documents</h4>
+                {(staff.documents ?? []).length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground text-sm">No documents uploaded yet.</div>
+                ) : (
                 <div className="space-y-2">
-                  {mockDocuments.map((doc, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                  {(staff.documents ?? []).map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         <FileText className="h-4 w-4 text-muted-foreground" />
                         <div>
                           <p className="font-medium text-sm">{doc.name}</p>
-                          <p className="text-xs text-muted-foreground">{doc.type} • {doc.uploadDate}</p>
+                          <p className="text-xs text-muted-foreground">{doc.type} • {new Date(doc.uploadedAt).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      <Button size="sm" variant="ghost">
-                        <Download className="h-4 w-4" />
-                      </Button>
+                      {doc.url && (
+                        <Button size="sm" variant="ghost" asChild>
+                          <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                            <Download className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1022,91 +1027,7 @@ export default function StaffProfile() {
         )}
       </Tabs>
 
-      {/* Edit Attendance Dialog */}
-      {editDialog.open && (
-        <Dialog open={editDialog.open} onOpenChange={(open) => setEditDialog({ open })}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Attendance Record</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Status</label>
-                <select 
-                  className="w-full mt-1 p-2 border rounded-md"
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                >
-                  <option value="Present">Present</option>
-                  <option value="Absent">Absent</option>
-                  <option value="Late">Late</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Comment</label>
-                <input
-                  type="text"
-                  className="w-full mt-1 p-2 border rounded-md"
-                  value={editComment}
-                  onChange={(e) => setEditComment(e.target.value)}
-                  placeholder="Optional comment..."
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setEditDialog({ open: false })}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={() => {
-                    if (editDialog.index !== undefined) {
-                      const updatedAttendance = [...mockAttendance];
-                      updatedAttendance[editDialog.index] = {
-                        ...updatedAttendance[editDialog.index],
-                        status: editStatus,
-                        comment: editComment
-                      };
-                      setMockAttendance(updatedAttendance);
-                    }
-                    setEditDialog({ open: false });
-                  }}
-                >
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-      {/* Class Details Dialog */}
-      {classDialogOpen && selectedClassInfo && (
-        <Dialog open={classDialogOpen} onOpenChange={setClassDialogOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Class Details</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Class</div>
-                <div className="text-lg font-semibold">{selectedClassInfo.class}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Subject</div>
-                <div className="text-lg">{selectedClassInfo.subject}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Students</div>
-                <div className="text-lg">{selectedClassInfo.students}</div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setClassDialogOpen(false)}>Close</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+
     </div>
   );
 }

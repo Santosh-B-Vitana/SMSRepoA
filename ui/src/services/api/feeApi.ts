@@ -513,7 +513,20 @@ export const linkStructure = async (
 export const getFeeStats = async (academicYear?: string): Promise<FeeStats> => {
   const params = academicYear ? `?academicYear=${academicYear}` : '';
   const response = await apiClient.get(`${BASE_PATH}/stats${params}`);
-  return response.data;
+  const d = response.data ?? {};
+  // Normalize: backend returns collectedFees/pendingFees/overdueFees; map to expected shape
+  const totalCollected = d.totalCollected ?? d.collectedFees ?? 0;
+  const totalFees = d.totalFees ?? 0;
+  return {
+    totalCollected,
+    totalPending: d.totalPending ?? d.pendingFees ?? 0,
+    totalOverdue: d.totalOverdue ?? d.overdueFees ?? 0,
+    totalDiscount: d.totalDiscount ?? d.discountGiven ?? 0,
+    totalLateFee: d.totalLateFee ?? d.lateFeeCollected ?? 0,
+    collectionRate: totalFees > 0 ? (totalCollected / totalFees) * 100 : 0,
+    monthlyCollection: d.monthlyCollection ?? {},
+    classwiseCollection: d.classwiseCollection ?? d.byClass ?? {},
+  };
 };
 
 /**

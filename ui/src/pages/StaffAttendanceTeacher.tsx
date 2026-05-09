@@ -75,7 +75,7 @@ export default function StaffAttendanceTeacher() {
     setAttendanceLoading(true);
     try {
       const res = await attendanceApi.listRecords({ dateFrom: date, dateTo: date, pageSize: 500 });
-      const records: { studentId: string; status: string; remarks?: string }[] = res.records ?? [];
+      const records: { studentId: string; status: string; remarks?: string }[] = res.items ?? [];
       const hasTaken = records.length > 0 &&
         studentList.some(s => records.find(r => r.studentId === s.id));
       setAlreadyTaken(hasTaken);

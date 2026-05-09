@@ -27,6 +27,15 @@ interface AttendanceStats {
   attendancePercent: number;
 }
 
+function computeStats(records: AttendanceRecord[]): AttendanceStats {
+  const presentDays = records.filter(r => r.status === 'present').length;
+  const absentDays = records.filter(r => r.status === 'absent').length;
+  const lateDays = records.filter(r => r.status === 'late').length;
+  const totalDays = records.length;
+  const attendancePercent = totalDays > 0 ? Math.round((presentDays + lateDays) / totalDays * 100) : 0;
+  return { presentDays, absentDays, lateDays, attendancePercent };
+}
+
 export default function StudentAttendanceView({ studentId }: StudentAttendanceViewProps) {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
@@ -58,11 +67,16 @@ export default function StudentAttendanceView({ studentId }: StudentAttendanceVi
         remarks: r.remarks
       }));
       
-      // Fetch real stats from backend
-      const statsResponse = await attendanceApi.getStats(studentId);
+      // Compute per-student stats from fetched records
+      const presentDays = records.filter(r => r.status === 'present').length;
+      const absentDays = records.filter(r => r.status === 'absent').length;
+      const lateDays = records.filter(r => r.status === 'late').length;
+      const totalDays = records.length;
+      const attendancePercent = totalDays > 0 ? Math.round((presentDays + lateDays) / totalDays * 100) : 0;
+      const computedStats: AttendanceStats = { presentDays, absentDays, lateDays, attendancePercent };
       
       setRecords(records);
-      setStats(statsResponse);
+      setStats(computedStats);
     } catch (error) {
       console.error('Error fetching attendance:', error);
       toast.error('Failed to load attendance records');
@@ -104,18 +118,15 @@ export default function StudentAttendanceView({ studentId }: StudentAttendanceVi
         remarks: response.remarks
       };
 
-      setRecords([newRecordForState, ...records]);
+      const updatedAfterAdd = [newRecordForState, ...records];
+      setRecords(updatedAfterAdd);
+      setStats(computeStats(updatedAfterAdd));
       setShowAddDialog(false);
       setNewRecord({
         date: new Date().toISOString().split('T')[0],
         status: 'present',
         remarks: ''
       });
-      
-      // Refresh stats
-      const statsResponse = await attendanceApi.getStats(studentId);
-      setStats(statsResponse);
-      
       toast.success('Attendance record added');
     } catch (error) {
       console.error('Error adding record:', error);
@@ -148,13 +159,9 @@ export default function StudentAttendanceView({ studentId }: StudentAttendanceVi
       );
       
       setRecords(updatedRecords);
+      setStats(computeStats(updatedRecords));
       setShowEditDialog(false);
       setEditingRecord(null);
-      
-      // Refresh stats
-      const statsResponse = await attendanceApi.getStats(studentId);
-      setStats(statsResponse);
-      
       toast.success('Attendance record updated');
     } catch (error) {
       console.error('Error updating record:', error);
@@ -173,12 +180,9 @@ export default function StudentAttendanceView({ studentId }: StudentAttendanceVi
       await attendanceApi.deleteRecord(record.id);
 
       // Remove from local state
-      setRecords(records.filter(r => r.id !== record.id));
-      
-      // Refresh stats
-      const statsResponse = await attendanceApi.getStats(studentId);
-      setStats(statsResponse);
-      
+      const afterDelete = records.filter(r => r.id !== record.id);
+      setRecords(afterDelete);
+      setStats(computeStats(afterDelete));
       toast.success('Attendance record deleted');
     } catch (error) {
       console.error('Error deleting record:', error);

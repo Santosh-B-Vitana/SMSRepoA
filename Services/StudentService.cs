@@ -49,6 +49,41 @@ namespace SmsApi.Services
 
         /// <summary>Returns students whose guardian email matches the given parent email.</summary>
         Task<List<StudentBasicResponse>> GetMyChildrenAsync(Guid schoolId, string parentEmail);
+
+        // ─── Sibling Management ───────────────────────────────────────────────
+        Task<List<StudentSiblingDto>> GetSiblingsAsync(Guid schoolId, Guid studentId);
+        Task AddSiblingAsync(Guid schoolId, Guid studentId, Guid siblingStudentId);
+        Task RemoveSiblingAsync(Guid schoolId, Guid studentId, Guid siblingStudentId);
+
+        // ─── Annual Health Records ────────────────────────────────────────────
+        Task<List<StudentAnnualHealthDto>> GetAnnualHealthRecordsAsync(Guid schoolId, Guid studentId);
+        Task<StudentAnnualHealthDto> UpsertAnnualHealthAsync(Guid schoolId, Guid studentId, UpsertAnnualHealthRequest request);
+
+        // ─── Hobby / Club Management ──────────────────────────────────────────
+        Task<List<HobbyDto>> GetHobbiesAsync(Guid schoolId);
+        Task<HobbyDto> CreateHobbyAsync(Guid schoolId, CreateHobbyRequest request);
+        Task<List<StudentHobbyEnrollmentDto>> GetStudentHobbiesAsync(Guid schoolId, Guid studentId, string? academicYear);
+        Task<StudentHobbyEnrollmentDto> EnrollHobbyAsync(Guid schoolId, Guid studentId, EnrollHobbyRequest request);
+        Task BulkEnrollHobbiesAsync(Guid schoolId, Guid studentId, BulkEnrollHobbiesRequest request);
+        Task RemoveHobbyEnrollmentAsync(Guid schoolId, Guid enrollmentId);
+
+        // ─── Permission Slips ────────────────────────────────────────────────
+        Task<List<StudentPermissionSlipDto>> GetPermissionSlipsAsync(Guid schoolId, Guid studentId, string? academicYear);
+        Task<List<StudentPermissionSlipDto>> GetAllPermissionSlipsAsync(Guid schoolId, DateTime date, string? academicYear);
+        Task<StudentPermissionSlipDto> CreatePermissionSlipAsync(Guid schoolId, Guid studentId, CreatePermissionSlipRequest request, Guid issuedBy);
+        Task<StudentPermissionSlipDto> ReviewPermissionSlipAsync(Guid schoolId, Guid slipId, ReviewPermissionSlipRequest request, Guid reviewedBy);
+
+        // ─── Transfer Certificate ─────────────────────────────────────────────
+        Task<TransferCertificateDto?> GetTransferCertificateAsync(Guid schoolId, Guid studentId);
+        Task<TransferCertificateDto> CreateTransferCertificateAsync(Guid schoolId, Guid studentId, CreateTransferCertificateRequest request, Guid issuedBy);
+        Task<TransferCertificateDto> IssueTCAsync(Guid schoolId, Guid studentId, IssueTCRequest request, Guid issuedBy);
+
+        // ─── Document Verification ────────────────────────────────────────────
+        Task<StudentDocumentDto> VerifyDocumentAsync(Guid schoolId, Guid documentId, VerifyDocumentDto request, Guid verifiedBy);
+
+        // ─── Roll Number Assignment ────────────────────────────────────────────
+        Task<List<RollNumberStudentDto>> GetStudentsForRollAssignmentAsync(Guid schoolId, string className, string section);
+        Task BulkAssignRollNumbersAsync(Guid schoolId, RollNumberAssignmentRequest request);
     }
 
     public class StudentService : IStudentService
@@ -177,6 +212,7 @@ namespace SmsApi.Services
             var student = await _context.Students
                 .Include(s => s.Guardians)
                 .Include(s => s.Documents)
+                .Include(s => s.Siblings!).ThenInclude(ss => ss.Sibling)
                 .Where(s => s.Id == id && s.SchoolId == schoolId)
                 .FirstOrDefaultAsync();
 
@@ -205,6 +241,18 @@ namespace SmsApi.Services
                 PassportNumber = student.PassportNumber,
                 VisaType = student.VisaType,
                 VisaExpiry = student.VisaExpiry,
+                RationCardNumber = student.RationCardNumber,
+                
+                // Government / UDISE
+                PenNumber = student.PenNumber,
+                UDISENumber = student.UDISENumber,
+                BoardRollNumber = student.BoardRollNumber,
+                RegistrationNumber = student.RegistrationNumber,
+                EnrollmentNumber = student.EnrollmentNumber,
+                LedgerNumber = student.LedgerNumber,
+                ApplicationFormNumber = student.ApplicationFormNumber,
+                ReasonToApply = student.ReasonToApply,
+                KnownAboutSchoolBy = student.KnownAboutSchoolBy,
                 
                 // Contact
                 Address = student.Address,
@@ -213,11 +261,29 @@ namespace SmsApi.Services
                 SecondaryPhone = student.SecondaryPhone,
                 Email = student.Email,
                 
-                // Academic
+                // Academic History
                 PreviousSchool = student.PreviousSchool,
                 PreviousClass = student.PreviousClass,
+                PreviousSchoolPlace = student.PreviousSchoolPlace,
+                PreviousSchoolBoard = student.PreviousSchoolBoard,
+                PreviousSchoolYearOfPassing = student.PreviousSchoolYearOfPassing,
+                PreviousSchoolPercentage = student.PreviousSchoolPercentage,
+                PreviousSchoolMedium = student.PreviousSchoolMedium,
                 TransferReason = student.TransferReason,
                 Category = student.Category,
+                SubCaste = student.SubCaste,
+                
+                // DISE flags
+                IsMinority = student.IsMinority,
+                IsBPL = student.IsBPL,
+                IsDifferentlyAbled = student.IsDifferentlyAbled,
+                DifferentlyAbledType = student.DifferentlyAbledType,
+                DifferentlyAbledPercentage = student.DifferentlyAbledPercentage,
+                
+                // Cultural
+                Religion = student.Religion,
+                Caste = student.Caste,
+                MotherTongue = student.MotherTongue,
                 
                 // Medical
                 BloodGroup = student.BloodGroup,
@@ -239,6 +305,21 @@ namespace SmsApi.Services
                 SpecialNeeds = student.SpecialNeeds,
                 TransportRequired = student.TransportRequired,
                 HostelRequired = student.HostelRequired,
+                CommunicationMode = student.CommunicationMode,
+                
+                // Extracurricular
+                IsNCCCadet = student.IsNCCCadet,
+                NCCDetails = student.NCCDetails,
+                ExtraCurricularActivities = student.ExtraCurricularActivities,
+                
+                // Report Card
+                ProgressReportRemarks = student.ProgressReportRemarks,
+                ProgressReportRemarksCBSE = student.ProgressReportRemarksCBSE,
+                
+                // Character cert
+                IsCharacterCertificateIssued = student.IsCharacterCertificateIssued,
+                CharacterCertificateNumber = student.CharacterCertificateNumber,
+                
                 SiblingIds = student.SiblingIds,
                 
                 // Legacy fields for backward compatibility
@@ -253,13 +334,26 @@ namespace SmsApi.Services
                 {
                     Id = g.Id,
                     Name = g.Name,
+                    Surname = g.Surname,
                     Relation = g.Relation,
+                    Qualification = g.Qualification,
                     Occupation = g.Occupation,
+                    EmploymentType = g.EmploymentType,
                     Employer = g.Employer,
+                    OfficeAddress = g.OfficeAddress,
+                    OfficePhone = g.OfficePhone,
+                    OfficeEmail = g.OfficeEmail,
+                    AnnualIncome = g.AnnualIncome,
+                    DateOfBirth = g.DateOfBirth,
+                    ResidentialAddress = g.ResidentialAddress,
                     Phone = g.Phone,
+                    HomePhone = g.HomePhone,
                     Email = g.Email,
                     AadharNumber = MaskAadhar(g.AadharNumber),
-                    PanNumber = MaskPan(g.PanNumber)
+                    PanNumber = MaskPan(g.PanNumber),
+                    PassportNumber = g.PassportNumber,
+                    PhotoUrl = g.PhotoUrl,
+                    HasPortalAccess = g.HasPortalAccess
                 }).ToList(),
                 
                 Documents = student.Documents?.Select(d => new StudentDocumentDto
@@ -268,7 +362,23 @@ namespace SmsApi.Services
                     DocumentType = d.DocumentType,
                     FileUrl = d.FileUrl,
                     FileName = d.FileName,
+                    DocumentNumber = d.DocumentNumber,
+                    IssuingAuthority = d.IssuingAuthority,
+                    IssueDate = d.IssueDate,
+                    ExpiryDate = d.ExpiryDate,
+                    VerificationStatus = d.VerificationStatus,
+                    VerifiedAt = d.VerifiedAt,
                     UploadedAt = d.UploadedAt
+                }).ToList(),
+                
+                Siblings = student.Siblings?.Select(ss => new StudentSiblingDto
+                {
+                    SiblingId = ss.SiblingId,
+                    Name = ss.Sibling?.Name ?? string.Empty,
+                    AdmissionNumber = ss.Sibling?.AdmissionNumber,
+                    Class = ss.Sibling?.Class ?? string.Empty,
+                    Section = ss.Sibling?.Section ?? string.Empty,
+                    PhotoUrl = ss.Sibling?.PhotoUrl
                 }).ToList(),
                 
                 CreatedAt = student.CreatedAt,
@@ -302,6 +412,9 @@ namespace SmsApi.Services
                     AdmissionNumber = request.AdmissionNumber,
                     AdmissionDate = request.AdmissionDate,
                     Name = request.Name,
+                    FirstName = request.FirstName,
+                    MiddleName = request.MiddleName,
+                    LastName = request.LastName,
                     PreferredName = request.PreferredName,
                     DateOfBirth = request.DateOfBirth,
                     PlaceOfBirth = request.PlaceOfBirth,
@@ -311,12 +424,24 @@ namespace SmsApi.Services
                     Section = request.Section,
                     RollNumber = request.RollNumber,
                     
+                    // Government / UDISE
+                    PenNumber = request.PenNumber,
+                    UDISENumber = request.UDISENumber,
+                    BoardRollNumber = request.BoardRollNumber,
+                    RegistrationNumber = request.RegistrationNumber,
+                    EnrollmentNumber = request.EnrollmentNumber,
+                    LedgerNumber = request.LedgerNumber,
+                    ApplicationFormNumber = request.ApplicationFormNumber,
+                    ReasonToApply = request.ReasonToApply,
+                    KnownAboutSchoolBy = request.KnownAboutSchoolBy,
+                    
                     // Indian IDs
                     AadharNumber = request.AadharNumber,
                     PanNumber = request.PanNumber,
                     PassportNumber = request.PassportNumber,
                     VisaType = request.VisaType,
                     VisaExpiry = request.VisaExpiry,
+                    RationCardNumber = request.RationCardNumber,
                     
                     // Contact
                     Address = request.Address,
@@ -325,11 +450,29 @@ namespace SmsApi.Services
                     SecondaryPhone = request.SecondaryPhone,
                     Email = request.Email,
                     
-                    // Academic
+                    // Academic History
                     PreviousSchool = request.PreviousSchool,
                     PreviousClass = request.PreviousClass,
+                    PreviousSchoolPlace = request.PreviousSchoolPlace,
+                    PreviousSchoolBoard = request.PreviousSchoolBoard,
+                    PreviousSchoolYearOfPassing = request.PreviousSchoolYearOfPassing,
+                    PreviousSchoolPercentage = request.PreviousSchoolPercentage,
+                    PreviousSchoolMedium = request.PreviousSchoolMedium,
                     TransferReason = request.TransferReason,
                     Category = request.Category,
+                    SubCaste = request.SubCaste,
+                    
+                    // DISE flags
+                    IsMinority = request.IsMinority,
+                    IsBPL = request.IsBPL,
+                    IsDifferentlyAbled = request.IsDifferentlyAbled,
+                    DifferentlyAbledType = request.DifferentlyAbledType,
+                    DifferentlyAbledPercentage = request.DifferentlyAbledPercentage,
+                    
+                    // Cultural
+                    Religion = request.Religion,
+                    Caste = request.Caste,
+                    MotherTongue = request.MotherTongue,
                     
                     // Medical
                     BloodGroup = request.BloodGroup,
@@ -351,6 +494,17 @@ namespace SmsApi.Services
                     SpecialNeeds = request.SpecialNeeds,
                     TransportRequired = request.TransportRequired,
                     HostelRequired = request.HostelRequired,
+                    CommunicationMode = request.CommunicationMode,
+                    
+                    // Extracurricular
+                    IsNCCCadet = request.IsNCCCadet,
+                    NCCDetails = request.NCCDetails,
+                    ExtraCurricularActivities = request.ExtraCurricularActivities,
+                    
+                    // Report Card
+                    ProgressReportRemarks = request.ProgressReportRemarks,
+                    ProgressReportRemarksCBSE = request.ProgressReportRemarksCBSE,
+                    
                     SiblingIds = request.SiblingIds,
                     
                     // Legacy fields
@@ -747,6 +901,28 @@ namespace SmsApi.Services
             if (request.PassportNumber != null) student.PassportNumber = request.PassportNumber;
             if (request.VisaType != null) student.VisaType = request.VisaType;
             if (request.VisaExpiry.HasValue) student.VisaExpiry = request.VisaExpiry;
+            if (request.RationCardNumber != null) student.RationCardNumber = request.RationCardNumber;
+            
+            // Government / UDISE
+            if (request.PenNumber != null) student.PenNumber = request.PenNumber;
+            if (request.UDISENumber != null) student.UDISENumber = request.UDISENumber;
+            if (request.BoardRollNumber != null) student.BoardRollNumber = request.BoardRollNumber;
+            if (request.RegistrationNumber != null) student.RegistrationNumber = request.RegistrationNumber;
+            if (request.EnrollmentNumber != null) student.EnrollmentNumber = request.EnrollmentNumber;
+            if (request.LedgerNumber != null) student.LedgerNumber = request.LedgerNumber;
+            if (request.PreviousSchoolPlace != null) student.PreviousSchoolPlace = request.PreviousSchoolPlace;
+            if (request.PreviousSchoolBoard != null) student.PreviousSchoolBoard = request.PreviousSchoolBoard;
+            if (request.PreviousSchoolYearOfPassing != null) student.PreviousSchoolYearOfPassing = request.PreviousSchoolYearOfPassing;
+            if (request.PreviousSchoolPercentage != null) student.PreviousSchoolPercentage = request.PreviousSchoolPercentage;
+            if (request.PreviousSchoolMedium != null) student.PreviousSchoolMedium = request.PreviousSchoolMedium;
+            
+            // DISE flags
+            if (request.IsMinority.HasValue) student.IsMinority = request.IsMinority.Value;
+            if (request.IsBPL.HasValue) student.IsBPL = request.IsBPL.Value;
+            if (request.IsDifferentlyAbled.HasValue) student.IsDifferentlyAbled = request.IsDifferentlyAbled.Value;
+            if (request.DifferentlyAbledType != null) student.DifferentlyAbledType = request.DifferentlyAbledType;
+            if (request.DifferentlyAbledPercentage != null) student.DifferentlyAbledPercentage = request.DifferentlyAbledPercentage;
+            if (request.SubCaste != null) student.SubCaste = request.SubCaste;
             
             // Contact
             if (request.Address != null) student.Address = request.Address;
@@ -781,6 +957,15 @@ namespace SmsApi.Services
             if (request.SpecialNeeds != null) student.SpecialNeeds = request.SpecialNeeds;
             if (request.TransportRequired.HasValue) student.TransportRequired = request.TransportRequired.Value;
             if (request.HostelRequired.HasValue) student.HostelRequired = request.HostelRequired.Value;
+            if (request.CommunicationMode != null) student.CommunicationMode = request.CommunicationMode;
+            
+            // Extracurricular
+            if (request.IsNCCCadet.HasValue) student.IsNCCCadet = request.IsNCCCadet.Value;
+            if (request.NCCDetails != null) student.NCCDetails = request.NCCDetails;
+            if (request.ExtraCurricularActivities != null) student.ExtraCurricularActivities = request.ExtraCurricularActivities;
+            if (request.ProgressReportRemarks != null) student.ProgressReportRemarks = request.ProgressReportRemarks;
+            if (request.ProgressReportRemarksCBSE != null) student.ProgressReportRemarksCBSE = request.ProgressReportRemarksCBSE;
+            
             if (request.SiblingIds != null) student.SiblingIds = request.SiblingIds;
             
             // Legacy
@@ -907,6 +1092,7 @@ namespace SmsApi.Services
             {
                 Id = Guid.NewGuid(),
                 StudentId = studentId,
+                SchoolId = schoolId,
                 DocumentType = documentType,
                 FileUrl = fileUrl,
                 FileName = fileName,
@@ -2144,6 +2330,519 @@ namespace SmsApi.Services
         }
 
         // ========== PRIVATE HELPERS ==========
+
+        // ─── Sibling Management ───────────────────────────────────────────────
+
+        public async Task<List<StudentSiblingDto>> GetSiblingsAsync(Guid schoolId, Guid studentId)
+        {
+            return await _context.StudentSiblings
+                .Include(ss => ss.Sibling)
+                .Where(ss => ss.SchoolId == schoolId && ss.StudentId == studentId)
+                .Select(ss => new StudentSiblingDto
+                {
+                    SiblingId = ss.SiblingId,
+                    Name = ss.Sibling != null ? ss.Sibling.Name : string.Empty,
+                    AdmissionNumber = ss.Sibling != null ? ss.Sibling.AdmissionNumber : null,
+                    Class = ss.Sibling != null ? ss.Sibling.Class : string.Empty,
+                    Section = ss.Sibling != null ? ss.Sibling.Section : string.Empty,
+                    PhotoUrl = ss.Sibling != null ? ss.Sibling.PhotoUrl : null
+                })
+                .ToListAsync();
+        }
+
+        public async Task AddSiblingAsync(Guid schoolId, Guid studentId, Guid siblingStudentId)
+        {
+            if (studentId == siblingStudentId)
+                throw new InvalidOperationException("A student cannot be their own sibling.");
+
+            // Check both students exist in this school
+            var students = await _context.Students
+                .Where(s => s.SchoolId == schoolId && (s.Id == studentId || s.Id == siblingStudentId))
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            if (students.Count < 2)
+                throw new InvalidOperationException("One or both students not found.");
+
+            // Idempotent — if already linked, skip.
+            var existsAtoB = await _context.StudentSiblings
+                .AnyAsync(ss => ss.SchoolId == schoolId && ss.StudentId == studentId && ss.SiblingId == siblingStudentId);
+            if (existsAtoB) return;
+
+            // Add both directions (bidirectional symmetry)
+            _context.StudentSiblings.AddRange(
+                new StudentSibling { Id = Guid.NewGuid(), SchoolId = schoolId, StudentId = studentId, SiblingId = siblingStudentId },
+                new StudentSibling { Id = Guid.NewGuid(), SchoolId = schoolId, StudentId = siblingStudentId, SiblingId = studentId }
+            );
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task RemoveSiblingAsync(Guid schoolId, Guid studentId, Guid siblingStudentId)
+        {
+            var links = await _context.StudentSiblings
+                .Where(ss => ss.SchoolId == schoolId &&
+                    ((ss.StudentId == studentId && ss.SiblingId == siblingStudentId) ||
+                     (ss.StudentId == siblingStudentId && ss.SiblingId == studentId)))
+                .ToListAsync();
+
+            foreach (var link in links)
+            {
+                link.IsDeleted = true;
+                link.DeletedAt = DateTime.UtcNow;
+            }
+            await _context.SaveChangesAsync();
+        }
+
+        // ─── Annual Health Records ────────────────────────────────────────────
+
+        public async Task<List<StudentAnnualHealthDto>> GetAnnualHealthRecordsAsync(Guid schoolId, Guid studentId)
+        {
+            return await _context.StudentAnnualHealthRecords
+                .Where(h => h.SchoolId == schoolId && h.StudentId == studentId)
+                .OrderByDescending(h => h.AcademicYear)
+                .Select(h => new StudentAnnualHealthDto
+                {
+                    Id = h.Id,
+                    AcademicYear = h.AcademicYear,
+                    Weight = h.Weight,
+                    Height = h.Height,
+                    VisionLeft = h.VisionLeft,
+                    VisionRight = h.VisionRight,
+                    DentalHygiene = h.DentalHygiene,
+                    Remarks = h.Remarks,
+                    ExaminedOn = h.ExaminedOn,
+                    ExaminedBy = h.ExaminedBy
+                })
+                .ToListAsync();
+        }
+
+        public async Task<StudentAnnualHealthDto> UpsertAnnualHealthAsync(Guid schoolId, Guid studentId, UpsertAnnualHealthRequest request)
+        {
+            var existing = await _context.StudentAnnualHealthRecords
+                .FirstOrDefaultAsync(h => h.SchoolId == schoolId && h.StudentId == studentId && h.AcademicYear == request.AcademicYear);
+
+            if (existing == null)
+            {
+                existing = new StudentAnnualHealth
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    StudentId = studentId,
+                    AcademicYear = request.AcademicYear
+                };
+                _context.StudentAnnualHealthRecords.Add(existing);
+            }
+
+            if (request.Weight != null) existing.Weight = request.Weight;
+            if (request.Height != null) existing.Height = request.Height;
+            if (request.VisionLeft != null) existing.VisionLeft = request.VisionLeft;
+            if (request.VisionRight != null) existing.VisionRight = request.VisionRight;
+            if (request.DentalHygiene != null) existing.DentalHygiene = request.DentalHygiene;
+            if (request.Remarks != null) existing.Remarks = request.Remarks;
+            if (request.ExaminedOn.HasValue) existing.ExaminedOn = request.ExaminedOn.Value;
+            if (request.ExaminedBy != null) existing.ExaminedBy = request.ExaminedBy;
+
+            await _context.SaveChangesAsync();
+
+            return new StudentAnnualHealthDto
+            {
+                Id = existing.Id,
+                AcademicYear = existing.AcademicYear,
+                Weight = existing.Weight,
+                Height = existing.Height,
+                VisionLeft = existing.VisionLeft,
+                VisionRight = existing.VisionRight,
+                DentalHygiene = existing.DentalHygiene,
+                Remarks = existing.Remarks,
+                ExaminedOn = existing.ExaminedOn,
+                ExaminedBy = existing.ExaminedBy
+            };
+        }
+
+        // ─── Hobby / Club Management ──────────────────────────────────────────
+
+        public async Task<List<HobbyDto>> GetHobbiesAsync(Guid schoolId)
+        {
+            return await _context.Hobbies
+                .Where(h => h.SchoolId == schoolId && h.IsActive)
+                .OrderBy(h => h.Category).ThenBy(h => h.Name)
+                .Select(h => new HobbyDto { Id = h.Id, Name = h.Name, Category = h.Category, IsActive = h.IsActive })
+                .ToListAsync();
+        }
+
+        public async Task<HobbyDto> CreateHobbyAsync(Guid schoolId, CreateHobbyRequest request)
+        {
+            var exists = await _context.Hobbies.AnyAsync(h => h.SchoolId == schoolId && h.Name == request.Name);
+            if (exists) throw new InvalidOperationException($"Hobby '{request.Name}' already exists.");
+
+            var hobby = new Hobby
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                Name = request.Name,
+                Category = request.Category,
+                IsActive = true
+            };
+            _context.Hobbies.Add(hobby);
+            await _context.SaveChangesAsync();
+            return new HobbyDto { Id = hobby.Id, Name = hobby.Name, Category = hobby.Category, IsActive = true };
+        }
+
+        public async Task<List<StudentHobbyEnrollmentDto>> GetStudentHobbiesAsync(Guid schoolId, Guid studentId, string? academicYear)
+        {
+            var query = _context.StudentHobbyEnrollments
+                .Include(e => e.Hobby)
+                .Where(e => e.SchoolId == schoolId && e.StudentId == studentId);
+            if (!string.IsNullOrWhiteSpace(academicYear))
+                query = query.Where(e => e.AcademicYear == academicYear);
+            return await query.Select(e => new StudentHobbyEnrollmentDto
+            {
+                Id = e.Id,
+                HobbyId = e.HobbyId,
+                HobbyName = e.Hobby != null ? e.Hobby.Name : string.Empty,
+                HobbyCategory = e.Hobby != null ? e.Hobby.Category : null,
+                AcademicYear = e.AcademicYear,
+                Remarks = e.Remarks
+            }).ToListAsync();
+        }
+
+        public async Task<StudentHobbyEnrollmentDto> EnrollHobbyAsync(Guid schoolId, Guid studentId, EnrollHobbyRequest request)
+        {
+            var alreadyEnrolled = await _context.StudentHobbyEnrollments.AnyAsync(
+                e => e.SchoolId == schoolId && e.StudentId == studentId
+                  && e.HobbyId == request.HobbyId && e.AcademicYear == request.AcademicYear);
+            if (alreadyEnrolled) throw new InvalidOperationException("Student is already enrolled in this hobby for this year.");
+
+            var enrollment = new StudentHobbyEnrollment
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                StudentId = studentId,
+                HobbyId = request.HobbyId,
+                AcademicYear = request.AcademicYear,
+                Remarks = request.Remarks
+            };
+            _context.StudentHobbyEnrollments.Add(enrollment);
+            await _context.SaveChangesAsync();
+
+            var hobby = await _context.Hobbies.FindAsync(request.HobbyId);
+            return new StudentHobbyEnrollmentDto
+            {
+                Id = enrollment.Id,
+                HobbyId = enrollment.HobbyId,
+                HobbyName = hobby?.Name ?? string.Empty,
+                HobbyCategory = hobby?.Category,
+                AcademicYear = enrollment.AcademicYear,
+                Remarks = enrollment.Remarks
+            };
+        }
+
+        public async Task BulkEnrollHobbiesAsync(Guid schoolId, Guid studentId, BulkEnrollHobbiesRequest request)
+        {
+            foreach (var hobbyId in request.HobbyIds)
+            {
+                var alreadyEnrolled = await _context.StudentHobbyEnrollments.AnyAsync(
+                    e => e.SchoolId == schoolId && e.StudentId == studentId
+                      && e.HobbyId == hobbyId && e.AcademicYear == request.AcademicYear);
+                if (!alreadyEnrolled)
+                {
+                    _context.StudentHobbyEnrollments.Add(new StudentHobbyEnrollment
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        StudentId = studentId,
+                        HobbyId = hobbyId,
+                        AcademicYear = request.AcademicYear
+                    });
+                }
+            }
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task RemoveHobbyEnrollmentAsync(Guid schoolId, Guid enrollmentId)
+        {
+            var enrollment = await _context.StudentHobbyEnrollments
+                .FirstOrDefaultAsync(e => e.SchoolId == schoolId && e.Id == enrollmentId);
+            if (enrollment == null) throw new InvalidOperationException("Enrollment not found.");
+            enrollment.IsDeleted = true;
+            enrollment.DeletedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        // ─── Permission Slips ────────────────────────────────────────────────
+
+        public async Task<List<StudentPermissionSlipDto>> GetPermissionSlipsAsync(Guid schoolId, Guid studentId, string? academicYear)
+        {
+            var query = _context.StudentPermissionSlips
+                .Include(p => p.Student)
+                .Where(p => p.SchoolId == schoolId && p.StudentId == studentId);
+            if (!string.IsNullOrWhiteSpace(academicYear))
+                query = query.Where(p => p.AcademicYear == academicYear);
+            return await query.OrderByDescending(p => p.OutDate).Select(p => MapSlipToDto(p)).ToListAsync();
+        }
+
+        public async Task<List<StudentPermissionSlipDto>> GetAllPermissionSlipsAsync(Guid schoolId, DateTime date, string? academicYear)
+        {
+            var query = _context.StudentPermissionSlips
+                .Include(p => p.Student)
+                .Where(p => p.SchoolId == schoolId && p.OutDate.Date == date.Date);
+            if (!string.IsNullOrWhiteSpace(academicYear))
+                query = query.Where(p => p.AcademicYear == academicYear);
+            return await query.OrderBy(p => p.Student!.Class).ThenBy(p => p.Student!.Name)
+                .Select(p => MapSlipToDto(p)).ToListAsync();
+        }
+
+        public async Task<StudentPermissionSlipDto> CreatePermissionSlipAsync(Guid schoolId, Guid studentId, CreatePermissionSlipRequest request, Guid issuedBy)
+        {
+            var student = await _context.Students.FirstOrDefaultAsync(s => s.Id == studentId && s.SchoolId == schoolId);
+            if (student == null) throw new InvalidOperationException("Student not found.");
+
+            var slip = new StudentPermissionSlip
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                StudentId = studentId,
+                AcademicYear = request.AcademicYear,
+                OutWith = request.OutWith,
+                OutWithRelation = request.OutWithRelation,
+                Reason = request.Reason,
+                OutDate = request.OutDate,
+                OutTime = request.OutTime,
+                Status = "pending",
+                IssuedBy = issuedBy
+            };
+            _context.StudentPermissionSlips.Add(slip);
+            await _context.SaveChangesAsync();
+
+            return new StudentPermissionSlipDto
+            {
+                Id = slip.Id,
+                StudentId = slip.StudentId,
+                StudentName = student.Name,
+                AcademicYear = slip.AcademicYear,
+                OutWith = slip.OutWith,
+                OutWithRelation = slip.OutWithRelation,
+                Reason = slip.Reason,
+                OutDate = slip.OutDate,
+                OutTime = slip.OutTime,
+                Status = slip.Status,
+                CreatedAt = slip.CreatedAt
+            };
+        }
+
+        public async Task<StudentPermissionSlipDto> ReviewPermissionSlipAsync(Guid schoolId, Guid slipId, ReviewPermissionSlipRequest request, Guid reviewedBy)
+        {
+            var allowedStatuses = new HashSet<string> { "approved", "rejected" };
+            if (!allowedStatuses.Contains(request.Status))
+                throw new InvalidOperationException("Status must be 'approved' or 'rejected'.");
+
+            var slip = await _context.StudentPermissionSlips
+                .Include(p => p.Student)
+                .FirstOrDefaultAsync(p => p.SchoolId == schoolId && p.Id == slipId);
+            if (slip == null) throw new InvalidOperationException("Permission slip not found.");
+
+            slip.Status = request.Status;
+            slip.ApprovedBy = reviewedBy;
+            slip.ReviewedAt = DateTime.UtcNow;
+            slip.ReviewRemarks = request.Remarks;
+            slip.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return MapSlipToDto(slip);
+        }
+
+        private static StudentPermissionSlipDto MapSlipToDto(StudentPermissionSlip p) => new()
+        {
+            Id = p.Id,
+            StudentId = p.StudentId,
+            StudentName = p.Student?.Name ?? string.Empty,
+            AcademicYear = p.AcademicYear,
+            OutWith = p.OutWith,
+            OutWithRelation = p.OutWithRelation,
+            Reason = p.Reason,
+            OutDate = p.OutDate,
+            OutTime = p.OutTime,
+            Status = p.Status,
+            ReviewRemarks = p.ReviewRemarks,
+            ReviewedAt = p.ReviewedAt,
+            CreatedAt = p.CreatedAt
+        };
+
+        // ─── Transfer Certificate ─────────────────────────────────────────────
+
+        public async Task<TransferCertificateDto?> GetTransferCertificateAsync(Guid schoolId, Guid studentId)
+        {
+            var tc = await _context.TransferCertificates
+                .Include(t => t.Student)
+                .FirstOrDefaultAsync(t => t.SchoolId == schoolId && t.StudentId == studentId);
+            return tc == null ? null : MapTCToDto(tc);
+        }
+
+        public async Task<TransferCertificateDto> CreateTransferCertificateAsync(Guid schoolId, Guid studentId, CreateTransferCertificateRequest request, Guid issuedBy)
+        {
+            var student = await _context.Students.FirstOrDefaultAsync(s => s.Id == studentId && s.SchoolId == schoolId);
+            if (student == null) throw new InvalidOperationException("Student not found.");
+
+            var existing = await _context.TransferCertificates.AnyAsync(t => t.SchoolId == schoolId && t.StudentId == studentId);
+            if (existing) throw new InvalidOperationException("A Transfer Certificate already exists for this student.");
+
+            // Auto-increment TC number within the school
+            var maxAutoTc = await _context.TransferCertificates
+                .Where(t => t.SchoolId == schoolId)
+                .MaxAsync(t => (int?)t.AutoTCNumber) ?? 0;
+            var autoTCNumber = maxAutoTc + 1;
+
+            var tc = new TransferCertificate
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                StudentId = studentId,
+                TCNumber = request.TCNumber,
+                TCNumberPrefix = request.TCNumberPrefix,
+                AutoTCNumber = autoTCNumber,
+                ApplicationDate = request.ApplicationDate ?? DateTime.UtcNow,
+                ExitAcademicYear = request.ExitAcademicYear,
+                ExitClass = request.ExitClass ?? student.Class,
+                ExitSection = request.ExitSection ?? student.Section,
+                ReasonForLeaving = request.ReasonForLeaving,
+                Conduct = request.Conduct,
+                IsFailedInLastClass = request.IsFailedInLastClass,
+                LastAnnualExamResult = request.LastAnnualExamResult,
+                IsQualifiedForHigherClass = request.IsQualifiedForHigherClass,
+                QualifiedToClass = request.QualifiedToClass,
+                AdditionalRemarks = request.AdditionalRemarks,
+                IssuedBy = issuedBy
+            };
+            _context.TransferCertificates.Add(tc);
+            await _context.SaveChangesAsync();
+
+            return MapTCToDto(tc, student);
+        }
+
+        public async Task<TransferCertificateDto> IssueTCAsync(Guid schoolId, Guid studentId, IssueTCRequest request, Guid issuedBy)
+        {
+            var tc = await _context.TransferCertificates
+                .Include(t => t.Student)
+                .FirstOrDefaultAsync(t => t.SchoolId == schoolId && t.StudentId == studentId);
+            if (tc == null) throw new InvalidOperationException("No Transfer Certificate record found. Create one first.");
+
+            tc.IsTCIssued = true;
+            tc.IssuedDate = request.IssuedDate;
+            if (!string.IsNullOrWhiteSpace(request.TCNumber))
+                tc.TCNumber = request.TCNumber;
+            if (request.IssueCharacterCertificate)
+            {
+                tc.IsCharacterCertificateIssued = true;
+                // Also update on Student entity for quick access
+                var student = await _context.Students.FindAsync(studentId);
+                if (student != null) student.IsCharacterCertificateIssued = true;
+            }
+            tc.IssuedBy = issuedBy;
+            tc.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return MapTCToDto(tc);
+        }
+
+        private static TransferCertificateDto MapTCToDto(TransferCertificate tc, Student? student = null) => new()
+        {
+            Id = tc.Id,
+            StudentId = tc.StudentId,
+            StudentName = student?.Name ?? tc.Student?.Name ?? string.Empty,
+            AdmissionNumber = student?.AdmissionNumber ?? tc.Student?.AdmissionNumber,
+            TCNumber = tc.TCNumber,
+            AutoTCNumber = tc.AutoTCNumber,
+            TCNumberPrefix = tc.TCNumberPrefix,
+            ApplicationDate = tc.ApplicationDate,
+            IssuedDate = tc.IssuedDate,
+            ExitAcademicYear = tc.ExitAcademicYear,
+            ExitClass = tc.ExitClass,
+            ExitSection = tc.ExitSection,
+            ReasonForLeaving = tc.ReasonForLeaving,
+            Conduct = tc.Conduct,
+            IsTCIssued = tc.IsTCIssued,
+            IsFailedInLastClass = tc.IsFailedInLastClass,
+            LastAnnualExamResult = tc.LastAnnualExamResult,
+            IsQualifiedForHigherClass = tc.IsQualifiedForHigherClass,
+            QualifiedToClass = tc.QualifiedToClass,
+            DetainedInSameClass = tc.DetainedInSameClass,
+            DatePupilStruck = tc.DatePupilStruck,
+            AdditionalRemarks = tc.AdditionalRemarks,
+            IsCharacterCertificateIssued = tc.IsCharacterCertificateIssued,
+            CharacterCertificateNumber = tc.CharacterCertificateNumber,
+            CreatedAt = tc.CreatedAt,
+            UpdatedAt = tc.UpdatedAt
+        };
+
+        // ─── Document Verification ────────────────────────────────────────────
+
+        public async Task<StudentDocumentDto> VerifyDocumentAsync(Guid schoolId, Guid documentId, VerifyDocumentDto request, Guid verifiedBy)
+        {
+            var allowedStatuses = new HashSet<string> { "verified", "rejected" };
+            if (!allowedStatuses.Contains(request.VerificationStatus))
+                throw new InvalidOperationException("VerificationStatus must be 'verified' or 'rejected'.");
+
+            var doc = await _context.StudentDocuments
+                .FirstOrDefaultAsync(d => d.Id == documentId && d.SchoolId == schoolId);
+            if (doc == null) throw new InvalidOperationException("Document not found.");
+
+            doc.VerificationStatus = request.VerificationStatus;
+            doc.VerifiedAt = DateTime.UtcNow;
+            doc.VerifiedBy = verifiedBy;
+            doc.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return new StudentDocumentDto
+            {
+                Id = doc.Id,
+                DocumentType = doc.DocumentType,
+                FileUrl = doc.FileUrl,
+                FileName = doc.FileName,
+                DocumentNumber = doc.DocumentNumber,
+                IssuingAuthority = doc.IssuingAuthority,
+                IssueDate = doc.IssueDate,
+                ExpiryDate = doc.ExpiryDate,
+                VerificationStatus = doc.VerificationStatus,
+                VerifiedAt = doc.VerifiedAt,
+                UploadedAt = doc.UploadedAt
+            };
+        }
+
+        // ─── Roll Number Assignment ────────────────────────────────────────────
+
+        public async Task<List<RollNumberStudentDto>> GetStudentsForRollAssignmentAsync(Guid schoolId, string className, string section)
+        {
+            return await _context.Students
+                .Where(s => s.SchoolId == schoolId && s.Class == className && s.Section == section && s.IsActive)
+                .OrderBy(s => s.Name)
+                .Select(s => new RollNumberStudentDto
+                {
+                    Id = s.Id,
+                    Name = s.Name,
+                    AdmissionNumber = s.AdmissionNumber,
+                    Gender = s.Gender,
+                    RollNumber = s.RollNumber
+                })
+                .ToListAsync();
+        }
+
+        public async Task BulkAssignRollNumbersAsync(Guid schoolId, RollNumberAssignmentRequest request)
+        {
+            var studentIds = request.Assignments.Keys.ToList();
+            var students = await _context.Students
+                .Where(s => s.SchoolId == schoolId
+                    && s.Class == request.Class
+                    && s.Section == request.Section
+                    && studentIds.Contains(s.Id))
+                .ToListAsync();
+
+            foreach (var student in students)
+            {
+                if (request.Assignments.TryGetValue(student.Id, out var rollNo))
+                    student.RollNumber = rollNo;
+            }
+            await _context.SaveChangesAsync();
+        }
 
         /// <summary>Normalizes class names to detect if a student is in Class 12 (final year).</summary>
         private static bool IsClass12(string className)

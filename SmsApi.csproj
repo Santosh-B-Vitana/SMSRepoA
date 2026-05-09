@@ -97,6 +97,8 @@
     <EmbeddedResource Remove="SmsApi.Tests\**\*" />
     <None Remove="SmsApi.Tests\**\*" />
     <Content Remove="SmsApi.Tests\**\*" />
+    <Content Remove="SmsApi.IntegrationTests\**\*" />
+    <None Remove="SmsApi.IntegrationTests\**\*" />
     <None Remove="artifacts\**\*" />
     <Content Remove="artifacts\**\*" />
   </ItemGroup>

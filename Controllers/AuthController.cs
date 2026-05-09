@@ -156,7 +156,8 @@ public class AuthController : ControllerBase
         userLogin.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var userModel = MapToUserModel(userLogin);
+        var designation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        var userModel = MapToUserModel(userLogin, designation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
 
@@ -168,16 +169,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = new UserInfo
-            {
-                Id = userLogin.Id,
-                Email = userLogin.Email,
-                FirstName = userLogin.FirstName,
-                LastName = userLogin.LastName,
-                Role = userLogin.Role,
-                SchoolId = userLogin.SchoolId,
-                RequirePasswordChange = userLogin.RequirePasswordChange
-            }
+            User = BuildUserInfo(userLogin, designation)
         });
     }
 
@@ -216,7 +208,8 @@ public class AuthController : ControllerBase
             userLogin.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var userModel = MapToUserModel(userLogin);
+            var refreshDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+            var userModel = MapToUserModel(userLogin, refreshDesignation);
             var newAccessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
             var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
 
@@ -225,16 +218,7 @@ public class AuthController : ControllerBase
                 Token = newAccessToken,
                 RefreshToken = newRawRefreshToken,
                 Expiration = DateTime.UtcNow.AddMinutes(expMins),
-                User = new UserInfo
-                {
-                    Id = userLogin.Id,
-                    Email = userLogin.Email,
-                    FirstName = userLogin.FirstName,
-                    LastName = userLogin.LastName,
-                    Role = userLogin.Role,
-                    SchoolId = userLogin.SchoolId,
-                    RequirePasswordChange = userLogin.RequirePasswordChange
-                }
+                User = BuildUserInfo(userLogin, refreshDesignation)
             });
         }
         catch (Exception ex)
@@ -284,16 +268,8 @@ public class AuthController : ControllerBase
         if (userLogin == null)
             return NotFound(new { message = "User not found" });
 
-        return Ok(new UserInfo
-        {
-            Id = userLogin.Id,
-            Email = userLogin.Email,
-            FirstName = userLogin.FirstName,
-            LastName = userLogin.LastName,
-            Role = userLogin.Role,
-            SchoolId = userLogin.SchoolId,
-            RequirePasswordChange = userLogin.RequirePasswordChange
-        });
+        var meDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        return Ok(BuildUserInfo(userLogin, meDesignation));
     }
 
     /// <summary>
@@ -387,7 +363,8 @@ public class AuthController : ControllerBase
         userLogin.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var userModel = MapToUserModel(userLogin);
+        var twoFaDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        var userModel = MapToUserModel(userLogin, twoFaDesignation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
 
@@ -398,16 +375,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = new UserInfo
-            {
-                Id = userLogin.Id,
-                Email = userLogin.Email,
-                FirstName = userLogin.FirstName,
-                LastName = userLogin.LastName,
-                Role = userLogin.Role,
-                SchoolId = userLogin.SchoolId,
-                RequirePasswordChange = userLogin.RequirePasswordChange
-            }
+            User = BuildUserInfo(userLogin, twoFaDesignation)
         });
     }
 
@@ -522,12 +490,38 @@ public class AuthController : ControllerBase
         return Convert.ToBase64String(bytes);
     }
 
-    private static User MapToUserModel(UserLogin userLogin) => new()
+    /// <summary>
+    /// Looks up the Staff member with a matching email to get their actual designation
+    /// (e.g. "Principal", "Mathematics Teacher"). Returns null if no staff record found.
+    /// </summary>
+    private async Task<string?> ResolveDesignationAsync(string email, Guid schoolId)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        return await _context.StaffMembers
+            .Where(s => s.SchoolId == schoolId && s.Email.ToLower() == email.ToLower() && !s.IsDeleted)
+            .Select(s => s.Designation)
+            .FirstOrDefaultAsync();
+    }
+
+    private static User MapToUserModel(UserLogin userLogin, string? designation = null) => new()
     {
         Id = userLogin.Id,
         Email = userLogin.Email,
         FirstName = userLogin.FirstName,
         LastName = userLogin.LastName,
-        Role = userLogin.Role
+        Role = userLogin.Role,
+        Designation = designation,
+    };
+
+    private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null) => new()
+    {
+        Id = userLogin.Id,
+        Email = userLogin.Email,
+        FirstName = userLogin.FirstName,
+        LastName = userLogin.LastName,
+        Role = userLogin.Role,
+        Designation = designation,
+        SchoolId = userLogin.SchoolId,
+        RequirePasswordChange = userLogin.RequirePasswordChange,
     };
 }

@@ -1,6 +1,7 @@
 # sms-api — Technical Document
 
-> **Version 2.0** · ASP.NET Core 8 · React 19 · PostgreSQL · Production-Grade
+> **Version 2.1** · ASP.NET Core 8 · .NET 8 · React 19 · PostgreSQL · **Release Candidate**  
+> **Last Updated:** May 8, 2026 | **Project:** SMSRepoA
 
 ---
 
@@ -281,20 +282,34 @@ services:
 
 ## 9. Testing
 
-```
-SmsApi.Tests/
-├── AuthControllerTests.cs        (login, JWT, lockout)
-├── StudentsControllerTests.cs
-├── FeesControllerTests.cs
-├── AttendanceControllerTests.cs
-└── ...
+| Layer | Location | Count | Status |
+|-------|----------|-------|--------|
+| Unit Tests | `SmsApi.Tests/` | 724 | ✅ All passing |
+| Integration Tests | `SmsApi.IntegrationTests/` | 8/26 | 🟡 JWT factory limitation |
+| Frontend | `ui/src/tests/` | 10 | ✅ Passing |
 
-ui/src/
-├── tests/ProtectedRoute.test.tsx  (5 tests)
-└── tests/AuthContext.test.tsx     (5 tests)
-
-Total: 724 backend + 10 frontend tests passing
+**Run all tests:**
+```bash
+dotnet test SmsApi.Tests
+dotnet test SmsApi.IntegrationTests
 ```
+
+For detailed test architecture, known issues, and templates see [TESTING_INFRASTRUCTURE.md](./TESTING_INFRASTRUCTURE.md).
+
+---
+
+## 10. Documentation Index
+
+| Document | Purpose |
+|----------|---------|
+| [TECHNICAL_DOCUMENT.md](./TECHNICAL_DOCUMENT.md) | Architecture, stack, database schema |
+| [FUNCTIONAL_DOCUMENT.md](./FUNCTIONAL_DOCUMENT.md) | Feature reference for all modules |
+| [API_DOCS.md](./API_DOCS.md) | REST API reference with examples |
+| [CODING_AGENT_GUIDELINES.md](./CODING_AGENT_GUIDELINES.md) | Patterns for developers and AI agents |
+| [DEFAULT_CREDENTIALS.md](./DEFAULT_CREDENTIALS.md) | Development credentials and JWT config |
+| [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Docker, cloud, migration, env vars |
+| [TESTING_INFRASTRUCTURE.md](./TESTING_INFRASTRUCTURE.md) | Test setup, patterns, known issues |
+| [MODULE_STATUS.md](./MODULE_STATUS.md) | Production readiness per module |
 
 ---
 

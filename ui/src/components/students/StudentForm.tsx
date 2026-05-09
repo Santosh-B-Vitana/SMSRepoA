@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Student, studentApi } from "@/services/api/studentApi";
 import { academicApi, ClassResponse, AcademicYearResponse } from "@/services/api/academicApi";
 import { useToast } from "@/hooks/use-toast";
+import { DOCUMENT_TYPES } from "./StudentDocumentUpload";
+import { Upload, Trash2, FileText } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface StudentFormProps {
   student?: Student | null;
@@ -138,6 +141,24 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
     setFormData({ ...formData, class: value, section: "" });
   };
 
+  // ── Admission document state ─────────────────────────────────────────────
+  interface PendingDoc { docType: string; file: File; }
+  const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
+  const docFileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingDocType, setPendingDocType] = useState("");
+
+  const handleAddPendingDoc = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !pendingDocType) return;
+    if (file.size > 10 * 1024 * 1024) { toast({ title: "File too large", description: "Max 10 MB per document.", variant: "destructive" }); return; }
+    setPendingDocs((prev) => [...prev, { docType: pendingDocType, file }]);
+    setPendingDocType("");
+    if (docFileInputRef.current) docFileInputRef.current.value = "";
+  };
+
+  const removePendingDoc = (idx: number) =>
+    setPendingDocs((prev) => prev.filter((_, i) => i !== idx));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -192,10 +213,20 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
 
       if (student) {
         await studentApi.update(student.id, payload);
+        // Upload any pending docs against existing student
+        for (const pd of pendingDocs) {
+          await studentApi.uploadDocument(student.id, pd.docType, pd.file).catch(() => {});
+        }
         toast({ title: "Success", description: "Student updated successfully" });
       } else {
-        await studentApi.create(payload);
-        toast({ title: "Success", description: "Student added successfully" });
+        const created = await studentApi.create(payload);
+        // Upload admission docs right after creation
+        if (created?.id && pendingDocs.length > 0) {
+          for (const pd of pendingDocs) {
+            await studentApi.uploadDocument(created.id, pd.docType, pd.file).catch(() => {});
+          }
+        }
+        toast({ title: "Success", description: `Student added successfully${pendingDocs.length > 0 ? ` with ${pendingDocs.length} document(s)` : ''}` });
       }
       onSuccess();
     } catch (error) {
@@ -213,13 +244,19 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
     <div className="space-y-4">
           <form onSubmit={handleSubmit} className="space-y-6">
             <Tabs defaultValue="basic" className="w-full">
-              <TabsList className="grid w-full grid-cols-6">
+              <TabsList className="grid w-full grid-cols-7">
                 <TabsTrigger value="basic">Basic</TabsTrigger>
                 <TabsTrigger value="identification">ID</TabsTrigger>
                 <TabsTrigger value="contact">Contact</TabsTrigger>
                 <TabsTrigger value="guardian">Guardian</TabsTrigger>
                 <TabsTrigger value="academic">Academic</TabsTrigger>
                 <TabsTrigger value="medical">Medical</TabsTrigger>
+                <TabsTrigger value="documents" className="relative">
+                  Documents
+                  {pendingDocs.length > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center">{pendingDocs.length}</span>
+                  )}
+                </TabsTrigger>
               </TabsList>
 
               {/* Basic Information Tab */}
@@ -781,6 +818,105 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
                       onCheckedChange={(checked) => setFormData({...formData, medicalConsent: checked as boolean})}
                     />
                     <Label htmlFor="medicalConsent">Medical Emergency Consent</Label>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* ── Admission Documents Tab ───────────────────────────────── */}
+              <TabsContent value="documents" className="space-y-4 mt-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    Attach supporting documents required for admission (Birth Certificate, Aadhar, Transfer Certificate, etc.).
+                    These will be uploaded automatically when you save the student.
+                  </p>
+                </div>
+
+                {/* Required document checklist */}
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                  <h4 className="text-sm font-semibold">Required Documents</h4>
+                  {DOCUMENT_TYPES.filter((t) => t.required).map((t) => {
+                    const uploaded = pendingDocs.some((d) => d.docType === t.value);
+                    return (
+                      <div key={t.value} className="flex items-center gap-2 text-sm">
+                        <span className={uploaded ? "text-green-600" : "text-amber-600"}>
+                          {uploaded ? "✓" : "○"}
+                        </span>
+                        <span className={uploaded ? "text-green-700 font-medium" : "text-muted-foreground"}>
+                          {t.label}
+                        </span>
+                        {uploaded && <Badge variant="secondary" className="text-[10px] h-4">Attached</Badge>}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Pending docs list */}
+                {pendingDocs.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold">Attached Documents ({pendingDocs.length})</h4>
+                    {pendingDocs.map((pd, idx) => {
+                      const label = DOCUMENT_TYPES.find((t) => t.value === pd.docType)?.label ?? pd.docType;
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-2 border rounded-lg bg-white">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{pd.file.name}</p>
+                              <p className="text-xs text-muted-foreground">{label} · {(pd.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                            </div>
+                          </div>
+                          <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive" onClick={() => removePendingDoc(idx)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add document row */}
+                <div className="rounded-lg border p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">Add Document</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Document Type</Label>
+                      <Select value={pendingDocType} onValueChange={setPendingDocType}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DOCUMENT_TYPES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                              {t.required && <span className="ml-1.5 text-xs text-amber-600">*</span>}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>File (PDF / JPG / PNG, max 10 MB)</Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          disabled={!pendingDocType}
+                          onClick={() => docFileInputRef.current?.click()}
+                        >
+                          <Upload className="h-4 w-4 mr-2" />
+                          Browse File
+                        </Button>
+                        <input
+                          ref={docFileInputRef}
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          onChange={handleAddPendingDoc}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </TabsContent>

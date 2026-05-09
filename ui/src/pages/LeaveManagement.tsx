@@ -7,7 +7,7 @@ import { AdminLeaveManagementEnhanced } from "../components/leave/AdminLeaveMana
 /**
  * Staff Leave Management Page — role-aware
  *
- * • Principal / Vice Principal → two tabs:
+ * • Admin / Principal / Vice Principal / HRManager → two tabs:
  *     "Staff Requests"  – approve/reject all staff leaves (AdminLeaveManagementEnhanced)
  *     "My Leave"        – personal leave application / history (StaffLeaveManagerEnhanced)
  *
@@ -15,8 +15,13 @@ import { AdminLeaveManagementEnhanced } from "../components/leave/AdminLeaveMana
  */
 export default function LeaveManagement() {
   const { user } = useAuth();
+  const role = user?.role ?? "";
   const designation = (user?.designation ?? "").toLowerCase();
-  const isLeadership = designation === "principal" || designation === "vice principal";
+  const isLeadership =
+    role === "admin" ||
+    designation === "principal" ||
+    designation === "vice principal" ||
+    designation === "hr manager";
 
   if (!isLeadership) {
     return <StaffLeaveManagerEnhanced />;

@@ -451,7 +451,9 @@ namespace SmsApi.Services
 
             return new ComplianceReportListResponse
             {
+                Items = reports.Select(MapToReportResponse).ToList(),
                 Reports = reports.Select(MapToReportResponse).ToList(),
+                TotalCount = reports.Count,
                 Total = reports.Count
             };
         }

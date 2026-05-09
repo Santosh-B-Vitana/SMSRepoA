@@ -918,11 +918,13 @@ namespace SmsApi.Services
 
         public async Task<List<MyClassAssignmentDto>> GetMyClassTeacherAssignmentsAsync(Guid staffId, Guid schoolId)
         {
+            // Return ALL assignments for this staff (class teacher + subject teacher)
             var assignments = await _context.TeacherAssignments
                 .Include(ta => ta.Class)
                 .Include(ta => ta.Section)
+                .Include(ta => ta.Subject)
                 .Where(ta => ta.StaffId == staffId && ta.SchoolId == schoolId
-                    && ta.IsClassTeacher && ta.Status == "active" && !ta.IsDeleted)
+                    && ta.Status == "active" && !ta.IsDeleted)
                 .ToListAsync();
 
             return assignments.Select(ta => new MyClassAssignmentDto
@@ -932,6 +934,8 @@ namespace SmsApi.Services
                 ClassName = ta.Class?.Name ?? string.Empty,
                 SectionId = ta.SectionId,
                 SectionName = ta.Section?.Name,
+                SubjectId = ta.SubjectId,
+                SubjectName = ta.Subject?.Name,
                 IsClassTeacher = ta.IsClassTeacher,
                 AcademicYear = ta.AcademicYear,
                 Status = ta.Status

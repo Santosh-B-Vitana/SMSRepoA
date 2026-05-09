@@ -885,9 +885,11 @@ namespace SmsApi.Tests.Unit.PFESI
             // Act
             await Svc.DeleteConfigAsync(PfConfigId1, School1);
 
-            // Assert
-            var config = await Db.PFESIConfigurations.FindAsync(PfConfigId1);
-            config.Should().BeNull();
+            // Assert: soft-delete applied — entity not accessible via filtered query
+            var config = await Db.PFESIConfigurations
+                .Where(c => c.Id == PfConfigId1)
+                .FirstOrDefaultAsync();
+            config.Should().BeNull("soft-delete should hide the record from filtered queries");
         }
 
         [Fact]
@@ -971,7 +973,7 @@ namespace SmsApi.Tests.Unit.PFESI
 
             // Act & Assert
             var ex = await Assert.ThrowsAsync<ArgumentException>(() => Svc.CalculateContributionsAsync(request));
-            ex.Message.Should().Contain("at least one");
+            ex.Message.Should().ContainEquivalentOf("at least one");
         }
     }
 }

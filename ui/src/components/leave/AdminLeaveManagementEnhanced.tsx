@@ -32,7 +32,7 @@ import {
   BarChart3, Users, Calendar, TrendingUp, Filter, Download, Search, X, CheckSquare,
   User, Mail, Phone, FileText, Briefcase, Info
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import leaveManagementApi, { LeaveRequest, LeaveType } from "../../services/api/leaveManagementApi";
 
 interface LeaveStats {
@@ -97,27 +97,28 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
   });
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { toast } = useToast();
+  // toast from sonner (imported at top)
 
   // Fetch Data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [types, response] = await Promise.all([
-          leaveManagementApi.getLeaveTypes("All"),
-          leaveManagementApi.getLeaveRequests(1, 500, undefined, undefined), // undefined = no status filter = all
+        const [staffTypes, studentTypes, response] = await Promise.all([
+          leaveManagementApi.getLeaveTypes("Staff"),
+          leaveManagementApi.getLeaveTypes("Student"),
+          leaveManagementApi.getLeaveRequests(1, 500, undefined, undefined), // no status filter = all
         ]);
-        setLeaveTypes(types);
+        // Merge and deduplicate by id
+        const allTypes = [...staffTypes, ...studentTypes].filter(
+          (t, i, arr) => arr.findIndex(x => x.id === t.id) === i
+        );
+        setLeaveTypes(allTypes);
         setLeaves(response.items);
         calculateStats(response.items);
       } catch (error: any) {
         console.error("Failed to fetch:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load leave management data",
-          variant: "destructive"
-        });
+        toast.error("Error", { description: "Failed to load leave management data" });
       } finally {
         setLoading(false);
       }
@@ -194,7 +195,7 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
     if (!approvalDialog.leaveId) return;
 
     if (action === "reject" && !approvalDialog.remarks.trim()) {
-      toast({ title: "Reason required", description: "Please provide a reason for rejection", variant: "destructive" });
+      toast.error("Reason required", { description: "Please provide a reason for rejection" });
       return;
     }
 
@@ -203,10 +204,10 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
       
       if (action === "approve") {
         await leaveManagementApi.approveLeave(approvalDialog.leaveId, approvalDialog.remarks || undefined);
-        toast({ title: "Leave Approved", description: "The staff member has been notified." });
+        toast.success("Leave Approved", { description: "The staff member has been notified." });
       } else {
         await leaveManagementApi.rejectLeave(approvalDialog.leaveId, approvalDialog.remarks);
-        toast({ title: "Leave Rejected", description: "The staff member has been notified with the reason." });
+        toast.success("Leave Rejected", { description: "The staff member has been notified with the reason." });
       }
 
       // Refresh data
@@ -217,11 +218,7 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
       setApprovalDialog({ open: false, leaveId: undefined, isRejecting: false, remarks: "" });
     } catch (error: any) {
       console.error("Error:", error);
-      toast({
-        title: "Error",
-        description: error?.response?.data?.message || "Failed to process leave request",
-        variant: "destructive"
-      });
+      toast.error("Error", { description: error?.response?.data?.message || "Failed to process leave request" });
     } finally {
       setProcessing(false);
     }
@@ -231,7 +228,7 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
   const handleDirectMarking = async () => {
     if (!directMarkingDialog.form.staffId || !directMarkingDialog.form.leaveTypeId ||
       !directMarkingDialog.form.startDate || !directMarkingDialog.form.endDate) {
-      toast({ title: "Incomplete", description: "Please fill all required fields", variant: "destructive" });
+      toast.error("Incomplete", { description: "Please fill all required fields" });
       return;
     }
 
@@ -249,7 +246,7 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
       // Auto-approve
       await leaveManagementApi.approveLeave(leave.id, `Admin direct marking: ${directMarkingDialog.form.remark || ''}`);
 
-      toast({ title: "Success", description: `Leave marked for ${directMarkingDialog.form.staffId}` });
+      toast.success("Success", { description: `Leave marked for ${directMarkingDialog.form.staffId}` });
 
       // Refresh
       const response = await leaveManagementApi.getLeaveRequests(1, 500, undefined, undefined);
@@ -259,7 +256,7 @@ export function AdminLeaveManagementEnhanced({ defaultRequestType = "all" }: { d
       setDirectMarkingDialog({ open: false, form: { staffId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", remark: "" } });
     } catch (error: any) {
       console.error("Error:", error);
-      toast({ title: "Error", description: "Failed to mark leave", variant: "destructive" });
+      toast.error("Error", { description: "Failed to mark leave" });
     } finally {
       setProcessing(false);
     }

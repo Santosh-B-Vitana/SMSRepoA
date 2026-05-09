@@ -28,6 +28,7 @@ import {
 import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
 import { Student, StudentBasic, StudentProfileSummary, studentApi } from "@/services/api/studentApi";
+import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
 import { StudentLeaveRequests } from "@/components/leave-management/StudentLeaveRequests";
 
@@ -43,11 +44,14 @@ import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 import { PdfPreviewModal } from "@/components/common/PdfPreviewModal";
 import { generateProfessionalReportCard, SchoolInfo } from "@/utils/professionalPdfGenerator";
+import { useSchool } from "@/contexts/SchoolContext";
+import { StudentDocumentUpload } from "@/components/students/StudentDocumentUpload";
 
 export default function StudentProfile() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const { academicYear: contextYear } = useAcademicYear();
+  const { schoolInfo } = useSchool();
   // Photo upload state
   const [photoPreview, setPhotoPreview] = useState<string | undefined>(undefined);
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,11 +108,7 @@ export default function StudentProfile() {
   const [showCommDialog, setShowCommDialog] = useState(false);
   const [commType, setCommType] = useState("SMS");
   const [commMessage, setCommMessage] = useState("");
-  const [mockCommunications, setMockCommunications] = useState([
-    { date: "2024-01-10", type: "SMS", message: "Parent-teacher meeting scheduled", status: "Sent" },
-    { date: "2024-01-08", type: "Email", message: "Monthly progress report", status: "Delivered" },
-    { date: "2024-01-05", type: "Phone", message: "Discussed academic performance", status: "Completed" },
-  ]);
+  const [communications, setCommunications] = useState<Array<{ date: string; type: string; message: string; status: string }>>([]);
   // Marks tab filter state
   const [selectedExam, setSelectedExam] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
@@ -118,6 +118,7 @@ export default function StudentProfile() {
   const [siblings, setSiblings] = useState<StudentBasic[]>([]);
   const [allStudents, setAllStudents] = useState<StudentBasic[]>([]);
   const [profileSummary, setProfileSummary] = useState<StudentProfileSummary | null>(null);
+  const [studentGrades, setStudentGrades] = useState<StudentGradeResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showAllDetailsExpanded, setShowAllDetailsExpanded] = useState(false);
@@ -130,12 +131,6 @@ export default function StudentProfile() {
   });
   const { toast } = useToast();
   const { t } = useLanguage();
-
-  // Mock API for parent communication
-  function mockParentCommApi(records) {
-    // This can be replaced with a real API call later
-    return records;
-  }
 
   useEffect(() => {
     if (id) {
@@ -165,6 +160,13 @@ export default function StudentProfile() {
         setProfileSummary(summary);
       } catch {
         // Summary is supplementary — don't fail if unavailable
+      }
+      // Load teacher-entered grades from the grades module
+      try {
+        const gradesResult = await gradesApi.getStudentGrades(undefined, id);
+        setStudentGrades(gradesResult.studentGrades ?? []);
+      } catch {
+        // Grades are supplementary
       }
     } catch (error) {
       console.error("Failed to fetch student:", error);
@@ -256,19 +258,11 @@ export default function StudentProfile() {
       return;
     }
     
-    // For other types like Report Card
-    const fileName = `${type.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
-    const fileContent = `This is a mock ${type} for student ${student?.name || ''}.`;
-    const blob = new Blob([fileContent], { type: 'application/pdf' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // For other types like Report Card — PDF generation not yet supported
     toast({
-      title: `${type} Generated`,
-      description: `Mock ${type} has been downloaded as ${fileName}.`,
+      title: `${type}`,
+      description: `${type} generation is not yet available. Please use the Reports module.`,
+      variant: "destructive",
     });
   };
 
@@ -635,6 +629,7 @@ export default function StudentProfile() {
             <TabsTrigger value="health" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Health</TabsTrigger>
             <TabsTrigger value="visitors" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Visitors</TabsTrigger>
             <TabsTrigger value="communication" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.communication')}</TabsTrigger>
+            <TabsTrigger value="documents" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Documents</TabsTrigger>
             {isAdmin && <TabsTrigger value="portal" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Portal</TabsTrigger>}
           </TabsList>
         </div>
@@ -1076,9 +1071,47 @@ export default function StudentProfile() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="communication">
+          {/* Teacher-Entered Formative Grades */}
+          {studentGrades.length > 0 && (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Award className="h-5 w-5" />
+                  Formative Grades (Teacher-Entered)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Assessment</TableHead>
+                        <TableHead>Marks</TableHead>
+                        <TableHead>Grade</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Remarks</TableHead>
+                        <TableHead>Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {studentGrades.map(g => (
+                        <TableRow key={g.id}>
+                          <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
+                          <TableCell>{g.marksObtained}{g.maxMarks ? <span className="text-muted-foreground text-xs"> / {g.maxMarks}</span> : ""}</TableCell>
+                          <TableCell>{g.grade ? <Badge variant="outline">{g.grade}</Badge> : "—"}</TableCell>
+                          <TableCell><Badge variant={g.status === "pass" ? "default" : g.status === "fail" ? "destructive" : "secondary"}>{g.status}</Badge></TableCell>
+                          <TableCell className="max-w-xs truncate">{g.remarks ?? "—"}</TableCell>
+                          <TableCell>{new Date(g.createdAt).toLocaleDateString()}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1126,7 +1159,7 @@ export default function StudentProfile() {
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowManualDialog(false)}>Cancel</Button>
                       <Button onClick={() => {
-                        setMockCommunications(prev => [
+                        setCommunications(prev => [
                           ...prev,
                           {
                             date: manualDate || new Date().toISOString().split('T')[0],
@@ -1156,7 +1189,11 @@ export default function StudentProfile() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mockParentCommApi(mockCommunications).map((comm, index) => (
+                    {communications.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground py-6">No communications logged yet.</TableCell>
+                      </TableRow>
+                    ) : communications.map((comm, index) => (
                       <TableRow key={index}>
                         <TableCell>{comm.date}</TableCell>
                         <TableCell>{comm.type}</TableCell>
@@ -1190,7 +1227,7 @@ export default function StudentProfile() {
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowCommDialog(false)}>Cancel</Button>
                       <Button onClick={() => {
-                        setMockCommunications(prev => [
+                        setCommunications(prev => [
                           ...prev,
                           {
                             date: new Date().toISOString().split('T')[0],
@@ -1250,8 +1287,8 @@ export default function StudentProfile() {
                       studentName={student.name}
                       fatherName={student.guardianName}
                       className={`${student.class}-${student.section}`}
-                      schoolName="St. Mary's Senior Secondary School"
-                      principalName="Dr. John Smith"
+                      schoolName={schoolInfo?.name || ""}
+                      principalName={schoolInfo?.principalName || ""}
                       academicYear={contextYear || "2024-25"}
                       rollNumber={student.rollNumber}
                       purpose="Higher Education"
@@ -1263,8 +1300,8 @@ export default function StudentProfile() {
                     <ConductCertificateTemplate
                       studentName={student.name}
                       className={`${student.class}-${student.section}`}
-                      schoolName="St. Mary's Senior Secondary School"
-                      principalName="Dr. John Smith"
+                      schoolName={schoolInfo?.name || ""}
+                      principalName={schoolInfo?.principalName || ""}
                       academicYear={contextYear || "2024-25"}
                       conduct="Excellent"
                       issueDate={new Date().toLocaleDateString()}
@@ -1285,10 +1322,10 @@ export default function StudentProfile() {
                     <TransferCertificateTemplate
                       studentName={student.name}
                       fatherName={student.guardianName}
-                      motherName="Mother Name"
+                      motherName=""
                       className={`${student.class}-${student.section}`}
-                      schoolName="St. Mary's Senior Secondary School"
-                      principalName="Dr. John Smith"
+                      schoolName={schoolInfo?.name || ""}
+                      principalName={schoolInfo?.principalName || ""}
                       academicYear={contextYear || "2024-25"}
                       dateOfBirth={student.dateOfBirth?.split('T')[0]}
                       dateOfAdmission={student.admissionDate}
@@ -1416,38 +1453,17 @@ export default function StudentProfile() {
                 </Button>
               </div>
 
-              {/* Uploaded Documents Section */}
-              <div className="border-t pt-4">
-                <h4 className="font-medium mb-3">Uploaded Documents</h4>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium text-sm">Admission Form</p>
-                        <p className="text-xs text-muted-foreground">PDF • 2024-01-15</p>
-                      </div>
-                    </div>
-                    <Button size="sm" variant="ghost">
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="font-medium text-sm">Birth Certificate</p>
-                        <p className="text-xs text-muted-foreground">PDF • 2024-01-10</p>
-                      </div>
-                    </div>
-                    <Button size="sm" variant="ghost">
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
             </CardContent>
           </Card>
+
+          {/* Live document upload/management */}
+          {student?.id && (
+            <StudentDocumentUpload
+              studentId={student.id}
+              studentName={student.name}
+              showRequiredChecklist
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="awards">

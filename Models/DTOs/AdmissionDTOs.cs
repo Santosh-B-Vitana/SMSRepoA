@@ -360,7 +360,7 @@ namespace SmsApi.Models.DTOs
         public string FileUrl { get; set; } = string.Empty;
     }
 
-    public class VerifyDocumentDto
+    public class VerifyAdmissionDocumentDto
     {
         [Required]
         public Guid VerifiedBy { get; set; }

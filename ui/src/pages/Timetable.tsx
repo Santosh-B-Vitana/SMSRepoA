@@ -1,17 +1,21 @@
-
+﻿
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Clock, Users, BookOpen, Sun } from "lucide-react";
 import TimetableManager from "./academics/TimetableManager";
 import HolidayManager from "@/components/timetable/HolidayManager";
+import { StaffTimetableView } from "@/components/timetable/StaffTimetableView";
 import { academicApi } from "@/services/api/academicApi";
 import { staffApi } from "@/services/api/staffApi";
 import { timetableApi } from "@/services/api/timetableApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Timetable() {
   const { academicYear } = useAcademicYear();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const [stats, setStats] = useState({
     totalClasses: 0,
     activeTeachers: 0,
@@ -21,6 +25,7 @@ export default function Timetable() {
   });
 
   useEffect(() => {
+    if (!isAdmin) return; // staff view doesn't need these stats
     Promise.allSettled([
       academicApi.listClasses(1, 500),
       staffApi.list(),
@@ -32,8 +37,27 @@ export default function Timetable() {
         activeTeachers: staffRes.status === 'fulfilled' ? (staffRes.value.total ?? staffRes.value.staff?.length ?? 0) : prev.activeTeachers,
       }));
     });
-  }, [academicYear]); // re-fetch KPI stats when year changes
+  }, [academicYear, isAdmin]);
 
+  // â”€â”€ Staff (non-admin): show personal timetable â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-display flex items-center gap-3">
+            <Clock className="h-8 w-8" />
+            My Timetable
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Your personal class schedule for the week
+          </p>
+        </div>
+        <StaffTimetableView />
+      </div>
+    );
+  }
+
+  // â”€â”€ Admin: full timetable management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}

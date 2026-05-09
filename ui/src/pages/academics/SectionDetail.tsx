@@ -164,7 +164,7 @@ export default function SectionDetail() {
         const groupedByDate: Record<string, any> = {};
         const totalStudentsCount = classStudents.length;
 
-        attendanceData.records?.forEach((record: any) => {
+        attendanceData.items?.forEach((record: any) => {
           const date = new Date(record.date).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',

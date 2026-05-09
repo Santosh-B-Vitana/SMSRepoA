@@ -46,19 +46,7 @@ namespace SmsApi.Services
         public DateTime CreatedAt { get; set; }
     }
 
-    public class HealthAlert
-    {
-        public Guid Id { get; set; }
-        public Guid SchoolId { get; set; }
-        public Guid StudentId { get; set; }
-        public string AlertType { get; set; } = string.Empty;
-        public string Severity { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public bool IsAcknowledged { get; set; }
-        public Guid? AcknowledgedBy { get; set; }
-        public DateTime? AcknowledgedAt { get; set; }
-        public DateTime CreatedAt { get; set; }
-    }
+    // HealthAlert entity is defined in Models/Entities/HealthExtended.cs
 
     public class HealthData
     {
@@ -107,7 +95,6 @@ namespace SmsApi.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<HealthService> _logger;
-        private readonly List<HealthAlert> _healthAlerts = new(); // In-memory storage for alerts
 
         public HealthService(AppDbContext context, ILogger<HealthService> logger)
         {
@@ -266,8 +253,8 @@ namespace SmsApi.Services
                         AdministeredBy = v.AdministeredBy,
                         CreatedAt = v.CreatedAt
                     }).ToList(),
-                    ActiveAlerts = _healthAlerts
-                        .Where(a => a.StudentId == record.StudentId && !a.IsAcknowledged)
+                    ActiveAlerts = await _context.HealthAlerts
+                        .Where(a => a.StudentId == record.StudentId && a.Status == "Active")
                         .Select(a => new HealthAlertDto
                         {
                             Id = a.Id,
@@ -276,13 +263,13 @@ namespace SmsApi.Services
                             StudentName = record.Student != null ? record.Student.Name : "",
                             AlertType = a.AlertType,
                             Severity = a.Severity,
-                            Description = a.Description,
-                            IsAcknowledged = a.IsAcknowledged,
+                            Description = a.Description ?? string.Empty,
+                            IsAcknowledged = a.Status != "Active",
                             AcknowledgedBy = a.AcknowledgedBy,
                             AcknowledgedAt = a.AcknowledgedAt,
                             CreatedAt = a.CreatedAt
                         })
-                        .ToList(),
+                        .ToListAsync(),
                     CreatedAt = record.CreatedAt,
                     UpdatedAt = record.UpdatedAt
                 };
@@ -303,7 +290,7 @@ namespace SmsApi.Services
                 // VALIDATION 1: Verify student is enrolled before recording health data
                 var student = await _context.Students
                     .FirstOrDefaultAsync(s => s.Id == dto.StudentId && s.SchoolId == schoolId);
-                if (student == null || student.Status != "active")
+                if (student == null || !string.Equals(student.Status, "active", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Student is not enrolled in the school");
 
                 // VALIDATION 2: Prevent duplicate health records for same date/type
@@ -326,11 +313,6 @@ namespace SmsApi.Services
                 
                 if (dto.Temperature < 95 || dto.Temperature > 105)
                     throw new InvalidOperationException("Temperature is out of valid range (95-105°F)");
-
-                // VALIDATION 4: Age-appropriate health checks
-                var age = DateTime.UtcNow.Year - student.DateOfBirth.Year;
-                if (age < 5 || age > 25)
-                    throw new InvalidOperationException("Student age is outside normal school range for health check");
 
                 var bmi = CalculateBMI(dto.Height, dto.Weight);
                 
@@ -704,34 +686,41 @@ namespace SmsApi.Services
                 if (student == null)
                     throw new KeyNotFoundException("Student not found");
 
-                var alert = new HealthAlert
+                var alertId = Guid.NewGuid();
+                var now = DateTime.UtcNow;
+                var severity = dto.Severity.ToLower();
+                var title = $"{dto.AlertType.Replace("_", " ")}: {dto.Description[..Math.Min(80, dto.Description.Length)]}";
+
+                var dbAlert = new SmsApi.Models.Entities.HealthAlert
                 {
-                    Id = Guid.NewGuid(),
+                    Id = alertId,
                     SchoolId = schoolId,
                     StudentId = dto.StudentId,
+                    Title = title,
                     AlertType = dto.AlertType,
-                    Severity = dto.Severity.ToLower(),
+                    Severity = severity,
                     Description = dto.Description,
-                    IsAcknowledged = false,
-                    CreatedAt = DateTime.UtcNow
+                    Status = "Active",
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
-
-                _healthAlerts.Add(alert);
+                _context.HealthAlerts.Add(dbAlert);
+                await _context.SaveChangesAsync();
 
                 _logger.LogInformation("Health alert created for student {StudentId}: {AlertType} ({Severity})", 
                     dto.StudentId, dto.AlertType, dto.Severity);
 
                 return new HealthAlertDto
                 {
-                    Id = alert.Id,
-                    SchoolId = alert.SchoolId,
-                    StudentId = alert.StudentId,
-                    StudentName = $"{student.Name.Split()[0]} {student.LastName}",
-                    AlertType = alert.AlertType,
-                    Severity = alert.Severity,
-                    Description = alert.Description,
-                    IsAcknowledged = alert.IsAcknowledged,
-                    CreatedAt = alert.CreatedAt
+                    Id = dbAlert.Id,
+                    SchoolId = dbAlert.SchoolId,
+                    StudentId = dbAlert.StudentId,
+                    StudentName = student.Name,
+                    AlertType = dbAlert.AlertType,
+                    Severity = dbAlert.Severity,
+                    Description = dbAlert.Description ?? string.Empty,
+                    IsAcknowledged = false,
+                    CreatedAt = dbAlert.CreatedAt
                 };
             }
             catch (Exception ex)
@@ -745,28 +734,29 @@ namespace SmsApi.Services
         {
             try
             {
-                var query = _healthAlerts.Where(a => a.SchoolId == schoolId);
+                var dbQuery = _context.HealthAlerts
+                    .AsNoTracking()
+                    .Include(a => a.Student)
+                    .Where(a => a.SchoolId == schoolId);
 
                 if (!string.IsNullOrEmpty(severity))
-                    query = query.Where(a => a.Severity == severity);
+                    dbQuery = dbQuery.Where(a => a.Severity.ToLower() == severity.ToLower());
 
                 if (isAcknowledged.HasValue)
-                    query = query.Where(a => a.IsAcknowledged == isAcknowledged.Value);
+                {
+                    if (isAcknowledged.Value)
+                        dbQuery = dbQuery.Where(a => a.Status != "Active");
+                    else
+                        dbQuery = dbQuery.Where(a => a.Status == "Active");
+                }
 
-                var alerts = query.OrderByDescending(a => a.CreatedAt).ToList();
+                var alerts = await dbQuery.OrderByDescending(a => a.CreatedAt).ToListAsync();
 
-                var studentIds = alerts.Select(a => a.StudentId).Distinct().ToList();
-                var students = await _context.Students
-                    .AsNoTracking()
-                    .Where(s => studentIds.Contains(s.Id))
-                    .ToDictionaryAsync(s => s.Id, s => $"{s.FirstName} {s.LastName}");
-
-                var users = new Dictionary<Guid, string>();
                 var userIds = alerts.Where(a => a.AcknowledgedBy.HasValue)
                     .Select(a => a.AcknowledgedBy!.Value)
-                    .Distinct()
-                    .ToList();
+                    .Distinct().ToList();
 
+                var users = new Dictionary<Guid, string>();
                 if (userIds.Any())
                 {
                     users = await _context.StaffMembers
@@ -780,11 +770,11 @@ namespace SmsApi.Services
                     Id = a.Id,
                     SchoolId = a.SchoolId,
                     StudentId = a.StudentId,
-                    StudentName = students.GetValueOrDefault(a.StudentId, "Unknown"),
+                    StudentName = a.Student?.Name ?? "Unknown",
                     AlertType = a.AlertType,
                     Severity = a.Severity,
-                    Description = a.Description,
-                    IsAcknowledged = a.IsAcknowledged,
+                    Description = a.Description ?? string.Empty,
+                    IsAcknowledged = a.Status != "Active",
                     AcknowledgedBy = a.AcknowledgedBy,
                     AcknowledgedByName = a.AcknowledgedBy.HasValue
                         ? users.GetValueOrDefault(a.AcknowledgedBy.Value, "Unknown")
@@ -804,18 +794,22 @@ namespace SmsApi.Services
         {
             try
             {
-                var alert = _healthAlerts.FirstOrDefault(a => a.SchoolId == schoolId && a.Id == alertId);
+                var alert = await _context.HealthAlerts
+                    .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.Id == alertId);
 
                 if (alert == null)
                     throw new KeyNotFoundException("Health alert not found");
 
-                alert.IsAcknowledged = true;
+                alert.Status = "Acknowledged";
                 alert.AcknowledgedBy = userId;
                 alert.AcknowledgedAt = DateTime.UtcNow;
+                alert.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
 
                 _logger.LogInformation("Health alert {AlertId} acknowledged by user {UserId}", alertId, userId);
 
-                return await Task.FromResult(true);
+                return true;
             }
             catch (Exception ex)
             {

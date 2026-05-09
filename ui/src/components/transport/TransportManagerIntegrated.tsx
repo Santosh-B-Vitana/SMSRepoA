@@ -11,14 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Bus, MapPin, Users, Plus, Settings, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { transportApi, TransportRoute, TransportStudent } from "@/services/transportApi";
-
-// Simple student interface for the component
-interface SimpleStudent {
-  id: string;
-  firstName: string;
-  lastName: string;
-  classGrade: string;
-}
+import { studentApi } from "@/services/api/studentApi";
+import type { StudentBasic } from "@/services/api/studentApi";
 
 export function TransportManagerIntegrated() {
   const { toast } = useToast();
@@ -26,10 +20,11 @@ export function TransportManagerIntegrated() {
   // State
   const [routes, setRoutes] = useState<TransportRoute[]>([]);
   const [transportStudents, setTransportStudents] = useState<TransportStudent[]>([]);
-  const [availableStudents, setAvailableStudents] = useState<SimpleStudent[]>([]);
+  const [availableStudents, setAvailableStudents] = useState<StudentBasic[]>([]);
   const [loading, setLoading] = useState(false);
   const [addRouteOpen, setAddRouteOpen] = useState(false);
   const [assignStudentOpen, setAssignStudentOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
   
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -97,9 +92,8 @@ export function TransportManagerIntegrated() {
 
   const loadAvailableStudents = async () => {
     try {
-      // TODO: Replace with actual students API when available
-      // For now, using empty array - will be populated from backend
-      setAvailableStudents([]);
+      const response = await studentApi.list({ status: 'active', pageSize: 200 });
+      setAvailableStudents(response.students);
     } catch (error) {
       console.error("Failed to load students:", error);
     }
@@ -138,6 +132,7 @@ export function TransportManagerIntegrated() {
         description: "Student assigned to transport successfully"
       });
       setAssignStudentOpen(false);
+      setStudentSearch('');
       resetAssignForm();
       loadTransportStudents();
       loadRoutes(); // Reload to update studentsAssigned count
@@ -459,14 +454,27 @@ export function TransportManagerIntegrated() {
                     <div className="space-y-4">
                       <div>
                         <Label>Student</Label>
+                        <Input
+                          placeholder="Search student by name..."
+                          value={studentSearch}
+                          onChange={e => setStudentSearch(e.target.value)}
+                          className="mb-1"
+                        />
                         <Select value={assignForm.studentId} onValueChange={val => setAssignForm({...assignForm, studentId: val})}>
                           <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                          <SelectContent>
-                            {availableStudents.map(student => (
-                              <SelectItem key={student.id} value={student.id}>
-                                {student.firstName} {student.lastName} - {student.classGrade}
-                              </SelectItem>
-                            ))}
+                          <SelectContent className="max-h-60">
+                            {availableStudents
+                              .filter(s => s.name.toLowerCase().includes(studentSearch.toLowerCase()))
+                              .map(student => (
+                                <SelectItem key={student.id} value={student.id}>
+                                  {student.name} — Class {student.class}-{student.section}
+                                </SelectItem>
+                              ))}
+                            {availableStudents.filter(s => s.name.toLowerCase().includes(studentSearch.toLowerCase())).length === 0 && (
+                              <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                                {availableStudents.length === 0 ? 'Loading students...' : 'No students found'}
+                              </div>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>

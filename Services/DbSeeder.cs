@@ -2,6 +2,7 @@ using SmsApi.Models.Constants;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using SmsApi.Data;
 using SmsApi.Models.Entities;
@@ -28,6 +29,9 @@ namespace SmsApi.Services
         Task SeedTeacherAssignmentsAsync();
         Task SeedTimetableAsync();
         Task SeedTimetablePeriodsAsync();
+        Task SeedTransportAsync();
+        Task SeedHostelAsync();
+        Task SeedHealthAsync();
     }
 
     public class DbSeeder : IDbSeeder
@@ -58,8 +62,14 @@ namespace SmsApi.Services
                 {
                     _logger.LogInformation("✅ Mock data already exists, skipping bulk seeding");
                     // Still run incremental seeders that have their own guards
+                    await SeedClassesAsync();
+                    await SeedStaffAsync();
+                    await SeedTeacherAssignmentsAsync();
                     await SeedLeaveTypesAsync();
                     await SeedTimetablePeriodsAsync();
+                    await SeedTransportAsync();
+                    await SeedHostelAsync();
+                    await SeedHealthAsync();
                     return;
                 }
 
@@ -67,6 +77,7 @@ namespace SmsApi.Services
                 
                 await SeedStudentsAsync();
                 await SeedStaffAsync();
+                await SeedClassesAsync();
                 await SeedSubjectsAsync();
                 await SeedClassSubjectsAsync();
                 await SeedTeacherAssignmentsAsync();
@@ -77,6 +88,9 @@ namespace SmsApi.Services
                 await SeedLibraryBooksAsync();
                 await SeedAttendanceRecordsAsync();
                 await SeedLeaveTypesAsync();
+                await SeedTransportAsync();
+                await SeedHostelAsync();
+                await SeedHealthAsync();
 
                 _logger.LogInformation("✅ Database seeding completed successfully!");
             }
@@ -285,52 +299,80 @@ namespace SmsApi.Services
 
         public async Task SeedStaffAsync()
         {
-            _logger.LogInformation("👨‍💼 Seeding staff members...");
+            _logger.LogInformation("👨‍🏫 Seeding teacher user logins for actual staff...");
 
-            var staffData = new[]
-            {
-                ("Rajesh", "Singh", "EMP001", "Principal", "Administration", "rajesh.singh@stmarys.edu.in"),
-                ("Priya", "Verma", "EMP002", "Vice Principal", "Administration", "priya.verma@stmarys.edu.in"),
-                ("Sarah", "Johnson", "EMP003", "Mathematics Teacher", "Academics", "sarah.johnson@stmarys.edu.in"),
-                ("John", "Smith", "EMP004", "English Teacher", "Academics", "john.smith@stmarys.edu.in"),
-                ("Meera", "Sharma", "EMP005", "Science Teacher", "Academics", "meera.sharma@stmarys.edu.in"),
-                ("Vikram", "Patel", "EMP006", "History Teacher", "Academics", "vikram.patel@stmarys.edu.in"),
-                ("Anjali", "Gupta", "EMP007", "Computer Science Teacher", "Academics", "anjali.gupta@stmarys.edu.in"),
-                ("Rohan", "Kumar", "EMP008", "Physical Education Teacher", "Sports", "rohan.kumar@stmarys.edu.in"),
-                ("Neha", "Singh", "EMP009", "Art Teacher", "Arts", "neha.singh@stmarys.edu.in"),
-                ("Arjun", "Nair", "EMP010", "Music Teacher", "Arts", "arjun.nair@stmarys.edu.in"),
-                ("Deepika", "Iyer", "EMP011", "Librarian", "Support Staff", "deepika.iyer@stmarys.edu.in"),
-                ("Ashok", "Rao", "EMP012", "Accountant", "Administration", "ashok.rao@stmarys.edu.in")
-            };
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
 
-            var staffMembers = new List<Staff>();
-            foreach (var (firstName, lastName, empId, designation, department, email) in staffData)
+            // Idempotency: skip if Teacher login for amit.k@demo.edu already exists with correct role
+            if (await _context.UserLogins.IgnoreQueryFilters()
+                    .AnyAsync(u => u.Email == "amit.k@demo.edu" && u.SchoolId == _schoolId && u.Role == "Teacher"))
             {
-                var staff = new Staff
-                {
-                    Id = Guid.NewGuid(),
-                    SchoolId = _schoolId,
-                    EmployeeId = empId,
-                    FirstName = firstName,
-                    LastName = lastName,
-                    Designation = designation,
-                    Department = department,
-                    Email = email,
-                    Status = "Active",
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                staffMembers.Add(staff);
+                _logger.LogInformation("✅ Teacher user logins already seeded, skipping");
+                return;
             }
 
-            _context.StaffMembers.AddRange(staffMembers);
+            // The actual teachers already exist in StaffMembers (seeded by legacy scripts).
+            // We only need to ensure they have working UserLogin accounts with role=Teacher.
+            const string teacherPassword = "Teacher@123";
+            var teacherData = new[]
+            {
+                ("amit.kapoor",   "amit.k@demo.edu",    "Amit",    "Kapoor"),
+                ("lakshmi.iyer",  "lakshmi.i@demo.edu", "Lakshmi", "Iyer"),
+                ("ravi.shankar",  "ravi.s@demo.edu",    "Ravi",    "Shankar"),
+                ("suman.reddy",   "suman.r@demo.edu",   "Suman",   "Reddy"),
+            };
+
+            foreach (var (username, email, firstName, lastName) in teacherData)
+            {
+                var existing = await _context.UserLogins.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Email == email);
+
+                if (existing != null)
+                {
+                    // Fix role to Teacher, reset password to known value, ensure correct school + active status
+                    existing.Role = "Teacher";
+                    existing.SchoolId = _schoolId;
+                    existing.Status = "active";
+                    existing.FirstName = firstName;
+                    existing.LastName = lastName;
+                    existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(teacherPassword, workFactor: 12);
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _context.UserLogins.Add(new UserLogin
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = _schoolId,
+                        Username = username,
+                        Email = email,
+                        FirstName = firstName,
+                        LastName = lastName,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(teacherPassword, workFactor: 12),
+                        Role = "Teacher",
+                        Status = "active",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
             await _context.SaveChangesAsync();
-            _logger.LogInformation("✅ {Count} staff members seeded", staffMembers.Count);
+            _logger.LogInformation("✅ Teacher user logins seeded (amit.k, lakshmi.i, ravi.s, suman.r @demo.edu)");
         }
 
         public async Task SeedClassesAsync()
         {
             _logger.LogInformation("📖 Seeding classes and sections...");
+
+            // Idempotency: skip if classes already exist for this school
+            if (await _context.Classes.IgnoreQueryFilters()
+                    .AnyAsync(c => c.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Classes already seeded, skipping");
+                return;
+            }
 
             var classes = new List<Class>();
             var sections = new List<Section>();
@@ -448,12 +490,9 @@ namespace SmsApi.Services
         {
             _logger.LogInformation("📅 Seeding structured timetables for all classes...");
 
-            // Skip if already seeded
-            if (await _context.Timetables.AnyAsync(t => t.SchoolId == _schoolId))
-            {
-                _logger.LogInformation("✅ Structured timetables already seeded, skipping");
-                return;
-            }
+            // Ensure _schoolId is set when called standalone
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
 
             var classes = await _context.Classes
                 .Where(c => c.SchoolId == _schoolId)
@@ -463,17 +502,30 @@ namespace SmsApi.Services
                 .Where(s => s.SchoolId == _schoolId)
                 .ToListAsync();
 
-            var teachers = await _context.StaffMembers
-                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
-                .ToListAsync();
-
             if (!subjects.Any() || !classes.Any())
             {
                 _logger.LogWarning("⚠️ No classes or subjects found. Skipping structured timetable seeding.");
                 return;
             }
 
-            // Use the current academic year from DB (isCurrent=true), fallback to date-based
+            // ── Clear existing timetable data so we always rebuild from ClassSubjects ──
+            var existingTtIds = await _context.Timetables
+                .Where(t => t.SchoolId == _schoolId)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            if (existingTtIds.Any())
+            {
+                await _context.TimetablePeriods
+                    .Where(tp => existingTtIds.Contains(tp.TimetableId))
+                    .ExecuteDeleteAsync();
+                await _context.Timetables
+                    .Where(t => t.SchoolId == _schoolId)
+                    .ExecuteDeleteAsync();
+                _logger.LogInformation("🧹 Cleared {Count} existing timetables for rebuild", existingTtIds.Count);
+            }
+
+            // ── Academic year ──────────────────────────────────────────────────────
             var academicYear = await _context.AcademicYears
                 .Where(y => y.SchoolId == _schoolId && y.IsCurrent)
                 .Select(y => y.Name)
@@ -485,27 +537,41 @@ namespace SmsApi.Services
                 academicYear = $"{startYear}-{startYear + 1}";
             }
             _logger.LogInformation("📅 Creating timetables for academic year: {Year}", academicYear);
-            var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
 
-            // Structured period schedule: 8 periods per day
+            // ── Period schedule: 8 slots per day, 6 lectures + 1 short break + 1 lunch ──
             var periodSchedule = new[]
             {
                 (1, new TimeSpan(8,  0, 0), new TimeSpan(8,  45, 0), "lecture"),
                 (2, new TimeSpan(8,  45, 0), new TimeSpan(9,  30, 0), "lecture"),
-                (3, new TimeSpan(9,  30, 0), new TimeSpan(9,  45, 0), "break"),    // short break
+                (3, new TimeSpan(9,  30, 0), new TimeSpan(9,  45, 0), "break"),
                 (4, new TimeSpan(9,  45, 0), new TimeSpan(10, 30, 0), "lecture"),
                 (5, new TimeSpan(10, 30, 0), new TimeSpan(11, 15, 0), "lecture"),
                 (6, new TimeSpan(11, 15, 0), new TimeSpan(12, 0,  0), "lecture"),
-                (7, new TimeSpan(12, 0,  0), new TimeSpan(12, 45, 0), "lunch"),    // lunch break
+                (7, new TimeSpan(12, 0,  0), new TimeSpan(12, 45, 0), "lunch"),
                 (8, new TimeSpan(12, 45, 0), new TimeSpan(13, 30, 0), "lecture"),
             };
 
-            int teacherIndex = 0;
-            int subjectIndex = 0;
+            var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
 
             foreach (var cls in classes)
             {
-                // Create one timetable per class (no section)
+                // ── Load class-subject assignments (with actual teacher per subject) ──
+                var classSubjects = await _context.ClassSubjects
+                    .Where(cs => cs.ClassId == cls.Id && cs.SchoolId == _schoolId && cs.Status == "active")
+                    .Include(cs => cs.Subject)
+                    .Include(cs => cs.Teacher)
+                    .ToListAsync();
+
+                // Build ordered list: (subjectId, teacherId) — cycle through by day×period
+                var subjectSlots = classSubjects.Count > 0
+                    ? classSubjects
+                        .Select(cs => (subjectId: cs.SubjectId, teacherId: cs.TeacherId))
+                        .ToList()
+                    : subjects
+                        .Select(s => (subjectId: s.Id, teacherId: (Guid?)null))
+                        .ToList();
+
+                // ── Class-level timetable (no SectionId) ──────────────────────────
                 var timetable = new Timetable
                 {
                     Id = Guid.NewGuid(),
@@ -518,19 +584,26 @@ namespace SmsApi.Services
                     UpdatedAt = DateTime.UtcNow,
                     IsDeleted = false
                 };
-
                 _context.Timetables.Add(timetable);
 
-                // Create periods for each day
+                int slotIdx = 0;
                 foreach (var day in days)
                 {
                     foreach (var (periodNum, startTime, endTime, periodType) in periodSchedule)
                     {
                         bool isBreak = periodType is "break" or "lunch";
-                        Guid? subjectId = isBreak ? null : subjects[subjectIndex % subjects.Count].Id;
-                        Guid? teacherId = isBreak ? null : (teachers.Any() ? teachers[teacherIndex % teachers.Count].Id : (Guid?)null);
+                        Guid? subjectId = null;
+                        Guid? teacherId = null;
 
-                        var period = new TimetablePeriod
+                        if (!isBreak && subjectSlots.Count > 0)
+                        {
+                            var slot = subjectSlots[slotIdx % subjectSlots.Count];
+                            subjectId = slot.subjectId;
+                            teacherId = slot.teacherId;
+                            slotIdx++;
+                        }
+
+                        _context.TimetablePeriods.Add(new TimetablePeriod
                         {
                             Id = Guid.NewGuid(),
                             TimetableId = timetable.Id,
@@ -546,75 +619,7 @@ namespace SmsApi.Services
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow,
                             IsDeleted = false
-                        };
-
-                        _context.TimetablePeriods.Add(period);
-
-                        if (!isBreak)
-                        {
-                            subjectIndex++;
-                            if (teachers.Any()) teacherIndex++;
-                        }
-                    }
-                }
-
-                // Also create per-section timetables if sections exist
-                var classSections = await _context.Sections
-                    .Where(s => s.ClassId == cls.Id && !s.IsDeleted)
-                    .ToListAsync();
-
-                foreach (var section in classSections)
-                {
-                    // Check uniqueness: skip if timetable already created for this class+section+year
-                    var sectionTimetable = new Timetable
-                    {
-                        Id = Guid.NewGuid(),
-                        SchoolId = _schoolId,
-                        ClassId = cls.Id,
-                        SectionId = section.Id,
-                        AcademicYear = academicYear,
-                        Status = "active",
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow,
-                        IsDeleted = false
-                    };
-
-                    _context.Timetables.Add(sectionTimetable);
-
-                    foreach (var day in days)
-                    {
-                        foreach (var (periodNum, startTime, endTime, periodType) in periodSchedule)
-                        {
-                            bool isBreak = periodType is "break" or "lunch";
-                            Guid? subjectId = isBreak ? null : subjects[subjectIndex % subjects.Count].Id;
-                            Guid? teacherId = isBreak ? null : (teachers.Any() ? teachers[teacherIndex % teachers.Count].Id : (Guid?)null);
-
-                            var period = new TimetablePeriod
-                            {
-                                Id = Guid.NewGuid(),
-                                TimetableId = sectionTimetable.Id,
-                                DayOfWeek = day,
-                                PeriodNumber = periodNum,
-                                StartTime = startTime,
-                                EndTime = endTime,
-                                SubjectId = subjectId,
-                                TeacherId = teacherId,
-                                PeriodType = periodType,
-                                Room = isBreak ? null : $"Room-{(periodNum % 5) + 101}",
-                                Notes = null,
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow,
-                                IsDeleted = false
-                            };
-
-                            _context.TimetablePeriods.Add(period);
-
-                            if (!isBreak)
-                            {
-                                subjectIndex++;
-                                if (teachers.Any()) teacherIndex++;
-                            }
-                        }
+                        });
                     }
                 }
             }
@@ -622,12 +627,12 @@ namespace SmsApi.Services
             await _context.SaveChangesAsync();
 
             var timetableCount = await _context.Timetables.CountAsync(t => t.SchoolId == _schoolId);
-            var schoolTimetableIds = await _context.Timetables
+            var schoolTtIds2 = await _context.Timetables
                 .Where(t => t.SchoolId == _schoolId)
                 .Select(t => t.Id)
                 .ToListAsync();
             var periodCount = await _context.TimetablePeriods
-                .CountAsync(tp => schoolTimetableIds.Contains(tp.TimetableId));
+                .CountAsync(tp => schoolTtIds2.Contains(tp.TimetableId));
             _logger.LogInformation("✅ Structured timetables seeded: {Timetables} timetables, {Periods} periods", timetableCount, periodCount);
         }
 
@@ -635,9 +640,9 @@ namespace SmsApi.Services
         {
             _logger.LogInformation("📖 Seeding class-subject assignments...");
 
-            var classes = await _context.Classes.Where(c => c.SchoolId == _schoolId).ToListAsync();
-            var subjects = await _context.Subjects.Where(s => s.SchoolId == _schoolId).ToListAsync();
-            var teachers = await _context.StaffMembers
+            var classes = await _context.Classes.IgnoreQueryFilters().Where(c => c.SchoolId == _schoolId).ToListAsync();
+            var subjects = await _context.Subjects.IgnoreQueryFilters().Where(s => s.SchoolId == _schoolId).ToListAsync();
+            var teachers = await _context.StaffMembers.IgnoreQueryFilters()
                 .Where(s => s.SchoolId == _schoolId && s.Designation.Contains("Teacher"))
                 .ToListAsync();
 
@@ -677,11 +682,25 @@ namespace SmsApi.Services
         {
             _logger.LogInformation("👨‍🏫 Seeding teacher assignments...");
 
-            var classes = await _context.Classes.Where(c => c.SchoolId == _schoolId).ToListAsync();
-            var sections = await _context.Sections.Where(s => s.SchoolId == _schoolId).ToListAsync();
-            var teachers = await _context.StaffMembers
+            // Idempotency: skip if assignments already exist for this school
+            if (await _context.TeacherAssignments.IgnoreQueryFilters()
+                    .AnyAsync(ta => ta.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Teacher assignments already seeded, skipping");
+                return;
+            }
+
+            var classes = await _context.Classes.IgnoreQueryFilters().Where(c => c.SchoolId == _schoolId).ToListAsync();
+            var sections = await _context.Sections.IgnoreQueryFilters().Where(s => s.SchoolId == _schoolId).ToListAsync();
+            var teachers = await _context.StaffMembers.IgnoreQueryFilters()
                 .Where(s => s.SchoolId == _schoolId && s.Designation.Contains("Teacher"))
                 .ToListAsync();
+
+            if (classes.Count == 0 || teachers.Count == 0)
+            {
+                _logger.LogWarning("⚠️ No classes or teachers found — skipping teacher assignment seeding");
+                return;
+            }
 
             var teacherAssignments = new List<TeacherAssignment>();
             var teacherIndex = 0;
@@ -691,51 +710,45 @@ namespace SmsApi.Services
                 var classSections = sections.Where(s => s.ClassId == cls.Id).ToList();
                 
                 // Assign class teacher
-                if (teachers.Count > 0)
+                var classTeacher = teachers[teacherIndex % teachers.Count];
+                var assignment = new TeacherAssignment
                 {
-                    var classTeacher = teachers[teacherIndex % teachers.Count];
-                    var assignment = new TeacherAssignment
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    StaffId = classTeacher.Id,
+                    ClassId = cls.Id,
+                    SectionId = classSections.Count > 0 ? classSections[0].Id : null,
+                    SubjectId = null,
+                    IsClassTeacher = true,
+                    AcademicYear = "2024-2025",
+                    Status = "active",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                teacherAssignments.Add(assignment);
+                teacherIndex++;
+
+                // Assign subject teachers
+                var subjects = await _context.Subjects.IgnoreQueryFilters().Where(s => s.SchoolId == _schoolId).Take(6).ToListAsync();
+                foreach (var subject in subjects)
+                {
+                    var subjectTeacher = teachers[teacherIndex % teachers.Count];
+                    var subjectAssignment = new TeacherAssignment
                     {
                         Id = Guid.NewGuid(),
                         SchoolId = _schoolId,
-                        StaffId = classTeacher.Id,
+                        StaffId = subjectTeacher.Id,
                         ClassId = cls.Id,
-                        SectionId = classSections.Count > 0 ? classSections[0].Id : null,
-                        SubjectId = null,
-                        IsClassTeacher = true,
+                        SectionId = null,
+                        SubjectId = subject.Id,
+                        IsClassTeacher = false,
                         AcademicYear = "2024-2025",
                         Status = "active",
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     };
-                    teacherAssignments.Add(assignment);
+                    teacherAssignments.Add(subjectAssignment);
                     teacherIndex++;
-                }
-
-                // Assign subject teachers
-                var subjects = await _context.Subjects.Where(s => s.SchoolId == _schoolId).Take(6).ToListAsync();
-                foreach (var subject in subjects)
-                {
-                    if (teachers.Count > 0)
-                    {
-                        var subjectTeacher = teachers[teacherIndex % teachers.Count];
-                        var assignment = new TeacherAssignment
-                        {
-                            Id = Guid.NewGuid(),
-                            SchoolId = _schoolId,
-                            StaffId = subjectTeacher.Id,
-                            ClassId = cls.Id,
-                            SectionId = null,
-                            SubjectId = subject.Id,
-                            IsClassTeacher = false,
-                            AcademicYear = "2024-2025",
-                            Status = "active",
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow
-                        };
-                        teacherAssignments.Add(assignment);
-                        teacherIndex++;
-                    }
                 }
             }
 
@@ -934,6 +947,235 @@ namespace SmsApi.Services
         // ─────────────────────────────────────────────────────────────────────
         // Leave Types — standard Indian school staff leave types
         // ─────────────────────────────────────────────────────────────────────
+        public async Task SeedTransportAsync()
+        {
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // Fully idempotent upsert: fetch all existing R-001/R-002/R-003 (even soft-deleted) via IgnoreQueryFilters
+            var seedNumbers = new[] { "R-001", "R-002", "R-003" };
+            var existingRoutes = await _context.TransportRoutes
+                .IgnoreQueryFilters()
+                .Where(r => r.SchoolId == _schoolId && seedNumbers.Contains(r.RouteNumber))
+                .ToListAsync();
+
+            var existingByNumber = existingRoutes.ToDictionary(r => r.RouteNumber);
+
+            // Restore any soft-deleted seed routes
+            foreach (var route in existingRoutes.Where(r => r.IsDeleted))
+            {
+                route.IsDeleted = false;
+                route.Status = "active";
+                route.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // Define the canonical seed routes
+            var routeDefs = new[]
+            {
+                ("R-001", "Banjara Hills Route",  "TS 09 AB 1234", "Ravi Kumar",    "+91 98765 43210", 40, 1500m),
+                ("R-002", "Jubilee Hills Route",  "TS 09 CD 5678", "Suresh Reddy",  "+91 98765 43211", 35, 1200m),
+                ("R-003", "Secunderabad Route",   "TS 09 EF 9012", "Prakash Singh", "+91 98765 43212", 45, 1800m),
+            };
+
+            var routeIdMap = new Dictionary<string, Guid>();
+            foreach (var (num, name, vehicle, driver, phone, cap, fee) in routeDefs)
+            {
+                if (existingByNumber.TryGetValue(num, out var existing))
+                {
+                    routeIdMap[num] = existing.Id; // already exists (restored above if deleted)
+                }
+                else
+                {
+                    var newRoute = new TransportRoute
+                    {
+                        Id = Guid.NewGuid(), SchoolId = _schoolId,
+                        RouteNumber = num, RouteName = name,
+                        VehicleNumber = vehicle, DriverName = driver, DriverPhone = phone,
+                        Capacity = cap, MonthlyFee = fee,
+                        StartTime = TimeSpan.FromHours(7), EndTime = TimeSpan.FromHours(8.5),
+                        StudentsAssigned = 0, Status = "active",
+                        CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+                    };
+                    _context.TransportRoutes.Add(newRoute);
+                    routeIdMap[num] = newRoute.Id;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            // Seed student assignments only if none exist for these routes
+            var routeIdList = routeIdMap.Values.ToList();
+            var assignmentCount = await _context.TransportStudents
+                .IgnoreQueryFilters()
+                .CountAsync(ts => ts.SchoolId == _schoolId && routeIdList.Contains(ts.RouteId));
+
+            if (assignmentCount > 0)
+            {
+                _logger.LogInformation("Transport seed routes present, {Count} assignments already exist", assignmentCount);
+                return;
+            }
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && s.Status.ToLower() == "active")
+                .OrderBy(s => s.Name)
+                .Take(12)
+                .ToListAsync();
+
+            if (!students.Any()) return;
+
+            var pickupPoints = new[] { "Main Gate", "Bus Stop No. 1", "Colony Gate", "Market Road", "Park Entrance", "Temple Road" };
+            var routeIdArray = new[] { routeIdMap["R-001"], routeIdMap["R-002"], routeIdMap["R-003"] };
+            var routeFees   = new[] { 1500m, 1200m, 1800m };
+            var assignments  = new List<TransportStudent>();
+
+            for (int i = 0; i < students.Count; i++)
+            {
+                var rIdx = i % 3;
+                assignments.Add(new TransportStudent
+                {
+                    Id = Guid.NewGuid(), SchoolId = _schoolId,
+                    StudentId = students[i].Id, RouteId = routeIdArray[rIdx],
+                    PickupPoint = pickupPoints[i % pickupPoints.Length],
+                    DropPoint = "School Main Gate",
+                    MonthlyFee = routeFees[rIdx],
+                    Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+                });
+            }
+
+            _context.TransportStudents.AddRange(assignments);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ 3 transport routes, {Count} student assignments seeded", assignments.Count);
+        }
+
+        public async Task SeedHostelAsync()
+        {
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // Upsert: only seed rooms that don't already exist by room number
+            // IgnoreQueryFilters() bypasses the global IsDeleted/SchoolId filter (which uses Guid.Empty at seeder time)
+            var existingRoomNumbers = await _context.HostelRooms
+                .IgnoreQueryFilters()
+                .Where(r => r.SchoolId == _schoolId)
+                .Select(r => r.RoomNumber)
+                .ToListAsync();
+
+            if (existingRoomNumbers.Contains("101") && existingRoomNumbers.Contains("102") &&
+                existingRoomNumbers.Contains("201") && existingRoomNumbers.Contains("202"))
+            {
+                _logger.LogInformation("Hostel seed rooms already present");
+                return;
+            }
+
+            var room101 = Guid.NewGuid(); var room102 = Guid.NewGuid();
+            var room201 = Guid.NewGuid(); var room202 = Guid.NewGuid();
+
+            var rooms = new[]
+            {
+                new HostelRoom { Id = room101, SchoolId = _schoolId, RoomNumber = "101", RoomType = "boys",  Capacity = 4, Occupied = 0, RentPerBed = 5000, Floor = "Ground", Status = "available", Facilities = "Fan, Study Table, Locker",    CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new HostelRoom { Id = room102, SchoolId = _schoolId, RoomNumber = "102", RoomType = "girls", Capacity = 4, Occupied = 0, RentPerBed = 5000, Floor = "Ground", Status = "available", Facilities = "Fan, Study Table, Locker",    CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new HostelRoom { Id = room201, SchoolId = _schoolId, RoomNumber = "201", RoomType = "boys",  Capacity = 3, Occupied = 0, RentPerBed = 6000, Floor = "First",  Status = "available", Facilities = "AC, Study Table, Attached Bath", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new HostelRoom { Id = room202, SchoolId = _schoolId, RoomNumber = "202", RoomType = "girls", Capacity = 3, Occupied = 0, RentPerBed = 6000, Floor = "First",  Status = "available", Facilities = "AC, Study Table, Attached Bath", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            };
+
+            _context.HostelRooms.AddRange(rooms);
+            await _context.SaveChangesAsync();
+
+            var maleStudents = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && s.Gender == "Male" && s.Status.ToLower() == "active")
+                .Take(4).ToListAsync();
+            var femaleStudents = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && s.Gender == "Female" && s.Status.ToLower() == "active")
+                .Take(4).ToListAsync();
+
+            var hostelStudents = new List<HostelStudent>();
+            var checkIn = DateTime.UtcNow.AddMonths(-2).Date;
+
+            for (int i = 0; i < Math.Min(maleStudents.Count, 4); i++)
+            {
+                var roomId = i < 2 ? room101 : room201;
+                hostelStudents.Add(new HostelStudent { Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = maleStudents[i].Id, RoomId = roomId, CheckInDate = checkIn, MonthlyFee = i < 2 ? 5000 : 6000, Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+                (i < 2 ? rooms[0] : rooms[2]).Occupied++;
+            }
+            for (int i = 0; i < Math.Min(femaleStudents.Count, 4); i++)
+            {
+                var roomId = i < 2 ? room102 : room202;
+                hostelStudents.Add(new HostelStudent { Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = femaleStudents[i].Id, RoomId = roomId, CheckInDate = checkIn, MonthlyFee = i < 2 ? 5000 : 6000, Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+                (i < 2 ? rooms[1] : rooms[3]).Occupied++;
+            }
+
+            _context.HostelStudents.AddRange(hostelStudents);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Rooms} hostel rooms, {Count} student assignments seeded", rooms.Length, hostelStudents.Count);
+        }
+
+        public async Task SeedHealthAsync()
+        {
+            if (await _context.HealthRecords.IgnoreQueryFilters().AnyAsync(h => h.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("Health records already seeded");
+                return;
+            }
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && s.Status.ToLower() == "active")
+                .OrderBy(s => s.Name)
+                .Take(15)
+                .ToListAsync();
+
+            if (!students.Any()) return;
+
+            var doctors = new[] { "Dr. Priya Sharma", "Dr. Ramesh Nair", "Dr. Anita Patel" };
+            var bloodGroups = new[] { "A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-" };
+            var healthRecords = new List<HealthRecord>();
+
+            for (int i = 0; i < students.Count; i++)
+            {
+                var s = students[i];
+                var ageYears = DateTime.UtcNow.Year - s.DateOfBirth.Year;
+                var heightCm = 140m + (ageYears - 10) * 3m + (i % 7);
+                var weightKg = 35m + (ageYears - 10) * 2m + (i % 5);
+
+                var healthData = new
+                {
+                    BloodPressureSystolic = 100 + (i % 20),
+                    BloodPressureDiastolic = 65 + (i % 10),
+                    HeartRate = 70 + (i % 15),
+                    Temperature = (decimal)(98.2 + (i % 3) * 0.2),
+                    Allergies = (i % 5 == 0) ? new[] { "Dust" } : Array.Empty<string>(),
+                    MedicalConditions = Array.Empty<string>(),
+                    CurrentMedications = Array.Empty<string>(),
+                    HearingLeft = "Normal", HearingRight = "Normal",
+                    DentalStatus = "Good", DentalRemarks = (string?)null,
+                    DoctorName = doctors[i % doctors.Length],
+                    DoctorNotes = (string?)null, Recommendations = (string?)null,
+                    NextCheckupDate = (DateTime?)DateTime.UtcNow.AddMonths(6),
+                    Status = "normal",
+                    Vaccinations = Array.Empty<object>()
+                };
+
+                healthRecords.Add(new HealthRecord
+                {
+                    Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = s.Id,
+                    CheckupDate = DateTime.UtcNow.AddMonths(-1 - i % 3),
+                    Height = heightCm, Weight = weightKg,
+                    BloodGroup = bloodGroups[i % bloodGroups.Length],
+                    VisionLeft = (i % 8 == 0) ? "6/9" : "6/6",
+                    VisionRight = (i % 8 == 0) ? "6/9" : "6/6",
+                    CheckedBy = doctors[i % doctors.Length],
+                    Notes = JsonSerializer.Serialize(healthData),
+                    CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+                });
+            }
+
+            _context.HealthRecords.AddRange(healthRecords);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} health records seeded", healthRecords.Count);
+        }
+
         public async Task SeedLeaveTypesAsync()
         {
             // Seed staff leave types if none exist

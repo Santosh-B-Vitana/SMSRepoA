@@ -343,6 +343,38 @@ namespace SmsApi.Controllers
 
         // Teacher Schedule Endpoint
         /// <summary>
+        /// Get the calling teacher's personal timetable — resolved automatically from JWT email.
+        /// </summary>
+        [HttpGet("my-schedule")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<TeacherScheduleResponse>> GetMySchedule()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+                if (string.IsNullOrWhiteSpace(email))
+                    return Unauthorized();
+                var schedule = await _timetableService.GetMyScheduleAsync(email, schoolId);
+                if (schedule == null)
+                    return NotFound(new { message = "No schedule found. You may not be assigned to any classes yet." });
+                return Ok(schedule);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, new { message = "An error occurred while fetching your schedule." });
+            }
+        }
+
+        /// <summary>
         /// Get timetable/schedule for a specific teacher. Accessible by all staff roles.
         /// Staff can only view their own schedule; Admin/Principal can view any teacher's schedule.
         /// </summary>

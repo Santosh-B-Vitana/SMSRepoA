@@ -35,6 +35,7 @@ public static class ApplicationServicesExtensions
 
         // ── Academic core ──────────────────────────────────────────────────
         services.AddScoped<IStudentService, StudentService>();
+        services.AddScoped<V1MigrationService>();
         services.AddScoped<IStaffService, StaffService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<IExaminationService, ExaminationService>();

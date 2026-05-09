@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -42,11 +42,11 @@ namespace SmsApi.Tests.Unit.Analytics
             return new AnalyticsService(_db, cache);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // Helpers
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-        private Student MakeStudent(Guid schoolId, string status = "Active", string cls = "Grade 1")
+        private Student MakeStudent(Guid schoolId, string status = "active", string cls = "Grade 1")
             => new()
             {
                 Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Student", Status = status,
@@ -54,7 +54,7 @@ namespace SmsApi.Tests.Unit.Analytics
                 AdmissionDate = DateTime.UtcNow.AddYears(-1), CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             };
 
-        private StaffEntity MakeStaff(Guid schoolId, string status = "Active")
+        private StaffEntity MakeStaff(Guid schoolId, string status = "active") 
             => new()
             {
                 Id = Guid.NewGuid(), SchoolId = schoolId, Name = "Staff Member", Status = status,
@@ -129,25 +129,25 @@ namespace SmsApi.Tests.Unit.Analytics
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             };
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetDashboardSummaryAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetDashboardSummary_ReturnsActiveStudentCount()
         {
-            _db.Students.AddRange(MakeStudent(_school1, "Active"), MakeStudent(_school1, "active"), MakeStudent(_school1, "Inactive"));
+            _db.Students.AddRange(MakeStudent(_school1, "active"), MakeStudent(_school1, "active"), MakeStudent(_school1, "inactive"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetDashboardSummaryAsync(_school1);
 
-            result.TotalStudents.Should().Be(1); // Only "Active" (exact case)
+            result.TotalStudents.Should().Be(2); // 2 active students out of 3
         }
 
         [Fact]
         public async Task GetDashboardSummary_ReturnsActiveStaffCount()
         {
-            _db.StaffMembers.AddRange(MakeStaff(_school1, "Active"), MakeStaff(_school1, "Active"), MakeStaff(_school1, "inactive"));
+            _db.StaffMembers.AddRange(MakeStaff(_school1, "active"), MakeStaff(_school1, "active"), MakeStaff(_school1, "inactive"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetDashboardSummaryAsync(_school1);
@@ -177,10 +177,10 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetDashboardSummary_AttendancePercentageCalculatedCorrectly()
         {
-            var s1 = MakeStudent(_school1, "Active");
-            var s2 = MakeStudent(_school1, "Active");
-            var s3 = MakeStudent(_school1, "Active");
-            var s4 = MakeStudent(_school1, "Active");
+            var s1 = MakeStudent(_school1, "active");
+            var s2 = MakeStudent(_school1, "active");
+            var s3 = MakeStudent(_school1, "active");
+            var s4 = MakeStudent(_school1, "active");
             _db.Students.AddRange(s1, s2, s3, s4);
             var today = DateTime.UtcNow.Date;
             _db.AttendanceRecords.AddRange(
@@ -229,7 +229,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetDashboardSummary_SchoolIsolation()
         {
-            _db.Students.AddRange(MakeStudent(_school1, "Active"), MakeStudent(_school2, "Active"), MakeStudent(_school2, "Active"));
+            _db.Students.AddRange(MakeStudent(_school1, "active"), MakeStudent(_school2, "active"), MakeStudent(_school2, "active"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetDashboardSummaryAsync(_school1);
@@ -240,9 +240,9 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetDashboardSummary_AbsentStudentsCalculated()
         {
-            var s1 = MakeStudent(_school1, "Active");
-            var s2 = MakeStudent(_school1, "Active");
-            var s3 = MakeStudent(_school1, "Active");
+            var s1 = MakeStudent(_school1, "active");
+            var s2 = MakeStudent(_school1, "active");
+            var s3 = MakeStudent(_school1, "active");
             _db.Students.AddRange(s1, s2, s3);
             _db.AttendanceRecords.Add(MakeAttendance(_school1, s1.Id, DateTime.UtcNow.Date, "present"));
             await _db.SaveChangesAsync();
@@ -252,14 +252,14 @@ namespace SmsApi.Tests.Unit.Analytics
             result.TodayAbsentStudents.Should().Be(2);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetOverviewStatsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetOverviewStats_TotalStudentsCountsAll()
         {
-            _db.Students.AddRange(MakeStudent(_school1, "Active"), MakeStudent(_school1, "Inactive"), MakeStudent(_school1, "graduated"));
+            _db.Students.AddRange(MakeStudent(_school1, "active"), MakeStudent(_school1, "inactive"), MakeStudent(_school1, "graduated"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetOverviewStatsAsync(_school1);
@@ -270,7 +270,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetOverviewStats_ActiveStudentsFiltered()
         {
-            _db.Students.AddRange(MakeStudent(_school1, "Active"), MakeStudent(_school1, "Active"), MakeStudent(_school1, "inactive"));
+            _db.Students.AddRange(MakeStudent(_school1, "active"), MakeStudent(_school1, "active"), MakeStudent(_school1, "inactive"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetOverviewStatsAsync(_school1);
@@ -281,7 +281,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetOverviewStats_TotalStaffCountsAll()
         {
-            _db.StaffMembers.AddRange(MakeStaff(_school1, "Active"), MakeStaff(_school1, "inactive"));
+            _db.StaffMembers.AddRange(MakeStaff(_school1, "active"), MakeStaff(_school1, "inactive"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetOverviewStatsAsync(_school1);
@@ -292,7 +292,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetOverviewStats_ActiveStaffFiltered()
         {
-            _db.StaffMembers.AddRange(MakeStaff(_school1, "Active"), MakeStaff(_school1, "Active"), MakeStaff(_school1, "resigned"));
+            _db.StaffMembers.AddRange(MakeStaff(_school1, "active"), MakeStaff(_school1, "active"), MakeStaff(_school1, "resigned"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetOverviewStatsAsync(_school1);
@@ -330,7 +330,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetOverviewStats_SchoolIsolation()
         {
-            _db.Students.AddRange(MakeStudent(_school1, "Active"), MakeStudent(_school2, "Active"), MakeStudent(_school2, "Active"), MakeStudent(_school2, "Active"));
+            _db.Students.AddRange(MakeStudent(_school1, "active"), MakeStudent(_school2, "active"), MakeStudent(_school2, "active"), MakeStudent(_school2, "active"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetOverviewStatsAsync(_school1);
@@ -350,9 +350,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.BooksIssued.Should().Be(0);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetAttendanceAnalyticsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetAttendanceAnalytics_EmptySchoolReturnsZeroTotalDays()
@@ -366,9 +366,9 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_DataPointsPerDayGroupedCorrectly()
         {
-            var s1 = MakeStudent(_school1, "Active");
-            var s2 = MakeStudent(_school1, "Active");
-            var s3 = MakeStudent(_school1, "Active");
+            var s1 = MakeStudent(_school1, "active");
+            var s2 = MakeStudent(_school1, "active");
+            var s3 = MakeStudent(_school1, "active");
             _db.Students.AddRange(s1, s2, s3);
             var day1 = DateTime.UtcNow.Date.AddDays(-2);
             var day2 = DateTime.UtcNow.Date.AddDays(-1);
@@ -392,8 +392,8 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_AttendancePercentageCalculatedPerDay()
         {
-            var s1 = MakeStudent(_school1, "Active");
-            var s2 = MakeStudent(_school1, "Active");
+            var s1 = MakeStudent(_school1, "active");
+            var s2 = MakeStudent(_school1, "active");
             _db.Students.AddRange(s1, s2);
             var today = DateTime.UtcNow.Date;
             _db.AttendanceRecords.AddRange(
@@ -410,8 +410,8 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_AverageIsAverageOfDailyPercentages()
         {
-            var s1 = MakeStudent(_school1, "Active");
-            var s2 = MakeStudent(_school1, "Active");
+            var s1 = MakeStudent(_school1, "active");
+            var s2 = MakeStudent(_school1, "active");
             _db.Students.AddRange(s1, s2);
             var day1 = DateTime.UtcNow.Date.AddDays(-2);
             var day2 = DateTime.UtcNow.Date.AddDays(-1);
@@ -431,8 +431,8 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_HighestAndLowestIdentified()
         {
-            var s1 = MakeStudent(_school1, "Active");
-            var s2 = MakeStudent(_school1, "Active");
+            var s1 = MakeStudent(_school1, "active");
+            var s2 = MakeStudent(_school1, "active");
             _db.Students.AddRange(s1, s2);
             var day1 = DateTime.UtcNow.Date.AddDays(-3);
             var day2 = DateTime.UtcNow.Date.AddDays(-2);
@@ -452,7 +452,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_FutureDatesExcluded()
         {
-            var s = MakeStudent(_school1, "Active");
+            var s = MakeStudent(_school1, "active");
             _db.Students.Add(s);
             _db.AttendanceRecords.Add(MakeAttendance(_school1, s.Id, DateTime.UtcNow.Date.AddDays(1), "present"));
             await _db.SaveChangesAsync();
@@ -465,7 +465,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_DaysParamLimitsRange()
         {
-            var s = MakeStudent(_school1, "Active");
+            var s = MakeStudent(_school1, "active");
             _db.Students.Add(s);
             // day 5 ago should be in range for days=7, but not for days=3
             _db.AttendanceRecords.Add(MakeAttendance(_school1, s.Id, DateTime.UtcNow.Date.AddDays(-4), "present"));
@@ -481,7 +481,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_LateStatusCounted()
         {
-            var s = MakeStudent(_school1, "Active");
+            var s = MakeStudent(_school1, "active");
             _db.Students.Add(s);
             _db.AttendanceRecords.Add(MakeAttendance(_school1, s.Id, DateTime.UtcNow.Date, "late"));
             await _db.SaveChangesAsync();
@@ -494,7 +494,7 @@ namespace SmsApi.Tests.Unit.Analytics
         [Fact]
         public async Task GetAttendanceAnalytics_SchoolIsolation()
         {
-            var s = MakeStudent(_school2, "Active");
+            var s = MakeStudent(_school2, "active");
             _db.Students.Add(s);
             _db.AttendanceRecords.Add(MakeAttendance(_school2, s.Id, DateTime.UtcNow.Date, "present"));
             await _db.SaveChangesAsync();
@@ -519,16 +519,16 @@ namespace SmsApi.Tests.Unit.Analytics
                 result.DailyData[0].AttendancePercentage.Should().Be(0);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetEnrollmentAnalyticsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetEnrollmentAnalytics_ActiveStudentsCounted()
         {
             _db.Students.AddRange(
-                MakeStudent(_school1, "Active", "Grade 1"),
-                MakeStudent(_school1, "Active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 1"),
                 MakeStudent(_school1, "inactive", "Grade 1"));
             await _db.SaveChangesAsync();
 
@@ -554,9 +554,9 @@ namespace SmsApi.Tests.Unit.Analytics
         {
             _db.Classes.Add(MakeClass(_school1, "Grade 1"));
             _db.Students.AddRange(
-                MakeStudent(_school1, "Active", "Grade 1"),
-                MakeStudent(_school1, "Active", "Grade 1"),
-                MakeStudent(_school1, "Active", "Grade 2")); // no matching class entry
+                MakeStudent(_school1, "active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 2")); // no matching class entry
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetEnrollmentAnalyticsAsync(_school1);
@@ -571,8 +571,8 @@ namespace SmsApi.Tests.Unit.Analytics
         {
             _db.Classes.Add(MakeClass(_school1, "Grade 1", capacity: 40));
             _db.Students.AddRange(
-                MakeStudent(_school1, "Active", "Grade 1"),
-                MakeStudent(_school1, "Active", "Grade 1"));
+                MakeStudent(_school1, "active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 1"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetEnrollmentAnalyticsAsync(_school1);
@@ -597,9 +597,9 @@ namespace SmsApi.Tests.Unit.Analytics
         {
             _db.Classes.AddRange(MakeClass(_school1, "Grade 1"), MakeClass(_school1, "Grade 2"));
             _db.Students.AddRange(
-                MakeStudent(_school1, "Active", "Grade 1"),
-                MakeStudent(_school1, "Active", "Grade 1"),
-                MakeStudent(_school1, "Active", "Grade 2"));
+                MakeStudent(_school1, "active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 1"),
+                MakeStudent(_school1, "active", "Grade 2"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetEnrollmentAnalyticsAsync(_school1);
@@ -621,7 +621,7 @@ namespace SmsApi.Tests.Unit.Analytics
         public async Task GetEnrollmentAnalytics_SchoolIsolation()
         {
             _db.Classes.Add(MakeClass(_school1, "Grade 1"));
-            _db.Students.AddRange(MakeStudent(_school2, "Active", "Grade 1"), MakeStudent(_school2, "Active", "Grade 1"));
+            _db.Students.AddRange(MakeStudent(_school2, "active", "Grade 1"), MakeStudent(_school2, "active", "Grade 1"));
             await _db.SaveChangesAsync();
 
             var result = await CreateService().GetEnrollmentAnalyticsAsync(_school1);
@@ -629,9 +629,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.TotalActiveStudents.Should().Be(0);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetPerformanceAnalyticsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetPerformanceAnalytics_NoExamsReturnsZeroTotals()
@@ -756,9 +756,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.TotalExams.Should().Be(0);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetFeeAnalyticsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetFeeAnalytics_TotalBilledSumsTotalAmount()
@@ -857,9 +857,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.TotalBilled.Should().Be(0m);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetDashboardWidgetsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetDashboardWidgets_ReturnsOnlyActiveWidgets()
@@ -928,9 +928,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.Items.Should().HaveCount(3);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetDashboardWidgetByIdAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetDashboardWidgetById_ReturnsWidgetWhenFound()
@@ -965,9 +965,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.Should().BeNull();
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // CreateDashboardWidgetAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task CreateDashboardWidget_SuccessReturnsCreatedWidget()
@@ -1103,9 +1103,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.Size.Should().Be("large");
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // UpdateDashboardWidgetAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task UpdateDashboardWidget_SuccessUpdatesFields()
@@ -1176,7 +1176,7 @@ namespace SmsApi.Tests.Unit.Analytics
             _db.DashboardWidgets.Add(widget);
             await _db.SaveChangesAsync();
 
-            // Only update IsActive — name and size should be unchanged
+            // Only update IsActive â€” name and size should be unchanged
             var request = new UpdateDashboardWidgetRequest { IsActive = false };
             var result = await CreateService().UpdateDashboardWidgetAsync(widget.Id, request, _school1);
 
@@ -1185,9 +1185,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.IsActive.Should().BeFalse();
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // DeleteDashboardWidgetAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task DeleteDashboardWidget_ReturnsTrueAndRemovesWidget()
@@ -1223,9 +1223,9 @@ namespace SmsApi.Tests.Unit.Analytics
             _db.DashboardWidgets.Find(widget.Id).Should().NotBeNull(); // not deleted
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // GetAnalyticsAsync (Pagination)
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task GetAnalytics_PageBelowOneNormalisedToOne()
@@ -1297,9 +1297,9 @@ namespace SmsApi.Tests.Unit.Analytics
             result.Items.Should().HaveCount(1);
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // CreateAnalyticsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task CreateAnalytics_SuccessReturnsRecord()
@@ -1416,9 +1416,9 @@ namespace SmsApi.Tests.Unit.Analytics
                 .Should().ThrowAsync<ArgumentException>();
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // DeleteAnalyticsAsync
-        // ═══════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
         [Fact]
         public async Task DeleteAnalytics_ReturnsTrueAndRemovesRecord()
@@ -1453,3 +1453,4 @@ namespace SmsApi.Tests.Unit.Analytics
         }
     }
 }
+

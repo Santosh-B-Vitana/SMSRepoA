@@ -25,16 +25,20 @@ public class TokenService : ITokenService
         var audience = jwtSettings.GetValue<string>("Audience");
         var expirationInMinutes = jwtSettings.GetValue<int>("ExpirationInMinutes");
 
-        var claims = new[]
+        var claimsList = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Name, $"{user.FirstName} {user.LastName}"),
-            new Claim(ClaimTypes.Role, user.Role),
+            new Claim(ClaimTypes.Role, ResolveEffectiveRole(user.Role, user.Designation)),
             new Claim("SchoolId", schoolId.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString())
+            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
         };
+
+        // Include staff designation if present (e.g. "Principal", "Mathematics Teacher")
+        if (!string.IsNullOrWhiteSpace(user.Designation))
+            claimsList.Add(new Claim("Designation", user.Designation));
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -43,7 +47,7 @@ public class TokenService : ITokenService
         var token = new JwtSecurityToken(
             issuer: issuer,
             audience: audience,
-            claims: claims,
+            claims: claimsList,
             expires: expiry,
             signingCredentials: creds
         );
@@ -58,6 +62,43 @@ public class TokenService : ITokenService
         rng.GetBytes(randomNumber);
         return Convert.ToBase64String(randomNumber);
     }
+
+    /// <summary>
+    /// Resolves the effective JWT role by taking designation into account.
+    /// Leadership designations (Principal, Vice Principal, HR Manager) override
+    /// the raw stored role so that [Authorize(Roles = "Principal")] etc. work.
+    /// </summary>
+    private static string ResolveEffectiveRole(string? rawRole, string? designation)
+    {
+        var des = (designation ?? "").Trim().ToLowerInvariant();
+        return des switch
+        {
+            "principal" or "vice principal"         => "Principal",
+            "hr manager" or "hrmanager"             => "HRManager",
+            "administrator" or "school administrator" => "Admin",
+            _                                       => NormalizeRole(rawRole)
+        };
+    }
+
+    /// <summary>
+    /// Normalizes a raw role string from the database to the title-case form expected
+    /// by [Authorize(Roles = "...")] attributes, regardless of how it was stored.
+    /// e.g. "teacher" → "Teacher", "hr manager" → "HRManager"
+    /// </summary>
+    private static string NormalizeRole(string? rawRole) => (rawRole ?? "").ToLowerInvariant() switch
+    {
+        "admin" or "administrator"          => "Admin",
+        "principal"                         => "Principal",
+        "teacher"                           => "Teacher",
+        "staff"                             => "Staff",
+        "parent" or "guardian"              => "Parent",
+        "student"                           => "Student",
+        "hrmanager" or "hr manager"         => "HRManager",
+        "super_admin" or "superadmin"       => "SuperAdmin",
+        "classteacher" or "class teacher"   => "Teacher",
+        _                                   => string.IsNullOrWhiteSpace(rawRole) ? "Staff"
+                                              : char.ToUpperInvariant(rawRole[0]) + rawRole[1..]
+    };
 
     public ClaimsPrincipal ValidateToken(string token)
     {

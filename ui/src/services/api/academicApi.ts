@@ -82,6 +82,8 @@ export interface MyClassAssignment {
   className: string;
   sectionId?: string;
   sectionName?: string;
+  subjectId?: string;
+  subjectName?: string;
   isClassTeacher: boolean;
   academicYear: string;
   status: string;
@@ -255,4 +257,8 @@ export const academicApi = {
   // ========== My Class Assignments (for logged-in teacher) ==========
   getMyClassAssignments: () =>
     apiGet<MyClassAssignment[]>('/academics/my-class-assignments'),
+
+  // ========== All assignments for a specific staff (admin view) ==========
+  getTeacherAssignmentsForStaff: (staffId: string) =>
+    apiGet<{ assignments: MyClassAssignment[]; total: number }>('/academics/teacher-assignments', { staffId, pageSize: 100 }),
 };

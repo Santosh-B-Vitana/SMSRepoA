@@ -560,6 +560,8 @@ namespace SmsApi.Models.DTOs
         public string ClassName { get; set; } = string.Empty;
         public Guid? SectionId { get; set; }
         public string? SectionName { get; set; }
+        public Guid? SubjectId { get; set; }
+        public string? SubjectName { get; set; }
         public bool IsClassTeacher { get; set; }
         public string AcademicYear { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;

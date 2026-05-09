@@ -81,10 +81,10 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
         pageSize: 1000
       });
 
-      if (response.records && response.records.length > 0) {
+      if (response.items && response.items.length > 0) {
         // Convert API response to attendance format
         const existingAttendance: Record<string, AttendanceEntry> = {};
-        response.records.forEach(record => {
+        response.items.forEach(record => {
           existingAttendance[record.studentId] = {
             studentId: record.studentId,
             status: record.status as AttendanceStatus,
@@ -95,7 +95,7 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
         setAttendance(existingAttendance);
         setHasExistingRecords(true);
         setIsEditMode(true);
-        toast.info(`Loaded ${response.records.length} existing records for ${selectedDate}`);
+        toast.info(`Loaded ${response.items.length} existing records for ${selectedDate}`);
       } else {
         setAttendance({});
         setHasExistingRecords(false);

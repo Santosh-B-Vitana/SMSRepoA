@@ -334,10 +334,6 @@ namespace SmsApi.Services
             if (request.CheckOutDate.HasValue && request.CheckOutDate < request.CheckInDate)
                 throw new ArgumentException("CheckOutDate cannot be earlier than CheckInDate");
 
-            var today = DateTime.Now.Date;
-            if (request.CheckInDate.Date < today)
-                throw new ArgumentException("CheckInDate cannot be in the past");
-
             // ===== MAIN ASSIGNMENT LOGIC =====
             var hostelStudent = new HostelStudent
             {
@@ -438,20 +434,6 @@ namespace SmsApi.Services
                 .FirstOrDefaultAsync(hs => hs.Id == id && hs.SchoolId == schoolId);
 
             if (hostelStudent == null) return false;
-
-            // Verify checkout status
-            if (hostelStudent.Status == "active")
-            {
-                // Check if student is alumni or graduated before allowing checkout
-                var student = await _context.Students
-                    .FirstOrDefaultAsync(s => s.Id == hostelStudent.StudentId);
-
-                if (student != null && student.Status != "alumni" && student.Status != "graduated")
-                {
-                    throw new InvalidOperationException(
-                        "Cannot checkout active students. Student must be alumni or graduated status.");
-                }
-            }
 
             // Mark as checkout with date and update status
             hostelStudent.CheckOutDate = DateTime.Now;

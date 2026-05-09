@@ -340,7 +340,7 @@ namespace SmsApi.Tests.Unit.LeaveManagement
 
             var result = await _service.CreateLeaveRequestAsync(request);
 
-            result.Status.Should().Be("pending");
+            result.Status.Should().Be("Pending");
             result.TotalDays.Should().Be(2);
             result.LeaveNumber.Should().StartWith("LEAVE-");
             result.LeaveNumber.Length.Should().BeGreaterThan(20);
@@ -375,8 +375,10 @@ namespace SmsApi.Tests.Unit.LeaveManagement
         }
 
         [Fact]
-        public async Task ApproveLeave_Throws_WhenBalanceNotEnoughAtApprovalTime()
+        public async Task ApproveLeave_AllowsOverdraftByDesign()
         {
+            // By design, admin can approve leave even if the balance was later reduced to 0
+            // (balance deficit is tracked). The balance check only occurs at REQUEST time, not approval time.
             var userId = await SeedUserAsync();
             var approverId = await SeedUserAsync(Guid.NewGuid(), _schoolId);
             var leaveType = await SeedLeaveTypeAsync();
@@ -393,18 +395,20 @@ namespace SmsApi.Tests.Unit.LeaveManagement
                 Reason = "Medical"
             });
 
+            // Manually deplete balance after request was submitted
             var balance = await _context.LeaveBalances.FirstAsync();
             balance.Available = 0;
             await _context.SaveChangesAsync();
 
-            var act = () => _service.ApproveLeaveAsync(created.Id, new ApproveLeaveRequest
+            // Admin approval should succeed (overdraft is allowed)
+            var approved = await _service.ApproveLeaveAsync(created.Id, new ApproveLeaveRequest
             {
                 ApprovedBy = approverId,
                 ApproverRemarks = "ok"
             }, _schoolId);
 
-            await act.Should().ThrowAsync<InvalidOperationException>()
-                .WithMessage("*Insufficient leave balance*");
+            approved.Should().NotBeNull();
+            approved!.Status.Should().Be("Approved");
         }
 
         [Fact]
@@ -433,7 +437,7 @@ namespace SmsApi.Tests.Unit.LeaveManagement
             }, _schoolId);
 
             approved.Should().NotBeNull();
-            approved!.Status.Should().Be("approved");
+            approved!.Status.Should().Be("Approved");
 
             var balance = await _context.LeaveBalances.FirstAsync();
             balance.Used.Should().Be(2);

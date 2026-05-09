@@ -90,10 +90,7 @@ export function ChildProfileManager() {
     if (!selectedChildId) return;
     setAttendanceLoading(true);
     try {
-      const [recordsRes, statsRes] = await Promise.all([
-        attendanceApi.getStudentRecords(selectedChildId, undefined, undefined, 1, 200),
-        attendanceApi.getStats(selectedChildId),
-      ]);
+      const recordsRes = await attendanceApi.getStudentRecords(selectedChildId, undefined, undefined, 1, 200);
       const records = recordsRes.items.map((r: any) => ({
         id: r.id,
         date: r.date,
@@ -102,7 +99,13 @@ export function ChildProfileManager() {
         remarks: r.remarks,
       }));
       setAttendanceRecords(records);
-      setAttendanceStats(statsRes);
+      // Compute per-student stats from fetched records
+      const presentDays = records.filter(r => r.status === 'present').length;
+      const absentDays = records.filter(r => r.status === 'absent').length;
+      const lateDays = records.filter(r => r.status === 'late').length;
+      const totalDays = records.length;
+      const attendancePercent = totalDays > 0 ? Math.round((presentDays + lateDays) / totalDays * 100) : 0;
+      setAttendanceStats({ presentDays, absentDays, lateDays, attendancePercent });
     } catch {
       toast.error("Failed to load attendance");
       setAttendanceRecords([]);

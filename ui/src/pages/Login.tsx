@@ -152,7 +152,7 @@ export default function Login() {
 
   const demoUsers = [
     { email: 'admin@vitanaschools.edu', role: 'Admin', password: 'admin-dev-change-me', name: 'Admin User', portal: 'admin' },
-    { email: 'suresh.n@demo.edu', role: 'Staff', password: 'StaffDemo2026!', name: 'Suresh Nair', portal: 'staff' },
+    { email: 'amit.k@demo.edu', role: 'Teacher', password: 'Teacher@123', name: 'Amit Kapoor', portal: 'staff' },
     { email: 'parent@demo.edu', role: 'Parent', password: 'ParentDemo2026!', name: 'Arjun Sharma', portal: 'parent' }
   ];
 

@@ -1769,7 +1769,7 @@ function ConcessionsTab({ academicYear }: { academicYear: string }) {
                     <TableCell className="font-medium text-green-700">
                       {c.discountType === "fixed" ? inr(c.discountValue) : `${c.discountValue ?? c.percentage}%`}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{c.validUntil}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{c.validUntil ? new Date(c.validUntil).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={c.status === "active" ? "text-green-700 border-green-300" : "text-gray-500"}>
                         {c.status ?? "active"}
@@ -1983,7 +1983,7 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
                       <TableCell className="font-medium">{r.studentName ?? "Unknown"}</TableCell>
                       <TableCell>{r.class ?? "—"}</TableCell>
                       <TableCell className="text-right font-semibold text-red-600">{inr(r.pendingAmount ?? 0)}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{r.dueDate || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{r.dueDate ? new Date(r.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</TableCell>
                       <TableCell>
                         <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
                           {daysOverdue(r.dueDate)}d overdue
@@ -2415,7 +2415,7 @@ export default function Fees() {
     { label: "Total Collected", value: inr(stats.totalCollected), sub: "This academic year", color: "text-blue-600", bg: "bg-blue-50", icon: <TrendingUp className="h-5 w-5 text-blue-600" /> },
     { label: "Total Pending", value: inr(stats.totalPending), sub: "Across all students", color: "text-amber-600", bg: "bg-amber-50", icon: <Clock className="h-5 w-5 text-amber-600" /> },
     { label: "Overdue", value: inr(stats.totalOverdue), sub: `${records.filter(r => r.status === "overdue").length} students`, color: "text-red-600", bg: "bg-red-50", icon: <AlertTriangle className="h-5 w-5 text-red-600" /> },
-    { label: "Collection Rate", value: `${Math.round(stats.collectionRate)}%`, sub: "Of total fees", color: "text-purple-600", bg: "bg-purple-50", icon: <BarChart3 className="h-5 w-5 text-purple-600" /> },
+    { label: "Collection Rate", value: `${isNaN(stats.collectionRate) || !isFinite(stats.collectionRate) ? 0 : Math.round(stats.collectionRate)}%`, sub: "Of total fees", color: "text-purple-600", bg: "bg-purple-50", icon: <BarChart3 className="h-5 w-5 text-purple-600" /> },
   ];
 
   return (
@@ -2550,7 +2550,7 @@ export default function Fees() {
                             <TableCell className="text-right text-green-600 font-medium">{inr(r.paidAmount ?? 0)}</TableCell>
                             <TableCell className="text-right font-semibold text-red-600">{inr(r.pendingAmount ?? 0)}</TableCell>
                             <TableCell className="text-muted-foreground text-sm">
-                              {r.dueDate || "—"}
+                              {r.dueDate ? new Date(r.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
                               {overdueDays > 0 && (
                                 <div className="text-xs text-red-600 font-medium">{overdueDays}d overdue</div>
                               )}

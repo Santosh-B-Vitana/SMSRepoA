@@ -1,35 +1,50 @@
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Staff } from "../../services/mockApi";
+﻿import { Card } from "@/components/ui/card";
 import { QrCode } from "lucide-react";
+import { useSchool } from "@/contexts/SchoolContext";
+import { Staff } from "@/services/api/staffApi";
 
 interface StaffIdCardTemplateProps {
   staff: Staff;
+  academicYear?: string;
 }
 
-export function StaffIdCardTemplate({ staff }: StaffIdCardTemplateProps) {
+export function StaffIdCardTemplate({ staff, academicYear }: StaffIdCardTemplateProps) {
+  const { schoolInfo } = useSchool();
+
+  const schoolName = schoolInfo?.name ?? 'School';
+  const schoolAddress = schoolInfo?.address ?? '';
+  const schoolPhone = schoolInfo?.phone ?? '';
+  const schoolEmail = schoolInfo?.email ?? '';
+  const schoolWebsite = schoolInfo?.websiteUrl ?? '';
+  const boardAffiliation = schoolInfo?.boardAffiliation ?? '';
+  const currentYear = academicYear ?? new Date().getFullYear().toString();
+
+  const validUntil = new Date();
+  validUntil.setFullYear(validUntil.getFullYear() + 1);
+
   return (
     <div className="id-card-container" style={{ pageBreakAfter: 'always' }}>
-      {/* Front of Staff ID Card - based on reference image */}
+      {/* Front of Staff ID Card */}
       <Card className="w-80 h-96 mx-auto bg-white border-2 border-gray-800 relative overflow-hidden print:shadow-none">
-        {/* Header with diagonal pattern */}
         <div className="bg-green-800 text-white p-2 text-center relative">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-white/10" 
+          <div className="absolute top-0 right-0 w-16 h-16 bg-white/10"
                style={{ clipPath: 'polygon(50% 0%, 100% 0%, 100% 100%)' }}></div>
-          <h3 className="font-bold text-xs">INDIAN EDUCATION SOCIETY</h3>
-          <h2 className="font-bold text-sm">CHANDRAKANT PATKAR VIDYALAYA</h2>
-          <p className="text-xs">ENGLISH MEDIUM, DOMBIVLI (E), Tel.: 025-6464468</p>
-          <p className="text-xs font-bold mt-1">ACADEMIC YEAR 2024-2025</p>
+          {schoolInfo?.logoUrl && (
+            <img src={schoolInfo.logoUrl} alt="logo"
+                 className="absolute left-2 top-1 h-8 w-8 object-contain rounded-full" />
+          )}
+          <h2 className="font-bold text-sm uppercase leading-tight">{schoolName}</h2>
+          {boardAffiliation && <p className="text-xs opacity-90">{boardAffiliation}</p>}
+          {schoolPhone && <p className="text-xs opacity-80">Tel.: {schoolPhone}</p>}
+          <p className="text-xs font-bold mt-1">ACADEMIC YEAR {currentYear}</p>
         </div>
 
-        {/* Content Section */}
         <div className="flex p-3 bg-white">
-          {/* Left side - Information */}
           <div className="flex-1 space-y-1">
             <div className="space-y-1 text-xs">
               <div className="flex">
                 <span className="w-14 font-medium">NAME :</span>
-                <span className="font-bold uppercase">{staff.name}</span>
+                <span className="font-bold uppercase">{staff.firstName} {staff.lastName}</span>
               </div>
               <div className="flex">
                 <span className="w-14 font-medium">DESIG. :</span>
@@ -41,55 +56,47 @@ export function StaffIdCardTemplate({ staff }: StaffIdCardTemplateProps) {
               </div>
               <div className="flex">
                 <span className="w-14 font-medium">EMP.ID :</span>
-                <span className="font-bold">{staff.id}</span>
+                <span className="font-bold">{staff.employeeId}</span>
               </div>
-              <div className="flex">
-                <span className="w-14 font-medium">ADD. :</span>
-                <div className="font-bold text-xs leading-tight">
-                  {staff.address || "16&17, GANESH PRASAD BLDG.,\nOPP.OM BUNGLOW, AYARE RD.,\nDOMBIVLI(E)"}
+              {staff.address && (
+                <div className="flex">
+                  <span className="w-14 font-medium">ADD. :</span>
+                  <div className="font-bold text-xs leading-tight flex-1">{staff.address}</div>
                 </div>
-              </div>
-              <div className="flex mt-2">
+              )}
+              <div className="flex mt-1">
                 <span className="w-14 font-medium">PHONE :</span>
-                <span className="font-bold">{staff.phone || "2883033 / 9821463433"}</span>
+                <span className="font-bold">{staff.phone}</span>
               </div>
             </div>
-            
-            {/* Footer note */}
-            <div className="mt-4 text-xs text-red-600">
-              <p>This card is not transferrable. Loss of card to be reported</p>
+
+            <div className="mt-3 text-xs text-red-600 leading-tight">
+              <p>This card is not transferable. Loss of card to be reported</p>
               <p>to issuing authority. Duplicate card will be charged extra.</p>
-              <p>Misuse in any form invite disciplinary action.</p>
             </div>
-            
-            {/* Signatures */}
-            <div className="flex justify-between mt-3 text-xs">
-              <div className="text-center">
-                <div className="font-bold">Principal</div>
-              </div>
-              <div className="text-center">
-                <div className="font-bold">Hon.Secretary & IT CEO</div>
-              </div>
+
+            <div className="flex justify-between mt-2 text-xs">
+              <span className="font-bold">Principal</span>
+              <span className="font-bold">HR / Admin</span>
             </div>
           </div>
 
-          {/* Right side - Photo */}
-          <div className="ml-3">
-            <div className="w-20 h-24 bg-white border-2 border-gray-800 overflow-hidden">
-              <img
-                src={`https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=96&fit=crop&crop=center`}
-                alt={staff.name}
-                className="w-full h-full object-cover"
-              />
+          <div className="ml-3 flex-shrink-0">
+            <div className="w-20 h-24 bg-gray-100 border-2 border-gray-800 overflow-hidden">
+              {staff.profilePhoto ? (
+                <img src={staff.profilePhoto} alt={staff.name}
+                     className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs text-center px-1">PHOTO</div>
+              )}
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Back of the card */}
+      {/* Back of Card */}
       <Card className="w-80 h-96 mx-auto mt-4 bg-white border-2 border-gray-300 relative overflow-hidden print:shadow-none">
         <div className="h-full flex flex-col">
-          {/* Header */}
           <div className="bg-green-800 text-white p-3 text-center">
             <h4 className="font-bold text-sm">INSTRUCTIONS & EMERGENCY CONTACT</h4>
           </div>
@@ -97,50 +104,70 @@ export function StaffIdCardTemplate({ staff }: StaffIdCardTemplateProps) {
           <div className="p-4 flex-1">
             <div className="space-y-3">
               <div>
-                <h5 className="font-bold text-xs text-green-600 mb-2">INSTRUCTIONS:</h5>
+                <h5 className="font-bold text-xs text-green-700 mb-2">INSTRUCTIONS:</h5>
                 <ul className="text-xs space-y-1 text-gray-700">
-                  <li>• This card must be carried at all times on school premises</li>
-                  <li>• Loss of card should be reported immediately</li>
-                  <li>• Card is not transferable</li>
-                  <li>• Present this card when requested by school authorities</li>
-                  <li>• Maintain professional conduct while representing the school</li>
+                  <li>â€¢ This card must be carried at all times on school premises</li>
+                  <li>â€¢ Loss of card should be reported immediately</li>
+                  <li>â€¢ Card is not transferable</li>
+                  <li>â€¢ Present this card when requested by school authorities</li>
+                  <li>â€¢ Maintain professional conduct while representing the school</li>
                 </ul>
               </div>
 
               <div className="border-t pt-3">
-                <h5 className="font-bold text-xs text-green-600 mb-2">EMERGENCY CONTACT:</h5>
+                <h5 className="font-bold text-xs text-green-700 mb-2">EMERGENCY CONTACT:</h5>
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Phone:</span>
                     <span className="font-medium">{staff.phone}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Email:</span>
-                    <span className="font-medium text-xs">{staff.email}</span>
-                  </div>
-                  <div className="mt-2">
-                    <span className="text-gray-600">Address:</span>
-                    <p className="text-xs mt-1 font-medium">{staff.address}</p>
-                  </div>
+                  {staff.email && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Email:</span>
+                      <span className="font-medium text-xs">{staff.email}</span>
+                    </div>
+                  )}
+                  {staff.emergencyContactName && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Emergency:</span>
+                      <span className="font-medium">{staff.emergencyContactName} ({staff.emergencyContactPhone})</span>
+                    </div>
+                  )}
+                  {staff.address && (
+                    <div className="mt-1">
+                      <span className="text-gray-600">Address:</span>
+                      <p className="text-xs mt-0.5 font-medium">{staff.address}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center border-t pt-2">
+                <span className="text-xs text-gray-600">
+                  Valid till: {validUntil.toLocaleDateString('en-IN')}
+                </span>
+                <div className="w-8 h-8 bg-white border border-gray-300 rounded flex items-center justify-center">
+                  <QrCode className="h-6 w-6 text-gray-600" />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="bg-gray-100 p-3 border-t">
+          <div className="bg-gray-50 p-2 border-t">
             <p className="text-xs text-center text-gray-600 font-medium">
-              If found, please return to Chandrakant Patkar Vidyalaya
+              If found, please return to {schoolName}
             </p>
-            <p className="text-xs text-center text-gray-600 mt-1">
-              Dombivli (E), Maharashtra | Phone: 025-6464468
-            </p>
-            <p className="text-xs text-center text-gray-500 mt-1">
-              Email: info@cpvidyalaya.edu.in | www.cpvidyalaya.edu.in
-            </p>
+            {schoolAddress && <p className="text-xs text-center text-gray-500 mt-0.5">{schoolAddress}</p>}
+            {(schoolPhone || schoolEmail) && (
+              <p className="text-xs text-center text-gray-500 mt-0.5">
+                {[schoolPhone && `Tel: ${schoolPhone}`, schoolEmail].filter(Boolean).join(' | ')}
+              </p>
+            )}
+            {schoolWebsite && <p className="text-xs text-center text-gray-400 mt-0.5">{schoolWebsite}</p>}
           </div>
         </div>
       </Card>
     </div>
   );
 }
+

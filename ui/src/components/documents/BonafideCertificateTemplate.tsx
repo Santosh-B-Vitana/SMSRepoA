@@ -1,61 +1,71 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import { generateBonafideCertificate } from "@/utils/professionalCertificateGenerator";
 import { useSchool } from "@/contexts/SchoolContext";
 import { toast } from "sonner";
 import { PdfPreviewModal } from "@/components/common/PdfPreviewModal";
 
-interface BonafideCertificateProps {
-  studentName: string;
-  fatherName: string;
-  className: string;
-  schoolName: string;
-  principalName: string;
-  academicYear: string;
-  rollNumber: string;
-  purpose: string;
+export interface BonafideCertificateData {
+  // Certificate meta
   certificateNumber: string;
   issueDate: string;
+  purpose: string;
+
+  // Student personal
+  studentName: string;
+  fatherName: string;
+  motherName?: string;
+  dateOfBirth?: string;
+  nationality?: string;
+  religion?: string;
+  category?: string;    // General / SC / ST / OBC / EWS
+  caste?: string;
+  bloodGroup?: string;
+  gender?: "male" | "female" | "other";
+
+  // Academic
+  admissionNumber: string;
+  rollNumber?: string;
+  className: string;
+  section?: string;
+  academicYear: string;
+
+  // Issuing authority
+  principalName?: string;
+  additionalRemarks?: string;
 }
 
-export function BonafideCertificateTemplate({
-  studentName,
-  fatherName,
-  className,
-  schoolName,
-  principalName,
-  academicYear,
-  rollNumber,
-  purpose,
-  certificateNumber,
-  issueDate
-}: BonafideCertificateProps) {
+export function BonafideCertificateTemplate(props: BonafideCertificateData) {
   const { schoolInfo, loading } = useSchool();
   const [previewUrl, setPreviewUrl] = useState<string>("");
-  
+
+  const {
+    certificateNumber, issueDate, purpose,
+    studentName, fatherName, motherName, dateOfBirth, nationality = "Indian",
+    religion, category, caste, bloodGroup, gender,
+    admissionNumber, rollNumber, className, section, academicYear,
+    principalName, additionalRemarks,
+  } = props;
+
+  const salutation = gender === "female" ? "Ms." : "Mr.";
+  const pronoun    = gender === "female" ? "She" : "He";
+  const possessive = gender === "female" ? "her" : "his";
+
   const handlePreview = () => {
-    if (!schoolInfo) {
-      toast.error("School information not available");
-      return;
-    }
-    
-    const [classNum, section] = className.split('-');
+    if (!schoolInfo) { toast.error("School information not available"); return; }
     const url = generateBonafideCertificate(schoolInfo, {
-      certificateNumber,
-      studentName,
-      fatherName,
-      class: classNum || className,
-      section: section || '',
-      studentId: rollNumber,
-      academicYear,
-      purpose,
-      issueDate
+      certificateNumber, studentName, fatherName, motherName,
+      class: className, section: section ?? '',
+      studentId: admissionNumber, rollNumber,
+      dateOfBirth, nationality, religion, category, caste, bloodGroup,
+      academicYear, purpose, issueDate, principalName,
     });
-    
     setPreviewUrl(url);
   };
+
+  const schoolName = schoolInfo?.name ?? '';
 
   return (
     <>
@@ -67,92 +77,138 @@ export function BonafideCertificateTemplate({
           </Button>
         </div>
 
-      <Card id="bonafide-certificate" className="max-w-4xl mx-auto bg-white">
-        <CardContent className="p-12">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
-              <span className="text-xs">LOGO</span>
+        <Card id="bonafide-certificate" className="max-w-4xl mx-auto bg-white">
+          <CardContent className="p-12">
+            {/* Header */}
+            <div className="text-center mb-8 border-b-2 border-blue-800 pb-6">
+              {schoolInfo?.logoUrl && (
+                <img src={schoolInfo.logoUrl} alt="logo"
+                     className="h-16 w-16 object-contain rounded-full mx-auto mb-2" />
+              )}
+              <h1 className="text-2xl font-bold text-blue-800 uppercase">{schoolName}</h1>
+              {schoolInfo?.address && <p className="text-sm text-gray-600">{schoolInfo.address}</p>}
+              {(schoolInfo?.phone || schoolInfo?.email) && (
+                <p className="text-xs text-gray-500">
+                  {[schoolInfo.phone && `Tel: ${schoolInfo.phone}`, schoolInfo.email].filter(Boolean).join(' | ')}
+                </p>
+              )}
+              {schoolInfo?.boardAffiliation && <p className="text-xs text-gray-500">{schoolInfo.boardAffiliation}</p>}
+              <h2 className="text-xl font-bold mt-4 tracking-widest text-gray-700">
+                BONAFIDE CERTIFICATE
+              </h2>
             </div>
-            <h1 className="text-3xl font-bold text-blue-800 mb-2">{schoolName}</h1>
-            <p className="text-lg text-gray-600">BONAFIDE CERTIFICATE</p>
-          </div>
 
-          {/* Certificate Body */}
-          <div className="space-y-6 text-justify leading-relaxed">
-            <div className="text-right text-sm text-gray-600">
-              <p>Certificate No: {certificateNumber}</p>
-              <p>Date: {issueDate}</p>
+            {/* Ref & Date */}
+            <div className="flex justify-between text-sm mb-6">
+              <p><span className="font-semibold">Certificate No.: </span><span className="font-bold text-blue-800">{certificateNumber}</span></p>
+              <p><span className="font-semibold">Date: </span><span className="font-bold">{issueDate}</span></p>
             </div>
 
-            <div className="space-y-4">
-              <p className="text-lg">
-                <strong>TO WHOM IT MAY CONCERN</strong>
+            {/* TO WHOM */}
+            <p className="font-bold text-base mb-6">TO WHOM IT MAY CONCERN</p>
+
+            {/* Body Paragraph */}
+            <div className="text-base leading-8 text-justify space-y-4">
+              <p>
+                This is to certify that <span className="font-bold">{salutation} {studentName}</span>,&nbsp;
+                Son/Daughter of <span className="font-bold">{fatherName}</span>
+                {motherName && <> and <span className="font-bold">{motherName}</span></>},&nbsp;
+                is a bonafide student of this school.
               </p>
+
+              {/* Student Details Table */}
+              <table className="w-full text-sm border border-gray-300 my-4">
+                <tbody>
+                  <tr className="bg-gray-50">
+                    <td className="border border-gray-300 p-2 font-medium w-1/3">Admission Number</td>
+                    <td className="border border-gray-300 p-2 font-semibold">{admissionNumber}</td>
+                    <td className="border border-gray-300 p-2 font-medium">Academic Year</td>
+                    <td className="border border-gray-300 p-2 font-semibold">{academicYear}</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-gray-300 p-2 font-medium">Class / Section</td>
+                    <td className="border border-gray-300 p-2 font-semibold">{className}{section ? ` â€” ${section}` : ''}</td>
+                    {rollNumber && <>
+                      <td className="border border-gray-300 p-2 font-medium">Roll No.</td>
+                      <td className="border border-gray-300 p-2 font-semibold">{rollNumber}</td>
+                    </>}
+                  </tr>
+                  {dateOfBirth && (
+                    <tr className="bg-gray-50">
+                      <td className="border border-gray-300 p-2 font-medium">Date of Birth</td>
+                      <td className="border border-gray-300 p-2 font-semibold">{dateOfBirth}</td>
+                      <td className="border border-gray-300 p-2 font-medium">Nationality</td>
+                      <td className="border border-gray-300 p-2 font-semibold">{nationality}</td>
+                    </tr>
+                  )}
+                  {(religion || category) && (
+                    <tr>
+                      {religion && <>
+                        <td className="border border-gray-300 p-2 font-medium">Religion</td>
+                        <td className="border border-gray-300 p-2 font-semibold">{religion}</td>
+                      </>}
+                      {category && <>
+                        <td className="border border-gray-300 p-2 font-medium">Category</td>
+                        <td className="border border-gray-300 p-2 font-semibold">{category}{caste ? ` / ${caste}` : ''}</td>
+                      </>}
+                    </tr>
+                  )}
+                  {bloodGroup && (
+                    <tr className="bg-gray-50">
+                      <td className="border border-gray-300 p-2 font-medium">Blood Group</td>
+                      <td className="border border-gray-300 p-2 font-semibold">{bloodGroup}</td>
+                      <td className="border border-gray-300 p-2 font-medium">Purpose</td>
+                      <td className="border border-gray-300 p-2 font-semibold">{purpose}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
 
               <p>
-                This is to certify that <strong>Mr./Ms. {studentName}</strong>, 
-                Son/Daughter of <strong>{fatherName}</strong> is a bonafide student of this school.
+                {pronoun} bears a good moral character and is regular in attendance. This certificate
+                is issued on {possessive} request for the purpose of <span className="font-bold">{purpose}</span>.
               </p>
-
-              <div className="grid grid-cols-2 gap-4 my-6">
-                <div className="space-y-2">
-                  <p><strong>Class/Standard:</strong> {className}</p>
-                  <p><strong>Roll Number:</strong> {rollNumber}</p>
-                </div>
-                <div className="space-y-2">
-                  <p><strong>Academic Year:</strong> {academicYear}</p>
-                  <p><strong>Purpose:</strong> {purpose}</p>
-                </div>
-              </div>
-
-              <p>
-                He/She bears a good moral character and is regular in attendance. 
-                This certificate is issued on his/her request for the purpose of <strong>{purpose}</strong>.
-              </p>
-
-              <p>
-                I wish him/her all success in his/her endeavors.
-              </p>
+              {additionalRemarks && <p>{additionalRemarks}</p>}
+              <p>We wish {possessive} all success in {possessive} future endeavours.</p>
             </div>
 
             {/* Signature Section */}
-            <div className="flex justify-between items-end mt-12 pt-8">
+            <div className="flex justify-between items-end mt-12">
               <div className="text-center">
-                <div className="h-16 w-48 border-b border-gray-300 mb-2"></div>
-                <p className="text-sm font-medium">Class Teacher</p>
+                <div className="h-14 w-40 border-b border-gray-400 mb-1"></div>
+                <p className="text-xs font-medium text-gray-600">Class Teacher</p>
               </div>
-              
               <div className="text-center">
-                <div className="w-24 h-24 border border-gray-300 mb-2 mx-auto">
-                  <p className="text-xs text-gray-500 mt-8">School Seal</p>
+                <div className="w-24 h-24 border border-gray-300 mb-1 mx-auto flex items-end justify-center pb-1">
+                  <p className="text-xs text-gray-400">Official Seal</p>
                 </div>
               </div>
-
               <div className="text-center">
-                <div className="h-16 w-48 border-b border-gray-300 mb-2"></div>
-                <p className="text-sm font-medium">Principal</p>
-                <p className="text-sm text-gray-600">{principalName}</p>
+                <div className="h-14 w-40 border-b border-gray-400 mb-1"></div>
+                <p className="text-xs font-medium text-gray-600">Principal / Head of Institution</p>
+                {principalName && <p className="text-xs text-gray-500">{principalName}</p>}
               </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="text-center mt-8 pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500">
-              This certificate is issued based on school records and is valid for official purposes
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+            {/* Footer */}
+            <div className="text-center mt-8 pt-4 border-t border-gray-200">
+              <p className="text-xs text-gray-400 italic">
+                This certificate is issued based on school records and is valid for official purposes only.
+                Verification available at school office.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-      
+
       <PdfPreviewModal
         open={!!previewUrl}
         onClose={() => setPreviewUrl("")}
         pdfUrl={previewUrl}
-        fileName={`Bonafide_Certificate_${studentName.replace(/\s+/g, '_')}.pdf`}
+        fileName={`Bonafide_${certificateNumber}_${studentName.replace(/\s+/g, '_')}.pdf`}
       />
     </>
   );
 }
+
+

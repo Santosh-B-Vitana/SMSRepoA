@@ -257,7 +257,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         name: `${backendUser.firstName ?? ''} ${backendUser.lastName ?? ''}`.trim() || backendUser.email,
         email: backendUser.email,
         role: mappedRole,
-        designation: normalizeDesignation(rawRole),
+        // Prefer the actual Staff.Designation from the backend over inferred-from-role
+        designation: backendUser.designation
+          ? backendUser.designation
+          : normalizeDesignation(rawRole),
         schoolId: backendUser.schoolId ? String(backendUser.schoolId) : undefined,
         requirePasswordChange: backendUser.requirePasswordChange === true,
       };

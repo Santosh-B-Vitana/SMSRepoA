@@ -42,6 +42,8 @@ import {
   type HealthStudentDetailResponse,
   type HealthAlertDto
 } from '@/services/healthApi';
+import { studentApi } from '@/services/api/studentApi';
+import type { StudentBasic } from '@/services/api/studentApi';
 
 export function HealthManagerIntegrated() {
   const { toast } = useToast();
@@ -59,6 +61,11 @@ export function HealthManagerIntegrated() {
   const [showViewDetails, setShowViewDetails] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  // Students for assignment dropdowns
+  const [availableStudents, setAvailableStudents] = useState<StudentBasic[]>([]);
+  const [healthStudentSearch, setHealthStudentSearch] = useState('');
+  const [vaccinStudentSearch, setVaccinStudentSearch] = useState('');
 
   // Form states
   const [formData, setFormData] = useState<CreateHealthRecordDto>({
@@ -81,6 +88,12 @@ export function HealthManagerIntegrated() {
   useEffect(() => {
     loadData();
   }, [currentPage, filterStatus, searchTerm]);
+
+  useEffect(() => {
+    studentApi.list({ status: 'active', pageSize: 200 })
+      .then(r => setAvailableStudents(r.students))
+      .catch(() => {});
+  }, []);
 
   const loadData = async () => {
     try {
@@ -164,6 +177,7 @@ export function HealthManagerIntegrated() {
       });
       
       setShowAddRecord(false);
+      setHealthStudentSearch('');
       resetForm();
       loadData();
     } catch (error: any) {
@@ -194,6 +208,7 @@ export function HealthManagerIntegrated() {
       });
       
       setShowAddVaccination(false);
+      setVaccinStudentSearch('');
       resetVaccinationForm();
       loadData();
     } catch (error: any) {
@@ -642,13 +657,36 @@ export function HealthManagerIntegrated() {
               <DialogTitle>Add Health Record</DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Student ID *</Label>
+              <div className="col-span-2">
+                <Label>Student *</Label>
                 <Input
-                  value={formData.studentId}
-                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                  placeholder="Enter student ID"
+                  placeholder="Search student by name..."
+                  value={healthStudentSearch}
+                  onChange={e => setHealthStudentSearch(e.target.value)}
+                  className="mb-1"
                 />
+                <Select
+                  value={formData.studentId}
+                  onValueChange={(value) => setFormData({ ...formData, studentId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select student" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {availableStudents
+                      .filter(s => s.name.toLowerCase().includes(healthStudentSearch.toLowerCase()))
+                      .map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} — Class {s.class}-{s.section}
+                        </SelectItem>
+                      ))}
+                    {availableStudents.filter(s => s.name.toLowerCase().includes(healthStudentSearch.toLowerCase())).length === 0 && (
+                      <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                        {availableStudents.length === 0 ? 'Loading students...' : 'No students found'}
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Checkup Date *</Label>
@@ -788,12 +826,35 @@ export function HealthManagerIntegrated() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>Student ID *</Label>
+                <Label>Student *</Label>
                 <Input
-                  value={vaccinationForm.studentId}
-                  onChange={(e) => setVaccinationForm({ ...vaccinationForm, studentId: e.target.value })}
-                  placeholder="Enter student ID"
+                  placeholder="Search student by name..."
+                  value={vaccinStudentSearch}
+                  onChange={e => setVaccinStudentSearch(e.target.value)}
+                  className="mb-1"
                 />
+                <Select
+                  value={vaccinationForm.studentId}
+                  onValueChange={(value) => setVaccinationForm({ ...vaccinationForm, studentId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select student" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {availableStudents
+                      .filter(s => s.name.toLowerCase().includes(vaccinStudentSearch.toLowerCase()))
+                      .map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} — Class {s.class}-{s.section}
+                        </SelectItem>
+                      ))}
+                    {availableStudents.filter(s => s.name.toLowerCase().includes(vaccinStudentSearch.toLowerCase())).length === 0 && (
+                      <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                        {availableStudents.length === 0 ? 'Loading students...' : 'No students found'}
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label>Vaccine Name *</Label>

@@ -72,7 +72,29 @@ export interface UpdatePeriodRequest {
   Room?: string;
   Notes?: string;
 }
+export interface TeacherScheduleEntry {
+  periodId: string;
+  dayOfWeek: string;
+  periodNumber: number;
+  startTime: string;    // "HH:MM:SS"
+  endTime: string;
+  subjectId?: string;
+  subjectName?: string;
+  timetableId: string;
+  classId: string;
+  className?: string;
+  sectionId?: string;
+  sectionName?: string;
+  periodType?: string;
+  room?: string;
+}
 
+export interface TeacherScheduleResponse {
+  teacherId: string;
+  teacherName: string;
+  schedule: TeacherScheduleEntry[];
+  totalPeriods: number;
+}
 // ─── API service ──────────────────────────────────────────────────────────────
 
 export const timetableApi = {
@@ -105,4 +127,12 @@ export const timetableApi = {
 
   deletePeriod: (id: string) =>
     apiDelete<void>(`/timetable/periods/${id}`),
+
+  /** Get the calling teacher's own schedule (auto-resolved from JWT email) */
+  getMySchedule: () =>
+    apiGet<TeacherScheduleResponse>('/timetable/my-schedule'),
+
+  /** Get any teacher's schedule by Staff.Id (admin/principal use) */
+  getTeacherSchedule: (teacherId: string) =>
+    apiGet<TeacherScheduleResponse>(`/timetable/teacher/${teacherId}`),
 };

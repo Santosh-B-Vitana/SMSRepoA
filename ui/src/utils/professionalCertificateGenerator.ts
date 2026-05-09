@@ -158,62 +158,107 @@ export const generateBonafideCertificate = (
     certificateNumber: string;
     studentName: string;
     fatherName: string;
+    motherName?: string;
     class: string;
     section: string;
-    studentId: string;
+    studentId: string;          // admissionNumber
+    rollNumber?: string;
+    dateOfBirth?: string;
+    nationality?: string;
+    religion?: string;
+    category?: string;
+    caste?: string;
+    bloodGroup?: string;
     academicYear: string;
     purpose: string;
     issueDate: string;
+    principalName?: string;
   }
 ): string => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
-  
+
   addCertificateBorder(doc);
   let yPosition = addCertificateHeader(doc, schoolInfo);
-  
-  // Certificate title - Compact
+
+  // Certificate title
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...COLORS.primary);
   doc.text('BONAFIDE CERTIFICATE', pageWidth / 2, yPosition, { align: 'center' });
-  
+
   yPosition += 4;
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...COLORS.dark);
   doc.text(`Certificate No: ${data.certificateNumber}`, pageWidth / 2, yPosition, { align: 'center' });
-  
-  // Certificate body - Compact
-  yPosition += 15;
+
+  yPosition += 12;
   doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  
-  const bodyText = [
-    `This is to certify that ${data.studentName}, son/daughter of ${data.fatherName},`,
-    `is a bonafide student of this institution, studying in Class ${data.class}-${data.section}`,
-    `during the academic year ${data.academicYear}.`,
-    '',
-    `Student ID: ${data.studentId}`,
-    '',
-    `This certificate is issued on the request of the student for the purpose of`,
-    `${data.purpose}.`,
-    '',
-    `The particulars furnished above are correct to the best of my knowledge and belief.`
+
+  const bodyLine1 = `This is to certify that ${data.studentName}, ` +
+    `Son/Daughter of ${data.fatherName}` +
+    (data.motherName ? ` and ${data.motherName}` : '') +
+    `, is a bonafide student of this institution.`;
+
+  const wrapped1 = doc.splitTextToSize(bodyLine1, pageWidth - 60);
+  doc.text(wrapped1, pageWidth / 2, yPosition, { align: 'center' });
+  yPosition += wrapped1.length * 6 + 4;
+
+  // Student details table
+  const leftX = 30;
+  const midX  = pageWidth / 2 + 5;
+  const colW  = pageWidth / 2 - 35;
+  const rowH  = 7;
+
+  const tableRows: [string, string, string, string][] = [
+    ['Admission No', data.studentId,     'Academic Year', data.academicYear],
+    ['Class / Sec.',  `${data.class}${data.section ? ' – ' + data.section : ''}`, 'Roll No.', data.rollNumber ?? '—'],
   ];
-  
-  bodyText.forEach(line => {
-    doc.text(line, pageWidth / 2, yPosition, { align: 'center', maxWidth: pageWidth - 60 });
-    yPosition += 6;
+  if (data.dateOfBirth)
+    tableRows.push(['Date of Birth', data.dateOfBirth, 'Nationality', data.nationality ?? 'Indian']);
+  if (data.religion || data.category)
+    tableRows.push(['Religion', data.religion ?? '—', 'Category', data.category ?? (data.caste ?? '—')]);
+  if (data.bloodGroup)
+    tableRows.push(['Blood Group', data.bloodGroup, 'Purpose', data.purpose]);
+
+  tableRows.forEach((row, i) => {
+    const bg: [number, number, number] = i % 2 === 0 ? [240, 245, 255] : [255, 255, 255];
+    doc.setFillColor(...bg);
+    doc.rect(leftX, yPosition - 4, pageWidth - 60, rowH, 'F');
+    doc.setDrawColor(...COLORS.border);
+    doc.rect(leftX, yPosition - 4, pageWidth - 60, rowH);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(row[0] + ':', leftX + 2, yPosition);
+    doc.setFont('helvetica', 'normal');
+    doc.text(row[1], leftX + 30, yPosition);
+    doc.setFont('helvetica', 'bold');
+    doc.text(row[2] + ':', midX, yPosition);
+    doc.setFont('helvetica', 'normal');
+    doc.text(row[3], midX + 28, yPosition);
+    yPosition += rowH;
   });
-  
-  addCertificateFooter(doc, schoolInfo, data.issueDate);
-  
+
+  yPosition += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  const line2 = `He/She bears a good moral character and is regular in attendance. This certificate is issued ` +
+    `on his/her request for the purpose of ${data.purpose}.`;
+  const wrapped2 = doc.splitTextToSize(line2, pageWidth - 60);
+  doc.text(wrapped2, pageWidth / 2, yPosition, { align: 'center' });
+  yPosition += wrapped2.length * 6 + 4;
+
+  doc.text('We wish him/her all success in his/her future endeavours.', pageWidth / 2, yPosition, { align: 'center' });
+
+  const principal = data.principalName ?? schoolInfo.principalName;
+  addCertificateFooter(doc, { ...schoolInfo, principalName: principal ?? schoolInfo.principalName }, data.issueDate);
+
   return doc.output('dataurlstring');
 };
 
 /**
- * Generate Transfer Certificate
+ * Generate Transfer Certificate — full Indian mandatory fields
  */
 export const generateTransferCertificate = (
   schoolInfo: SchoolInfo,
@@ -221,64 +266,124 @@ export const generateTransferCertificate = (
     certificateNumber: string;
     studentName: string;
     fatherName: string;
-    motherName: string;
-    nationality: string;
+    motherName?: string;
+    nationality?: string;
+    religion?: string;
+    category?: string;
+    caste?: string;
     class: string;
+    section?: string;
     dateOfBirth: string;
     admissionDate: string;
+    classAtAdmission?: string;
+    academicYear: string;
     dateOfLeaving: string;
     classAtLeaving: string;
+    workingDays?: number;
+    presentDays?: number;
+    lastAnnualExamResult?: string;
+    qualifiedForPromotion?: boolean;
+    qualifiedToClass?: string;
+    failedInLastClass?: boolean;
+    detainedInSameClass?: boolean;
+    feesDueCleared?: boolean;
+    ncc?: string;
+    scouts?: string;
+    sports?: string;
+    games?: string;
     conduct: string;
     reasonForLeaving: string;
+    additionalRemarks?: string;
     issueDate: string;
+    principalName?: string;
+    admissionNumber?: string;
   }
 ): string => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
-  
+
   addCertificateBorder(doc);
   let yPosition = addCertificateHeader(doc, schoolInfo);
-  
-  // Certificate title
-  doc.setFontSize(22);
+
+  // Title
+  doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...COLORS.primary);
   doc.text('TRANSFER CERTIFICATE', pageWidth / 2, yPosition, { align: 'center' });
-  
-  yPosition += 5;
-  doc.setFontSize(9);
+
+  yPosition += 4;
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...COLORS.dark);
-  doc.text(`TC No: ${data.certificateNumber}`, pageWidth / 2, yPosition, { align: 'center' });
-  
-  // Certificate details in table format
-  yPosition += 15;
-  doc.setFontSize(11);
-  
-  const details = [
-    ['Student Name', data.studentName],
-    ["Father's Name", data.fatherName],
-    ["Mother's Name", data.motherName],
-    ['Nationality', data.nationality],
-    ['Date of Birth', data.dateOfBirth],
-    ['Class at Admission', data.class],
-    ['Date of Admission', data.admissionDate],
-    ['Class at Leaving', data.classAtLeaving],
-    ['Date of Leaving', data.dateOfLeaving],
-    ['Conduct & Character', data.conduct],
-    ['Reason for Leaving', data.reasonForLeaving]
+  doc.text(`TC No: ${data.certificateNumber}     Date of Issue: ${data.issueDate}`, pageWidth / 2, yPosition, { align: 'center' });
+
+  yPosition += 8;
+
+  const att = (data.workingDays && data.presentDays)
+    ? `${data.presentDays} / ${data.workingDays}`
+    : '—';
+
+  const promoText =
+    data.qualifiedForPromotion === undefined ? '—' :
+    data.qualifiedForPromotion ? `Yes — to ${data.qualifiedToClass ?? 'next class'}` : 'No';
+
+  const details: [string, string][] = [
+    ['1. Name of Student',            data.studentName],
+    ["2. Father's Name",              data.fatherName],
+    ["3. Mother's Name",              data.motherName ?? '—'],
+    ['4. Nationality',                data.nationality ?? 'Indian'],
+    ['5. Religion',                   data.religion ?? '—'],
+    ['6. Category / Caste',           data.category ? `${data.category}${data.caste ? ' / ' + data.caste : ''}` : '—'],
+    ['7. Date of Birth',              data.dateOfBirth],
+    ['8. Admission No.',              data.admissionNumber ?? '—'],
+    ['9. Class at Admission',         data.classAtAdmission ?? '—'],
+    ['10. Date of Admission',         data.admissionDate],
+    ['11. Academic Year',             data.academicYear],
+    ['12. Class at Leaving',          `${data.classAtLeaving}${data.section ? ' – ' + data.section : ''}`],
+    ['13. Date of Leaving',           data.dateOfLeaving],
+    ['14. Reason for Leaving',        data.reasonForLeaving],
+    ['15. Attendance (Present/Total)', att],
+    ['16. Failed in any class?',      data.failedInLastClass ? 'Yes' : 'No'],
+    ['17. Last Annual Exam Result',   data.lastAnnualExamResult ?? '—'],
+    ['18. Qualified for promotion?',  promoText],
+    ['19. Detained in same class?',   data.detainedInSameClass ? 'Yes' : 'No'],
+    ['20. NCC / NSS',                 data.ncc ?? '—'],
+    ['21. Scouts / Guides',           data.scouts ?? '—'],
+    ['22. Games / Sports',            data.sports ?? data.games ?? '—'],
+    ['23. Fees / Dues cleared?',      data.feesDueCleared === undefined ? '—' : data.feesDueCleared ? 'Yes' : 'No'],
+    ['24. Character & Conduct',       data.conduct],
   ];
-  
-  details.forEach(([label, value]) => {
+  if (data.additionalRemarks)
+    details.push(['25. Remarks', data.additionalRemarks]);
+
+  const leftX = 25;
+  const valX  = 115;
+  const rowH  = 6.5;
+
+  details.forEach(([label, value], i) => {
+    const bg: [number, number, number] = i % 2 === 0 ? [245, 248, 255] : [255, 255, 255];
+    doc.setFillColor(...bg);
+    doc.rect(leftX, yPosition - 4, pageWidth - 50, rowH, 'F');
+    doc.setDrawColor(...COLORS.border);
+    doc.rect(leftX, yPosition - 4, pageWidth - 50, rowH);
     doc.setFont('helvetica', 'bold');
-    doc.text(`${label}:`, 30, yPosition);
+    doc.setFontSize(8);
+    doc.text(label, leftX + 2, yPosition);
     doc.setFont('helvetica', 'normal');
-    doc.text(value, 90, yPosition);
-    yPosition += 8;
+    doc.text(value, valX, yPosition);
+    yPosition += rowH;
   });
-  
-  addCertificateFooter(doc, schoolInfo, data.issueDate);
-  
+
+  yPosition += 4;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(8);
+  const certLine = 'Certified that the above particulars have been verified from school records and are correct.';
+  const wrappedCert = doc.splitTextToSize(certLine, pageWidth - 60);
+  doc.text(wrappedCert, pageWidth / 2, yPosition, { align: 'center' });
+
+  const principal = data.principalName ?? schoolInfo.principalName;
+  addCertificateFooter(doc, { ...schoolInfo, principalName: principal ?? schoolInfo.principalName }, data.issueDate);
+
   return doc.output('dataurlstring');
 };
 

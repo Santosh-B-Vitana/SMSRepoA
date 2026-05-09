@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
+using SmsApi.Services.Migration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -533,11 +534,11 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
-        /// Get siblings of a student
+        /// Get siblings of a student (legacy JSON-based lookup)
         /// </summary>
-        [HttpGet("{id}/siblings")]
+        [HttpGet("{id}/siblings-legacy")]
         [Authorize(Roles = "Admin,Principal,Staff,Teacher")]
-        public async Task<ActionResult<List<StudentBasicResponse>>> GetSiblings(Guid id)
+        public async Task<ActionResult<List<StudentBasicResponse>>> GetSiblingsLegacy(Guid id)
         {
             try
             {
@@ -744,7 +745,51 @@ namespace SmsApi.Controllers
             }
         }
 
-        // ── CSV parsing helper ──────────────────────────────────────────────
+        // ── CSV parsing helper ─────────────────────────────────────────────
+
+        // ────────────────────────────────────────────────────────────────────
+        // V1 → V2 MIGRATION  (POST /api/Students/migrate-v1)
+        // ────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Accepts a batch of v1 (SQL Server / .NET Framework 4.x) student records
+        /// exported as JSON and migrates them into the v2 database for the current school.
+        ///
+        /// All students are imported via the existing BulkImport pipeline (duplicate detection,
+        /// validation, audit). Guardians and Transfer Certificates included in the batch are
+        /// written after the main import succeeds so referential integrity is preserved.
+        ///
+        /// Batch limit: 500 students per request. Use multiple requests for larger datasets.
+        /// </summary>
+        [HttpPost("migrate-v1")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<MigrationResult>> MigrateFromV1(
+            [FromBody] V1MigrationBatch batch,
+            [FromServices] V1MigrationService migrationService)
+        {
+            if (batch?.Students == null || batch.Students.Count == 0)
+                return BadRequest(new { message = "No student records provided in the migration batch." });
+
+            if (batch.Students.Count > 500)
+                return BadRequest(new { message = "Maximum 500 students per migration batch. Split into multiple requests." });
+
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId   = _tenant.UserId;
+                var result   = await migrationService.MigrateStudentsAsync(schoolId, userId, batch);
+
+                if (!result.IsFullSuccess && result.SuccessCount == 0)
+                    return UnprocessableEntity(result);
+
+                return result.IsFullSuccess ? Ok(result) : StatusCode(207, result); // 207 = partial success
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Migration failed.", error = ex.Message });
+            }
+        }
+
         private static List<CreateStudentRequest> ParseStudentCsv(System.IO.StreamReader reader)
         {
             var requests = new List<CreateStudentRequest>();
@@ -852,6 +897,241 @@ namespace SmsApi.Controllers
             }
             result.Add(sb.ToString());
             return result.ToArray();
+        }
+
+        // ── Sibling Management ───────────────────────────────────────────────
+
+        [HttpGet("{studentId:guid}/siblings")]
+        [Authorize(Roles = "Admin,Principal,Staff,Parent")]
+        public async Task<IActionResult> GetSiblings(Guid studentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var siblings = await _studentService.GetSiblingsAsync(schoolId, studentId);
+            return Ok(siblings);
+        }
+
+        [HttpPost("{studentId:guid}/siblings")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> AddSibling(Guid studentId, [FromBody] AddSiblingRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            await _studentService.AddSiblingAsync(schoolId, studentId, request.SiblingStudentId);
+            return Ok(new { message = "Sibling linked successfully." });
+        }
+
+        [HttpDelete("{studentId:guid}/siblings/{siblingId:guid}")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> RemoveSibling(Guid studentId, Guid siblingId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            await _studentService.RemoveSiblingAsync(schoolId, studentId, siblingId);
+            return Ok(new { message = "Sibling link removed." });
+        }
+
+        // ── Annual Health Records ─────────────────────────────────────────────
+
+        [HttpGet("{studentId:guid}/annual-health")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetAnnualHealthRecords(Guid studentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var records = await _studentService.GetAnnualHealthRecordsAsync(schoolId, studentId);
+            return Ok(records);
+        }
+
+        [HttpPut("{studentId:guid}/annual-health")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> UpsertAnnualHealth(Guid studentId, [FromBody] UpsertAnnualHealthRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _studentService.UpsertAnnualHealthAsync(schoolId, studentId, request);
+            return Ok(result);
+        }
+
+        // ── Hobby / Club Management ───────────────────────────────────────────
+
+        [HttpGet("hobbies")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetHobbies()
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var hobbies = await _studentService.GetHobbiesAsync(schoolId);
+            return Ok(hobbies);
+        }
+
+        [HttpPost("hobbies")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<IActionResult> CreateHobby([FromBody] CreateHobbyRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var hobby = await _studentService.CreateHobbyAsync(schoolId, request);
+            return CreatedAtAction(nameof(GetHobbies), hobby);
+        }
+
+        [HttpGet("{studentId:guid}/hobbies")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetStudentHobbies(Guid studentId, [FromQuery] string? academicYear)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var hobbies = await _studentService.GetStudentHobbiesAsync(schoolId, studentId, academicYear);
+            return Ok(hobbies);
+        }
+
+        [HttpPost("{studentId:guid}/hobbies")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> EnrollHobby(Guid studentId, [FromBody] EnrollHobbyRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var enrollment = await _studentService.EnrollHobbyAsync(schoolId, studentId, request);
+            return CreatedAtAction(nameof(GetStudentHobbies), new { studentId }, enrollment);
+        }
+
+        [HttpPost("{studentId:guid}/hobbies/bulk")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> BulkEnrollHobbies(Guid studentId, [FromBody] BulkEnrollHobbiesRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            await _studentService.BulkEnrollHobbiesAsync(schoolId, studentId, request);
+            return Ok(new { message = "Hobbies enrolled successfully." });
+        }
+
+        [HttpDelete("{studentId:guid}/hobbies/{enrollmentId:guid}")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> RemoveHobbyEnrollment(Guid studentId, Guid enrollmentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            await _studentService.RemoveHobbyEnrollmentAsync(schoolId, enrollmentId);
+            return Ok(new { message = "Hobby enrollment removed." });
+        }
+
+        // ── Permission Slips ──────────────────────────────────────────────────
+
+        [HttpGet("{studentId:guid}/permission-slips")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetPermissionSlips(Guid studentId, [FromQuery] string? academicYear)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var slips = await _studentService.GetPermissionSlipsAsync(schoolId, studentId, academicYear);
+            return Ok(slips);
+        }
+
+        /// <summary>All permission slips for a given date — for the daily gate register.</summary>
+        [HttpGet("permission-slips")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetAllPermissionSlips(
+            [FromQuery] DateTime? date,
+            [FromQuery] string? academicYear)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var targetDate = date ?? DateTime.UtcNow.Date;
+            var slips = await _studentService.GetAllPermissionSlipsAsync(schoolId, targetDate, academicYear);
+            return Ok(slips);
+        }
+
+        [HttpPost("{studentId:guid}/permission-slips")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> CreatePermissionSlip(Guid studentId, [FromBody] CreatePermissionSlipRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var userId = GetCurrentUserId();
+            var slip = await _studentService.CreatePermissionSlipAsync(schoolId, studentId, request, userId);
+            return CreatedAtAction(nameof(GetPermissionSlips), new { studentId }, slip);
+        }
+
+        [HttpPut("permission-slips/{slipId:guid}/review")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> ReviewPermissionSlip(Guid slipId, [FromBody] ReviewPermissionSlipRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var userId = GetCurrentUserId();
+            var slip = await _studentService.ReviewPermissionSlipAsync(schoolId, slipId, request, userId);
+            return Ok(slip);
+        }
+
+        // ── Transfer Certificate ──────────────────────────────────────────────
+
+        [HttpGet("{studentId:guid}/transfer-certificate")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetTransferCertificate(Guid studentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var tc = await _studentService.GetTransferCertificateAsync(schoolId, studentId);
+            if (tc == null) return NotFound(new { message = "No Transfer Certificate found for this student." });
+            return Ok(tc);
+        }
+
+        [HttpPost("{studentId:guid}/transfer-certificate")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<IActionResult> CreateTransferCertificate(Guid studentId, [FromBody] CreateTransferCertificateRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var userId = GetCurrentUserId();
+            var tc = await _studentService.CreateTransferCertificateAsync(schoolId, studentId, request, userId);
+            return CreatedAtAction(nameof(GetTransferCertificate), new { studentId }, tc);
+        }
+
+        [HttpPost("{studentId:guid}/transfer-certificate/issue")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<IActionResult> IssueTC(Guid studentId, [FromBody] IssueTCRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var userId = GetCurrentUserId();
+            var tc = await _studentService.IssueTCAsync(schoolId, studentId, request, userId);
+            return Ok(tc);
+        }
+
+        // ── Document Verification ─────────────────────────────────────────────
+
+        [HttpPost("documents/{documentId:guid}/verify")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> VerifyDocument(Guid documentId, [FromBody] VerifyDocumentDto request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var userId = GetCurrentUserId();
+            var doc = await _studentService.VerifyDocumentAsync(schoolId, documentId, request, userId);
+            return Ok(doc);
+        }
+
+        // ── Roll Number Assignment ─────────────────────────────────────────────
+
+        [HttpGet("roll-assignment")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetStudentsForRollAssignment(
+            [FromQuery] string className,
+            [FromQuery] string section)
+        {
+            if (string.IsNullOrWhiteSpace(className) || string.IsNullOrWhiteSpace(section))
+                return BadRequest(new { message = "class and section query params are required." });
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var students = await _studentService.GetStudentsForRollAssignmentAsync(schoolId, className, section);
+            return Ok(students);
+        }
+
+        [HttpPost("roll-assignment")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> BulkAssignRollNumbers([FromBody] RollNumberAssignmentRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            await _studentService.BulkAssignRollNumbersAsync(schoolId, request);
+            return Ok(new { message = "Roll numbers assigned successfully." });
+        }
+
+        // ── Helper ────────────────────────────────────────────────────────────
+        private Guid GetCurrentUserId()
+        {
+            var userIdClaim = User.FindFirst("UserId")?.Value ?? User.FindFirst("sub")?.Value;
+            return Guid.TryParse(userIdClaim, out var id) ? id : Guid.Empty;
         }
     }
 }

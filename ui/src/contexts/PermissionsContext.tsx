@@ -1,4 +1,5 @@
 ﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { apiGet } from '@/lib/apiClient';
 
@@ -117,6 +118,15 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     setLoading(true);
     fetchPermissions();
   }, [authLoading, fetchPermissions]);
+
+  // Re-check permissions on every route navigation so super-admin module
+  // enable/disable takes effect without requiring a full re-login
+  const location = useLocation();
+  useEffect(() => {
+    if (!authLoading && user && user.role !== 'super_admin') {
+      fetchPermissions();
+    }
+  }, [location.pathname]);
 
   const isModuleEnabled = useCallback((module: ModuleName): boolean => {
     if (user?.role === 'super_admin') return true;

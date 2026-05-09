@@ -1,10 +1,12 @@
 # sms-api — School Management System
 
-> Production-grade ERP for Indian K-12 schools · ASP.NET Core 8 · React 19 · PostgreSQL
+> Production-grade ERP for Indian K-12 schools · ASP.NET Core 8 · React 19 · PostgreSQL  
+> **Release Candidate** — May 2026
 
 [![Tests](https://img.shields.io/badge/tests-724%20passing-brightgreen)](SmsApi.Tests/)
 [![.NET](https://img.shields.io/badge/.NET-8.0-blue)](https://dotnet.microsoft.com)
 [![React](https://img.shields.io/badge/React-19.2.5-61dafb)](ui/)
+[![Status](https://img.shields.io/badge/status-release%20candidate-orange)](docs/MODULE_STATUS.md)
 
 ---
 
@@ -72,9 +74,14 @@ Seq Logs: `http://localhost:5341`
 
 | Document | Description |
 |---|---|
-| [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md) | Architecture, stack, configuration |
-| [docs/FUNCTIONAL_DOCUMENT.md](docs/FUNCTIONAL_DOCUMENT.md) | Feature reference for all modules |
-| [MODULE_STATUS_SHEET.md](MODULE_STATUS_SHEET.md) | Module completion status |
+| [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md) | Architecture, stack, database schema, configuration |
+| [docs/FUNCTIONAL_DOCUMENT.md](docs/FUNCTIONAL_DOCUMENT.md) | Complete feature reference for all modules |
+| [docs/API_DOCS.md](docs/API_DOCS.md) | REST API reference with request/response examples |
+| [docs/CODING_AGENT_GUIDELINES.md](docs/CODING_AGENT_GUIDELINES.md) | Patterns for developers and AI coding agents |
+| [docs/DEFAULT_CREDENTIALS.md](docs/DEFAULT_CREDENTIALS.md) | Dev credentials, JWT config, test factory setup |
+| [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | Docker, cloud deployment, env vars, migrations |
+| [docs/TESTING_INFRASTRUCTURE.md](docs/TESTING_INFRASTRUCTURE.md) | Test setup, unit/integration patterns, known issues |
+| [docs/MODULE_STATUS.md](docs/MODULE_STATUS.md) | Production readiness status per module |
 
 ---
 

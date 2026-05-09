@@ -130,8 +130,8 @@ function App() {
             <AuthProvider>
               <SchoolProvider>
                 <AcademicYearProvider>
-                <PermissionsProvider>
               <Router>
+                <PermissionsProvider>
                 <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                 <Routes>
@@ -233,10 +233,10 @@ function App() {
                 </Routes>
                 </Suspense>
                 </ErrorBoundary>
-              </Router>
                 <Toaster />
                 <NetworkErrorHandler />
                 </PermissionsProvider>
+              </Router>
                 </AcademicYearProvider>
               </SchoolProvider>
             </AuthProvider>

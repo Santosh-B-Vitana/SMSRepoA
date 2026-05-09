@@ -24,6 +24,7 @@ namespace SmsApi.Services
         Task<bool> DeletePeriodAsync(Guid id);
 
         Task<TeacherScheduleResponse?> GetTeacherScheduleAsync(Guid teacherId, Guid schoolId);
+        Task<TeacherScheduleResponse?> GetMyScheduleAsync(string email, Guid schoolId);
     }
 
     public class TimetableService : ITimetableService
@@ -430,6 +431,14 @@ namespace SmsApi.Services
             await _context.SaveChangesAsync();
 
             return true;
+        }
+
+        public async Task<TeacherScheduleResponse?> GetMyScheduleAsync(string email, Guid schoolId)
+        {
+            var teacher = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.Email.ToLower() == email.ToLower() && s.SchoolId == schoolId && !s.IsDeleted);
+            if (teacher == null) return null;
+            return await GetTeacherScheduleAsync(teacher.Id, schoolId);
         }
 
         public async Task<TeacherScheduleResponse?> GetTeacherScheduleAsync(Guid teacherId, Guid schoolId)

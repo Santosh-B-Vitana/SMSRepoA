@@ -373,10 +373,10 @@ namespace SmsApi.Services
                 ? $"{staffMember.FirstName} {staffMember.LastName}".Trim() 
                 : "Staff Member";
 
-            // Get admin users to notify
+            // Get admin/principal users to notify — use case-insensitive compare because DB seeds lowercase roles
             var admins = await _context.UserLogins
-                .Where(u => u.SchoolId == request.SchoolId && 
-                           (u.Role == StatusConstants.Roles.Admin || u.Role == "Principal") && 
+                .Where(u => u.SchoolId == request.SchoolId &&
+                           (u.Role.ToLower() == "admin" || u.Role.ToLower() == "principal") &&
                            !u.IsDeleted)
                 .ToListAsync();
 

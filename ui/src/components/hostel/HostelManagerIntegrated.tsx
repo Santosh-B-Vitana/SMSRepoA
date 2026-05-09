@@ -11,15 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building, Users, Bed, Plus, Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { hostelApi, HostelRoom, HostelStudent } from "@/services/hostelApi";
-
-// Simple student interface
-interface SimpleStudent {
-  id: string;
-  firstName: string;
-  lastName: string;
-  classGrade: string;
-  gender: string;
-}
+import { studentApi } from "@/services/api/studentApi";
+import type { StudentBasic } from "@/services/api/studentApi";
 
 export function HostelManagerIntegrated() {
   const { toast } = useToast();
@@ -27,10 +20,11 @@ export function HostelManagerIntegrated() {
   // State
   const [rooms, setRooms] = useState<HostelRoom[]>([]);
   const [hostelStudents, setHostelStudents] = useState<HostelStudent[]>([]);
-  const [availableStudents, setAvailableStudents] = useState<SimpleStudent[]>([]);
+  const [availableStudents, setAvailableStudents] = useState<StudentBasic[]>([]);
   const [loading, setLoading] = useState(false);
   const [addRoomOpen, setAddRoomOpen] = useState(false);
   const [assignStudentOpen, setAssignStudentOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
   
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -95,8 +89,8 @@ export function HostelManagerIntegrated() {
 
   const loadAvailableStudents = async () => {
     try {
-      // TODO: Replace with actual students API when available
-      setAvailableStudents([]);
+      const response = await studentApi.list({ status: 'active', pageSize: 200 });
+      setAvailableStudents(response.students);
     } catch (error) {
       console.error("Failed to load students:", error);
     }
@@ -129,6 +123,7 @@ export function HostelManagerIntegrated() {
         description: "Student assigned to hostel room successfully"
       });
       setAssignStudentOpen(false);
+      setStudentSearch('');
       resetAssignForm();
       loadHostelStudents();
       loadRooms(); // Reload to update occupied count
@@ -495,14 +490,27 @@ export function HostelManagerIntegrated() {
                       <div className="space-y-4">
                         <div>
                           <Label>Student</Label>
+                          <Input
+                            placeholder="Search student by name..."
+                            value={studentSearch}
+                            onChange={e => setStudentSearch(e.target.value)}
+                            className="mb-1"
+                          />
                           <Select value={assignForm.studentId} onValueChange={val => setAssignForm({...assignForm, studentId: val})}>
                             <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                            <SelectContent>
-                              {availableStudents.map(student => (
-                                <SelectItem key={student.id} value={student.id}>
-                                  {student.firstName} {student.lastName} - {student.classGrade} ({student.gender})
-                                </SelectItem>
-                              ))}
+                            <SelectContent className="max-h-60">
+                              {availableStudents
+                                .filter(s => s.name.toLowerCase().includes(studentSearch.toLowerCase()))
+                                .map(student => (
+                                  <SelectItem key={student.id} value={student.id}>
+                                    {student.name} — Class {student.class}-{student.section}
+                                  </SelectItem>
+                                ))}
+                              {availableStudents.filter(s => s.name.toLowerCase().includes(studentSearch.toLowerCase())).length === 0 && (
+                                <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                                  {availableStudents.length === 0 ? 'Loading students...' : 'No students found'}
+                                </div>
+                              )}
                             </SelectContent>
                           </Select>
                         </div>

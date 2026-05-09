@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronUp, AlertCircle, CalendarDays, TrendingDown,
   ArrowRight, Info, BarChart3, AlertTriangle, X
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import leaveManagementApi, { LeaveRequest, LeaveType } from "../../services/api/leaveManagementApi";
 
 interface StaffLeaveBalance {
@@ -68,7 +68,7 @@ export function StaffLeaveManagerEnhanced() {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { toast } = useToast();
+  // toast from sonner (imported at top)
 
   const [form, setForm] = useState<StaffLeaveData>({ leaveTypeId: "", startDate: "", endDate: "", reason: "" });
   const previewDays = daysBetween(form.startDate, form.endDate);
@@ -81,7 +81,7 @@ export function StaffLeaveManagerEnhanced() {
       try {
         setLoading(true);
         const [types, response] = await Promise.all([
-          leaveManagementApi.getLeaveTypes("Staff"),
+          leaveManagementApi.getLeaveTypes("Staff"), // filter to Staff leave types only — avoids showing Student duplicates
           leaveManagementApi.getMyLeaveRequests(1, 100),
         ]);
         setLeaveTypes(types);
@@ -108,7 +108,7 @@ export function StaffLeaveManagerEnhanced() {
         setLeaveBalances(balances);
       } catch (error) {
         console.error("Failed to fetch:", error);
-        toast({ title: "Error", description: "Failed to load leave data", variant: "destructive" });
+        toast.error("Error", { description: "Failed to load leave data" });
       } finally {
         setLoading(false);
       }
@@ -120,26 +120,22 @@ export function StaffLeaveManagerEnhanced() {
   // Submit Leave Request
   const handleSubmit = async () => {
     if (!form.leaveTypeId || !form.startDate || !form.endDate || !form.reason) {
-      toast({ title: "Incomplete", description: "Please fill in all required fields", variant: "destructive" });
+      toast.error("Incomplete", { description: "Please fill in all required fields" });
       return;
     }
 
     if (new Date(form.startDate) > new Date(form.endDate)) {
-      toast({ title: "Invalid dates", description: "End date must be after start date", variant: "destructive" });
+      toast.error("Invalid dates", { description: "End date must be after start date" });
       return;
     }
 
     if (selectedBalance && previewDays > selectedBalance.remainingDays) {
-      toast({
-        title: "Insufficient Balance",
-        description: `You have only ${selectedBalance.remainingDays} day${selectedBalance.remainingDays !== 1 ? "s" : ""} of ${selectedBalance.leaveTypeName} available`,
-        variant: "destructive"
-      });
+      toast.error("Insufficient Balance", { description: `You have only ${selectedBalance.remainingDays} day${selectedBalance.remainingDays !== 1 ? "s" : ""} of ${selectedBalance.leaveTypeName} available` });
       return;
     }
 
     if (form.reason.trim().length < 10) {
-      toast({ title: "Too short", description: "Reason must be at least 10 characters", variant: "destructive" });
+      toast.error("Too short", { description: "Reason must be at least 10 characters" });
       return;
     }
 
@@ -159,14 +155,10 @@ export function StaffLeaveManagerEnhanced() {
 
       setForm({ leaveTypeId: "", startDate: "", endDate: "", reason: "" });
       setShowForm(false);
-      toast({ title: "Submitted", description: "Your leave request has been sent for approval." });
+      toast.success("Submitted", { description: "Your leave request has been sent for approval." });
     } catch (error: any) {
       console.error("Error:", error);
-      toast({
-        title: "Error",
-        description: error?.response?.data?.message || "Failed to submit leave request",
-        variant: "destructive"
-      });
+      toast.error("Error", { description: error?.response?.data?.message || "Failed to submit leave request" });
     } finally {
       setSubmitting(false);
     }

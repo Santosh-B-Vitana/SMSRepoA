@@ -15,6 +15,11 @@ public class UserInfo
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    /// <summary>
+    /// The actual staff designation from the Staff table (e.g. "Principal", "Mathematics Teacher").
+    /// Null for admin/super-admin users who have no Staff record.
+    /// </summary>
+    public string? Designation { get; set; }
     public Guid SchoolId { get; set; }
     /// <summary>
     /// When true, the client must redirect the user to the change-password screen before continuing.
@@ -35,6 +40,8 @@ public class User
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    /// <summary>Staff designation from the Staff table (e.g. "Principal").</summary>
+    public string? Designation { get; set; }
 }
 
 // ── 2FA request models ────────────────────────────────────────────────────
