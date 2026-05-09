@@ -11,7 +11,7 @@ namespace SmsApi.Services
 {
     public interface IAssignmentService
     {
-        Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? subjectId = null, int page = 1, int pageSize = 10);
+        Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10);
         Task<AssignmentResponse?> GetAssignmentByIdAsync(Guid id, Guid schoolId);
         Task<AssignmentResponse> CreateAssignmentAsync(CreateAssignmentRequest request);
         Task<AssignmentResponse?> UpdateAssignmentAsync(Guid id, Guid schoolId, UpdateAssignmentRequest request);
@@ -32,7 +32,7 @@ namespace SmsApi.Services
             _context = context;
         }
 
-        public async Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? subjectId = null, int page = 1, int pageSize = 10)
+        public async Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10)
         {
             // Normalize pagination bounds
             if (page < 1) page = 1;
@@ -49,6 +49,11 @@ namespace SmsApi.Services
             if (subjectId.HasValue)
             {
                 query = query.Where(a => a.SubjectId == subjectId.Value);
+            }
+
+            if (assignedById.HasValue)
+            {
+                query = query.Where(a => a.AssignedById == assignedById.Value);
             }
 
             var total = await query.CountAsync();

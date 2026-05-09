@@ -892,7 +892,7 @@ static async Task SeedOperationalDataAsync(
     }
 
     // ── 13. Fee Records (one per student based on their class fee structure) ───
-    if (!await db.FeeRecords.AnyAsync(f => f.SchoolId == schoolId))
+    if (!await db.FeeRecords.IgnoreQueryFilters().AnyAsync(f => f.SchoolId == schoolId && !f.IsDeleted))
     {
         var students = await db.Students
             .Where(s => s.SchoolId == schoolId && !s.IsDeleted)
@@ -989,6 +989,7 @@ static async Task SeedOperationalDataAsync(
                         (s.Class == "Class 4" || s.Class == "Class 5"))
             .ToListAsync();
         var existingStudentIds = await db.FeeRecords
+            .IgnoreQueryFilters()
             .Where(f => f.SchoolId == schoolId && !f.IsDeleted)
             .Select(f => f.StudentId)
             .ToListAsync();

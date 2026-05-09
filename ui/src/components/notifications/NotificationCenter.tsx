@@ -4,8 +4,9 @@
  * Polling every 30 seconds for near-real-time updates.
  */
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, CheckCheck, Info, AlertCircle, CheckCircle, Trash2, ExternalLink, Loader2 } from "lucide-react";
+import { Bell, Check, CheckCheck, Info, AlertCircle, CheckCircle, Trash2, ExternalLink, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import {
   getMyNotifications, getUnreadCount, markAsRead, markAllAsRead, deleteMyNotification,
   type NotificationItem,
 } from "@/services/api/notificationApi";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 // ─── Priority / type colour helpers ─────────────────────────────────────────
@@ -126,6 +128,10 @@ export function NotificationCenter() {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const notificationsPageUrl = user?.role === "parent" ? "/parent-notifications" : "/notifications";
 
   // Unread count — polls every 30 seconds for badge freshness
   const { data: countData } = useQuery({
@@ -246,9 +252,19 @@ export function NotificationCenter() {
 
         {data && data.totalPages > 1 && (
           <div className="border-t px-4 py-2 text-xs text-muted-foreground flex-shrink-0">
-            Showing first 30 of {data.total} notifications. Visit the Notifications page for full list.
+            Showing first 30 of {data.total} notifications.
           </div>
         )}
+        <div className="border-t px-4 py-2 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-xs text-primary flex items-center justify-center gap-1.5"
+            onClick={() => { setOpen(false); navigate(notificationsPageUrl); }}
+          >
+            View all notifications <ArrowRight className="h-3 w-3" />
+          </Button>
+        </div>
       </SheetContent>
     </Sheet>
   );

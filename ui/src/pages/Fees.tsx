@@ -722,6 +722,77 @@ function CollectPaymentDialog({
                   </div>
                 )}
 
+              {/* ── Transport & Hostel Module Fees ── */}
+              {((activeRecord.transportMonthlyFee ?? 0) > 0 || (activeRecord.hostelMonthlyFee ?? 0) > 0) && (
+                <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                  <div className="text-xs font-bold uppercase tracking-wider text-blue-700 mb-2.5 flex items-center gap-1.5">
+                    <span>Transport &amp; Hostel Module Fees</span>
+                    <span className="font-normal text-blue-500 normal-case">— pro-rata calculated at time of assignment</span>
+                  </div>
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-blue-200">
+                        <th className="text-left pb-1.5 font-semibold text-blue-600">Module</th>
+                        <th className="text-right pb-1.5 font-semibold text-blue-600">Monthly Rate</th>
+                        <th className="text-right pb-1.5 font-semibold text-blue-600">Pro-rata Charged</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(activeRecord.transportMonthlyFee ?? 0) > 0 && (
+                        <tr className="border-b border-blue-100">
+                          <td className="py-1.5 text-blue-800">
+                            <div className="font-semibold">Transport Fee</div>
+                            {activeRecord.transportRoute && (
+                              <div className="text-[10px] text-blue-500 mt-0.5">
+                                Route: {activeRecord.transportRoute}
+                                {activeRecord.transportPickup ? ` · Pickup: ${activeRecord.transportPickup}` : ""}
+                              </div>
+                            )}
+                            <div className="text-[10px] text-blue-400 mt-0.5">
+                              Partial month + remaining full months of academic year
+                            </div>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums text-blue-700 font-medium">
+                            {inr(activeRecord.transportMonthlyFee ?? 0)}<span className="text-[9px] text-blue-400">/mo</span>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums font-bold text-blue-800">
+                            {inr(activeRecord.transportFee ?? 0)}
+                          </td>
+                        </tr>
+                      )}
+                      {(activeRecord.hostelMonthlyFee ?? 0) > 0 && (
+                        <tr className="border-b border-blue-100">
+                          <td className="py-1.5 text-blue-800">
+                            <div className="font-semibold">Hostel Fee</div>
+                            {activeRecord.hostelRoom && (
+                              <div className="text-[10px] text-blue-500 mt-0.5">Room: {activeRecord.hostelRoom}</div>
+                            )}
+                            <div className="text-[10px] text-blue-400 mt-0.5">
+                              Partial month + remaining full months of academic year
+                            </div>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums text-blue-700 font-medium">
+                            {inr(activeRecord.hostelMonthlyFee ?? 0)}<span className="text-[9px] text-blue-400">/mo</span>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums font-bold text-blue-800">
+                            {inr(activeRecord.hostelFee ?? 0)}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot className="border-t border-blue-200">
+                      <tr>
+                        <td className="pt-1.5 text-blue-700 font-semibold">Total Module Additions</td>
+                        <td />
+                        <td className="pt-1.5 text-right tabular-nums font-bold text-blue-900">
+                          {inr((activeRecord.transportFee ?? 0) + (activeRecord.hostelFee ?? 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
                 {/* Collection progress bar */}
                 <div className="mt-4">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1.5">

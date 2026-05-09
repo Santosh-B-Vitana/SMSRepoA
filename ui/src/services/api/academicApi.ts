@@ -87,6 +87,7 @@ export interface MyClassAssignment {
   isClassTeacher: boolean;
   academicYear: string;
   status: string;
+  studentCount?: number;
 }
 
 // =========== Subjects ===========
@@ -168,6 +169,42 @@ export interface AssignSubjectRequest {
   classId: string;
   subjectId: string;
   teacherId?: string;
+  schoolId?: string;
+}
+
+// =========== Teacher Assignments ===========
+export interface TeacherAssignmentResponse {
+  id: string;
+  schoolId: string;
+  staffId: string;
+  staffName: string;
+  classId: string;
+  className: string;
+  sectionId?: string;
+  sectionName?: string;
+  subjectId?: string;
+  subjectName?: string;
+  isClassTeacher: boolean;
+  academicYear: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeacherAssignmentListResponse {
+  assignments: TeacherAssignmentResponse[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AssignTeacherRequest {
+  staffId: string;
+  classId: string;
+  sectionId?: string;
+  subjectId?: string;
+  isClassTeacher: boolean;
+  academicYear: string;
   schoolId?: string;
 }
 
@@ -254,11 +291,21 @@ export const academicApi = {
   removeSubjectFromClass: (id: string) =>
     apiDelete<void>(`/academics/class-subjects/${id}`),
 
+  // ========== Teacher / Staff Assignments (admin) ==========
+  getTeacherAssignments: (params: { classId?: string; sectionId?: string; staffId?: string; page?: number; pageSize?: number } = {}) =>
+    apiGet<TeacherAssignmentListResponse>('/academics/teacher-assignments', params as Record<string, unknown>),
+
+  assignTeacher: (data: AssignTeacherRequest) =>
+    apiPost<TeacherAssignmentResponse>('/academics/teacher-assignments', data),
+
+  removeTeacherAssignment: (id: string) =>
+    apiDelete<void>(`/academics/teacher-assignments/${id}`),
+
   // ========== My Class Assignments (for logged-in teacher) ==========
   getMyClassAssignments: () =>
     apiGet<MyClassAssignment[]>('/academics/my-class-assignments'),
 
   // ========== All assignments for a specific staff (admin view) ==========
   getTeacherAssignmentsForStaff: (staffId: string) =>
-    apiGet<{ assignments: MyClassAssignment[]; total: number }>('/academics/teacher-assignments', { staffId, pageSize: 100 }),
+    apiGet<TeacherAssignmentListResponse>('/academics/teacher-assignments', { staffId, pageSize: 100 }),
 };

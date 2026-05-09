@@ -227,4 +227,8 @@ export const gradesApi = {
 
   deleteCCEAssessment: (id: string) =>
     apiClient.delete(`/grades/cce/${id}`),
+
+  // Parent: get grades for a specific child (requires parent role + guardian link)
+  getMyChildGrades: (studentId: string, gradeItemId?: string, page = 1, pageSize = 50) =>
+    apiClient.get<StudentGradeListResponse>('/grades/my-child-grades', { params: { studentId, gradeItemId, page, pageSize } }).then(r => r.data),
 };

@@ -10,6 +10,11 @@ export const ADMIN_CREDENTIALS = {
   password: 'admin-dev-change-me',
 };
 
+export const STAFF_CREDENTIALS = {
+  email: 'amit.k@demo.edu',
+  password: 'Teacher@123',
+};
+
 // Pre-created class/section for test students
 export const TEST_CLASS = '10';
 export const TEST_SECTION = 'A';

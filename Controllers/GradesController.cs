@@ -1,6 +1,8 @@
 ﻿using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
@@ -16,11 +18,13 @@ namespace SmsApi.Controllers
     {
         private readonly IGradeService _gradeService;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _context;
 
-        public GradesController(IGradeService gradeService, ITenantContext tenant)
+        public GradesController(IGradeService gradeService, ITenantContext tenant, AppDbContext context)
         {
             _gradeService = gradeService;
             _tenant = tenant;
+            _context = context;
         }
 
         private Guid GetSchoolId() => _tenant.GetEffectiveSchoolId();
@@ -192,6 +196,36 @@ namespace SmsApi.Controllers
         }
 
         // â”€â”€â”€ STUDENT GRADES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+        [HttpGet("my-child-grades")]
+        [Authorize(Roles = "Parent")]
+        [ProducesResponseType(typeof(StudentGradeListResponse), 200)]
+        [ProducesResponseType(403)]
+        public async Task<IActionResult> GetMyChildGrades(
+            [FromQuery] Guid studentId,
+            [FromQuery] Guid? gradeItemId = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            var schoolId = GetSchoolId();
+            var parentEmail = _tenant.UserEmail;
+
+            if (string.IsNullOrEmpty(parentEmail))
+                return Unauthorized(new { message = "Parent email not found in token." });
+
+            var isLinked = await _context.StudentGuardians
+                .AnyAsync(g => g.StudentId == studentId
+                            && g.SchoolId == schoolId
+                            && !g.IsDeleted
+                            && g.Email != null
+                            && g.Email.ToLower() == parentEmail.ToLower());
+
+            if (!isLinked)
+                return StatusCode(403, new { message = "Parents can only access their own child's grades." });
+
+            var result = await _gradeService.GetStudentGradesAsync(schoolId, gradeItemId, studentId, page, pageSize);
+            return Ok(result);
+        }
 
         [HttpGet("student-grades")]
         [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]

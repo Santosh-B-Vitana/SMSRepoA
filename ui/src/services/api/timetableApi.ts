@@ -9,7 +9,9 @@ export interface TimetableRecord {
   id: string;
   schoolId: string;
   classId: string;
+  className?: string;
   sectionId?: string;
+  sectionName?: string;
   academicYear: string;
   status: string;
   createdAt: string;
@@ -29,8 +31,11 @@ export interface TimetablePeriod {
   startTime: string;      // "HH:MM:SS"
   endTime: string;
   subjectId?: string;
+  subjectName?: string;
+  subjectCode?: string;
   teacherId?: string;
-  periodType?: string;    // "class" | "break" | "lab" | "free"
+  teacherName?: string;
+  periodType?: string;    // "lecture" | "practical" | "lab" | "break" | "lunch" etc.
   room?: string;
   notes?: string;
   createdAt: string;
@@ -43,7 +48,7 @@ export interface TimetablePeriodListResponse {
 }
 
 export interface CreateTimetableRequest {
-  SchoolId: string;
+  SchoolId?: string;   // server resolves from JWT tenant context; safe to omit
   ClassId: string;
   SectionId?: string;
   AcademicYear: string;
@@ -98,8 +103,8 @@ export interface TeacherScheduleResponse {
 // ─── API service ──────────────────────────────────────────────────────────────
 
 export const timetableApi = {
-  list: (classId?: string, page = 1, pageSize = 50) =>
-    apiGet<TimetableListResponse>('/timetable', { classId, page, pageSize }),
+  list: (classId?: string, page = 1, pageSize = 50, sectionId?: string, academicYear?: string) =>
+    apiGet<TimetableListResponse>('/timetable', { classId, page, pageSize, sectionId, academicYear }),
 
   getById: (id: string) =>
     apiGet<TimetableRecord>(`/timetable/${id}`),

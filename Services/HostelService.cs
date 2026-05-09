@@ -20,6 +20,7 @@ namespace SmsApi.Services
         Task<List<HostelStudentResponse>> GetStudentsByRoomAsync(Guid roomId, Guid schoolId);
         Task<List<HostelStudentDetailResponse>> GetAllHostelStudentsAsync(Guid schoolId);
         Task<HostelStudentResponse> AssignStudentToRoomAsync(CreateHostelStudentRequest request);
+        Task<HostelStudentResponse?> UpdateHostelStudentAsync(Guid id, Guid schoolId, UpdateHostelStudentRequest request);
         Task<bool> RemoveStudentFromRoomAsync(Guid id, Guid schoolId);
     }
 
@@ -361,58 +362,210 @@ namespace SmsApi.Services
                 request.StudentId, request.RoomId, room.RoomNumber, room.Occupied, room.Capacity);
 
             // ===== VALIDATION 8: Auto-Fee Deduction =====
-            await CreateOrUpdateHostelFeeAsync(request.SchoolId, request.StudentId, request.MonthlyFee, hostelStudent.Id);
+            await AddFeesToStudentRecordAsync(request.SchoolId, request.StudentId, request.MonthlyFee);
 
             return MapToStudentResponse(hostelStudent);
         }
 
-        private async Task CreateOrUpdateHostelFeeAsync(Guid schoolId, Guid studentId, decimal monthlyFee, Guid hostelAssignmentId)
+        // ─── Fee Helpers ─────────────────────────────────────────────────────────
+
+        private async Task<(string Name, DateTime EndDate)> GetCurrentAcademicYearInfoAsync(Guid schoolId)
+        {
+            var now = DateTime.UtcNow;
+            var activeYear = await _context.AcademicYears
+                .IgnoreQueryFilters()
+                .Where(a => a.SchoolId == schoolId && !a.IsDeleted && a.StartDate <= now && a.EndDate >= now)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => new { a.Name, a.EndDate })
+                .FirstOrDefaultAsync();
+            if (activeYear != null) return (activeYear.Name, activeYear.EndDate);
+
+            var latestYear = await _context.AcademicYears
+                .IgnoreQueryFilters()
+                .Where(a => a.SchoolId == schoolId && !a.IsDeleted)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => new { a.Name, a.EndDate })
+                .FirstOrDefaultAsync();
+            if (latestYear != null) return (latestYear.Name, latestYear.EndDate);
+
+            // Fallback: Indian academic year Apr–Mar
+            var yearEnd = now.Month >= 4
+                ? new DateTime(now.Year + 1, 3, 31)
+                : new DateTime(now.Year, 3, 31);
+            var yearName = now.Month >= 4 ? $"{now.Year}-{now.Year + 1}" : $"{now.Year - 1}-{now.Year}";
+            return (yearName, yearEnd);
+        }
+
+        /// <summary>
+        /// Pro-rates a monthly fee from <paramref name="from"/> to the end of the academic year.
+        /// Includes a partial first month (remaining days) plus full subsequent months.
+        /// </summary>
+        private static decimal CalculateProrataAmount(decimal monthlyFee, DateTime from, DateTime academicYearEnd)
+        {
+            if (monthlyFee <= 0) return 0m;
+
+            var daysInMonth = DateTime.DaysInMonth(from.Year, from.Month);
+            var remainingDays = daysInMonth - from.Day + 1;
+            var prorataThisMonth = Math.Round(monthlyFee * remainingDays / daysInMonth, 2);
+
+            var nextMonth = new DateTime(from.Year, from.Month, 1).AddMonths(1);
+            var firstMonthAfterEnd = new DateTime(academicYearEnd.Year, academicYearEnd.Month, 1).AddMonths(1);
+            var fullMonths = 0;
+            for (var m = nextMonth; m < firstMonthAfterEnd; m = m.AddMonths(1))
+                fullMonths++;
+
+            return prorataThisMonth + fullMonths * monthlyFee;
+        }
+
+        /// <summary>
+        /// Adds the pro-rated hostel fee (from today to academic-year end) plus any pending
+        /// library fines to the student's existing pending FeeRecord. Creates one if none exists.
+        /// Library fines are marked FinePaid=true to prevent double-counting.
+        /// </summary>
+        private async Task AddFeesToStudentRecordAsync(Guid schoolId, Guid studentId, decimal monthlyFee)
         {
             try
             {
-                // Check if hostel fee already exists for this month
-                var currentMonth = DateTime.Now.Month;
-                var currentYear = DateTime.Now.Year;
-                var nextMonthStart = new DateTime(currentYear, currentMonth, 1).AddMonths(1);
+                var (academicYear, yearEnd) = await GetCurrentAcademicYearInfoAsync(schoolId);
+                var now = DateTime.UtcNow;
 
-                var existingFee = await _context.FeeRecords
-                    .FirstOrDefaultAsync(fr => fr.StudentId == studentId && 
-                                               fr.DueDate.Month == nextMonthStart.Month &&
-                                               fr.DueDate.Year == nextMonthStart.Year);
+                var prorataFee = CalculateProrataAmount(monthlyFee, now, yearEnd);
 
-                if (existingFee == null)
+                var pendingFines = await _context.BookIssues
+                    .IgnoreQueryFilters()
+                    .Where(bi => bi.StudentId == studentId && bi.SchoolId == schoolId && !bi.IsDeleted && !bi.FinePaid && bi.Fine > 0)
+                    .ToListAsync();
+                var libraryFineTotal = pendingFines.Sum(bi => bi.Fine);
+                foreach (var fine in pendingFines)
+                    fine.FinePaid = true;
+
+                var totalToAdd = prorataFee + libraryFineTotal;
+                if (totalToAdd <= 0) return;
+
+                var feeRecord = await _context.FeeRecords
+                    .IgnoreQueryFilters()
+                    .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                 (fr.AcademicYear == academicYear || fr.AcademicYear == null || fr.AcademicYear == "") &&
+                                 fr.Status != "paid")
+                    .OrderByDescending(fr => fr.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (feeRecord != null)
                 {
-                    // Create new hostel fee for next month
-                    var hostelFee = new FeeRecord
+                    if (string.IsNullOrEmpty(feeRecord.AcademicYear))
+                        feeRecord.AcademicYear = academicYear;
+                    feeRecord.TotalAmount += totalToAdd;
+                    feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
+                    feeRecord.BalanceAmount = feeRecord.PendingAmount;
+                    feeRecord.UpdatedAt = now;
+
+                    _logger.LogInformation(
+                        "Added ₹{Amount} (pro-rata hostel ₹{Hostel} [{Days}d] + library fines ₹{Fines}) to fee record {RecordId} for student {StudentId}",
+                        totalToAdd, prorataFee, DateTime.DaysInMonth(now.Year, now.Month) - now.Day + 1, libraryFineTotal, feeRecord.Id, studentId);
+                }
+                else
+                {
+                    var dueDate = new DateTime(now.Year, now.Month, 1).AddMonths(1);
+                    var newRecord = new FeeRecord
                     {
                         Id = Guid.NewGuid(),
                         SchoolId = schoolId,
                         StudentId = studentId,
-                        TotalAmount = monthlyFee,
-                        DueDate = nextMonthStart,
+                        TotalAmount = totalToAdd,
+                        PaidAmount = 0,
+                        DiscountAmount = 0,
+                        LateFeeAmount = 0,
+                        PendingAmount = totalToAdd,
+                        BalanceAmount = totalToAdd,
+                        AcademicYear = academicYear,
+                        DueDate = dueDate,
                         Status = "pending",
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
+                        CreatedAt = now,
+                        UpdatedAt = now
                     };
+                    _context.FeeRecords.Add(newRecord);
 
-                    _context.FeeRecords.Add(hostelFee);
+                    _logger.LogInformation(
+                        "Created fee record for student {StudentId}: ₹{Amount} (pro-rata hostel ₹{Hostel} + library fines ₹{Fines}), due {DueDate}",
+                        studentId, totalToAdd, prorataFee, libraryFineTotal, dueDate);
+                }
+
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying fees to student {StudentId}", studentId);
+            }
+        }
+
+        /// <summary>
+        /// Adjusts the student's fee record when the hostel monthly fee changes.
+        /// The adjustment is pro-rated: remaining days this month + remaining full months to year-end.
+        /// </summary>
+        private async Task AdjustStudentFeeRecordAsync(Guid schoolId, Guid studentId, decimal oldAmount, decimal newAmount)
+        {
+            if (newAmount == oldAmount) return;
+            try
+            {
+                var now = DateTime.UtcNow;
+                var (academicYear, yearEnd) = await GetCurrentAcademicYearInfoAsync(schoolId);
+
+                var feeRecord = await _context.FeeRecords
+                    .IgnoreQueryFilters()
+                    .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                 (fr.AcademicYear == academicYear || fr.AcademicYear == null || fr.AcademicYear == "") &&
+                                 fr.Status != "paid")
+                    .OrderByDescending(fr => fr.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                var monthlyDiff = newAmount - oldAmount;
+                var prorataDiff = CalculateProrataAmount(Math.Abs(monthlyDiff), now, yearEnd);
+                if (monthlyDiff < 0) prorataDiff = -prorataDiff;
+
+                if (feeRecord != null)
+                {
+                    if (string.IsNullOrEmpty(feeRecord.AcademicYear))
+                        feeRecord.AcademicYear = academicYear;
+                    feeRecord.TotalAmount = Math.Max(0, feeRecord.TotalAmount + prorataDiff);
+                    feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
+                    feeRecord.BalanceAmount = feeRecord.PendingAmount;
+                    feeRecord.UpdatedAt = now;
                     await _context.SaveChangesAsync();
 
                     _logger.LogInformation(
-                        "Hostel fee created for student {StudentId}: {Amount:C} due on {DueDate}",
-                        studentId, monthlyFee, nextMonthStart);
+                        "Adjusted fee record for student {StudentId}: pro-rata diff ₹{Diff} (monthly ₹{Old} → ₹{New}), new total ₹{Total}",
+                        studentId, prorataDiff, oldAmount, newAmount, feeRecord.TotalAmount);
                 }
-                else
+                else if (prorataDiff > 0)
                 {
+                    var newRecord = new FeeRecord
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        StudentId = studentId,
+                        TotalAmount = prorataDiff,
+                        PaidAmount = 0,
+                        DiscountAmount = 0,
+                        LateFeeAmount = 0,
+                        PendingAmount = prorataDiff,
+                        BalanceAmount = prorataDiff,
+                        AcademicYear = academicYear,
+                        DueDate = new DateTime(now.Year, now.Month, 1).AddMonths(1),
+                        Status = "pending",
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    };
+                    _context.FeeRecords.Add(newRecord);
+                    await _context.SaveChangesAsync();
+
                     _logger.LogInformation(
-                        "Hostel fee already exists for student {StudentId} for {Month}/{Year}",
-                        studentId, nextMonthStart.Month, nextMonthStart.Year);
+                        "Created fee record for student {StudentId} on fee update: pro-rata ₹{Diff} (monthly ₹{Old} → ₹{New})",
+                        studentId, prorataDiff, oldAmount, newAmount);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating hostel fee for student {StudentId}", studentId);
-                throw;
+                _logger.LogError(ex, "Error adjusting fee record for student {StudentId}", studentId);
             }
         }
 
@@ -425,6 +578,55 @@ namespace SmsApi.Services
                 return level;
 
             return 0;
+        }
+
+        public async Task<HostelStudentResponse?> UpdateHostelStudentAsync(Guid id, Guid schoolId, UpdateHostelStudentRequest request)
+        {
+            var hostelStudent = await _context.HostelStudents
+                .Include(hs => hs.Room)
+                .FirstOrDefaultAsync(hs => hs.Id == id && hs.SchoolId == schoolId);
+
+            if (hostelStudent == null) return null;
+
+            // If room changed, update occupied counts
+            if (hostelStudent.RoomId != request.RoomId)
+            {
+                var newRoom = await _context.HostelRooms
+                    .FirstOrDefaultAsync(r => r.Id == request.RoomId && r.SchoolId == schoolId);
+                if (newRoom == null)
+                    throw new KeyNotFoundException("Room not found.");
+
+                if (newRoom.Occupied >= newRoom.Capacity)
+                    throw new InvalidOperationException($"Room {newRoom.RoomNumber} is at full capacity.");
+
+                // Decrement old room
+                if (hostelStudent.Room != null)
+                {
+                    hostelStudent.Room.Occupied = Math.Max(0, hostelStudent.Room.Occupied - 1);
+                    hostelStudent.Room.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // Increment new room
+                newRoom.Occupied++;
+                newRoom.UpdatedAt = DateTime.UtcNow;
+
+                hostelStudent.RoomId = request.RoomId;
+            }
+
+            var oldFee = hostelStudent.MonthlyFee;
+
+            hostelStudent.CheckInDate = request.CheckInDate;
+            hostelStudent.CheckOutDate = request.CheckOutDate;
+            hostelStudent.MonthlyFee = request.MonthlyFee;
+            hostelStudent.Status = request.Status;
+            hostelStudent.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            // Adjust student's fee record if monthly fee changed
+            await AdjustStudentFeeRecordAsync(schoolId, hostelStudent.StudentId, oldFee, request.MonthlyFee);
+
+            return MapToStudentResponse(hostelStudent);
         }
 
         public async Task<bool> RemoveStudentFromRoomAsync(Guid id, Guid schoolId)

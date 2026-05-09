@@ -11,7 +11,7 @@ namespace SmsApi.Services
 {
     public interface ITimetableService
     {
-        Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, int page = 1, int pageSize = 10, string? academicYear = null);
+        Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, int page = 1, int pageSize = 10, string? academicYear = null);
         Task<TimetableResponse?> GetTimetableByIdAsync(Guid id, Guid schoolId);
         Task<TimetableDetailResponse?> GetTimetableWithPeriodsAsync(Guid id, Guid schoolId);
         Task<TimetableResponse> CreateTimetableAsync(CreateTimetableRequest request);
@@ -39,7 +39,7 @@ namespace SmsApi.Services
             _context = context;
         }
 
-        public async Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, int page = 1, int pageSize = 10, string? academicYear = null)
+        public async Task<TimetableListResponse> GetTimetablesAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, int page = 1, int pageSize = 10, string? academicYear = null)
         {
             // VALIDATION: Normalize pagination bounds
             if (page < 1) page = 1;
@@ -47,13 +47,19 @@ namespace SmsApi.Services
             if (pageSize > 100) pageSize = 100;
 
             var query = _context.Timetables
+                .IgnoreQueryFilters()
                 .Include(t => t.Class)
                 .Include(t => t.Section)
-                .Where(t => t.SchoolId == schoolId);
+                .Where(t => t.SchoolId == schoolId && !t.IsDeleted);
 
             if (classId.HasValue)
             {
                 query = query.Where(t => t.ClassId == classId.Value);
+            }
+
+            if (sectionId.HasValue)
+            {
+                query = query.Where(t => t.SectionId == sectionId.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(academicYear))
@@ -78,9 +84,10 @@ namespace SmsApi.Services
         public async Task<TimetableResponse?> GetTimetableByIdAsync(Guid id, Guid schoolId)
         {
             var timetable = await _context.Timetables
+                .IgnoreQueryFilters()
                 .Include(t => t.Class)
                 .Include(t => t.Section)
-                .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId);
+                .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
 
             return timetable == null ? null : MapToResponse(timetable);
         }
@@ -88,6 +95,7 @@ namespace SmsApi.Services
         public async Task<TimetableDetailResponse?> GetTimetableWithPeriodsAsync(Guid id, Guid schoolId)
         {
             var timetable = await _context.Timetables
+                .IgnoreQueryFilters()
                 .Include(t => t.Class)
                 .Include(t => t.Section)
                 .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
@@ -95,6 +103,7 @@ namespace SmsApi.Services
             if (timetable == null) return null;
 
             var periods = await _context.TimetablePeriods
+                .IgnoreQueryFilters()
                 .Include(tp => tp.Subject)
                 .Include(tp => tp.Teacher)
                 .Where(tp => tp.TimetableId == id && !tp.IsDeleted)
@@ -124,7 +133,8 @@ namespace SmsApi.Services
 
             // VALIDATION 3: Class exists and belongs to school
             var classExists = await _context.Classes
-                .AnyAsync(c => c.Id == request.ClassId && c.SchoolId == request.SchoolId);
+                .IgnoreQueryFilters()
+                .AnyAsync(c => c.Id == request.ClassId && c.SchoolId == request.SchoolId && !c.IsDeleted);
             if (!classExists)
                 throw new InvalidOperationException("Class does not exist in this school");
 
@@ -132,13 +142,15 @@ namespace SmsApi.Services
             if (request.SectionId.HasValue && request.SectionId != Guid.Empty)
             {
                 var sectionExists = await _context.Sections
-                    .AnyAsync(s => s.Id == request.SectionId && s.ClassId == request.ClassId);
+                    .IgnoreQueryFilters()
+                    .AnyAsync(s => s.Id == request.SectionId && s.ClassId == request.ClassId && !s.IsDeleted);
                 if (!sectionExists)
                     throw new InvalidOperationException("Section does not exist for this class");
             }
 
             // VALIDATION 5: Prevent duplicate timetables for same class/section/academic year
             var existingTimetable = await _context.Timetables
+                .IgnoreQueryFilters()
                 .AnyAsync(t => t.ClassId == request.ClassId &&
                               (request.SectionId == null || request.SectionId == Guid.Empty ? t.SectionId == null : t.SectionId == request.SectionId) &&
                               t.AcademicYear == request.AcademicYear &&
@@ -169,6 +181,7 @@ namespace SmsApi.Services
         public async Task<TimetableResponse?> UpdateTimetableAsync(Guid id, Guid schoolId, CreateTimetableRequest request)
         {
             var timetable = await _context.Timetables
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
 
             if (timetable == null) 
@@ -197,6 +210,7 @@ namespace SmsApi.Services
         public async Task<bool> DeleteTimetableAsync(Guid id, Guid schoolId)
         {
             var timetable = await _context.Timetables
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
 
             if (timetable == null) 
@@ -212,6 +226,7 @@ namespace SmsApi.Services
         public async Task<TimetablePeriodListResponse> GetPeriodsAsync(Guid timetableId)
         {
             var periods = await _context.TimetablePeriods
+                .IgnoreQueryFilters()
                 .Include(tp => tp.Subject)
                 .Include(tp => tp.Teacher)
                 .Where(tp => tp.TimetableId == timetableId && !tp.IsDeleted)
@@ -230,6 +245,7 @@ namespace SmsApi.Services
         {
             // VALIDATION 1: Timetable exists
             var timetableExists = await _context.Timetables
+                .IgnoreQueryFilters()
                 .AnyAsync(t => t.Id == request.TimetableId && !t.IsDeleted);
             if (!timetableExists)
                 throw new KeyNotFoundException("Timetable not found");
@@ -261,6 +277,7 @@ namespace SmsApi.Services
 
             // VALIDATION 7: Detect overlapping periods for same day
             var overlappingPeriod = await _context.TimetablePeriods
+                .IgnoreQueryFilters()
                 .AnyAsync(tp => tp.TimetableId == request.TimetableId &&
                                tp.DayOfWeek.ToUpper() == dayOfWeek.ToUpper() &&
                                tp.PeriodNumber == request.PeriodNumber &&
@@ -272,6 +289,7 @@ namespace SmsApi.Services
             if (request.SubjectId.HasValue && request.SubjectId != Guid.Empty)
             {
                 var subjectExists = await _context.Subjects
+                    .IgnoreQueryFilters()
                     .AnyAsync(s => s.Id == request.SubjectId && !s.IsDeleted);
                 if (!subjectExists)
                     throw new KeyNotFoundException("Subject not found");
@@ -281,12 +299,14 @@ namespace SmsApi.Services
             if (request.TeacherId.HasValue && request.TeacherId != Guid.Empty)
             {
                 var teacherExists = await _context.StaffMembers
+                    .IgnoreQueryFilters()
                     .AnyAsync(s => s.Id == request.TeacherId && !s.IsDeleted);
                 if (!teacherExists)
                     throw new KeyNotFoundException("Teacher not found");
 
                 // VALIDATION 10: Check for teacher scheduling conflicts
                 var teacherConflict = await _context.TimetablePeriods
+                    .IgnoreQueryFilters()
                     .Where(tp => tp.TeacherId == request.TeacherId &&
                                 tp.DayOfWeek.ToUpper() == dayOfWeek.ToUpper() &&
                                 !tp.IsDeleted)
@@ -338,6 +358,7 @@ namespace SmsApi.Services
         public async Task<TimetablePeriodResponse?> UpdatePeriodAsync(Guid id, UpdateTimetablePeriodRequest request)
         {
             var period = await _context.TimetablePeriods
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(tp => tp.Id == id && !tp.IsDeleted);
 
             if (period == null) 
@@ -366,6 +387,7 @@ namespace SmsApi.Services
             if (request.SubjectId.HasValue && request.SubjectId != Guid.Empty)
             {
                 var subjectExists = await _context.Subjects
+                    .IgnoreQueryFilters()
                     .AnyAsync(s => s.Id == request.SubjectId && !s.IsDeleted);
                 if (!subjectExists)
                     throw new KeyNotFoundException("Subject not found");
@@ -376,12 +398,14 @@ namespace SmsApi.Services
             if (request.TeacherId.HasValue && request.TeacherId != Guid.Empty)
             {
                 var teacherExists = await _context.StaffMembers
+                    .IgnoreQueryFilters()
                     .AnyAsync(s => s.Id == request.TeacherId && !s.IsDeleted);
                 if (!teacherExists)
                     throw new KeyNotFoundException("Teacher not found");
 
                 // VALIDATION 6: Check for teacher scheduling conflicts (excluding current period)
                 var teacherConflict = await _context.TimetablePeriods
+                    .IgnoreQueryFilters()
                     .Where(tp => tp.TeacherId == request.TeacherId &&
                                 tp.Id != id &&
                                 tp.DayOfWeek.ToUpper() == period.DayOfWeek.ToUpper() &&
@@ -421,6 +445,7 @@ namespace SmsApi.Services
         public async Task<bool> DeletePeriodAsync(Guid id)
         {
             var period = await _context.TimetablePeriods
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(tp => tp.Id == id && !tp.IsDeleted);
 
             if (period == null) 
@@ -436,6 +461,7 @@ namespace SmsApi.Services
         public async Task<TeacherScheduleResponse?> GetMyScheduleAsync(string email, Guid schoolId)
         {
             var teacher = await _context.StaffMembers
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(s => s.Email.ToLower() == email.ToLower() && s.SchoolId == schoolId && !s.IsDeleted);
             if (teacher == null) return null;
             return await GetTeacherScheduleAsync(teacher.Id, schoolId);
@@ -444,11 +470,13 @@ namespace SmsApi.Services
         public async Task<TeacherScheduleResponse?> GetTeacherScheduleAsync(Guid teacherId, Guid schoolId)
         {
             var teacher = await _context.StaffMembers
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(s => s.Id == teacherId && s.SchoolId == schoolId && !s.IsDeleted);
 
             if (teacher == null) return null;
 
             var periods = await _context.TimetablePeriods
+                .IgnoreQueryFilters()
                 .Include(tp => tp.Timetable)
                     .ThenInclude(t => t!.Class)
                 .Include(tp => tp.Timetable)

@@ -82,6 +82,14 @@ export interface FeeRecord {
   payments: PaymentTransaction[];
   createdAt: string;
   updatedAt: string;
+  // Transport & Hostel breakdown (populated by backend on single-record fetch)
+  transportFee?: number;
+  transportMonthlyFee?: number;
+  transportRoute?: string;
+  transportPickup?: string;
+  hostelFee?: number;
+  hostelMonthlyFee?: number;
+  hostelRoom?: string;
 }
 
 export interface CreateFeeRecordDto {

@@ -215,6 +215,25 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Parent role: must provide a studentId and must be a linked guardian
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                if (userRole == "Parent" || userRole == "Student")
+                {
+                    if (!studentId.HasValue)
+                        return BadRequest(new { message = "studentId is required for Parent/Student role." });
+
+                    var parentEmail = _tenant.UserEmail;
+                    var isLinked = await _context.StudentGuardians
+                        .AnyAsync(g => g.StudentId == studentId.Value
+                                   && g.SchoolId == schoolId
+                                   && !g.IsDeleted
+                                   && g.Email != null
+                                   && g.Email.ToLower() == parentEmail.ToLower());
+                    if (!isLinked)
+                        return StatusCode(403, new { message = "Parents can only access their own child's fee records." });
+                }
+
                 // Year resolver integrated: accepts X-Academic-Year header + query params for future use
                 var result = await _feeService.GetFeeRecordsAsync(schoolId, page, pageSize, studentId, status);
                 return Ok(result);

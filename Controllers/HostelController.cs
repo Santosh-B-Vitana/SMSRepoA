@@ -148,6 +148,23 @@ namespace SmsApi.Controllers
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
 
+        [HttpPut("students/{id}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        public async Task<ActionResult<HostelStudentResponse>> UpdateHostelStudent(Guid id, [FromBody] UpdateHostelStudentRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var student = await _hostelService.UpdateHostelStudentAsync(id, schoolId, request);
+                if (student == null) return NotFound();
+                return Ok(student);
+            }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (KeyNotFoundException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
         [HttpDelete("students/{id}")]
         [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
         public async Task<ActionResult> RemoveStudentFromRoom(Guid id)

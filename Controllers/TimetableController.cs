@@ -34,6 +34,7 @@ namespace SmsApi.Controllers
         [ProducesResponseType(500)]
         public async Task<ActionResult<TimetableListResponse>> GetTimetables(
             [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? sectionId = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? academicYear = null)
@@ -43,7 +44,7 @@ namespace SmsApi.Controllers
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 var headerYear = HttpContext.Items["AcademicYearHeaderValue"] as string;
                 var effectiveYear = !string.IsNullOrWhiteSpace(academicYear) ? academicYear : headerYear;
-                var result = await _timetableService.GetTimetablesAsync(schoolId, classId, page, pageSize, effectiveYear);
+                var result = await _timetableService.GetTimetablesAsync(schoolId, classId, sectionId, page, pageSize, effectiveYear);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException)

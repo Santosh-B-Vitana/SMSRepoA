@@ -39,7 +39,7 @@ namespace SmsApi.Services
         Task<bool> RemoveSubjectFromClassAsync(Guid id, Guid schoolId);
 
         // Teacher Assignments
-        Task<TeacherAssignmentListResponse> GetTeacherAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? staffId = null, int page = 1, int pageSize = 10);
+        Task<TeacherAssignmentListResponse> GetTeacherAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, Guid? staffId = null, int page = 1, int pageSize = 10);
         Task<TeacherAssignmentResponse> AssignTeacherAsync(AssignTeacherRequest request);
         Task<bool> RemoveTeacherAssignmentAsync(Guid id, Guid schoolId);
         Task<List<MyClassAssignmentDto>> GetMyClassTeacherAssignmentsAsync(Guid staffId, Guid schoolId);
@@ -727,7 +727,10 @@ namespace SmsApi.Services
         // Class Subjects Implementation
         public async Task<List<ClassSubjectResponse>> GetClassSubjectsAsync(Guid classId, Guid schoolId)
         {
+            // IgnoreQueryFilters so the global school/IsDeleted filter on Subject and Staff entities
+            // does not null-out the Subject and Teacher nav-props during Include.
             var classSubjects = await _context.ClassSubjects
+                .IgnoreQueryFilters()
                 .Include(cs => cs.Teacher)
                 .Include(cs => cs.Subject)
                 .Include(cs => cs.SubjectType)
@@ -807,21 +810,29 @@ namespace SmsApi.Services
         }
 
         // Teacher Assignments Implementation
-        public async Task<TeacherAssignmentListResponse> GetTeacherAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? staffId = null, int page = 1, int pageSize = 10)
+        public async Task<TeacherAssignmentListResponse> GetTeacherAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, Guid? staffId = null, int page = 1, int pageSize = 10)
         {
             EnsureSchoolId(schoolId);
             NormalizePagination(ref page, ref pageSize);
-            var query = _context.TeacherAssignments.Where(ta => ta.SchoolId == schoolId);
+            // Use IgnoreQueryFilters so the global school/IsDeleted filter on related entities
+            // (Class, Section, Subject, Staff) does not silently null-out navigation properties.
+            // The explicit WHERE clause below re-applies the correct tenant + soft-delete filters.
+            var query = _context.TeacherAssignments
+                .IgnoreQueryFilters()
+                .Include(ta => ta.Staff)
+                .Include(ta => ta.Class)
+                .Include(ta => ta.Section)
+                .Include(ta => ta.Subject)
+                .Where(ta => ta.SchoolId == schoolId && !ta.IsDeleted);
 
             if (classId.HasValue)
-            {
                 query = query.Where(ta => ta.ClassId == classId.Value);
-            }
+
+            if (sectionId.HasValue)
+                query = query.Where(ta => ta.SectionId == sectionId.Value);
 
             if (staffId.HasValue)
-            {
                 query = query.Where(ta => ta.StaffId == staffId.Value);
-            }
 
             var total = await query.CountAsync();
             var assignments = await query
@@ -900,7 +911,18 @@ namespace SmsApi.Services
             _context.TeacherAssignments.Add(assignment);
             await _context.SaveChangesAsync();
 
-            return MapToTeacherAssignmentResponse(assignment);
+            // Reload with navigation properties so the response includes names.
+            // Use IgnoreQueryFilters on the entry load so that the school/IsDeleted
+            // global query filter on Class/Section/Subject does not null out the nav-props.
+            var saved = await _context.TeacherAssignments
+                .IgnoreQueryFilters()
+                .Include(ta => ta.Staff)
+                .Include(ta => ta.Class)
+                .Include(ta => ta.Section)
+                .Include(ta => ta.Subject)
+                .FirstAsync(ta => ta.Id == assignment.Id);
+
+            return MapToTeacherAssignmentResponse(saved);
         }
 
         public async Task<bool> RemoveTeacherAssignmentAsync(Guid id, Guid schoolId)
@@ -918,14 +940,39 @@ namespace SmsApi.Services
 
         public async Task<List<MyClassAssignmentDto>> GetMyClassTeacherAssignmentsAsync(Guid staffId, Guid schoolId)
         {
-            // Return ALL assignments for this staff (class teacher + subject teacher)
+            // Return ALL assignments for this staff (class teacher + subject teacher).
+            // IgnoreQueryFilters prevents the global school/IsDeleted filter on related
+            // entities from silently nulling out Class/Section/Subject nav-props.
             var assignments = await _context.TeacherAssignments
+                .IgnoreQueryFilters()
                 .Include(ta => ta.Class)
                 .Include(ta => ta.Section)
                 .Include(ta => ta.Subject)
                 .Where(ta => ta.StaffId == staffId && ta.SchoolId == schoolId
                     && ta.Status == "active" && !ta.IsDeleted)
                 .ToListAsync();
+
+            // Batch student count query — count students per (Class.Name, Section.Name) pair
+            var classNames = assignments
+                .Where(ta => ta.Class != null)
+                .Select(ta => ta.Class!.Name)
+                .Distinct()
+                .ToList();
+
+            var studentGroups = await _context.Students
+                .Where(s => s.SchoolId == schoolId && classNames.Contains(s.Class))
+                .GroupBy(s => new { s.Class, s.Section })
+                .Select(g => new { g.Key.Class, g.Key.Section, Count = g.Count() })
+                .ToListAsync();
+
+            int GetStudentCount(string? className, string? sectionName)
+            {
+                if (string.IsNullOrEmpty(className)) return 0;
+                return studentGroups
+                    .Where(g => g.Class == className &&
+                                (string.IsNullOrEmpty(sectionName) || g.Section == sectionName))
+                    .Sum(g => g.Count);
+            }
 
             return assignments.Select(ta => new MyClassAssignmentDto
             {
@@ -938,7 +985,8 @@ namespace SmsApi.Services
                 SubjectName = ta.Subject?.Name,
                 IsClassTeacher = ta.IsClassTeacher,
                 AcademicYear = ta.AcademicYear,
-                Status = ta.Status
+                Status = ta.Status,
+                StudentCount = GetStudentCount(ta.Class?.Name, ta.Section?.Name)
             }).ToList();
         }
 
@@ -1224,14 +1272,22 @@ namespace SmsApi.Services
 
         private static TeacherAssignmentResponse MapToTeacherAssignmentResponse(TeacherAssignment assignment)
         {
+            var staffName = assignment.Staff != null
+                ? $"{assignment.Staff.FirstName} {assignment.Staff.LastName}".Trim()
+                : string.Empty;
+
             return new TeacherAssignmentResponse
             {
                 Id = assignment.Id,
                 SchoolId = assignment.SchoolId,
                 StaffId = assignment.StaffId,
+                StaffName = staffName,
                 ClassId = assignment.ClassId,
+                ClassName = assignment.Class?.Name ?? string.Empty,
                 SectionId = assignment.SectionId,
+                SectionName = assignment.Section?.Name,
                 SubjectId = assignment.SubjectId,
+                SubjectName = assignment.Subject?.Name,
                 IsClassTeacher = assignment.IsClassTeacher,
                 AcademicYear = assignment.AcademicYear,
                 Status = assignment.Status,

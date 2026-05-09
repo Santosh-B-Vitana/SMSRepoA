@@ -1,9 +1,12 @@
 using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace SmsApi.Controllers
@@ -15,11 +18,13 @@ namespace SmsApi.Controllers
     {
         private readonly IAssignmentService _assignmentService;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _context;
 
-        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant)
+        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant, AppDbContext context)
         {
             _assignmentService = assignmentService;
             _tenant = tenant;
+            _context = context;
         }
 
         // Assignment Endpoints
@@ -28,13 +33,25 @@ namespace SmsApi.Controllers
         public async Task<ActionResult<AssignmentListResponse>> GetAssignments(
             [FromQuery] Guid? classId = null,
             [FromQuery] Guid? subjectId = null,
+            [FromQuery] Guid? assignedById = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, subjectId, page, pageSize);
+
+                // For staff/teacher role: auto-restrict to assignments they created.
+                // Admin and Principal can see all assignments (or filter by assignedById if specified).
+                var effectiveAssignedById = assignedById;
+                var userRole = User.FindFirstValue(ClaimTypes.Role)?.ToLower()
+                    ?? User.Claims.FirstOrDefault(c => c.Type == "role")?.Value?.ToLower();
+                if (userRole is "staff" or "teacher")
+                {
+                    effectiveAssignedById = _tenant.UserId;
+                }
+
+                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, subjectId, effectiveAssignedById, page, pageSize);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -64,7 +81,21 @@ namespace SmsApi.Controllers
             {
                 // Inject server-side identity — never trust the client for these security-sensitive fields
                 request.SchoolId = _tenant.GetEffectiveSchoolId();
-                request.AssignedById = _tenant.UserId;
+                // For teacher/staff, AssignedById must be the StaffMember.Id (not UserLogin.Id)
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+                if (userRole == "Teacher" || userRole == "Staff")
+                {
+                    var userEmail = _tenant.UserEmail;
+                    var staffMember = await _context.StaffMembers
+                        .FirstOrDefaultAsync(s => s.SchoolId == request.SchoolId
+                                               && s.Email != null
+                                               && s.Email.ToLower() == userEmail.ToLower());
+                    request.AssignedById = staffMember?.Id ?? _tenant.UserId;
+                }
+                else
+                {
+                    request.AssignedById = _tenant.UserId;
+                }
                 var assignment = await _assignmentService.CreateAssignmentAsync(request);
                 return CreatedAtAction(nameof(GetAssignmentById), new { id = assignment.Id, schoolId = assignment.SchoolId }, assignment);
             }

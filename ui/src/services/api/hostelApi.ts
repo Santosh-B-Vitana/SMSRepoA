@@ -63,6 +63,14 @@ export interface AssignStudentDto {
   status: string;
 }
 
+export interface UpdateHostelStudentDto {
+  roomId: string;
+  checkInDate: string;
+  checkOutDate?: string;
+  monthlyFee: number;
+  status: string;
+}
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 const getRooms = async (page = 1, pageSize = 100): Promise<HostelRoomListResponse> => {
@@ -104,6 +112,11 @@ const assignStudentToRoom = async (data: AssignStudentDto): Promise<HostelStuden
   return r.data;
 };
 
+const updateHostelStudent = async (id: string, data: UpdateHostelStudentDto): Promise<HostelStudent> => {
+  const r = await apiClient.put<HostelStudent>(`${BASE}/students/${id}`, data);
+  return r.data;
+};
+
 const removeStudentFromRoom = async (id: string): Promise<void> => {
   await apiClient.delete(`${BASE}/students/${id}`);
 };
@@ -117,5 +130,6 @@ export const hostelApiClient = {
   getStudentsByRoom,
   getAllHostelStudents,
   assignStudentToRoom,
+  updateHostelStudent,
   removeStudentFromRoom,
 };

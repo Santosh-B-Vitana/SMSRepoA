@@ -399,6 +399,40 @@ namespace SmsApi.Services
                 })
                 .ToListAsync();
 
+            // Live transport/hostel assignment lookup for fee breakdown
+            var transportAssignment = await _context.TransportStudents
+                .IgnoreQueryFilters()
+                .Include(ts => ts.Route)
+                .Where(ts => ts.StudentId == record.StudentId && ts.SchoolId == schoolId
+                             && !ts.IsDeleted && ts.Status == "active")
+                .OrderByDescending(ts => ts.UpdatedAt)
+                .FirstOrDefaultAsync();
+
+            var hostelAssignment = await _context.HostelStudents
+                .IgnoreQueryFilters()
+                .Include(hs => hs.Room)
+                .Where(hs => hs.StudentId == record.StudentId && hs.SchoolId == schoolId
+                             && !hs.IsDeleted && hs.Status == "active")
+                .OrderByDescending(hs => hs.UpdatedAt)
+                .FirstOrDefaultAsync();
+
+            // Compute pro-rata transport fee for context (from assignment date to current year end)
+            decimal transportFee = 0m, hostelFee = 0m;
+            if (transportAssignment?.MonthlyFee > 0)
+            {
+                var from = transportAssignment.UpdatedAt > transportAssignment.CreatedAt
+                    ? transportAssignment.CreatedAt.Date
+                    : transportAssignment.CreatedAt.Date;
+                var yearEnd = record.DueDate > DateTime.UtcNow ? record.DueDate : DateTime.UtcNow.AddMonths(10);
+                transportFee = CalculateProrataForDisplay(transportAssignment.MonthlyFee ?? 0m, from, yearEnd);
+            }
+            if (hostelAssignment?.MonthlyFee > 0)
+            {
+                var from = hostelAssignment.CreatedAt.Date;
+                var yearEnd = record.DueDate > DateTime.UtcNow ? record.DueDate : DateTime.UtcNow.AddMonths(10);
+                hostelFee = CalculateProrataForDisplay(hostelAssignment.MonthlyFee, from, yearEnd);
+            }
+
             return new FeeRecordResponse
             {
                 Id = record.Id,
@@ -418,8 +452,28 @@ namespace SmsApi.Services
                 Status = record.Status,
                 Payments = payments,
                 CreatedAt = record.CreatedAt,
-                UpdatedAt = record.UpdatedAt
+                UpdatedAt = record.UpdatedAt,
+                TransportFee = transportFee,
+                TransportMonthlyFee = transportAssignment?.MonthlyFee ?? 0m,
+                TransportRoute = transportAssignment?.Route?.RouteName,
+                TransportPickup = transportAssignment?.PickupPoint,
+                HostelFee = hostelFee,
+                HostelMonthlyFee = hostelAssignment?.MonthlyFee ?? 0m,
+                HostelRoom = hostelAssignment?.Room?.RoomNumber,
             };
+        }
+
+        private static decimal CalculateProrataForDisplay(decimal monthlyFee, DateTime from, DateTime yearEnd)
+        {
+            if (monthlyFee <= 0) return 0m;
+            var daysInMonth = DateTime.DaysInMonth(from.Year, from.Month);
+            var remainingDays = daysInMonth - from.Day + 1;
+            var prorataThisMonth = Math.Round(monthlyFee * remainingDays / daysInMonth, 2);
+            var nextMonth = new DateTime(from.Year, from.Month, 1).AddMonths(1);
+            var firstMonthAfterEnd = new DateTime(yearEnd.Year, yearEnd.Month, 1).AddMonths(1);
+            var fullMonths = 0;
+            for (var m = nextMonth; m < firstMonthAfterEnd; m = m.AddMonths(1)) fullMonths++;
+            return prorataThisMonth + fullMonths * monthlyFee;
         }
 
         public async Task<FeeRecordResponse> CreateFeeRecordAsync(CreateFeeRecordRequest request)

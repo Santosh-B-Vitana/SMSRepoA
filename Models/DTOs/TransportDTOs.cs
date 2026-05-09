@@ -126,6 +126,22 @@ namespace SmsApi.Models.DTOs
         public int PageSize { get; set; }
     }
 
+    public class UpdateTransportStudentRequest
+    {
+        public Guid RouteId { get; set; }
+
+        [MaxLength(200)]
+        public string? PickupPoint { get; set; }
+
+        [MaxLength(200)]
+        public string? DropPoint { get; set; }
+
+        public decimal? MonthlyFee { get; set; }
+
+        [MaxLength(20)]
+        public string Status { get; set; } = "active";
+    }
+
     // Transport Student with full details including student info
     public class TransportStudentDetailResponse
     {

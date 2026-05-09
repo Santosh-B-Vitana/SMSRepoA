@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route } from "lucide-react";
-import { transportApi, TransportRoute, TransportStudent, CreateRouteDto, AssignStudentDto } from "@/services/api/transportApi";
+import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X } from "lucide-react";
+import { transportApi, TransportRoute, TransportStudent, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
 
 // ─── Route Form Dialog ────────────────────────────────────────────────────────
@@ -112,17 +112,47 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
 
 function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRoute[]; onClose: () => void; onSaved: () => void }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
+  const [assignedStudentIds, setAssignedStudentIds] = useState<Set<string>>(new Set());
   const [form, setForm] = useState<AssignStudentDto>({ studentId: "", routeId: "", pickupPoint: "", dropPoint: "", status: "active" });
   const [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [studentOpen, setStudentOpen] = useState(false);
+  const studentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {});
+    studentApi.list({ page: 1, pageSize: 500 }).then(r => setStudents(r.students ?? [])).catch(() => {});
+    transportApi.getAllTransportStudents().then(ts => {
+      setAssignedStudentIds(new Set(ts.map(t => t.studentId)));
+    }).catch(() => {});
   }, []);
 
-  const filtered = students.filter(s =>
-    s.status === "Active" && (s.name?.toLowerCase().includes(search.toLowerCase()) || s.admissionNumber?.toLowerCase().includes(search.toLowerCase()))
+  useEffect(() => {
+    function onOutsideClick(e: MouseEvent) {
+      if (studentRef.current && !studentRef.current.contains(e.target as Node)) setStudentOpen(false);
+    }
+    document.addEventListener("mousedown", onOutsideClick);
+    return () => document.removeEventListener("mousedown", onOutsideClick);
+  }, []);
+
+  const availableStudents = students.filter(s =>
+    s.status?.toLowerCase() === "active" && !assignedStudentIds.has(s.id)
   );
+  const filteredStudents = availableStudents.filter(s =>
+    !studentQuery ||
+    s.name?.toLowerCase().includes(studentQuery.toLowerCase()) ||
+    s.admissionNumber?.toLowerCase().includes(studentQuery.toLowerCase())
+  ).slice(0, 8);
+  const selectedStudent = students.find(s => s.id === form.studentId);
+
+  function pickStudent(s: StudentBasic) {
+    setForm(p => ({ ...p, studentId: s.id }));
+    setStudentQuery("");
+    setStudentOpen(false);
+  }
+  function clearStudent() {
+    setForm(p => ({ ...p, studentId: "" }));
+    setStudentQuery("");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -143,19 +173,47 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
         <DialogHeader><DialogTitle>Assign Student to Route</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Search Student</Label>
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or admission number..." />
-          </div>
-          <div className="space-y-1.5">
             <Label>Student *</Label>
-            <Select value={form.studentId} onValueChange={v => setForm(p => ({ ...p, studentId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-              <SelectContent>
-                {filtered.slice(0, 50).map(s => (
-                  <SelectItem key={s.id} value={s.id}>{s.name} — {s.class} {s.section} ({s.admissionNumber})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div ref={studentRef} className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                className="pl-9 pr-8"
+                placeholder={students.length === 0 ? "Loading students..." : "Search by name or admission number..."}
+                value={selectedStudent && !studentOpen
+                  ? `${selectedStudent.name} — ${selectedStudent.class} ${selectedStudent.section} (${selectedStudent.admissionNumber})`
+                  : studentQuery}
+                onChange={e => {
+                  setStudentQuery(e.target.value);
+                  if (selectedStudent) setForm(p => ({ ...p, studentId: "" }));
+                  setStudentOpen(true);
+                }}
+                onFocus={() => setStudentOpen(true)}
+              />
+              {selectedStudent && (
+                <button type="button" onClick={clearStudent}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+              {studentOpen && (
+                <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
+                  {students.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">Loading students...</div>
+                  ) : filteredStudents.length > 0 ? (
+                    filteredStudents.map(s => (
+                      <button key={s.id} type="button"
+                        onMouseDown={e => { e.preventDefault(); pickStudent(s); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between gap-2">
+                        <span className="font-medium truncate">{s.name}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{s.class} {s.section} · {s.admissionNumber}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No students found</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Route *</Label>
@@ -190,6 +248,85 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
   );
 }
 
+// ─── Edit Transport Student Dialog ───────────────────────────────────────────
+
+function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { assignment: TransportStudent; routes: TransportRoute[]; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<UpdateTransportStudentDto>({
+    routeId: assignment.routeId,
+    pickupPoint: assignment.pickupPoint ?? "",
+    dropPoint: assignment.dropPoint ?? "",
+    monthlyFee: assignment.monthlyFee ?? 0,
+    status: assignment.status,
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.routeId) { toast.error("Select a route"); return; }
+    setSaving(true);
+    try {
+      await transportApi.updateTransportStudent(assignment.id, form);
+      toast.success("Transport assignment updated");
+      onSaved(); onClose();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update assignment");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Edit Transport Assignment — {assignment.studentName}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Route *</Label>
+            <Select value={form.routeId} onValueChange={v => setForm(p => ({ ...p, routeId: v }))}>
+              <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
+              <SelectContent>
+                {routes.filter(r => r.status === "active" || r.id === assignment.routeId).map(r => (
+                  <SelectItem key={r.id} value={r.id}>{r.routeNumber} — {r.routeName} ({r.studentsAssigned}/{r.capacity})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Pickup Point</Label>
+              <Input value={form.pickupPoint ?? ""} onChange={e => setForm(p => ({ ...p, pickupPoint: e.target.value }))} placeholder="Main Gate" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Drop Point</Label>
+              <Input value={form.dropPoint ?? ""} onChange={e => setForm(p => ({ ...p, dropPoint: e.target.value }))} placeholder="Bus Stand" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Monthly Fee (₹)</Label>
+              <Input type="number" value={form.monthlyFee ?? 0} onChange={e => setForm(p => ({ ...p, monthlyFee: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving} className="gap-2">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Update Assignment
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TransportManager() {
@@ -201,6 +338,7 @@ export function TransportManager() {
   const [editRoute, setEditRoute] = useState<TransportRoute | undefined>();
   const [showAddRoute, setShowAddRoute] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
+  const [editStudent, setEditStudent] = useState<TransportStudent | undefined>();
   const [tab, setTab] = useState("routes");
 
   const loadRoutes = useCallback(async () => {
@@ -417,7 +555,10 @@ export function TransportManager() {
                       <TableCell>₹{(s.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
                       <TableCell><Badge variant={s.status === "active" ? "default" : "outline"}>{s.status}</Badge></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveStudent(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveStudent(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -433,6 +574,7 @@ export function TransportManager() {
         <RouteFormDialog route={editRoute} onClose={() => { setShowAddRoute(false); setEditRoute(undefined); }} onSaved={() => { loadRoutes(); }} />
       )}
       {showAssign && <AssignStudentDialog routes={routes} onClose={() => setShowAssign(false)} onSaved={() => { loadStudents(); loadRoutes(); }} />}
+      {editStudent && <EditTransportStudentDialog assignment={editStudent} routes={routes} onClose={() => setEditStudent(undefined)} onSaved={() => { loadStudents(); loadRoutes(); }} />}
     </div>
   );
 }

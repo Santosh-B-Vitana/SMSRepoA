@@ -113,6 +113,12 @@ export function MyClassesManager() {
                   <span className="text-muted-foreground">Academic Year</span>
                   <span className="font-medium">{assignment.academicYear}</span>
                 </div>
+                {assignment.subjectName && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subject</span>
+                    <span className="font-medium">{assignment.subjectName}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Status</span>
                   <Badge

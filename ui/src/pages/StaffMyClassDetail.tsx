@@ -72,6 +72,7 @@ import { toast } from "sonner";
 
 // Services
 import { academicApi, type MyClassAssignment, type ClassSubjectResponse } from "@/services/api/academicApi";
+import { timetableApi, type TimetablePeriod } from "@/services/api/timetableApi";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
 import { attendanceApi, type AttendanceRecordBasic, type MarkAttendanceDto } from "@/services/api/attendanceApi";
 import assignmentApi, {
@@ -924,6 +925,107 @@ function EmptyState({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sub-component: Timetable Tab (read-only for staff)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STAFF_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const STAFF_PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
+const PERIOD_DEFAULTS: Record<number, string> = {
+  1: "09:00–09:45", 2: "09:45–10:30", 3: "10:45–11:30", 4: "11:30–12:15",
+  5: "13:00–13:45", 6: "13:45–14:30", 7: "14:30–15:15", 8: "15:15–16:00",
+};
+
+function StaffTimetableTab({
+  periods, loading, className: cls, sectionName,
+}: {
+  periods: TimetablePeriod[];
+  loading: boolean;
+  className?: string;
+  sectionName?: string;
+}) {
+  if (loading) return <LoadingSpinner text="Loading timetable…" />;
+
+  if (periods.length === 0) {
+    return (
+      <Card>
+        <CardContent className="text-center py-12 text-muted-foreground">
+          <Clock className="h-12 w-12 mx-auto mb-4 opacity-40" />
+          <p className="font-medium">No timetable configured</p>
+          <p className="text-sm mt-1">The admin hasn't set up the timetable for this section yet</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const getPeriod = (day: string, periodNum: number) =>
+    periods.find(p => p.dayOfWeek.toLowerCase() === day.toLowerCase() && p.periodNumber === periodNum) ?? null;
+
+  const fmt = (t: string) => t.substring(0, 5);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Clock className="h-4 w-4" />
+          Weekly Timetable
+          {cls && <Badge variant="outline">{cls}{sectionName ? ` – ${sectionName}` : ""}</Badge>}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0 overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="border px-3 py-2 text-left text-xs font-medium text-muted-foreground w-24">Period</th>
+              {STAFF_DAYS.map(d => (
+                <th key={d} className="border px-3 py-2 text-center text-xs font-medium min-w-[110px]">{d}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {STAFF_PERIODS.map(periodNum => {
+              const anyP = periods.find(p => p.periodNumber === periodNum);
+              const timeLabel = anyP
+                ? `${fmt(anyP.startTime)}–${fmt(anyP.endTime)}`
+                : (PERIOD_DEFAULTS[periodNum] ?? "");
+              return (
+                <tr key={periodNum} className="hover:bg-muted/20">
+                  <td className="border px-3 py-2 bg-muted/30">
+                    <div className="font-medium text-xs">P{periodNum}</div>
+                    <div className="text-xs text-muted-foreground">{timeLabel}</div>
+                  </td>
+                  {STAFF_DAYS.map(day => {
+                    const p = getPeriod(day, periodNum);
+                    return (
+                      <td key={`${day}-${periodNum}`} className="border px-2 py-1.5 text-center align-middle">
+                        {p ? (
+                          <div className="bg-primary/10 rounded px-1.5 py-1 text-left">
+                            <div className="font-medium text-xs leading-tight">
+                              {p.subjectName ?? "—"}
+                            </div>
+                            {p.teacherName && (
+                              <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
+                            )}
+                            {p.room && (
+                              <div className="text-xs text-muted-foreground/60 mt-0.5">{p.room}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/30 text-xs">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main page component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -939,6 +1041,10 @@ export default function StaffMyClassDetail() {
   const [loadingAssignment, setLoadingAssignment] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [activeTab, setActiveTab] = useState("students");
+
+  // Timetable for this class/section
+  const [timetablePeriods, setTimetablePeriods] = useState<TimetablePeriod[]>([]);
+  const [timetableLoading, setTimetableLoading] = useState(false);
 
   // Load teacher's assignments and find this one
   useEffect(() => {
@@ -983,7 +1089,21 @@ export default function StaffMyClassDetail() {
       .then((res) => setCategories(res.categories ?? []))
       .catch(() => {/* silently skip — categories may not exist */});
 
-    return () => { void studentsPromise; void subjectsPromise; void categoriesPromise; };
+    // Load timetable for this section
+    setTimetableLoading(true);
+    const timetablePromise = timetableApi
+      .list(assignment.classId, 1, 5, assignment.sectionId ?? undefined)
+      .then(async (res) => {
+        const active = res.timetables.find(t => t.status === "active") ?? res.timetables[0];
+        if (active) {
+          const detail = await timetableApi.getDetail(active.id);
+          setTimetablePeriods(detail.periods ?? []);
+        }
+      })
+      .catch(() => {/* silently skip */})
+      .finally(() => setTimetableLoading(false));
+
+    return () => { void studentsPromise; void subjectsPromise; void categoriesPromise; void timetablePromise; };
   }, [assignment]);
 
   // ── Loading state ──
@@ -1019,6 +1139,7 @@ export default function StaffMyClassDetail() {
 
   const tabs = [
     { id: "students",    label: "Students",    icon: <Users className="h-4 w-4" /> },
+    { id: "timetable",   label: "Timetable",   icon: <Clock className="h-4 w-4" /> },
     { id: "assignments", label: "Assignments", icon: <FileText className="h-4 w-4" /> },
     { id: "marks",       label: "Marks",       icon: <GraduationCap className="h-4 w-4" /> },
   ];
@@ -1075,6 +1196,15 @@ export default function StaffMyClassDetail() {
 
         <TabsContent value="students">
           <StudentsTab students={students} loading={loadingStudents} />
+        </TabsContent>
+
+        <TabsContent value="timetable">
+          <StaffTimetableTab
+            periods={timetablePeriods}
+            loading={timetableLoading}
+            className={assignment.className}
+            sectionName={assignment.sectionName}
+          />
         </TabsContent>
 
         <TabsContent value="assignments">

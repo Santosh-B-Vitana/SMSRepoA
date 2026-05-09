@@ -2,10 +2,13 @@ using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -20,17 +23,20 @@ namespace SmsApi.Controllers
         private readonly IAcademicYearContextService _yearContextService;
         private readonly ITenantContext _tenant;
         private readonly ILogger<AttendanceController> _logger;
+        private readonly AppDbContext _context;
 
         public AttendanceController(
             IAttendanceService service,
             IAcademicYearContextService yearContextService,
             ILogger<AttendanceController> logger,
-            ITenantContext tenant)
+            ITenantContext tenant,
+            AppDbContext context)
         {
             _service = service;
             _yearContextService = yearContextService;
             _logger = logger;
             _tenant = tenant;
+            _context = context;
         }
 
         /// <summary>
@@ -65,6 +71,100 @@ namespace SmsApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Checks whether the logged-in staff member is the active class teacher
+        /// for the section to which the given student belongs.
+        /// </summary>
+        private async Task<bool> IsClassTeacherForStudentAsync(Guid schoolId, Guid studentId)
+        {
+            var userEmail = _tenant.UserEmail;
+            if (string.IsNullOrWhiteSpace(userEmail)) return false;
+
+            var staffId = await _context.StaffMembers
+                .Where(s => s.SchoolId == schoolId && s.Email == userEmail && !s.IsDeleted)
+                .Select(s => (Guid?)s.Id)
+                .FirstOrDefaultAsync();
+            if (staffId == null) return false;
+
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId)
+                .Select(s => new { s.Class, s.Section })
+                .FirstOrDefaultAsync();
+            if (student == null) return false;
+
+            var sectionId = await ResolveSectionIdAsync(schoolId, student.Class, student.Section);
+
+            if (sectionId == null)
+                return false;
+
+            return await _context.TeacherAssignments
+                .AnyAsync(ta => ta.SchoolId == schoolId
+                    && ta.StaffId == staffId.Value
+                    && ta.SectionId == sectionId.Value
+                    && ta.IsClassTeacher
+                    && ta.Status == "active"
+                    && !ta.IsDeleted);
+        }
+
+        /// <summary>
+        /// Returns true only if the logged-in staff member is the class teacher
+        /// for ALL sections to which the given students belong.
+        /// </summary>
+        private async Task<bool> IsClassTeacherForAllStudentsAsync(Guid schoolId, List<Guid> studentIds)
+        {
+            if (studentIds.Count == 0) return true;
+
+            var userEmail = _tenant.UserEmail;
+            if (string.IsNullOrWhiteSpace(userEmail)) return false;
+
+            var staffId = await _context.StaffMembers
+                .Where(s => s.SchoolId == schoolId && s.Email == userEmail && !s.IsDeleted)
+                .Select(s => (Guid?)s.Id)
+                .FirstOrDefaultAsync();
+            if (staffId == null) return false;
+
+            var pairs = await _context.Students
+                .Where(s => s.SchoolId == schoolId && studentIds.Contains(s.Id))
+                .Select(s => new { s.Class, s.Section })
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var pair in pairs)
+            {
+                var sectionId = await ResolveSectionIdAsync(schoolId, pair.Class, pair.Section);
+                if (sectionId == null) return false;
+
+                var isClassTeacher = await _context.TeacherAssignments
+                    .AnyAsync(ta => ta.SchoolId == schoolId
+                        && ta.StaffId == staffId.Value
+                        && ta.SectionId == sectionId.Value
+                        && ta.IsClassTeacher
+                        && ta.Status == "active"
+                        && !ta.IsDeleted);
+
+                if (!isClassTeacher) return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves the Section.Id from class name + section name.
+        /// </summary>
+        private async Task<Guid?> ResolveSectionIdAsync(Guid schoolId, string className, string sectionName)
+        {
+            var classId = await _context.Classes
+                .Where(c => c.SchoolId == schoolId && c.Name == className)
+                .Select(c => (Guid?)c.Id)
+                .FirstOrDefaultAsync();
+            if (classId == null) return null;
+
+            return await _context.Sections
+                .Where(s => s.SchoolId == schoolId && s.ClassId == classId.Value && s.Name == sectionName)
+                .Select(s => (Guid?)s.Id)
+                .FirstOrDefaultAsync();
+        }
+
         // ========== NEW ATTENDANCE RECORDS API ==========
 
         /// <summary>
@@ -80,7 +180,25 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                
+
+                // Parent role: verify they only access their linked child's attendance
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+                if (userRole == "Parent")
+                {
+                    if (!filters.StudentId.HasValue)
+                        return BadRequest(new { message = "studentId is required for Parent role." });
+
+                    var parentEmail = _tenant.UserEmail;
+                    var isLinked = await _context.StudentGuardians
+                        .AnyAsync(g => g.StudentId == filters.StudentId.Value
+                                   && g.SchoolId == schoolId
+                                   && !g.IsDeleted
+                                   && g.Email != null
+                                   && g.Email.ToLower() == parentEmail.ToLower());
+                    if (!isLinked)
+                        return StatusCode(403, new { message = "Parents can only access their own child's attendance records." });
+                }
+
                 // Resolve effective academic year from header
                 var headerYear = (string?)HttpContext.Items["AcademicYearHeaderValue"] ?? "";
                 var effectiveYear = await _yearContextService.GetEffectiveYearAsync(
@@ -149,8 +267,17 @@ namespace SmsApi.Controllers
             {
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
+
+                // Non-admin/principal roles must be the class teacher for the student's section
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+                if (userRole != "Admin" && userRole != "Principal")
+                {
+                    var authorized = await IsClassTeacherForStudentAsync(schoolId, dto.StudentId);
+                    if (!authorized)
+                        return StatusCode(403, new { message = "Only the class teacher of this section may mark attendance." });
+                }
+
                 var result = await _service.MarkAttendanceAsync(schoolId, dto, userId);
-                
                 return CreatedAtAction(nameof(GetAttendanceById), new { id = result.Id }, result);
             }
             catch (InvalidOperationException ex)
@@ -177,8 +304,18 @@ namespace SmsApi.Controllers
             {
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
+
+                // Non-admin/principal roles must be the class teacher for every student's section
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+                if (userRole != "Admin" && userRole != "Principal")
+                {
+                    var studentIds = dto.Attendances.Select(a => a.StudentId).ToList();
+                    var authorized = await IsClassTeacherForAllStudentsAsync(schoolId, studentIds);
+                    if (!authorized)
+                        return StatusCode(403, new { message = "Only the class teacher of this section may mark attendance." });
+                }
+
                 var result = await _service.BulkMarkAttendanceAsync(schoolId, dto, userId);
-                
                 return CreatedAtAction(nameof(GetAttendanceRecords), null, result);
             }
             catch (ArgumentException ex)

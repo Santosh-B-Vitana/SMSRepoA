@@ -2,7 +2,7 @@
 import {
   User, Calendar, Award, BookOpen, Loader2, AlertCircle,
   CheckCircle, XCircle, Timer, GraduationCap, TrendingUp,
-  ChevronDown, ChevronUp, CalendarDays
+  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/services/api/studentApi";
 import { attendanceApi } from "@/services/api/attendanceApi";
 import { getResults, type ResultBasic } from "@/services/api/examinationApi";
+import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
 import { ParentLeaveTab } from "@/components/leave-management/ParentLeaveTab";
 import { toast } from "sonner";
 
@@ -57,6 +58,10 @@ export function ChildProfileManager() {
   const [examGroups, setExamGroups] = useState<ExamGroup[]>([]);
   const [academicLoading, setAcademicLoading] = useState(false);
   const [expandedExam, setExpandedExam] = useState<string | null>(null);
+
+  // Grades state
+  const [gradeRecords, setGradeRecords] = useState<StudentGradeResponse[]>([]);
+  const [gradesLoading, setGradesLoading] = useState(false);
 
   useEffect(() => {
     studentApi.getMyChildren()
@@ -151,6 +156,20 @@ export function ChildProfileManager() {
       setExamGroups([]);
     } finally {
       setAcademicLoading(false);
+    }
+  };
+
+  const loadGrades = async () => {
+    if (!selectedChildId) return;
+    setGradesLoading(true);
+    try {
+      const res = await gradesApi.getMyChildGrades(selectedChildId, undefined, 1, 100);
+      setGradeRecords(res.studentGrades ?? []);
+    } catch {
+      toast.error("Failed to load grades");
+      setGradeRecords([]);
+    } finally {
+      setGradesLoading(false);
     }
   };
 
@@ -268,8 +287,9 @@ export function ChildProfileManager() {
         <Tabs defaultValue="attendance" className="space-y-4" onValueChange={(val) => {
           if (val === "attendance" && attendanceRecords.length === 0) loadAttendance();
           if (val === "academics" && examResults.length === 0) loadAcademics();
+          if (val === "grades" && gradeRecords.length === 0) loadGrades();
         }}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="attendance" onClick={() => { if (attendanceRecords.length === 0) loadAttendance(); }}>
               <Calendar className="h-4 w-4 mr-1.5" />
               Attendance
@@ -277,6 +297,10 @@ export function ChildProfileManager() {
             <TabsTrigger value="academics" onClick={() => { if (examResults.length === 0) loadAcademics(); }}>
               <Award className="h-4 w-4 mr-1.5" />
               Academic Performance
+            </TabsTrigger>
+            <TabsTrigger value="grades" onClick={() => { if (gradeRecords.length === 0) loadGrades(); }}>
+              <BarChart2 className="h-4 w-4 mr-1.5" />
+              Grades
             </TabsTrigger>
             <TabsTrigger value="leave">
               <CalendarDays className="h-4 w-4 mr-1.5" />
@@ -583,7 +607,119 @@ export function ChildProfileManager() {
                   </CardContent>
                 </Card>
               )}
+
+              {summary?.transport && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Bus className="h-5 w-5 text-blue-500" />
+                      Transport Details
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <InfoRow label="Route" value={`${summary.transport.routeNumber} — ${summary.transport.routeName}`} />
+                      {summary.transport.pickupPoint && <InfoRow label="Pickup Point" value={summary.transport.pickupPoint} />}
+                      {summary.transport.dropPoint && <InfoRow label="Drop Point" value={summary.transport.dropPoint} />}
+                      {summary.transport.vehicleNumber && <InfoRow label="Vehicle No." value={summary.transport.vehicleNumber} />}
+                      {summary.transport.driverName && <InfoRow label="Driver" value={summary.transport.driverName} />}
+                      {summary.transport.driverPhone && <InfoRow label="Driver Phone" value={summary.transport.driverPhone} />}
+                      <InfoRow label="Monthly Fee" value={`\u20B9${summary.transport.monthlyFee.toLocaleString("en-IN")}`} />
+                      <InfoRow label="Status" value={summary.transport.status} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {summary?.hostel && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Home className="h-5 w-5 text-purple-500" />
+                      Hostel Details
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <InfoRow label="Room Number" value={summary.hostel.roomNumber} />
+                      {summary.hostel.roomType && <InfoRow label="Room Type" value={summary.hostel.roomType} />}
+                      {summary.hostel.floor && <InfoRow label="Floor" value={summary.hostel.floor} />}
+                      <InfoRow label="Check-In Date" value={new Date(summary.hostel.checkInDate).toLocaleDateString("en-IN")} />
+                      <InfoRow label="Monthly Fee" value={`\u20B9${summary.hostel.monthlyFee.toLocaleString("en-IN")}`} />
+                      <InfoRow label="Status" value={summary.hostel.status} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
+          </TabsContent>
+
+          {/* ── Grades Tab ── */}
+          <TabsContent value="grades">
+            {gradesLoading ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+                  <p className="text-muted-foreground">Loading grades...</p>
+                </CardContent>
+              </Card>
+            ) : gradeRecords.length === 0 ? (
+              <Card>
+                <CardContent className="p-10 text-center">
+                  <BarChart2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="font-medium text-muted-foreground">No grades recorded yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Grades will appear here once teachers enter marks for your child.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BarChart2 className="h-4 w-4" />
+                    Grades ({gradeRecords.length} entries)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Subject / Grade Item</TableHead>
+                        <TableHead className="text-center">Marks</TableHead>
+                        <TableHead className="text-center">Max</TableHead>
+                        <TableHead className="text-center">Grade</TableHead>
+                        <TableHead>Remarks</TableHead>
+                        <TableHead>Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {gradeRecords.map(g => {
+                        const pct = g.maxMarks && g.maxMarks > 0 ? Math.round((g.marksObtained / g.maxMarks) * 100) : null;
+                        return (
+                          <TableRow key={g.id}>
+                            <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
+                            <TableCell className="text-center font-bold">{g.marksObtained}</TableCell>
+                            <TableCell className="text-center text-muted-foreground">{g.maxMarks ?? "—"}</TableCell>
+                            <TableCell className="text-center">
+                              {g.grade ? (
+                                <Badge variant={g.grade >= "C" ? "default" : "destructive"}>{g.grade}</Badge>
+                              ) : pct !== null ? (
+                                <span className={pct >= 50 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>{pct}%</span>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">{g.remarks ?? "—"}</TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {new Date(g.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* ── Leave Tab ── */}

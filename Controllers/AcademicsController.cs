@@ -318,6 +318,7 @@ namespace SmsApi.Controllers
         [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
         public async Task<ActionResult<TeacherAssignmentListResponse>> GetTeacherAssignments(
             [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? sectionId = null,
             [FromQuery] Guid? staffId = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -325,7 +326,7 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var result = await _academicsService.GetTeacherAssignmentsAsync(schoolId, classId, staffId, page, pageSize);
+                var result = await _academicsService.GetTeacherAssignmentsAsync(schoolId, classId, sectionId, staffId, page, pageSize);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }

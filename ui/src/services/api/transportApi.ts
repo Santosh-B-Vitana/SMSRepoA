@@ -66,6 +66,14 @@ export interface AssignStudentDto {
   status: string;
 }
 
+export interface UpdateTransportStudentDto {
+  routeId: string;
+  pickupPoint?: string;
+  dropPoint?: string;
+  monthlyFee?: number;
+  status: string;
+}
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 const getRoutes = async (page = 1, pageSize = 50): Promise<TransportRouteListResponse> => {
@@ -107,6 +115,11 @@ const assignStudentToRoute = async (data: AssignStudentDto): Promise<TransportSt
   return r.data;
 };
 
+const updateTransportStudent = async (id: string, data: UpdateTransportStudentDto): Promise<TransportStudent> => {
+  const r = await apiClient.put<TransportStudent>(`${BASE}/students/${id}`, data);
+  return r.data;
+};
+
 const removeStudentFromRoute = async (id: string): Promise<void> => {
   await apiClient.delete(`${BASE}/students/${id}`);
 };
@@ -120,5 +133,6 @@ export const transportApi = {
   getStudentsByRoute,
   getAllTransportStudents,
   assignStudentToRoute,
+  updateTransportStudent,
   removeStudentFromRoute,
 };

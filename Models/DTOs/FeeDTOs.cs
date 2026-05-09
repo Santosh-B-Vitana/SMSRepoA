@@ -183,6 +183,15 @@ namespace SmsApi.Models.DTOs
         public List<PaymentTransactionDto> Payments { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+
+        // Transport & Hostel fee breakdown (live from assignments)
+        public decimal TransportFee { get; set; } = 0;        // pro-rata amount charged
+        public decimal TransportMonthlyFee { get; set; } = 0; // configured monthly rate
+        public string? TransportRoute { get; set; }
+        public string? TransportPickup { get; set; }
+        public decimal HostelFee { get; set; } = 0;           // pro-rata amount charged
+        public decimal HostelMonthlyFee { get; set; } = 0;    // configured monthly rate
+        public string? HostelRoom { get; set; }
     }
 
     // Payment Transaction DTOs

@@ -287,9 +287,13 @@ namespace SmsApi.Models.DTOs
         public Guid Id { get; set; }
         public Guid SchoolId { get; set; }
         public Guid StaffId { get; set; }
+        public string StaffName { get; set; } = string.Empty;
         public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
         public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
         public Guid? SubjectId { get; set; }
+        public string? SubjectName { get; set; }
         public bool IsClassTeacher { get; set; }
         public string AcademicYear { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
@@ -565,6 +569,7 @@ namespace SmsApi.Models.DTOs
         public bool IsClassTeacher { get; set; }
         public string AcademicYear { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public int StudentCount { get; set; }
     }
 
     // Extended Class Settings with new fields

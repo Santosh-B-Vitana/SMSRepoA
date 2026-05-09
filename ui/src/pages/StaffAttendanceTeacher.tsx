@@ -13,7 +13,6 @@ import { toast } from "sonner";
 import { academicApi, type MyClassAssignment } from "@/services/api/academicApi";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
 import { attendanceApi } from "@/services/api/attendanceApi";
-import { apiPost } from "@/lib/apiClient";
 
 interface AttendanceEntry {
   studentId: string;
@@ -41,8 +40,10 @@ export default function StaffAttendanceTeacher() {
   useEffect(() => {
     academicApi.getMyClassAssignments()
       .then(data => {
-        setAssignments(data);
-        if (data.length > 0) setSelectedAssignment(data[0]);
+        // Only class teachers can mark attendance — filter to class teacher assignments
+        const classTeacherAssignments = data.filter(a => a.isClassTeacher);
+        setAssignments(classTeacherAssignments);
+        if (classTeacherAssignments.length > 0) setSelectedAssignment(classTeacherAssignments[0]);
       })
       .catch(() => toast.error("Failed to load class assignments"))
       .finally(() => setLoading(false));
@@ -140,14 +141,13 @@ export default function StaffAttendanceTeacher() {
     if (!selectedAssignment) return;
     setSaving(true);
     try {
-      await apiPost('/attendance/records/bulk', {
+      await attendanceApi.markBulkAttendance({
         date: selectedDate,
         attendances: attendance.map(a => ({
           studentId: a.studentId,
-          date: selectedDate,
           status: a.status,
           remarks: a.remarks ?? null,
-          isManualOverride: true
+          isManualOverride: true,
         }))
       });
       toast.success("Attendance saved successfully");

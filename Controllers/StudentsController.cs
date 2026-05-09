@@ -583,6 +583,16 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Parent role: verify the student is their linked child via StudentGuardians
+                var role = _tenant.Role ?? string.Empty;
+                if (role.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parentEmail = _tenant.UserEmail;
+                    var guardians = await _studentService.GetGuardiansAsync(id, schoolId);
+                    if (!guardians.Any(g => string.Equals(g.Email, parentEmail, StringComparison.OrdinalIgnoreCase)))
+                        return StatusCode(403, new { message = "Parents can only access their own child's profile." });
+                }
                 var summary = await _studentService.GetStudentProfileSummaryAsync(id, schoolId);
                 if (summary == null)
                     return NotFound(new { message = "Student not found." });
@@ -590,7 +600,7 @@ namespace SmsApi.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Forbid(ex.Message);
+                return StatusCode(403, new { message = ex.Message });
             }
             catch (Exception ex)
             {

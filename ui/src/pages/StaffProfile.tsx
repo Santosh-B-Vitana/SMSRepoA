@@ -25,7 +25,7 @@ import {
   RotateCcw
 } from "lucide-react";
 import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
-import { academicApi, MyClassAssignment } from "@/services/api/academicApi";
+import { academicApi, MyClassAssignment, TeacherAssignmentResponse } from "@/services/api/academicApi";
 import { attendanceApi, StaffAttendanceResponse } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
 import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
@@ -82,7 +82,7 @@ export default function StaffProfile() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
-  const [assignedClasses, setAssignedClasses] = useState<MyClassAssignment[]>([]);
+  const [assignedClasses, setAssignedClasses] = useState<TeacherAssignmentResponse[]>([]);
   const [classesLoading, setClassesLoading] = useState(false);
   const { toast } = useToast();
   const { t } = useLanguage();
@@ -146,7 +146,31 @@ export default function StaffProfile() {
     setClassesLoading(true);
     try {
       const result = await academicApi.getTeacherAssignmentsForStaff(id);
-      setAssignedClasses(result.assignments ?? []);
+      const all = result.assignments ?? [];
+
+      // Valid academic year pattern: "2024-2025" or "2024-25" — filters out integration-test garbage like "AY-20260419190735"
+      const validYear = /^\d{4}-\d{2,4}$/;
+      // Filter to only real records: active status, valid year, and real class name (not INT- test runs)
+      const real = all.filter(a =>
+        a.status === 'active' &&
+        validYear.test(a.academicYear ?? '') &&
+        !!a.className &&
+        !a.className.startsWith('INT-')
+      );
+
+      // Deduplicate: keep only the most recent record per (classId, subjectId) pair.
+      const sorted = [...real].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      const seen = new Set<string>();
+      const deduped = sorted.filter(a => {
+        const key = `${a.classId}||${a.subjectId ?? 'none'}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      setAssignedClasses(deduped);
     } catch {
       // Non-fatal: classes tab will show empty state
     } finally {
@@ -770,10 +794,10 @@ export default function StaffProfile() {
                     </TableHeader>
                     <TableBody>
                       {assignedClasses.map((a) => (
-                        <TableRow key={a.assignmentId}>
-                          <TableCell className="font-medium">{a.className}</TableCell>
-                          <TableCell>{a.sectionName ?? '—'}</TableCell>
-                          <TableCell>{a.subjectName ?? '—'}</TableCell>
+                        <TableRow key={a.id}>
+                          <TableCell className="font-medium">{a.className || '—'}</TableCell>
+                          <TableCell>{a.sectionName || '—'}</TableCell>
+                          <TableCell>{a.subjectName || '—'}</TableCell>
                           <TableCell>
                             <Badge variant={a.isClassTeacher ? 'default' : 'secondary'}>
                               {a.isClassTeacher ? 'Class Teacher' : 'Subject Teacher'}

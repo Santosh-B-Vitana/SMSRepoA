@@ -119,6 +119,22 @@ namespace SmsApi.Models.DTOs
         public int PageSize { get; set; }
     }
 
+    public class UpdateHostelStudentRequest
+    {
+        public Guid RoomId { get; set; }
+
+        [Required]
+        public DateTime CheckInDate { get; set; }
+
+        public DateTime? CheckOutDate { get; set; }
+
+        [Required]
+        public decimal MonthlyFee { get; set; }
+
+        [MaxLength(20)]
+        public string Status { get; set; } = "active";
+    }
+
     // Hostel Student with full details including student and room info
     public class HostelStudentDetailResponse
     {

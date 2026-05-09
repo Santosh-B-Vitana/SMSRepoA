@@ -52,9 +52,11 @@ public class StaffPortalController : ControllerBase
         UserLogin? login = null;
         if (!string.IsNullOrWhiteSpace(staff.Email))
         {
+            // Find any login for this email in this school — regardless of role.
+            // AutoProvisionUserLoginAsync creates logins with role "teacher", "principal", etc.
+            // Filtering by role="staff" would miss those and trigger a duplicate-key error on provision.
             login = await _context.UserLogins
                 .FirstOrDefaultAsync(u => u.SchoolId == schoolId
-                                          && u.Role.ToLower() == "staff"
                                           && u.Email.ToLower() == staff.Email.ToLower()
                                           && !u.IsDeleted);
         }
@@ -101,11 +103,12 @@ public class StaffPortalController : ControllerBase
 
         var email = staff.Email.Trim().ToLower();
 
-        // Check for an existing staff portal account
+        // Find any existing login for this email in this school (role-agnostic).
+        // AutoProvisionUserLoginAsync assigns roles like "teacher" or "principal", not "staff".
+        // Without this, we'd try to INSERT a duplicate login and hit a unique-key error.
         var existing = await _context.UserLogins
             .FirstOrDefaultAsync(u => u.SchoolId == schoolId
                                        && u.Email.ToLower() == email
-                                       && u.Role.ToLower() == "staff"
                                        && !u.IsDeleted);
 
         var plainPassword = GenerateReadablePassword();
@@ -193,10 +196,10 @@ public class StaffPortalController : ControllerBase
 
         var email = staff.Email.Trim().ToLower();
 
+        // Find any existing login for this email (role-agnostic) — same reasoning as provision.
         var login = await _context.UserLogins
             .FirstOrDefaultAsync(u => u.SchoolId == schoolId
                                        && u.Email.ToLower() == email
-                                       && u.Role.ToLower() == "staff"
                                        && !u.IsDeleted);
 
         if (login == null)

@@ -26,9 +26,13 @@ import {
   ArrowRightLeft,
   UserPlus,
   Loader2,
+  GraduationCap,
+  BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { academicApi, type SectionResponse } from "@/services/api/academicApi";
+import { academicApi, type SectionResponse, type TeacherAssignmentResponse, type ClassSubjectResponse } from "@/services/api/academicApi";
+import { timetableApi, type TimetableRecord, type TimetablePeriod } from "@/services/api/timetableApi";
 import { studentApi } from "@/services/api/studentApi";
 import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 import { attendanceApi } from "@/services/api/attendanceApi";
@@ -67,34 +71,49 @@ export default function SectionDetail() {
     classTeacherId: ""
   });
 
-  // Timetable for the section
-  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const periods = [1, 2, 3, 4, 5, 6, 7, 8];
-  const timeSlots = [
-    { period: 1, start: "09:00", end: "09:40" },
-    { period: 2, start: "09:40", end: "10:20" },
-    { period: 3, start: "10:40", end: "11:20" },
-    { period: 4, start: "11:20", end: "12:00" },
-    { period: 5, start: "01:00", end: "01:40" },
-    { period: 6, start: "01:40", end: "02:20" },
-    { period: 7, start: "02:20", end: "03:00" },
-    { period: 8, start: "03:00", end: "03:40" }
-  ];
+  // Timetable constants
+  const TIMETABLE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const TIMETABLE_PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
+  const DEFAULT_PERIOD_TIMES: Record<number, { start: string; end: string }> = {
+    1: { start: "09:00", end: "09:45" }, 2: { start: "09:45", end: "10:30" },
+    3: { start: "10:45", end: "11:30" }, 4: { start: "11:30", end: "12:15" },
+    5: { start: "13:00", end: "13:45" }, 6: { start: "13:45", end: "14:30" },
+    7: { start: "14:30", end: "15:15" }, 8: { start: "15:15", end: "16:00" },
+  };
 
-  const [timetableEntries, setTimetableEntries] = useState([
-    { day: "Monday", period: 1, subject: "Mathematics", teacher: "Ms. Sarah" },
-    { day: "Monday", period: 2, subject: "English", teacher: "Mr. John" },
-    { day: "Monday", period: 3, subject: "Science", teacher: "Ms. Lisa" },
-    { day: "Tuesday", period: 1, subject: "Hindi", teacher: "Ms. Priya" },
-    { day: "Tuesday", period: 2, subject: "Mathematics", teacher: "Ms. Sarah" },
-    { day: "Wednesday", period: 1, subject: "EVS", teacher: "Mr. Kumar" },
-    { day: "Thursday", period: 1, subject: "Games", teacher: "Coach Amit" },
-    { day: "Friday", period: 1, subject: "Art", teacher: "Ms. Ritu" },
-    { day: "Saturday", period: 1, subject: "Music", teacher: "Mr. Dev" }
-  ]);
-
+  // Timetable state
+  const [timetableRecord, setTimetableRecord] = useState<TimetableRecord | null>(null);
+  const [timetablePeriods, setTimetablePeriods] = useState<TimetablePeriod[]>([]);
+  const [timetableLoading, setTimetableLoading] = useState(false);
+  const [timetableInitializing, setTimetableInitializing] = useState(false);
   const [timetableEditMode, setTimetableEditMode] = useState(false);
+  const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
+  const [periodSaving, setPeriodSaving] = useState(false);
+  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
+  const [deletingPeriodId, setDeletingPeriodId] = useState<string | null>(null);
+  const [periodForm, setPeriodForm] = useState({
+    day: "Monday", periodNumber: 1,
+    startTime: "09:00", endTime: "09:45",
+    subjectId: "", teacherId: "", teacherName: "", room: "",
+    periodType: "lecture", notes: "",
+  });
+  const [teacherPickerQuery, setTeacherPickerQuery] = useState("");
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
+
+  // ── Staff Assignments ──────────────────────────────────────────────────────
+  const [staffAssignments, setStaffAssignments] = useState<TeacherAssignmentResponse[]>([]);
+  const [staffAssignmentsLoading, setStaffAssignmentsLoading] = useState(false);
+  const [classSubjects, setClassSubjects] = useState<ClassSubjectResponse[]>([]);
+  const [assignStaffOpen, setAssignStaffOpen] = useState(false);
+  const [assignStaffSaving, setAssignStaffSaving] = useState(false);
+  const [staffSearchQuery, setStaffSearchQuery] = useState("");
+  const [staffDropdownOpen, setStaffDropdownOpen] = useState(false);
+  const [assignForm, setAssignForm] = useState<{
+    staffId: string;
+    staffName: string;
+    subjectId: string;
+    isClassTeacher: boolean;
+  }>({ staffId: "", staffName: "", subjectId: "", isClassTeacher: false });
   const [visibleRecords, setVisibleRecords] = useState(5);
   const [attendanceDetailsOpen, setAttendanceDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
@@ -122,6 +141,8 @@ export default function SectionDetail() {
 
   useEffect(() => {
     loadSectionData();
+    loadStaffAssignments();
+    loadTimetable();
   }, [classId, sectionId]);
 
   const loadSectionData = useCallback(async () => {
@@ -210,6 +231,274 @@ export default function SectionDetail() {
     setLoading(false);
   }, [sectionId]);
 
+  const loadStaffAssignments = useCallback(async () => {
+    if (!sectionId) return;
+    setStaffAssignmentsLoading(true);
+    try {
+      const [assignmentsResult, classSubjectsResult] = await Promise.all([
+        academicApi.getTeacherAssignments({ sectionId, pageSize: 100 }),
+        academicApi.getClassSubjects(classId!),
+      ]);
+      setStaffAssignments(assignmentsResult.assignments ?? []);
+      setClassSubjects(classSubjectsResult ?? []);
+    } catch {
+      toast.error("Failed to load staff assignments");
+    } finally {
+      setStaffAssignmentsLoading(false);
+    }
+  }, [sectionId]);
+
+  const handleAssignStaff = async () => {
+    if (!assignForm.staffId || !classId || !sectionId) {
+      toast.error("Please select a staff member");
+      return;
+    }
+    setAssignStaffSaving(true);
+    try {
+      // Determine current academic year
+      const years = await academicApi.listAcademicYears(1, 1);
+      const academicYear =
+        years.academicYears?.find(y => y.isCurrent)?.name ??
+        years.academicYears?.[0]?.name ??
+        `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+
+      const saved = await academicApi.assignTeacher({
+        staffId: assignForm.staffId,
+        classId,
+        sectionId,
+        subjectId: assignForm.subjectId || undefined,
+        isClassTeacher: assignForm.isClassTeacher,
+        academicYear,
+      });
+
+      // Optimistically add the new assignment immediately (with the UI-supplied names)
+      // so it shows up right away even before the background re-fetch completes.
+      const optimistic: typeof saved = {
+        ...saved,
+        staffName: assignForm.staffName,
+        subjectName: classSubjects.find(cs => cs.subjectId === assignForm.subjectId)?.subjectName ?? saved.subjectName,
+        academicYear,
+      };
+      setStaffAssignments(prev => {
+        // Avoid duplicates (server may already have returned the record in a race)
+        if (prev.some(a => a.id === optimistic.id)) return prev;
+        return [...prev, optimistic];
+      });
+
+      toast.success(`${assignForm.staffName} assigned successfully`);
+      setAssignStaffOpen(false);
+      setAssignForm({ staffId: "", staffName: "", subjectId: "", isClassTeacher: false });
+      setStaffSearchQuery("");
+      // Background re-fetch to get accurate server data (nav-prop names etc.)
+      loadStaffAssignments();
+      // Reload section data to refresh class teacher name in header
+      loadSectionData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to assign staff");
+    } finally {
+      setAssignStaffSaving(false);
+    }
+  };
+
+  const handleRemoveStaffAssignment = async (assignmentId: string, staffName: string) => {
+    try {
+      await academicApi.removeTeacherAssignment(assignmentId);
+      toast.success(`${staffName} removed from section`);
+      setStaffAssignments(prev => prev.filter(a => a.id !== assignmentId));
+      // Reload section to refresh class teacher display
+      await loadSectionData();
+    } catch {
+      toast.error("Failed to remove staff assignment");
+    }
+  };
+
+  const filteredStaffForAssign = useMemo(() => {
+    const q = staffSearchQuery.toLowerCase();
+    return (teachingStaff ?? []).filter(
+      s => !q || (s.name ?? `${s.firstName} ${s.lastName}`).toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [teachingStaff, staffSearchQuery]);
+
+  // Teacher picker for the period dialog.
+  // Primary source: teachers configured for subjects in this class (ClassSubjects).
+  // Secondary: any additional staff directly assigned to this section (TeacherAssignments).
+  // We do NOT fall back to all teaching staff — only show class-configured teachers.
+  const periodTeacherOptions = useMemo(() => {
+    // Deduplicated list from class subjects (each teacher appears once, labelled with their subject)
+    const fromClassSubjects = classSubjects
+      .filter(cs => cs.teacherId)
+      .filter((cs, i, arr) => arr.findIndex(x => x.teacherId === cs.teacherId) === i)
+      .map(cs => ({
+        id: cs.teacherId!,
+        name: cs.teacherName ?? "",
+        designation: cs.subjectName, // shown as sub-text so the user knows which subject
+        isAssigned: true,
+        subjectId: cs.subjectId,
+      }));
+
+    const classSubjectTeacherIds = new Set(fromClassSubjects.map(t => t.id));
+
+    // Section-level assignments not already covered by classSubjects
+    const fromSectionAssignments = staffAssignments
+      .filter((a, i, arr) => a.staffId && arr.findIndex(x => x.staffId === a.staffId) === i)
+      .filter(a => !classSubjectTeacherIds.has(a.staffId))
+      .map(a => ({
+        id: a.staffId,
+        name: a.staffName,
+        designation: a.subjectName ?? "",
+        isAssigned: true,
+        subjectId: a.subjectId,
+      }));
+
+    return [...fromClassSubjects, ...fromSectionAssignments];
+  }, [classSubjects, staffAssignments]);
+
+  // ── Timetable ──────────────────────────────────────────────────────────────
+  const loadTimetable = useCallback(async () => {
+    if (!classId || !sectionId) return;
+    setTimetableLoading(true);
+    try {
+      const res = await timetableApi.list(classId, 1, 5, sectionId);
+      const active = res.timetables.find(t => t.status === "active") ?? res.timetables[0] ?? null;
+      setTimetableRecord(active);
+      if (active) {
+        const detail = await timetableApi.getDetail(active.id);
+        setTimetablePeriods(detail.periods ?? []);
+      } else {
+        setTimetablePeriods([]);
+      }
+    } catch {
+      // silently degrade — timetable is non-critical
+    } finally {
+      setTimetableLoading(false);
+    }
+  }, [classId, sectionId]);
+
+  const handleInitTimetable = async () => {
+    if (!classId || !sectionId) return;
+    setTimetableInitializing(true);
+    try {
+      const years = await academicApi.listAcademicYears(1, 5);
+      const academicYear =
+        years.academicYears?.find(y => y.isCurrent)?.name ??
+        years.academicYears?.[0]?.name ??
+        `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+      const record = await timetableApi.create({
+        ClassId: classId,
+        SectionId: sectionId,
+        AcademicYear: academicYear,
+        Status: "active",
+      });
+      setTimetableRecord(record);
+      setTimetablePeriods([]);
+      setTimetableEditMode(true);
+      toast.success("Timetable created — add periods by clicking cells");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to create timetable";
+      // If duplicate, just reload
+      if (msg.toLowerCase().includes("already exists")) {
+        toast.info("Timetable already exists, refreshing...");
+        await loadTimetable();
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setTimetableInitializing(false);
+    }
+  };
+
+  const openAddPeriod = (day: string, periodNumber: number) => {
+    const defaults = DEFAULT_PERIOD_TIMES[periodNumber] ?? { start: "09:00", end: "09:45" };
+    setPeriodForm({
+      day, periodNumber,
+      startTime: defaults.start, endTime: defaults.end,
+      subjectId: "", teacherId: "", teacherName: "", room: "", periodType: "lecture", notes: "",
+    });
+    setTeacherPickerQuery("");
+    setEditingPeriodId(null);
+    setPeriodDialogOpen(true);
+  };
+
+  const openEditPeriod = (period: TimetablePeriod) => {
+    const fmt = (t: string) => t.substring(0, 5); // "HH:MM:SS" → "HH:MM"
+    setPeriodForm({
+      day: period.dayOfWeek, periodNumber: period.periodNumber,
+      startTime: fmt(period.startTime), endTime: fmt(period.endTime),
+      subjectId: period.subjectId ?? "", teacherId: period.teacherId ?? "",
+      teacherName: period.teacherName ?? "",
+      room: period.room ?? "", periodType: period.periodType ?? "lecture",
+      notes: period.notes ?? "",
+    });
+    setTeacherPickerQuery("");
+    setEditingPeriodId(period.id);
+    setPeriodDialogOpen(true);
+  };
+
+  const handleSavePeriod = async () => {
+    if (!timetableRecord) return;
+    if (!periodForm.day || !periodForm.startTime || !periodForm.endTime) {
+      toast.error("Day, start time and end time are required");
+      return;
+    }
+    setPeriodSaving(true);
+    try {
+      const toTimeSpan = (t: string) => t.length === 5 ? `${t}:00` : t;
+      if (editingPeriodId) {
+        const updated = await timetableApi.updatePeriod(editingPeriodId, {
+          StartTime: toTimeSpan(periodForm.startTime),
+          EndTime: toTimeSpan(periodForm.endTime),
+          SubjectId: periodForm.subjectId || undefined,
+          TeacherId: periodForm.teacherId || undefined,
+          Room: periodForm.room || undefined,
+          PeriodType: periodForm.periodType || undefined,
+          Notes: periodForm.notes || undefined,
+        });
+        setTimetablePeriods(prev =>
+          prev.map(p => p.id === editingPeriodId ? updated : p)
+        );
+        toast.success("Period updated");
+      } else {
+        const created = await timetableApi.createPeriod({
+          TimetableId: timetableRecord.id,
+          DayOfWeek: periodForm.day,
+          PeriodNumber: periodForm.periodNumber,
+          StartTime: toTimeSpan(periodForm.startTime),
+          EndTime: toTimeSpan(periodForm.endTime),
+          SubjectId: periodForm.subjectId || undefined,
+          TeacherId: periodForm.teacherId || undefined,
+          Room: periodForm.room || undefined,
+          PeriodType: periodForm.periodType || undefined,
+          Notes: periodForm.notes || undefined,
+        });
+        setTimetablePeriods(prev => [...prev, created]);
+        toast.success("Period added");
+      }
+      setPeriodDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to save period");
+    } finally {
+      setPeriodSaving(false);
+    }
+  };
+
+  const handleDeletePeriod = async (periodId: string) => {
+    setDeletingPeriodId(periodId);
+    try {
+      await timetableApi.deletePeriod(periodId);
+      setTimetablePeriods(prev => prev.filter(p => p.id !== periodId));
+      toast.success("Period removed");
+    } catch {
+      toast.error("Failed to remove period");
+    } finally {
+      setDeletingPeriodId(null);
+    }
+  };
+
+  const getPeriodForCell = (day: string, periodNumber: number) =>
+    timetablePeriods.find(
+      p => p.dayOfWeek.toLowerCase() === day.toLowerCase() && p.periodNumber === periodNumber
+    ) ?? null;
+
   const handleSaveSection = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -225,10 +514,6 @@ export default function SectionDetail() {
       console.error("Error updating section:", error);
       toast.error("Failed to update section");
     }
-  };
-
-  const getTimetableEntry = (day: string, period: number) => {
-    return timetableEntries.find(e => e.day === day && e.period === period);
   };
 
   const handleLoadMore = () => {
@@ -495,10 +780,14 @@ export default function SectionDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="students">
             <Users className="h-4 w-4 mr-2" />
             Students
+          </TabsTrigger>
+          <TabsTrigger value="staff">
+            <GraduationCap className="h-4 w-4 mr-2" />
+            Staff
           </TabsTrigger>
           <TabsTrigger value="attendance">
             <Calendar className="h-4 w-4 mr-2" />
@@ -637,6 +926,254 @@ export default function SectionDetail() {
           </Card>
         </TabsContent>
 
+        {/* Staff Assignment Tab */}
+        <TabsContent value="staff" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+              <CardTitle className="flex items-center gap-2">
+                <GraduationCap className="h-5 w-5" />
+                Staff Assignments
+                <Badge variant="secondary" className="ml-1">{staffAssignments.length}</Badge>
+              </CardTitle>
+              <Button size="sm" onClick={() => { setAssignForm({ staffId: "", staffName: "", subjectId: "", isClassTeacher: false }); setStaffSearchQuery(""); setAssignStaffOpen(true); }} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Assign Staff
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {staffAssignmentsLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                  <span className="text-muted-foreground">Loading assignments...</span>
+                </div>
+              ) : staffAssignments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <GraduationCap className="h-12 w-12 mx-auto mb-4 opacity-40" />
+                  <p className="font-medium">No staff assigned to this section yet</p>
+                  <p className="text-sm mt-1">Assign teaching staff and designate a class teacher</p>
+                  <Button size="sm" className="mt-4 gap-1.5" onClick={() => setAssignStaffOpen(true)}>
+                    <Plus className="h-4 w-4" />
+                    Assign Staff
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Staff Member</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Academic Year</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {staffAssignments.map((assignment) => (
+                      <TableRow key={assignment.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              <span className="text-xs font-bold text-primary">
+                                {(assignment.staffName || "?")[0].toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="font-medium">{assignment.staffName || "—"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {assignment.subjectName ? (
+                            <div className="flex items-center gap-1.5">
+                              <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>{assignment.subjectName}</span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">General</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {assignment.isClassTeacher ? (
+                            <Badge className="bg-primary/10 text-primary border-primary/20 gap-1" variant="outline">
+                              <ShieldCheck className="h-3 w-3" />
+                              Class Teacher
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Subject Teacher</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{assignment.academicYear}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={assignment.status === "active"
+                              ? "bg-green-500/10 text-green-700 border-green-200"
+                              : "bg-gray-100 text-gray-600"}
+                          >
+                            {assignment.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => handleRemoveStaffAssignment(assignment.id, assignment.staffName)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Remove
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Assign Staff Dialog */}
+          <Dialog open={assignStaffOpen} onOpenChange={setAssignStaffOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <GraduationCap className="h-5 w-5" />
+                  Assign Staff to {section?.className} – {section?.name}
+                </DialogTitle>
+                <DialogDescription>
+                  Assign a staff member to this section. Optionally link to a subject and designate as class teacher.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 pt-2">
+                {/* Subject — drives which teacher is pre-filled */}
+                <div>
+                  <Label>Subject <span className="text-destructive">*</span></Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-1">
+                    Only subjects assigned to this class are listed. Selecting one pre-fills the assigned teacher.
+                  </p>
+                  <Select
+                    value={assignForm.subjectId || "none"}
+                    onValueChange={v => {
+                      if (v === "none") {
+                        setAssignForm(f => ({ ...f, subjectId: "", staffId: "", staffName: "" }));
+                        setStaffSearchQuery("");
+                        return;
+                      }
+                      const cs = classSubjects.find(c => c.subjectId === v);
+                      setAssignForm(f => ({
+                        ...f,
+                        subjectId: v,
+                        // Auto-fill from ClassSubject teacher; keep any manually-set override
+                        staffId: cs?.teacherId ?? "",
+                        staffName: cs?.teacherName ?? "",
+                      }));
+                      setStaffSearchQuery("");
+                    }}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select a subject..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— Class Teacher (no subject) —</SelectItem>
+                      {classSubjects.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No subjects assigned to this class yet
+                        </div>
+                      )}
+                      {classSubjects.map(cs => (
+                        <SelectItem key={cs.subjectId} value={cs.subjectId}>
+                          {cs.subjectName}{cs.teacherName ? ` · ${cs.teacherName}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Staff Member — auto-filled from subject, override allowed */}
+                <div>
+                  <Label>
+                    Staff Member <span className="text-destructive">*</span>
+                    {assignForm.staffId && assignForm.subjectId && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">(pre-filled from class subject)</span>
+                    )}
+                  </Label>
+                  <div className="relative mt-1">
+                    <div className="flex items-center border rounded-md px-3 h-10">
+                      <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+                      <input
+                        className="flex-1 bg-transparent outline-none text-sm"
+                        placeholder="Search to override staff..."
+                        value={assignForm.staffId ? assignForm.staffName : staffSearchQuery}
+                        onFocus={() => { setStaffDropdownOpen(true); if (assignForm.staffId) setStaffSearchQuery(""); }}
+                        onBlur={() => setTimeout(() => setStaffDropdownOpen(false), 150)}
+                        onChange={e => { setStaffSearchQuery(e.target.value); setAssignForm(f => ({ ...f, staffId: "", staffName: "" })); setStaffDropdownOpen(true); }}
+                      />
+                      {assignForm.staffId && (
+                        <button
+                          className="ml-1 text-muted-foreground hover:text-foreground"
+                          onMouseDown={e => { e.preventDefault(); setAssignForm(f => ({ ...f, staffId: "", staffName: "" })); setStaffSearchQuery(""); }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {staffDropdownOpen && !assignForm.staffId && (
+                      <div className="absolute z-50 top-full mt-1 w-full bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                        {filteredStaffForAssign.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">No staff found</div>
+                        ) : filteredStaffForAssign.map(s => (
+                          <button
+                            key={s.id}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex flex-col"
+                            onMouseDown={e => {
+                              e.preventDefault();
+                              setAssignForm(f => ({ ...f, staffId: s.id, staffName: s.name ?? `${s.firstName} ${s.lastName}` }));
+                              setStaffDropdownOpen(false);
+                              setStaffSearchQuery("");
+                            }}
+                          >
+                            <span className="font-medium">{s.name ?? `${s.firstName} ${s.lastName}`}</span>
+                            <span className="text-xs text-muted-foreground">{s.designation} · {s.department}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Class Teacher toggle */}
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div>
+                    <p className="text-sm font-medium">Designate as Class Teacher</p>
+                    <p className="text-xs text-muted-foreground">This staff will be responsible for attendance and section management</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={assignForm.isClassTeacher}
+                    onClick={() => setAssignForm(f => ({ ...f, isClassTeacher: !f.isClassTeacher }))}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${assignForm.isClassTeacher ? "bg-primary" : "bg-input"}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ${assignForm.isClassTeacher ? "translate-x-5" : "translate-x-0"}`} />
+                  </button>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    className="flex-1"
+                    onClick={handleAssignStaff}
+                    disabled={!assignForm.staffId || assignStaffSaving}
+                  >
+                    {assignStaffSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Assign
+                  </Button>
+                  <Button variant="outline" onClick={() => setAssignStaffOpen(false)}>Cancel</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+
         {/* Attendance Tab */}
         <TabsContent value="attendance" className="space-y-4">
           <Card>
@@ -750,70 +1287,359 @@ export default function SectionDetail() {
 
         {/* Timetable Tab */}
         <TabsContent value="timetable" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Section Timetable
-              </CardTitle>
-              <Button
-                size="sm"
-                variant={timetableEditMode ? "default" : "outline"}
-                onClick={() => {
-                  setTimetableEditMode(!timetableEditMode);
-                  toast.success(timetableEditMode ? "Edit mode disabled" : "Edit mode enabled");
-                }}
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                {timetableEditMode ? "Done" : "Edit"}
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-32">Time</TableHead>
-                      {days.map((day) => (
-                        <TableHead key={day} className="text-center min-w-[120px]">{day}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {timeSlots.map((slot) => (
-                      <TableRow key={slot.period}>
-                        <TableCell className="font-medium">
-                          <div className="text-xs text-muted-foreground">Period {slot.period}</div>
-                          <div className="text-sm">{slot.start} - {slot.end}</div>
-                        </TableCell>
-                        {days.map((day) => {
-                          const entry = getTimetableEntry(day, slot.period);
-                          return (
-                            <TableCell key={`${day}-${slot.period}`} className="text-center p-2">
-                              {entry ? (
-                                <div
-                                  className={`bg-primary/10 rounded p-2 transition-colors ${
-                                    timetableEditMode ? 'hover:bg-primary/30 cursor-pointer' : 'hover:bg-primary/20'
-                                  }`}
+          {timetableLoading ? (
+            <Card>
+              <CardContent className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                <span className="text-muted-foreground">Loading timetable...</span>
+              </CardContent>
+            </Card>
+          ) : !timetableRecord ? (
+            <Card>
+              <CardContent className="text-center py-14">
+                <Clock className="h-12 w-12 mx-auto mb-4 opacity-40" />
+                <p className="font-medium text-lg">No timetable yet</p>
+                <p className="text-sm text-muted-foreground mt-1 mb-6">
+                  Initialise the section timetable to start scheduling periods
+                </p>
+                <Button onClick={handleInitTimetable} disabled={timetableInitializing}>
+                  {timetableInitializing
+                    ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Creating...</>
+                    : <><Plus className="h-4 w-4 mr-2" />Create Timetable</>}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Section Timetable
+                  <Badge variant="outline" className="text-xs ml-1">{timetableRecord.academicYear}</Badge>
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  {timetableEditMode && (
+                    <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md">
+                      Edit mode — click cells to add/edit
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={timetableEditMode ? "default" : "outline"}
+                    onClick={() => setTimetableEditMode(!timetableEditMode)}
+                  >
+                    {timetableEditMode
+                      ? <><CheckCircle className="h-4 w-4 mr-1.5" />Done Editing</>
+                      : <><Edit className="h-4 w-4 mr-1.5" />Edit</>}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="border px-3 py-2 text-left text-xs font-medium text-muted-foreground w-28">Period</th>
+                        {TIMETABLE_DAYS.map(day => (
+                          <th key={day} className="border px-3 py-2 text-center text-xs font-medium min-w-[120px]">{day}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {TIMETABLE_PERIODS.map(periodNum => {
+                        // For time row header, find actual stored time or use default
+                        const anyPeriod = timetablePeriods.find(p => p.periodNumber === periodNum);
+                        const fmt = (t?: string) => t ? t.substring(0, 5) : DEFAULT_PERIOD_TIMES[periodNum]?.start ?? "";
+                        const rowStart = anyPeriod ? fmt(anyPeriod.startTime) : DEFAULT_PERIOD_TIMES[periodNum]?.start;
+                        const rowEnd = anyPeriod ? fmt(anyPeriod.endTime) : DEFAULT_PERIOD_TIMES[periodNum]?.end;
+                        return (
+                          <tr key={periodNum} className="hover:bg-muted/20">
+                            <td className="border px-3 py-2 bg-muted/30">
+                              <div className="font-medium text-xs">P{periodNum}</div>
+                              <div className="text-xs text-muted-foreground">{rowStart}–{rowEnd}</div>
+                            </td>
+                            {TIMETABLE_DAYS.map(day => {
+                              const p = getPeriodForCell(day, periodNum);
+                              return (
+                                <td
+                                  key={`${day}-${periodNum}`}
+                                  className={`border px-2 py-1.5 text-center align-middle ${timetableEditMode ? "cursor-pointer" : ""}`}
+                                  onClick={() => {
+                                    if (!timetableEditMode) return;
+                                    if (p) openEditPeriod(p);
+                                    else openAddPeriod(day, periodNum);
+                                  }}
                                 >
-                                  <div className="font-medium text-sm">{entry.subject}</div>
-                                  <div className="text-xs text-muted-foreground mt-1">{entry.teacher}</div>
-                                </div>
-                              ) : (
-                                <div className={`text-xs text-muted-foreground ${timetableEditMode ? 'hover:bg-primary/10 cursor-pointer rounded p-2' : ''}`}>
-                                  {timetableEditMode ? '+ Add' : '-'}
-                                </div>
-                              )}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                                  {p ? (
+                                    <div className={`rounded px-1.5 py-1 text-left transition-colors ${timetableEditMode ? "bg-primary/15 hover:bg-primary/25" : "bg-primary/10"}`}>
+                                      <div className="font-medium text-xs leading-tight">
+                                        {p.subjectName ?? <span className="text-muted-foreground">—</span>}
+                                      </div>
+                                      {p.teacherName && (
+                                        <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
+                                      )}
+                                      {p.room && (
+                                        <div className="text-xs text-muted-foreground/70 mt-0.5">{p.room}</div>
+                                      )}
+                                      {timetableEditMode && (
+                                        <div className="flex justify-end mt-1">
+                                          <button
+                                            className="text-destructive/70 hover:text-destructive p-0.5 rounded"
+                                            onClick={e => { e.stopPropagation(); handleDeletePeriod(p.id); }}
+                                            disabled={deletingPeriodId === p.id}
+                                          >
+                                            {deletingPeriodId === p.id
+                                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                                              : <Trash2 className="h-3 w-3" />}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className={`text-muted-foreground/40 text-xs py-1 rounded transition-colors ${timetableEditMode ? "hover:bg-primary/10 hover:text-primary" : ""}`}>
+                                      {timetableEditMode ? <Plus className="h-3.5 w-3.5 mx-auto" /> : "—"}
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Period Add/Edit Dialog */}
+          <Dialog open={periodDialogOpen} onOpenChange={setPeriodDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  {editingPeriodId ? "Edit Period" : `Add Period — ${periodForm.day}, P${periodForm.periodNumber}`}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 pt-2">
+                {/* Day + Period (read-only if editing, editable if new) */}
+                {!editingPeriodId && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Day</Label>
+                      <Select value={periodForm.day} onValueChange={v => setPeriodForm(f => ({ ...f, day: v }))}>
+                        <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {TIMETABLE_DAYS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Period Number</Label>
+                      <Select
+                        value={String(periodForm.periodNumber)}
+                        onValueChange={v => {
+                          const n = parseInt(v);
+                          const defaults = DEFAULT_PERIOD_TIMES[n] ?? { start: "09:00", end: "09:45" };
+                          setPeriodForm(f => ({ ...f, periodNumber: n, startTime: defaults.start, endTime: defaults.end }));
+                        }}
+                      >
+                        <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {TIMETABLE_PERIODS.map(n => <SelectItem key={n} value={String(n)}>Period {n}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Time */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Start Time</Label>
+                    <Input type="time" className="mt-1" value={periodForm.startTime}
+                      onChange={e => setPeriodForm(f => ({ ...f, startTime: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>End Time</Label>
+                    <Input type="time" className="mt-1" value={periodForm.endTime}
+                      onChange={e => setPeriodForm(f => ({ ...f, endTime: e.target.value }))} />
+                  </div>
+                </div>
+
+                {/* Subject */}
+                <div>
+                  <Label>Subject</Label>
+                  <Select
+                    value={periodForm.subjectId || "none"}
+                    onValueChange={v => {
+                      const subjectId = v === "none" ? "" : v;
+                      // Auto-fill teacher from the class-subject configuration
+                      const cs = classSubjects.find(c => c.subjectId === subjectId);
+                      setPeriodForm(f => ({
+                        ...f,
+                        subjectId,
+                        ...(cs?.teacherId
+                          ? { teacherId: cs.teacherId, teacherName: cs.teacherName ?? "" }
+                          : {}),
+                      }));
+                      if (cs?.teacherId) setTeacherPickerQuery("");
+                    }}
+                  >
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select subject..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— No subject —</SelectItem>
+                      {classSubjects.map(cs => (
+                        <SelectItem key={cs.subjectId} value={cs.subjectId}>
+                          {cs.subjectName}{cs.teacherName ? ` · ${cs.teacherName}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Teacher — card picker */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label>Teacher</Label>
+                    {periodForm.teacherId && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                        onClick={() => { setPeriodForm(f => ({ ...f, teacherId: "", teacherName: "" })); setTeacherPickerQuery(""); }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Selected teacher pill */}
+                  {periodForm.teacherId ? (
+                    <div className="flex items-center gap-2 p-2 bg-primary/10 border border-primary/20 rounded-md">
+                      <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                        <span className="text-xs font-bold text-primary">
+                          {(periodForm.teacherName || "?")[0].toUpperCase()}
+                        </span>
+                      </div>
+                      <span className="text-sm font-medium">{periodForm.teacherName}</span>
+                      <button
+                        type="button"
+                        className="ml-auto text-muted-foreground hover:text-destructive"
+                        onClick={() => { setPeriodForm(f => ({ ...f, teacherId: "", teacherName: "" })); setTeacherPickerQuery(""); }}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Search */}
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                        <Input
+                          className="pl-8 h-8 text-sm"
+                          placeholder="Search teacher..."
+                          value={teacherPickerQuery}
+                          onChange={e => setTeacherPickerQuery(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Section-assigned staff first, then others */}
+                      {(() => {
+                        const q = teacherPickerQuery.toLowerCase();
+                        const filtered = periodTeacherOptions.filter(
+                          t => !q || t.name.toLowerCase().includes(q)
+                        );
+                        const assigned = filtered.filter(t => t.isAssigned);
+                        const others = filtered.filter(t => !t.isAssigned).slice(0, teacherPickerQuery ? 6 : 3);
+
+                        return (
+                          <div className="mt-1.5 space-y-1 max-h-44 overflow-y-auto">
+                            {assigned.length > 0 && (
+                              <>
+                                <p className="text-xs font-medium text-muted-foreground px-1 py-0.5">Configured for this class</p>
+                                {assigned.map(t => (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md hover:bg-primary/10 text-left transition-colors group"
+                                    onClick={() => { setPeriodForm(f => ({ ...f, teacherId: t.id, teacherName: t.name })); setTeacherPickerQuery(""); }}
+                                  >
+                                    <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                                      <span className="text-xs font-bold text-primary">{(t.name || "?")[0].toUpperCase()}</span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium leading-none">{t.name}</p>
+                                      {t.designation && <p className="text-xs text-muted-foreground mt-0.5">{t.designation}</p>}
+                                    </div>
+                                    <ShieldCheck className="h-3.5 w-3.5 text-primary/60 opacity-0 group-hover:opacity-100 shrink-0" />
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                            {others.length > 0 && (
+                              <>
+                                <p className="text-xs font-medium text-muted-foreground px-1 py-0.5 mt-1">
+                                  {assigned.length > 0 ? "Other assigned staff" : "Assigned to this class"}
+                                </p>
+                                {others.map(t => (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md hover:bg-muted text-left transition-colors"
+                                    onClick={() => { setPeriodForm(f => ({ ...f, teacherId: t.id, teacherName: t.name })); setTeacherPickerQuery(""); }}
+                                  >
+                                    <div className="w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center shrink-0">
+                                      <span className="text-xs font-semibold text-muted-foreground">{(t.name || "?")[0].toUpperCase()}</span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium leading-none">{t.name}</p>
+                                      {t.designation && <p className="text-xs text-muted-foreground mt-0.5">{t.designation}</p>}
+                                    </div>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                            {filtered.length === 0 && (
+                              <p className="text-sm text-muted-foreground px-2 py-3 text-center">No staff found</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+
+                {/* Room + Type */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Room (optional)</Label>
+                    <Input className="mt-1" placeholder="e.g. Room 101" value={periodForm.room}
+                      onChange={e => setPeriodForm(f => ({ ...f, room: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Type</Label>
+                    <Select value={periodForm.periodType} onValueChange={v => setPeriodForm(f => ({ ...f, periodType: v }))}>
+                      <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["lecture", "practical", "lab", "seminar", "tutorial", "break", "lunch"].map(t => (
+                          <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <Button className="flex-1" onClick={handleSavePeriod} disabled={periodSaving}>
+                    {periodSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {editingPeriodId ? "Save Changes" : "Add Period"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setPeriodDialogOpen(false)}>Cancel</Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Assignments Tab */}

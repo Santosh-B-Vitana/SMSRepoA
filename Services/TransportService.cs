@@ -20,6 +20,7 @@ namespace SmsApi.Services
         Task<List<TransportStudentResponse>> GetStudentsByRouteAsync(Guid routeId, Guid schoolId);
         Task<List<TransportStudentDetailResponse>> GetAllTransportStudentsAsync(Guid schoolId);
         Task<TransportStudentResponse> AssignStudentToRouteAsync(CreateTransportStudentRequest request);
+        Task<TransportStudentResponse?> UpdateTransportStudentAsync(Guid id, Guid schoolId, UpdateTransportStudentRequest request);
         Task<bool> RemoveStudentFromRouteAsync(Guid id, Guid schoolId);
     }
 
@@ -347,7 +348,7 @@ namespace SmsApi.Services
 
             // ===== VALIDATION 7: Auto-Fee Deduction =====
             var monthlyFee = request.MonthlyFee ?? 500m;  // Default to 500 if not specified
-            await CreateOrUpdateTransportFeeAsync(request.SchoolId, request.StudentId, monthlyFee, transportStudent.Id);
+            await AddFeesToStudentRecordAsync(request.SchoolId, request.StudentId, monthlyFee);
 
             // ===== VALIDATION 8: Parent Notification =====
             await NotifyParentOfRouteAssignmentAsync(request.SchoolId, request.StudentId, route);
@@ -355,57 +356,214 @@ namespace SmsApi.Services
             return MapToStudentResponse(transportStudent);
         }
 
-        private async Task CreateOrUpdateTransportFeeAsync(Guid schoolId, Guid studentId, decimal monthlyFee, Guid transportAssignmentId)
+        // ─── Fee Helpers ─────────────────────────────────────────────────────────
+
+        private async Task<(string Name, DateTime EndDate)> GetCurrentAcademicYearInfoAsync(Guid schoolId)
+        {
+            var now = DateTime.UtcNow;
+            var activeYear = await _context.AcademicYears
+                .IgnoreQueryFilters()
+                .Where(a => a.SchoolId == schoolId && !a.IsDeleted && a.StartDate <= now && a.EndDate >= now)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => new { a.Name, a.EndDate })
+                .FirstOrDefaultAsync();
+            if (activeYear != null) return (activeYear.Name, activeYear.EndDate);
+
+            var latestYear = await _context.AcademicYears
+                .IgnoreQueryFilters()
+                .Where(a => a.SchoolId == schoolId && !a.IsDeleted)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => new { a.Name, a.EndDate })
+                .FirstOrDefaultAsync();
+            if (latestYear != null) return (latestYear.Name, latestYear.EndDate);
+
+            // Fallback: Indian academic year Apr–Mar
+            var yearEnd = now.Month >= 4
+                ? new DateTime(now.Year + 1, 3, 31)
+                : new DateTime(now.Year, 3, 31);
+            var yearName = now.Month >= 4 ? $"{now.Year}-{now.Year + 1}" : $"{now.Year - 1}-{now.Year}";
+            return (yearName, yearEnd);
+        }
+
+        /// <summary>
+        /// Pro-rates a monthly fee from <paramref name="from"/> to the end of the academic year.
+        /// Includes a partial first month (remaining days) plus full subsequent months.
+        /// </summary>
+        private static decimal CalculateProrataAmount(decimal monthlyFee, DateTime from, DateTime academicYearEnd)
+        {
+            if (monthlyFee <= 0) return 0m;
+
+            // Remaining days in the current month (inclusive of today)
+            var daysInMonth = DateTime.DaysInMonth(from.Year, from.Month);
+            var remainingDays = daysInMonth - from.Day + 1;
+            var prorataThisMonth = Math.Round(monthlyFee * remainingDays / daysInMonth, 2);
+
+            // Count full months from next month up to and including the year-end month
+            var nextMonth = new DateTime(from.Year, from.Month, 1).AddMonths(1);
+            var firstMonthAfterEnd = new DateTime(academicYearEnd.Year, academicYearEnd.Month, 1).AddMonths(1);
+            var fullMonths = 0;
+            for (var m = nextMonth; m < firstMonthAfterEnd; m = m.AddMonths(1))
+                fullMonths++;
+
+            return prorataThisMonth + fullMonths * monthlyFee;
+        }
+
+        /// <summary>
+        /// Adds the pro-rated transport fee (from today to academic-year end) plus any pending
+        /// library fines to the student's existing pending FeeRecord. Creates one if none exists.
+        /// Library fines are marked FinePaid=true to prevent double-counting.
+        /// </summary>
+        private async Task AddFeesToStudentRecordAsync(Guid schoolId, Guid studentId, decimal monthlyFee)
         {
             try
             {
-                // Calculate proportional fee if student joined mid-month
-                var today = DateTime.Now;
-                var currentMonth = new DateTime(today.Year, today.Month, 1);
-                var daysInMonth = DateTime.DaysInMonth(today.Year, today.Month);
-                var daysRemaining = daysInMonth - today.Day + 1;
-                var proportionalFee = monthlyFee * (daysRemaining / (decimal)daysInMonth);
+                var (academicYear, yearEnd) = await GetCurrentAcademicYearInfoAsync(schoolId);
+                var now = DateTime.UtcNow;
 
+                // Pro-rate the monthly fee from today to end of academic year
+                var prorataFee = CalculateProrataAmount(monthlyFee, now, yearEnd);
 
-                // Check if transport fee already exists for this month
-                var existingFee = await _context.FeeRecords
-                    .FirstOrDefaultAsync(fr => fr.StudentId == studentId && 
-                                               fr.DueDate.Month == currentMonth.Month &&
-                                               fr.DueDate.Year == currentMonth.Year);
+                // Collect pending library fines and mark them as transferred
+                var pendingFines = await _context.BookIssues
+                    .IgnoreQueryFilters()
+                    .Where(bi => bi.StudentId == studentId && bi.SchoolId == schoolId && !bi.IsDeleted && !bi.FinePaid && bi.Fine > 0)
+                    .ToListAsync();
+                var libraryFineTotal = pendingFines.Sum(bi => bi.Fine);
+                foreach (var fine in pendingFines)
+                    fine.FinePaid = true;
 
-                if (existingFee == null)
+                var totalToAdd = prorataFee + libraryFineTotal;
+                if (totalToAdd <= 0) return;
+
+                // Find the student's primary unpaid fee record for this academic year (or one with no year set)
+                var feeRecord = await _context.FeeRecords
+                    .IgnoreQueryFilters()
+                    .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                 (fr.AcademicYear == academicYear || fr.AcademicYear == null || fr.AcademicYear == "") &&
+                                 fr.Status != "paid")
+                    .OrderByDescending(fr => fr.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (feeRecord != null)
                 {
-                    // Create new transport fee
-                    var transportFee = new FeeRecord
+                    if (string.IsNullOrEmpty(feeRecord.AcademicYear))
+                        feeRecord.AcademicYear = academicYear;
+                    feeRecord.TotalAmount += totalToAdd;
+                    feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
+                    feeRecord.BalanceAmount = feeRecord.PendingAmount;
+                    feeRecord.UpdatedAt = now;
+
+                    _logger.LogInformation(
+                        "Added ₹{Amount} (pro-rata transport ₹{Transport} [{Days}d] + library fines ₹{Fines}) to fee record {RecordId} for student {StudentId}",
+                        totalToAdd, prorataFee, DateTime.DaysInMonth(now.Year, now.Month) - now.Day + 1, libraryFineTotal, feeRecord.Id, studentId);
+                }
+                else
+                {
+                    var dueDate = new DateTime(now.Year, now.Month, 1).AddMonths(1);
+                    var newRecord = new FeeRecord
                     {
                         Id = Guid.NewGuid(),
                         SchoolId = schoolId,
                         StudentId = studentId,
-                        TotalAmount = proportionalFee > 0 ? proportionalFee : monthlyFee,
-                        DueDate = currentMonth.AddMonths(1),
+                        TotalAmount = totalToAdd,
+                        PaidAmount = 0,
+                        DiscountAmount = 0,
+                        LateFeeAmount = 0,
+                        PendingAmount = totalToAdd,
+                        BalanceAmount = totalToAdd,
+                        AcademicYear = academicYear,
+                        DueDate = dueDate,
                         Status = "pending",
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
+                        CreatedAt = now,
+                        UpdatedAt = now
                     };
+                    _context.FeeRecords.Add(newRecord);
 
-                    _context.FeeRecords.Add(transportFee);
+                    _logger.LogInformation(
+                        "Created fee record for student {StudentId}: ₹{Amount} (pro-rata transport ₹{Transport} + library fines ₹{Fines}), due {DueDate}",
+                        studentId, totalToAdd, prorataFee, libraryFineTotal, dueDate);
+                }
+
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying fees to student {StudentId}", studentId);
+            }
+        }
+
+        /// <summary>
+        /// Adjusts the student's fee record when the transport monthly fee changes.
+        /// The adjustment is pro-rated: remaining days this month + remaining full months to year-end.
+        /// </summary>
+        private async Task AdjustStudentFeeRecordAsync(Guid schoolId, Guid studentId, decimal oldAmount, decimal newAmount)
+        {
+            if (newAmount == oldAmount) return;
+            try
+            {
+                var now = DateTime.UtcNow;
+                var (academicYear, yearEnd) = await GetCurrentAcademicYearInfoAsync(schoolId);
+
+                var feeRecord = await _context.FeeRecords
+                    .IgnoreQueryFilters()
+                    .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                 (fr.AcademicYear == academicYear || fr.AcademicYear == null || fr.AcademicYear == "") &&
+                                 fr.Status != "paid")
+                    .OrderByDescending(fr => fr.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                var monthlyDiff = newAmount - oldAmount;
+                var prorataDiff = CalculateProrataAmount(Math.Abs(monthlyDiff), now, yearEnd);
+                if (monthlyDiff < 0) prorataDiff = -prorataDiff;
+
+                if (feeRecord != null)
+                {
+                    if (string.IsNullOrEmpty(feeRecord.AcademicYear))
+                        feeRecord.AcademicYear = academicYear;
+                    feeRecord.TotalAmount = Math.Max(0, feeRecord.TotalAmount + prorataDiff);
+                    feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
+                    feeRecord.BalanceAmount = feeRecord.PendingAmount;
+                    feeRecord.UpdatedAt = now;
                     await _context.SaveChangesAsync();
 
                     _logger.LogInformation(
-                        "Transport fee created for student {StudentId}: {Amount:C} due on {DueDate}",
-                        studentId, transportFee.TotalAmount, transportFee.DueDate);
+                        "Adjusted fee record for student {StudentId}: pro-rata diff ₹{Diff} (monthly ₹{Old} → ₹{New}), new total ₹{Total}",
+                        studentId, prorataDiff, oldAmount, newAmount, feeRecord.TotalAmount);
                 }
                 else
                 {
-                    _logger.LogInformation(
-                        "Transport fee already exists for student {StudentId} for {Month}/{Year}",
-                        studentId, currentMonth.Month, currentMonth.Year);
+                    // No existing unpaid record — create one for the pro-rata adjustment
+                    if (prorataDiff > 0)
+                    {
+                        var newRecord = new FeeRecord
+                        {
+                            Id = Guid.NewGuid(),
+                            SchoolId = schoolId,
+                            StudentId = studentId,
+                            TotalAmount = prorataDiff,
+                            PaidAmount = 0,
+                            DiscountAmount = 0,
+                            LateFeeAmount = 0,
+                            PendingAmount = prorataDiff,
+                            BalanceAmount = prorataDiff,
+                            AcademicYear = academicYear,
+                            DueDate = new DateTime(now.Year, now.Month, 1).AddMonths(1),
+                            Status = "pending",
+                            CreatedAt = now,
+                            UpdatedAt = now
+                        };
+                        _context.FeeRecords.Add(newRecord);
+                        await _context.SaveChangesAsync();
+
+                        _logger.LogInformation(
+                            "Created fee record for student {StudentId} on fee update: pro-rata ₹{Diff} (monthly ₹{Old} → ₹{New})",
+                            studentId, prorataDiff, oldAmount, newAmount);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating transport fee for student {StudentId}", studentId);
-                throw;
+                _logger.LogError(ex, "Error adjusting fee record for student {StudentId}", studentId);
             }
         }
 
@@ -431,6 +589,57 @@ namespace SmsApi.Services
             {
                 _logger.LogWarning(ex, "Error notifying parent of route assignment for student {StudentId}", studentId);
             }
+        }
+
+        public async Task<TransportStudentResponse?> UpdateTransportStudentAsync(Guid id, Guid schoolId, UpdateTransportStudentRequest request)
+        {
+            var transportStudent = await _context.TransportStudents
+                .Include(ts => ts.Route)
+                .FirstOrDefaultAsync(ts => ts.Id == id && ts.SchoolId == schoolId);
+
+            if (transportStudent == null) return null;
+
+            // If route changed, update StudentsAssigned counts
+            if (transportStudent.RouteId != request.RouteId)
+            {
+                var newRoute = await _context.TransportRoutes
+                    .FirstOrDefaultAsync(r => r.Id == request.RouteId && r.SchoolId == schoolId);
+                if (newRoute == null)
+                    throw new KeyNotFoundException("Route not found.");
+
+                var currentCount = await _context.TransportStudents
+                    .CountAsync(ts => ts.RouteId == request.RouteId && ts.SchoolId == schoolId && ts.Status == "active");
+                if (currentCount >= newRoute.Capacity)
+                    throw new InvalidOperationException($"Route {newRoute.RouteName} is already at full capacity.");
+
+                // Decrement old route
+                if (transportStudent.Route != null && transportStudent.Route.StudentsAssigned > 0)
+                {
+                    transportStudent.Route.StudentsAssigned--;
+                    transportStudent.Route.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // Increment new route
+                newRoute.StudentsAssigned++;
+                newRoute.UpdatedAt = DateTime.UtcNow;
+
+                transportStudent.RouteId = request.RouteId;
+            }
+
+            var oldFee = transportStudent.MonthlyFee ?? 0m;
+
+            transportStudent.PickupPoint = request.PickupPoint;
+            transportStudent.DropPoint = request.DropPoint;
+            transportStudent.MonthlyFee = request.MonthlyFee;
+            transportStudent.Status = request.Status;
+            transportStudent.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            // Adjust student's fee record if monthly fee changed
+            await AdjustStudentFeeRecordAsync(schoolId, transportStudent.StudentId, oldFee, request.MonthlyFee ?? 0m);
+
+            return MapToStudentResponse(transportStudent);
         }
 
         public async Task<bool> RemoveStudentFromRouteAsync(Guid id, Guid schoolId)

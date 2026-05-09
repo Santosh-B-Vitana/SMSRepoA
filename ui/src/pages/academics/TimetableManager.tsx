@@ -11,7 +11,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { timetableApi, TimetableRecord, TimetablePeriod } from "@/services/api/timetableApi";
-import { academicApi, ClassResponse, AcademicYearResponse, ClassSubjectResponse, SubjectResponse } from "@/services/api/academicApi";
+import { academicApi, ClassResponse, AcademicYearResponse, ClassSubjectResponse, SubjectResponse, SectionResponse } from "@/services/api/academicApi";
 import { staffApi, StaffBasic } from "@/services/api/staffApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
@@ -71,6 +71,11 @@ export default function TimetableManager() {
   const [classSubjects, setClassSubjects] = useState<ClassSubjectResponse[]>([]);
   const [teachers, setTeachers]         = useState<StaffBasic[]>([]);
 
+  // Sections for the selected class (needed to resolve sectionId for timetable scoping)
+  const [classSections, setClassSections] = useState<SectionResponse[]>([]);
+  // The resolved section entity ID — used when creating/loading timetables
+  const [resolvedSectionId, setResolvedSectionId] = useState<string | undefined>(undefined);
+
   // Filters
   const [selectedYear, setSelectedYear]         = useState("");
   const [selectedStandard, setSelectedStandard] = useState("");
@@ -126,6 +131,13 @@ export default function TimetableManager() {
     ?? subjectId ?? "";
 
   const getTeacherShortName = (teacherId?: string) => {
+    // Prefer classSubjects (already loaded, has correct names for this class)
+    const fromSubject = classSubjects.find(cs => cs.teacherId === teacherId);
+    if (fromSubject?.teacherName) {
+      const parts = fromSubject.teacherName.split(" ");
+      return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : fromSubject.teacherName;
+    }
+    // Fall back to full staff list
     const t = teachers.find(t => t.id === teacherId);
     if (!t) return "";
     const full = (t.name ?? `${t.firstName} ${t.lastName}`).trim();
@@ -194,32 +206,50 @@ export default function TimetableManager() {
       .finally(() => setLoadingSubjects(false));
   }, [selectedClassObj?.id]);
 
-  // ─── Load timetable when class + year change ─────────────────────────────
+  // ─── Load timetable when class + section + year change ───────────────────
   useEffect(() => {
-    if (!selectedClassObj || !selectedYear) {
+    if (!selectedClassObj || !selectedYear || !selectedSection) {
       setActiveTimetable(null);
       setPeriodsMap({});
+      setResolvedSectionId(undefined);
       return;
     }
     loadTimetableData();
-  }, [selectedClassObj?.id, selectedYear]);
+  }, [selectedClassObj?.id, selectedSection, selectedYear]);
 
   const loadTimetableData = async () => {
     if (!selectedClassObj || !selectedYear) return;
     setLoadingTimetable(true);
     try {
-      const res = await timetableApi.list(selectedClassObj.id, 1, 50);
-      // Normalize year format: both "2025/2026" and "2025-2026" are treated as equal
+      // 1. Resolve the section entity ID for the selected section name.
+      //    Timetables are created per-section (SectionId), so we need the real UUID.
+      let sectionId: string | undefined;
+      if (selectedSection) {
+        const secRes = await academicApi.listSections(selectedClassObj.id, 1, 50);
+        const secs = secRes.sections ?? [];
+        setClassSections(secs);
+        const sec = secs.find(s => s.name === selectedSection);
+        sectionId = sec?.id;
+        setResolvedSectionId(sectionId);
+      } else {
+        setClassSections([]);
+        setResolvedSectionId(undefined);
+      }
+
+      // 2. List timetables scoped to this exact class + section combination.
+      const res = await timetableApi.list(selectedClassObj.id, 1, 50, sectionId);
       const normalizeYear = (y: string) => y.replace(/\//g, '-').trim();
       const tt = (res.timetables || []).find(
         t => normalizeYear(t.academicYear) === normalizeYear(selectedYear)
       ) ?? null;
       if (!tt) { setActiveTimetable(null); setPeriodsMap({}); return; }
       setActiveTimetable(tt);
+
+      // 3. Load all periods for this timetable.
       const periodsRes = await timetableApi.getPeriods(tt.id);
       const map: Record<string, TimetablePeriod> = {};
       for (const p of periodsRes.periods || []) {
-        if (p.subjectId) map[`${p.dayOfWeek}-${p.periodNumber}`] = p;
+        map[`${p.dayOfWeek}-${p.periodNumber}`] = p;
       }
       setPeriodsMap(map);
     } catch {
@@ -231,12 +261,12 @@ export default function TimetableManager() {
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleInitTimetable = async () => {
-    if (!selectedClassObj || !selectedYear) return;
+    if (!selectedClassObj || !selectedYear || !selectedSection) return;
     setCreating(true);
     try {
       const tt = await timetableApi.create({
-        SchoolId: "00000000-0000-0000-0000-000000000000",
         ClassId: selectedClassObj.id,
+        SectionId: resolvedSectionId,
         AcademicYear: selectedYear,
         Status: "active",
       });
@@ -501,8 +531,8 @@ export default function TimetableManager() {
         </div>
       )}
 
-      {/* ── Empty: no class/year selected ── */}
-      {!loadingTimetable && (!selectedClassObj || !selectedYear) && (
+      {/* ── Empty: no class/year/section selected ── */}
+      {!loadingTimetable && (!selectedClassObj || !selectedYear || !selectedSection) && (
         <Card className="py-14 text-center border-dashed">
           <LayoutGrid className="h-10 w-10 mx-auto mb-3 text-muted-foreground/20" />
           <p className="font-semibold text-muted-foreground">Select academic year, class and section</p>
@@ -511,7 +541,7 @@ export default function TimetableManager() {
       )}
 
       {/* ── No timetable yet ── */}
-      {!loadingTimetable && selectedClassObj && selectedYear && !activeTimetable && (
+      {!loadingTimetable && selectedClassObj && selectedYear && selectedSection && !activeTimetable && (
         <Card className="py-14 text-center">
           <CalendarClock className="h-12 w-12 mx-auto mb-3 text-muted-foreground/25" />
           <p className="text-lg font-semibold">
@@ -746,28 +776,37 @@ export default function TimetableManager() {
               </Select>
             </div>
 
-            {/* Teacher */}
+            {/* Teacher — only teachers configured for this class's subjects */}
             <div>
               <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
                 Teacher
+                <span className="ml-1.5 font-normal normal-case tracking-normal text-[10px] text-muted-foreground">(auto-filled when subject is chosen)</span>
               </Label>
               <Select
                 value={editForm.teacherId || "__none__"}
                 onValueChange={v => setEditForm(f => ({ ...f, teacherId: v === "__none__" ? "" : v }))}
+                disabled={classSubjects.filter(cs => cs.teacherId).length === 0}
               >
                 <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Select teacher (optional)" />
+                  <SelectValue placeholder={classSubjects.length === 0 ? "Assign subjects to class first" : "Select teacher"} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— None —</SelectItem>
-                  {teachers.map(t => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {(t.name ?? `${t.firstName} ${t.lastName}`).trim()}
-                      {t.designation ? ` · ${t.designation}` : ""}
-                    </SelectItem>
-                  ))}
+                  {classSubjects
+                    .filter(cs => cs.teacherId)
+                    .filter((cs, i, arr) => arr.findIndex(x => x.teacherId === cs.teacherId) === i)
+                    .map(cs => (
+                      <SelectItem key={cs.teacherId!} value={cs.teacherId!}>
+                        {cs.teacherName}
+                        <span className="text-muted-foreground ml-1.5">· {cs.subjectName}</span>
+                      </SelectItem>
+                    ))
+                  }
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Only teachers assigned to this class's subjects are shown
+              </p>
             </div>
 
             {/* Room + Notes */}
