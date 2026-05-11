@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
-import { getFeeRecords, getFeeStructureById, type FeeRecord, type FeeStructure, type PaymentTransaction } from "@/services/api/feeApi";
+import { getFeeRecords, getFeeStructureById, getFeeRecordById, type FeeRecord, type FeeStructure, type PaymentTransaction } from "@/services/api/feeApi";
 import { toast } from "sonner";
 
 const FEE_HEAD_CONFIG: { key: string; label: string; icon: React.ReactNode; category: string }[] = [
@@ -36,6 +36,7 @@ export default function ParentChildFeeDetails() {
   const navigate = useNavigate();
   const [child, setChild] = useState<StudentBasic | null>(null);
   const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
+  const [detailedRecords, setDetailedRecords] = useState<Record<string, FeeRecord>>({});
   const [feeStructures, setFeeStructures] = useState<Record<string, FeeStructure>>({});
   const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,17 @@ export default function ParentChildFeeDetails() {
       const records = feeData.feeRecords || feeData.items || [];
       setFeeRecords(records);
 
+      // Fetch each record individually to get transport/hostel module fees
+      const detailMap: Record<string, FeeRecord> = {};
+      await Promise.all(
+        records.map(async (r: FeeRecord) => {
+          try {
+            detailMap[r.id] = await getFeeRecordById(r.id);
+          } catch { detailMap[r.id] = r; }
+        })
+      );
+      setDetailedRecords(detailMap);
+
       // Load fee structures for each record to show detailed breakdown
       const structureIds = [...new Set(records.map(r => r.feeStructureId).filter(Boolean))] as string[];
       const structureMap: Record<string, FeeStructure> = {};
@@ -74,9 +86,17 @@ export default function ParentChildFeeDetails() {
     }
   };
 
-  const totalAmount = feeRecords.reduce((s, r) => s + r.totalAmount, 0);
+  // Use detailed record data (with transport/hostel) for totals
+  const totalAmount = feeRecords.reduce((s, r) => {
+    const det = detailedRecords[r.id] ?? r;
+    return s + det.totalAmount + (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+  }, 0);
   const paidAmount = feeRecords.reduce((s, r) => s + r.paidAmount, 0);
-  const pendingAmount = totalAmount - paidAmount;
+  const totalPending = feeRecords.reduce((s, r) => {
+    const det = detailedRecords[r.id] ?? r;
+    return s + (det.pendingAmount ?? 0) + (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+  }, 0);
+  const pendingAmount = totalPending;
   const discountAmount = feeRecords.reduce((s, r) => s + (r.discountAmount || 0), 0);
   const lateFeeAmount = feeRecords.reduce((s, r) => s + (r.lateFeeAmount || 0), 0);
 
@@ -117,7 +137,7 @@ export default function ParentChildFeeDetails() {
             </p>
           )}
         </div>
-        {pendingAmount > 0 && (
+        {(pendingAmount > 0 || totalPending > 0) && (
           <Button onClick={() => navigate(`/parent-fees/${childId}/pay`)}>
             <CreditCard className="h-4 w-4 mr-1.5" />
             Pay Now
@@ -129,7 +149,7 @@ export default function ParentChildFeeDetails() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <SummaryCard label="Total Fee" value={totalAmount} color="blue" icon={<BadgeIndianRupee className="h-4 w-4" />} />
         <SummaryCard label="Paid" value={paidAmount} color="green" icon={<CheckCircle className="h-4 w-4" />} />
-        <SummaryCard label="Pending" value={pendingAmount} color={pendingAmount > 0 ? "amber" : "green"} icon={<Clock className="h-4 w-4" />} />
+        <SummaryCard label="Pending" value={totalPending} color={totalPending > 0 ? "amber" : "green"} icon={<Clock className="h-4 w-4" />} />
         <SummaryCard label="Discount" value={discountAmount} color="purple" icon={<Receipt className="h-4 w-4" />} />
         <SummaryCard label="Late Fee" value={lateFeeAmount} color={lateFeeAmount > 0 ? "red" : "green"} icon={<CalendarDays className="h-4 w-4" />} />
       </div>
@@ -172,10 +192,17 @@ export default function ParentChildFeeDetails() {
             <div className="space-y-4">
               {feeRecords.map(record => {
                 const structure = record.feeStructureId ? feeStructures[record.feeStructureId] : null;
+                const det = detailedRecords[record.id] ?? record;
+                const transportFee = det.transportFee ?? 0;
+                const hostelFee = det.hostelFee ?? 0;
+                const moduleTotal = transportFee + hostelFee;
+                const effectiveTotal = record.totalAmount + moduleTotal;
+                const effectivePending = (det.pendingAmount ?? 0) + moduleTotal;
                 const isExpanded = expandedRecord === record.id;
                 const feeHeads = structure
                   ? FEE_HEAD_CONFIG.filter(h => (structure as any)[h.key] > 0)
                   : [];
+                const componentSum = feeHeads.reduce((s, h) => s + ((structure as any)[h.key] as number), 0);
 
                 return (
                 <Card key={record.id} className="overflow-hidden">
@@ -194,7 +221,7 @@ export default function ParentChildFeeDetails() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <p className="text-muted-foreground">Total</p>
-                        <p className="font-semibold">{"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</p>
+                        <p className="font-semibold">{"\u20B9"}{effectiveTotal.toLocaleString("en-IN")}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Paid</p>
@@ -202,8 +229,8 @@ export default function ParentChildFeeDetails() {
                       </div>
                       <div>
                         <p className="text-muted-foreground">Pending</p>
-                        <p className={`font-semibold ${record.pendingAmount > 0 ? "text-amber-600" : "text-green-600"}`}>
-                          {"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")}
+                        <p className={`font-semibold ${effectivePending > 0 ? "text-amber-600" : "text-green-600"}`}>
+                          {"\u20B9"}{effectivePending.toLocaleString("en-IN")}
                         </p>
                       </div>
                       <div>
@@ -216,7 +243,38 @@ export default function ParentChildFeeDetails() {
                       </div>
                     </div>
                     {record.totalAmount > 0 && (
-                      <Progress value={(record.paidAmount / record.totalAmount) * 100} className="h-1.5 mt-3" />
+                      <Progress value={(record.paidAmount / effectiveTotal) * 100} className="h-1.5 mt-3" />
+                    )}
+
+                    {/* Transport & Hostel Module Fees */}
+                    {moduleTotal > 0 && (
+                      <div className="mt-3 pt-3 border-t rounded-lg bg-blue-50/60 border border-blue-100 p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 mb-2">Module Fees (Pro-rata)</p>
+                        {transportFee > 0 && (
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="flex items-center gap-1.5 text-blue-800">
+                              <Bus className="h-3.5 w-3.5" />
+                              Transport Fee
+                              {det.transportRoute && <span className="text-[11px] text-blue-500">({det.transportRoute})</span>}
+                            </span>
+                            <span className="font-semibold tabular-nums">{"\u20B9"}{transportFee.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+                        {hostelFee > 0 && (
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="flex items-center gap-1.5 text-blue-800">
+                              <Home className="h-3.5 w-3.5" />
+                              Hostel Fee
+                              {det.hostelRoom && <span className="text-[11px] text-blue-500">(Room: {det.hostelRoom})</span>}
+                            </span>
+                            <span className="font-semibold tabular-nums">{"\u20B9"}{hostelFee.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between text-sm font-bold pt-1.5 border-t border-blue-200 mt-1">
+                          <span className="text-blue-700">Module Total</span>
+                          <span className="text-blue-800">{"\u20B9"}{moduleTotal.toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
                     )}
 
                     {/* Fee Head Breakdown Toggle */}
@@ -242,7 +300,7 @@ export default function ParentChildFeeDetails() {
                                   <div className="space-y-1">
                                     {catHeads.map(h => {
                                       const amt = (structure as any)[h.key] as number;
-                                      const pct = structure.totalAmount > 0 ? (amt / structure.totalAmount) * 100 : 0;
+                                      const pct = componentSum > 0 ? (amt / componentSum) * 100 : 0;
                                       return (
                                         <div key={h.key} className="flex items-center gap-2 text-sm">
                                           <span className="text-muted-foreground shrink-0">{h.icon}</span>
@@ -259,10 +317,37 @@ export default function ParentChildFeeDetails() {
                               );
                             })}
 
-                            {/* Total line */}
+                            {/* Sub-total of listed components */}
+                            <div className="flex items-center justify-between pt-2 border-t text-sm text-muted-foreground">
+                              <span>Listed components sub-total</span>
+                              <span>{"\u20B9"}{componentSum.toLocaleString("en-IN")}</span>
+                            </div>
+                            {/* Show gap if record total doesn't match component sum */}
+                            {record.totalAmount > componentSum && (
+                              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  Other fee heads
+                                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded">(not itemised)</span>
+                                </span>
+                                <span>+ {"\u20B9"}{(record.totalAmount - componentSum).toLocaleString("en-IN")}</span>
+                              </div>
+                            )}
+                            {/* Fee structure total */}
+                            <div className="flex items-center justify-between text-sm text-muted-foreground font-medium">
+                              <span>Fee Structure Total</span>
+                              <span>{"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</span>
+                            </div>
+                            {/* Module fees */}
+                            {moduleTotal > 0 && (
+                              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                                <span>Module Fees (pro-rata)</span>
+                                <span>+ {"\u20B9"}{moduleTotal.toLocaleString("en-IN")}</span>
+                              </div>
+                            )}
+                            {/* Grand total */}
                             <div className="flex items-center justify-between pt-2 border-t text-sm font-bold">
-                              <span>Total Fee</span>
-                              <span>{"\u20B9"}{structure.totalAmount.toLocaleString("en-IN")}</span>
+                              <span>Grand Total</span>
+                              <span>{"\u20B9"}{effectiveTotal.toLocaleString("en-IN")}</span>
                             </div>
 
                             {/* Discount & Late fee info */}

@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 11, 2026 | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 11, 2026 (Session 2) | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -24,14 +24,14 @@
 | **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export; Staff Parent tab (GuardianStaffId) added May 2026 |
 | **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix |
 | **Admissions** | ✅ Production Ready | ✅ | 5-step wizard, RTE support, CSV export |
-| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId |
+| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId; Parent portal fee breakdown shows itemised components + non-itemised gap + module fees (transport/hostel pro-rata) with correct Grand Total |
 | **Attendance** | ✅ Production Ready | 16/16 | Staff + student tracking |
 | **Academics** | ✅ Production Ready | 70/70 | Classes (school-wide, no year filter), subjects from live API, teacher search bar in assign dialog |
 | **Academic Year Management** | ✅ Production Ready | ✅ | Single active year enforced; status driven by IsCurrent flag; admin + principal header selector with historical indicator |
 | **Leave Management** | ✅ Production Ready | 30/30 | Balance tracking, approvals, overlap detection |
 | **Communication** | ✅ Production Ready | 89/89 | Messages, announcements, templates |
 | **Payroll** | ✅ Production Ready | 30/30 | Salary slips, allowances, deductions |
-| **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading |
+| **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading; Staff assignments page fully rewritten — class-grouped with per-class colour coding, section sub-tabs, clickable cards with submission/grading detail sheet |
 | **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation |
 | **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash |
 | **Reports** | ✅ Production Ready | ✅ | PDF/CSV export for all modules |
@@ -50,7 +50,7 @@ All staff-facing modules are production-ready and fully hardened.
 | Leave Management | 30/30 | Date range, overlap detection, balance enforcement |
 | Communication | 89/89 | Length validation, recipient type, multi-channel |
 | Payroll | 30/30 | Year/month validation, pagination, audit trail |
-| Assignments | 40/40 | Due date, max marks bounds, duplicate prevention |
+| Assignments | 40/40 | Due date, max marks bounds, duplicate prevention; UI: class-grouped sections, clickable cards → detail sheet (submission stats, grading progress, description) |
 | My Classes | ✅ | Staff class assignment, student lists |
 
 ---

@@ -76,9 +76,13 @@ namespace SmsApi.Models.DTOs
         public Guid Id { get; set; }
         public Guid SchoolId { get; set; }
         public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
         public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
         public Guid SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
         public Guid AssignedById { get; set; }
+        public string AssignedByName { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public DateTime AssignedDate { get; set; }
@@ -86,6 +90,8 @@ namespace SmsApi.Models.DTOs
         public decimal MaxMarks { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? AttachmentUrl { get; set; }
+        public int SubmissionCount { get; set; }
+        public int GradedCount { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }
@@ -132,6 +138,8 @@ namespace SmsApi.Models.DTOs
         public Guid Id { get; set; }
         public Guid AssignmentId { get; set; }
         public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? StudentRollNo { get; set; }
         public DateTime SubmissionDate { get; set; }
         public string Content { get; set; } = string.Empty;
         public string? AttachmentUrl { get; set; }

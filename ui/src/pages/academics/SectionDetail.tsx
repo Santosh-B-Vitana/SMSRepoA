@@ -29,6 +29,11 @@ import {
   GraduationCap,
   BookOpen,
   ShieldCheck,
+  ChevronRight,
+  Award,
+  AlertCircle,
+  Eye,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { academicApi, type SectionResponse, type TeacherAssignmentResponse, type ClassSubjectResponse } from "@/services/api/academicApi";
@@ -38,6 +43,7 @@ import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 import { attendanceApi } from "@/services/api/attendanceApi";
 import AttendanceRoster from "@/components/attendance/AttendanceRoster";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { assignmentApi, type AssignmentResponse, type SubmissionResponse } from "@/services/api/assignmentApi";
 
 interface StudentInfo {
   id: string;
@@ -139,11 +145,124 @@ export default function SectionDetail() {
   const [bulkTargetSectionId, setBulkTargetSectionId] = useState("");
   const [bulkTransferLoading, setBulkTransferLoading] = useState(false);
 
+  // ── Assignments Tab ──────────────────────────────────────────────────────
+  const [classAssignments, setClassAssignments] = useState<AssignmentResponse[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
+  // Create assignment dialog
+  const [createAssignmentOpen, setCreateAssignmentOpen] = useState(false);
+  const [createAssignmentSaving, setCreateAssignmentSaving] = useState(false);
+  const [createAssignmentForm, setCreateAssignmentForm] = useState({
+    title: "", description: "", subjectId: "",
+    assignedDate: new Date().toISOString().split("T")[0],
+    dueDate: "", maxMarks: "100",
+  });
+  // Assignment detail / submissions panel
+  const [selectedAssignment, setSelectedAssignment] = useState<AssignmentResponse | null>(null);
+  const [assignmentSubmissions, setAssignmentSubmissions] = useState<SubmissionResponse[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  // Grade dialog
+  const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
+  const [gradingSubmission, setGradingSubmission] = useState<SubmissionResponse | null>(null);
+  const [gradeForm, setGradeForm] = useState({ marks: "", feedback: "" });
+  const [gradeSaving, setGradeSaving] = useState(false);
+
+  // ── Assignment loaders and handlers ──────────────────────────────────────
+  const loadAssignments = useCallback(async () => {
+    if (!classId || !sectionId) return;
+    setAssignmentsLoading(true);
+    try {
+      const result = await assignmentApi.getAssignments(classId, sectionId, undefined, 1, 100);
+      setClassAssignments(result.assignments ?? []);
+      setAssignmentsLoaded(true);
+    } catch {
+      toast.error("Failed to load assignments");
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, [classId, sectionId]);
+
+  const loadSubmissions = useCallback(async (assignment: AssignmentResponse) => {
+    setSelectedAssignment(assignment);
+    setSubmissionsLoading(true);
+    try {
+      const result = await assignmentApi.getSubmissions(assignment.id, 1, 200);
+      setAssignmentSubmissions(result.submissions ?? []);
+    } catch {
+      toast.error("Failed to load submissions");
+    } finally {
+      setSubmissionsLoading(false);
+    }
+  }, []);
+
+  const handleCreateAssignment = async () => {
+    if (!createAssignmentForm.title.trim() || !createAssignmentForm.subjectId || !createAssignmentForm.dueDate) {
+      toast.error("Title, subject, and due date are required");
+      return;
+    }
+    setCreateAssignmentSaving(true);
+    try {
+      const created = await assignmentApi.createAssignment({
+        classId: classId!,
+        sectionId: sectionId!,
+        subjectId: createAssignmentForm.subjectId,
+        title: createAssignmentForm.title.trim(),
+        description: createAssignmentForm.description.trim(),
+        assignedDate: createAssignmentForm.assignedDate,
+        dueDate: createAssignmentForm.dueDate,
+        maxMarks: parseFloat(createAssignmentForm.maxMarks) || 100,
+        status: "active",
+      });
+      setClassAssignments(prev => [created, ...prev]);
+      setCreateAssignmentOpen(false);
+      setCreateAssignmentForm({ title: "", description: "", subjectId: "", assignedDate: new Date().toISOString().split("T")[0], dueDate: "", maxMarks: "100" });
+      toast.success("Assignment created successfully");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Failed to create assignment");
+    } finally {
+      setCreateAssignmentSaving(false);
+    }
+  };
+
+  const handleGradeSubmit = async () => {
+    if (!gradingSubmission || !gradeForm.marks) return;
+    const marks = parseFloat(gradeForm.marks);
+    if (isNaN(marks) || marks < 0) { toast.error("Enter valid marks"); return; }
+    setGradeSaving(true);
+    try {
+      await assignmentApi.gradeSubmission(gradingSubmission.id, {
+        marksObtained: marks,
+        feedback: gradeForm.feedback || undefined,
+        gradedById: "",  // server resolves from JWT in future; for now backend doesn't validate this
+        status: "graded",
+      });
+      toast.success("Submission graded");
+      setGradeDialogOpen(false);
+      setGradingSubmission(null);
+      setGradeForm({ marks: "", feedback: "" });
+      // Refresh submissions list
+      if (selectedAssignment) loadSubmissions(selectedAssignment);
+      // Refresh assignment list to update graded count
+      loadAssignments();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Failed to grade submission");
+    } finally {
+      setGradeSaving(false);
+    }
+  };
+
   useEffect(() => {
     loadSectionData();
     loadStaffAssignments();
     loadTimetable();
   }, [classId, sectionId]);
+
+  // Lazy-load assignments when tab is first selected
+  useEffect(() => {
+    if (activeTab === "assignments" && !assignmentsLoaded) {
+      loadAssignments();
+    }
+  }, [activeTab, assignmentsLoaded, loadAssignments]);
 
   const loadSectionData = useCallback(async () => {
     setLoading(true);
@@ -1644,25 +1763,357 @@ export default function SectionDetail() {
 
         {/* Assignments Tab */}
         <TabsContent value="assignments" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Assignments
-              </CardTitle>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Assignment
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No assignments available</p>
-                <p className="text-sm">Create assignments for this section</p>
+          {/* If an assignment is selected, show the detail/submissions view */}
+          {selectedAssignment ? (
+            <div className="space-y-4">
+              {/* Back + header */}
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedAssignment(null); setAssignmentSubmissions([]); }}>
+                  <ArrowLeft className="h-4 w-4 mr-1" /> Back to Assignments
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <CardTitle className="text-lg">{selectedAssignment.title}</CardTitle>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" />{selectedAssignment.subjectName || "—"}</span>
+                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{selectedAssignment.assignedByName || "—"}</span>
+                        <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />Due: {new Date(selectedAssignment.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                        <span className="flex items-center gap-1"><Award className="h-3.5 w-3.5" />Max: {selectedAssignment.maxMarks} marks</span>
+                      </div>
+                      {selectedAssignment.description && (
+                        <p className="text-sm text-muted-foreground mt-1">{selectedAssignment.description}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Badge variant={selectedAssignment.status === "active" ? "default" : "secondary"} className="capitalize">{selectedAssignment.status}</Badge>
+                    </div>
+                  </div>
+                  {/* Submission stats */}
+                  <div className="flex gap-4 mt-3 pt-3 border-t">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-primary">{assignmentSubmissions.length}</div>
+                      <div className="text-xs text-muted-foreground">Submitted</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{assignmentSubmissions.filter(s => s.status === "graded").length}</div>
+                      <div className="text-xs text-muted-foreground">Graded</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-500">{assignmentSubmissions.filter(s => s.status !== "graded").length}</div>
+                      <div className="text-xs text-muted-foreground">Pending</div>
+                    </div>
+                    {assignmentSubmissions.filter(s => s.marksObtained != null).length > 0 && (
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {(assignmentSubmissions.filter(s => s.marksObtained != null).reduce((sum, s) => sum + (s.marksObtained ?? 0), 0) / assignmentSubmissions.filter(s => s.marksObtained != null).length).toFixed(1)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Avg Score</div>
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {submissionsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                      <span className="text-muted-foreground">Loading submissions…</span>
+                    </div>
+                  ) : assignmentSubmissions.length === 0 ? (
+                    <div className="text-center py-10 text-muted-foreground">
+                      <AlertCircle className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                      <p>No submissions yet for this assignment</p>
+                      <p className="text-sm mt-1">Students will appear here once they submit</p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead>Roll No.</TableHead>
+                          <TableHead>Submitted On</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Marks</TableHead>
+                          <TableHead>Feedback</TableHead>
+                          <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {assignmentSubmissions.map(sub => (
+                          <TableRow key={sub.id}>
+                            <TableCell className="font-medium">{sub.studentName || sub.studentId.slice(0, 8)}</TableCell>
+                            <TableCell className="text-muted-foreground">{sub.studentRollNo || "—"}</TableCell>
+                            <TableCell className="text-sm">{new Date(sub.submissionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
+                            <TableCell>
+                              <Badge variant={sub.status === "graded" ? "default" : "secondary"} className="capitalize text-xs">{sub.status}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {sub.marksObtained != null ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}` : "—"}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">{sub.feedback || "—"}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant={sub.status === "graded" ? "outline" : "default"}
+                                onClick={() => { setGradingSubmission(sub); setGradeForm({ marks: sub.marksObtained?.toString() ?? "", feedback: sub.feedback ?? "" }); setGradeDialogOpen(true); }}
+                              >
+                                <Award className="h-3.5 w-3.5 mr-1" />
+                                {sub.status === "graded" ? "Re-grade" : "Grade"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            /* Assignments list view */
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Assignments
+                  {classAssignments.length > 0 && (
+                    <Badge variant="secondary" className="ml-1">{classAssignments.length}</Badge>
+                  )}
+                </CardTitle>
+                <Button size="sm" onClick={() => setCreateAssignmentOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Assignment
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {assignmentsLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                    <span className="text-muted-foreground">Loading assignments…</span>
+                  </div>
+                ) : classAssignments.length === 0 ? (
+                  <div className="text-center py-10 text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="font-medium">No assignments yet</p>
+                    <p className="text-sm mt-1">Create the first assignment for this section</p>
+                    <Button size="sm" className="mt-4" onClick={() => setCreateAssignmentOpen(true)}>
+                      <Plus className="h-4 w-4 mr-2" /> Create Assignment
+                    </Button>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Assigned By</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead className="text-right">Max Marks</TableHead>
+                        <TableHead className="text-center">Submissions</TableHead>
+                        <TableHead className="text-center">Graded</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {classAssignments.map(a => {
+                        const isOverdue = new Date(a.dueDate) < new Date() && a.status === "active";
+                        return (
+                          <TableRow key={a.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadSubmissions(a)}>
+                            <TableCell className="font-medium">{a.title}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.subjectName || "—"}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.assignedByName || "—"}</TableCell>
+                            <TableCell>
+                              <span className={isOverdue ? "text-red-500 font-medium" : ""}>
+                                {new Date(a.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                              </span>
+                              {isOverdue && <span className="ml-1 text-xs text-red-400">(overdue)</span>}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">{a.maxMarks}</TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center gap-1">
+                                {a.submissionCount}
+                                {a.submissionCount > 0 && (
+                                  <span className="text-xs text-muted-foreground">/ {students.length}</span>
+                                )}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {a.gradedCount > 0 ? (
+                                <span className="text-green-600 font-medium">{a.gradedCount}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={a.status === "active" ? "default" : "secondary"} className="capitalize text-xs">{a.status}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Create Assignment Dialog */}
+          <Dialog open={createAssignmentOpen} onOpenChange={setCreateAssignmentOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Create Assignment
+                </DialogTitle>
+                <DialogDescription>
+                  Create a new assignment for {section?.className} – {section?.name}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div>
+                  <Label htmlFor="asgn-title">Title <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="asgn-title"
+                    placeholder="e.g. Chapter 3 – Algebraic Expressions"
+                    value={createAssignmentForm.title}
+                    onChange={e => setCreateAssignmentForm(f => ({ ...f, title: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="asgn-subject">Subject <span className="text-red-500">*</span></Label>
+                  <Select
+                    value={createAssignmentForm.subjectId}
+                    onValueChange={v => setCreateAssignmentForm(f => ({ ...f, subjectId: v }))}
+                  >
+                    <SelectTrigger id="asgn-subject" className="mt-1">
+                      <SelectValue placeholder="Select subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classSubjects.map(cs => (
+                        <SelectItem key={cs.subjectId} value={cs.subjectId}>{cs.subjectName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="asgn-desc">Description</Label>
+                  <textarea
+                    id="asgn-desc"
+                    rows={3}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="Instructions or details for students…"
+                    value={createAssignmentForm.description}
+                    onChange={e => setCreateAssignmentForm(f => ({ ...f, description: e.target.value }))}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="asgn-assigned">Assigned Date</Label>
+                    <Input
+                      id="asgn-assigned"
+                      type="date"
+                      className="mt-1"
+                      value={createAssignmentForm.assignedDate}
+                      onChange={e => setCreateAssignmentForm(f => ({ ...f, assignedDate: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="asgn-due">Due Date <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="asgn-due"
+                      type="date"
+                      className="mt-1"
+                      value={createAssignmentForm.dueDate}
+                      min={createAssignmentForm.assignedDate}
+                      onChange={e => setCreateAssignmentForm(f => ({ ...f, dueDate: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="asgn-marks">Maximum Marks</Label>
+                  <Input
+                    id="asgn-marks"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    className="mt-1"
+                    value={createAssignmentForm.maxMarks}
+                    onChange={e => setCreateAssignmentForm(f => ({ ...f, maxMarks: e.target.value }))}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setCreateAssignmentOpen(false)} disabled={createAssignmentSaving}>Cancel</Button>
+                  <Button onClick={handleCreateAssignment} disabled={createAssignmentSaving}>
+                    {createAssignmentSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : "Create Assignment"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Grade Submission Dialog */}
+          <Dialog open={gradeDialogOpen} onOpenChange={open => { if (!open) { setGradeDialogOpen(false); setGradingSubmission(null); } }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Award className="h-5 w-5" />
+                  Grade Submission
+                </DialogTitle>
+                <DialogDescription>
+                  {gradingSubmission?.studentName} — {selectedAssignment?.title}
+                </DialogDescription>
+              </DialogHeader>
+              {gradingSubmission && (
+                <div className="space-y-4 pt-2">
+                  {gradingSubmission.content && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Student's Answer</Label>
+                      <div className="mt-1 rounded-md border bg-muted/30 p-3 text-sm max-h-32 overflow-y-auto whitespace-pre-wrap">
+                        {gradingSubmission.content}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <Label htmlFor="grade-marks">Marks Obtained (out of {selectedAssignment?.maxMarks}) <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="grade-marks"
+                      type="number"
+                      min="0"
+                      max={selectedAssignment?.maxMarks}
+                      className="mt-1"
+                      value={gradeForm.marks}
+                      onChange={e => setGradeForm(f => ({ ...f, marks: e.target.value }))}
+                      placeholder={`0 – ${selectedAssignment?.maxMarks}`}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="grade-feedback">Feedback</Label>
+                    <textarea
+                      id="grade-feedback"
+                      rows={3}
+                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Optional feedback for the student…"
+                      value={gradeForm.feedback}
+                      onChange={e => setGradeForm(f => ({ ...f, feedback: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => { setGradeDialogOpen(false); setGradingSubmission(null); }} disabled={gradeSaving}>Cancel</Button>
+                    <Button onClick={handleGradeSubmit} disabled={gradeSaving}>
+                      {gradeSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Save Grade"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
 

@@ -257,7 +257,3 @@ export default function StudentMarks() {
     </div>
   );
 }
-
-    </div>
-  );
-}

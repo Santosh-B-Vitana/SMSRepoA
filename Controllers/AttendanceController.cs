@@ -24,19 +24,22 @@ namespace SmsApi.Controllers
         private readonly ITenantContext _tenant;
         private readonly ILogger<AttendanceController> _logger;
         private readonly AppDbContext _context;
+        private readonly IParentAuthorizationService _parentAuth;
 
         public AttendanceController(
             IAttendanceService service,
             IAcademicYearContextService yearContextService,
             ILogger<AttendanceController> logger,
             ITenantContext tenant,
-            AppDbContext context)
+            AppDbContext context,
+            IParentAuthorizationService parentAuth)
         {
             _service = service;
             _yearContextService = yearContextService;
             _logger = logger;
             _tenant = tenant;
             _context = context;
+            _parentAuth = parentAuth;
         }
 
         /// <summary>
@@ -188,14 +191,9 @@ namespace SmsApi.Controllers
                     if (!filters.StudentId.HasValue)
                         return BadRequest(new { message = "studentId is required for Parent role." });
 
-                    var parentEmail = _tenant.UserEmail;
-                    var isLinked = await _context.StudentGuardians
-                        .AnyAsync(g => g.StudentId == filters.StudentId.Value
-                                   && g.SchoolId == schoolId
-                                   && !g.IsDeleted
-                                   && g.Email != null
-                                   && g.Email.ToLower() == parentEmail.ToLower());
-                    if (!isLinked)
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, filters.StudentId.Value);
+                    if (!canAccess)
                         return StatusCode(403, new { message = "Parents can only access their own child's attendance records." });
                 }
 

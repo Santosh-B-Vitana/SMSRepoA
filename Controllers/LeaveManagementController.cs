@@ -15,10 +15,14 @@ namespace SmsApi.Controllers
     public class LeaveManagementController : ControllerBase
     {
         private readonly ILeaveManagementService _leaveManagementService;
+        private readonly IParentAuthorizationService _parentAuth;
+        private readonly ITenantContext _tenant;
 
-        public LeaveManagementController(ILeaveManagementService leaveManagementService)
+        public LeaveManagementController(ILeaveManagementService leaveManagementService, IParentAuthorizationService parentAuth, ITenantContext tenant)
         {
             _leaveManagementService = leaveManagementService;
+            _parentAuth = parentAuth;
+            _tenant = tenant;
         }
 
         private Guid GetSchoolId()
@@ -284,6 +288,15 @@ namespace SmsApi.Controllers
         {
             var schoolId = GetSchoolId();
             if (schoolId == Guid.Empty) return Unauthorized();
+
+            // Verify the parent is authorised to view the given student (direct child or sibling)
+            if (studentId.HasValue)
+            {
+                var parentEmail = _tenant.UserEmail ?? string.Empty;
+                var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId.Value);
+                if (!canAccess)
+                    return StatusCode(403, new { message = "Parents can only access their own child's leave records." });
+            }
 
             var result = await _leaveManagementService.GetStudentLeaveRequestsAsync(schoolId, page, pageSize, studentId, status);
             return Ok(result);

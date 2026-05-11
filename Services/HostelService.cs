@@ -208,7 +208,11 @@ namespace SmsApi.Services
             {
                 Id = hs.Id,
                 StudentId = hs.StudentId,
-                StudentName = hs.Student != null ? $"{hs.Student.FirstName} {hs.Student.LastName}" : "Unknown",
+                StudentName = hs.Student != null
+                    ? (!string.IsNullOrWhiteSpace(hs.Student.FirstName)
+                        ? $"{hs.Student.FirstName} {hs.Student.LastName}".Trim()
+                        : hs.Student.Name)
+                    : "Unknown",
                 StudentClass = hs.Student?.Class ?? "N/A",
                 StudentSection = hs.Student?.Section ?? "N/A",
                 Gender = hs.Student?.Gender ?? "Unknown",

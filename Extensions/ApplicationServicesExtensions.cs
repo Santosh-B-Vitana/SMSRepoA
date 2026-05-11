@@ -29,6 +29,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<ITwoFactorService, TwoFactorService>();
         services.AddScoped<IResourceAuthorizationService, ResourceAuthorizationService>();
+        services.AddScoped<IParentAuthorizationService, ParentAuthorizationService>();
 
         // ── Resilience (Polly) ─────────────────────────────────────────────
         services.AddResiliencePatterns();

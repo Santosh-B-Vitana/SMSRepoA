@@ -89,6 +89,11 @@ namespace SmsApi.Services
         Task<GuardianStaffDto?> GetGuardianStaffAsync(Guid schoolId, Guid staffId);
         Task SetGuardianStaffAsync(Guid schoolId, Guid studentId, Guid? staffId);
         Task<List<StaffChildDto>> GetChildrenOfStaffAsync(Guid schoolId, Guid staffId);
+
+        // ─── Student Exit (Drop-Out / Pass-Out) ────────────────────────────────
+        Task<ExitClearanceResponse> GetExitClearanceAsync(Guid studentId, Guid schoolId);
+        Task<StudentExitResponse> ProcessDropoutAsync(Guid studentId, Guid schoolId, StudentDropoutRequest request, Guid processedBy);
+        Task<StudentExitResponse> ProcessPassoutAsync(Guid studentId, Guid schoolId, StudentPassoutRequest request, Guid processedBy);
     }
 
     public class StudentService : IStudentService
@@ -556,6 +561,9 @@ namespace SmsApi.Services
                     // AUTO-CREATE LIBRARY CARD if student needs library access
                     await CreateLibraryCardAsync(student);
                     
+                    // AUTO-CREATE HEALTH RECORD so student appears in health management by default
+                    await CreateInitialHealthRecordAsync(student);
+                    
                     // AUTO-ASSIGN TRANSPORT ROUTE if student needs transport
                     if (student.TransportRequired)
                     {
@@ -695,6 +703,40 @@ namespace SmsApi.Services
             {
                 _logger.LogError(ex, "Failed to initialize library card for student {StudentId}", student.Id);
                 // Don't throw - library card failure shouldn't block student creation
+            }
+        }
+
+        private async Task CreateInitialHealthRecordAsync(Student student)
+        {
+            try
+            {
+                // Only create if no health record already exists for this student
+                var exists = await _context.HealthRecords
+                    .AnyAsync(h => h.SchoolId == student.SchoolId && h.StudentId == student.Id);
+                if (exists) return;
+
+                var healthRecord = new SmsApi.Models.Entities.HealthRecord
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = student.SchoolId,
+                    StudentId = student.Id,
+                    CheckupDate = DateTime.UtcNow,
+                    BloodGroup = student.BloodGroup,
+                    Allergies = student.Allergies,
+                    ChronicConditions = student.ChronicConditions,
+                    Medications = student.Medications,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.HealthRecords.Add(healthRecord);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Health record auto-created for student {StudentId}", student.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create health record for student {StudentId}", student.Id);
+                // Don't throw - health record failure shouldn't block student creation
             }
         }
         
@@ -2513,8 +2555,8 @@ namespace SmsApi.Services
 
         public async Task<List<StudentBasicResponse>> GetMyChildrenAsync(Guid schoolId, string parentEmail)
         {
-            // Find all students whose guardian email matches the parent's login email
-            var guardianLinks = await _context.StudentGuardians
+            // Step 1: Find all students whose guardian email matches the parent's login email
+            var directChildrenIds = await _context.StudentGuardians
                 .Where(sg => sg.SchoolId == schoolId
                     && sg.Email != null
                     && sg.Email.ToLower() == parentEmail.ToLower()
@@ -2523,11 +2565,21 @@ namespace SmsApi.Services
                 .Distinct()
                 .ToListAsync();
 
-            if (!guardianLinks.Any())
+            if (!directChildrenIds.Any())
                 return new List<StudentBasicResponse>();
 
+            // Step 2: Expand to include siblings of the direct children
+            var siblingIds = await _context.StudentSiblings
+                .Where(ss => ss.SchoolId == schoolId && directChildrenIds.Contains(ss.StudentId))
+                .Select(ss => ss.SiblingId)
+                .Distinct()
+                .ToListAsync();
+
+            // Merge direct children + siblings, deduplicated
+            var allStudentIds = directChildrenIds.Union(siblingIds).Distinct().ToList();
+
             var students = await _context.Students
-                .Where(s => guardianLinks.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted)
+                .Where(s => allStudentIds.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted)
                 .OrderBy(s => s.Name)
                 .ToListAsync();
 
@@ -3123,6 +3175,363 @@ namespace SmsApi.Services
                     PhotoUrl = s.PhotoUrl
                 })
                 .ToListAsync();
+        }
+
+        // =====================================================================
+        // STUDENT EXIT — Drop-Out & Pass-Out
+        // =====================================================================
+
+        public async Task<ExitClearanceResponse> GetExitClearanceAsync(Guid studentId, Guid schoolId)
+        {
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            // ── Pending fee records ──────────────────────────────────────────
+            var feeRecords = await _context.FeeRecords
+                .IgnoreQueryFilters()
+                .Include(f => f.FeeStructure)
+                .Where(f => f.StudentId == studentId && f.SchoolId == schoolId
+                         && f.PendingAmount > 0 && !f.IsDeleted)
+                .ToListAsync();
+
+            var pendingDtos = feeRecords.Select(f => new ExitPendingFeeDto
+            {
+                FeeRecordId   = f.Id,
+                FeeType       = f.FeeStructure?.Name ?? "Fee",
+                AcademicYear  = f.AcademicYear ?? string.Empty,
+                TotalAmount   = f.TotalAmount,
+                PaidAmount    = f.PaidAmount,
+                PendingAmount = f.PendingAmount,
+                DueDate       = (DateTime?)f.DueDate
+            }).ToList();
+
+            // ── Academic year — fall back to student's own field ────────────
+            var academicYear = (await _context.StudentEnrollments
+                .IgnoreQueryFilters()
+                .Where(e => e.StudentId == studentId && e.SchoolId == schoolId && !e.IsDeleted
+                         && e.Status == "active")
+                .Include(e => e.AcademicYear)
+                .OrderByDescending(e => e.EnrollmentDate)
+                .Select(e => e.AcademicYear != null ? e.AcademicYear.Name : null)
+                .FirstOrDefaultAsync()) ?? DateTime.UtcNow.Year.ToString();
+
+            // ── Build available documents with pre-populated fields ──────────
+            var currentYear = DateTime.UtcNow.Year;
+            var docs = new List<ExitDocumentDto>
+            {
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "transfer_certificate",
+                    Title        = "Transfer Certificate",
+                    IsMandatory  = true,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]         = student.Name,
+                        ["admissionNumber"]     = student.AdmissionNumber ?? string.Empty,
+                        ["dateOfBirth"]         = student.DateOfBirth.ToString("dd/MM/yyyy"),
+                        ["fatherName"]          = student.GuardianName ?? string.Empty,
+                        ["class"]               = student.Class ?? string.Empty,
+                        ["section"]             = student.Section ?? string.Empty,
+                        ["academicYear"]        = academicYear,
+                        ["reasonForLeaving"]    = string.Empty,
+                        ["conduct"]             = "Good",
+                        ["dateOfLeaving"]       = DateTime.UtcNow.ToString("dd/MM/yyyy"),
+                        ["lastExamResult"]      = string.Empty,
+                        ["qualifiedForHigher"]  = "Yes",
+                        ["additionalRemarks"]   = string.Empty
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "character_certificate",
+                    Title        = "Character Certificate",
+                    IsMandatory  = true,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]     = student.Name,
+                        ["admissionNumber"] = student.AdmissionNumber ?? string.Empty,
+                        ["class"]           = student.Class ?? string.Empty,
+                        ["section"]         = student.Section ?? string.Empty,
+                        ["academicYear"]    = academicYear,
+                        ["conduct"]         = "Good",
+                        ["characterRemarks"]= "The student has been found to be of good character and conduct during the period of study.",
+                        ["issueDate"]       = DateTime.UtcNow.ToString("dd/MM/yyyy")
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "bonafide_certificate",
+                    Title        = "Bonafide Certificate",
+                    IsMandatory  = false,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]     = student.Name,
+                        ["admissionNumber"] = student.AdmissionNumber ?? string.Empty,
+                        ["dateOfBirth"]     = student.DateOfBirth.ToString("dd/MM/yyyy"),
+                        ["class"]           = student.Class ?? string.Empty,
+                        ["section"]         = student.Section ?? string.Empty,
+                        ["academicYear"]    = academicYear,
+                        ["issueDate"]       = DateTime.UtcNow.ToString("dd/MM/yyyy"),
+                        ["purpose"]         = string.Empty
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "progress_report",
+                    Title        = "Progress Report / Report Card",
+                    IsMandatory  = false,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]  = student.Name,
+                        ["class"]        = student.Class ?? string.Empty,
+                        ["section"]      = student.Section ?? string.Empty,
+                        ["academicYear"] = academicYear
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "no_dues_certificate",
+                    Title        = "No Dues / Fee Clearance Certificate",
+                    IsMandatory  = false,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]     = student.Name,
+                        ["admissionNumber"] = student.AdmissionNumber ?? string.Empty,
+                        ["class"]           = student.Class ?? string.Empty,
+                        ["academicYear"]    = academicYear,
+                        ["issueDate"]       = DateTime.UtcNow.ToString("dd/MM/yyyy")
+                    }
+                }
+            };
+
+            return new ExitClearanceResponse
+            {
+                StudentId          = student.Id,
+                StudentName        = student.Name,
+                CurrentClass       = student.Class ?? string.Empty,
+                CurrentSection     = student.Section,
+                AcademicYear       = academicYear,
+                IsFeeClear         = !pendingDtos.Any(),
+                TotalPendingAmount = pendingDtos.Sum(p => p.PendingAmount),
+                PendingFees        = pendingDtos,
+                AvailableDocuments = docs
+            };
+        }
+
+        public async Task<StudentExitResponse> ProcessDropoutAsync(
+            Guid studentId, Guid schoolId, StudentDropoutRequest request, Guid processedBy)
+        {
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            var isTransfer = string.Equals(request.DropoutType, "transfer", StringComparison.OrdinalIgnoreCase);
+
+            // ── Create Transfer Certificate record if transfer ──────────────
+            if (isTransfer)
+            {
+                var existingTc = await _context.TransferCertificates
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(tc => tc.StudentId == studentId && tc.SchoolId == schoolId && !tc.IsDeleted);
+
+                if (existingTc == null)
+                {
+                    var tcFields = request.DocumentsToGenerate
+                        .FirstOrDefault(d => d.DocumentKey == "transfer_certificate")?.Fields
+                        ?? new Dictionary<string, string>();
+
+                    _context.TransferCertificates.Add(new TransferCertificate
+                    {
+                        Id                       = Guid.NewGuid(),
+                        SchoolId                 = schoolId,
+                        StudentId                = studentId,
+                        ApplicationDate          = DateTime.UtcNow,
+                        IssuedDate               = DateTime.UtcNow,
+                        ExitAcademicYear         = tcFields.GetValueOrDefault("academicYear"),
+                        ExitClass                = student.Class,
+                        ExitSection              = student.Section,
+                        ReasonForLeaving         = request.Reason ?? tcFields.GetValueOrDefault("reasonForLeaving"),
+                        Conduct                  = request.Conduct ?? tcFields.GetValueOrDefault("conduct") ?? "Good",
+                        IsTCIssued               = true,
+                        IsFailedInLastClass      = false,
+                        LastAnnualExamResult     = tcFields.GetValueOrDefault("lastExamResult"),
+                        IsQualifiedForHigherClass = string.Equals(tcFields.GetValueOrDefault("qualifiedForHigher"), "Yes", StringComparison.OrdinalIgnoreCase),
+                        AdditionalRemarks        = request.Remarks ?? tcFields.GetValueOrDefault("additionalRemarks"),
+                        IsCharacterCertificateIssued = request.DocumentsToGenerate.Any(d => d.DocumentKey == "character_certificate"),
+                        CreatedAt                = DateTime.UtcNow,
+                        UpdatedAt                = DateTime.UtcNow
+                    });
+                }
+
+                // Mark student inactive (left school)
+                student.Status   = "inactive";
+                student.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                // Detain — student stays in same class, remains active
+                // Optionally mark in remarks only
+                student.ProgressReportRemarks = string.IsNullOrWhiteSpace(student.ProgressReportRemarks)
+                    ? $"Detained {DateTime.UtcNow:yyyy-MM-dd}: {request.Reason}"
+                    : student.ProgressReportRemarks + $" | Detained {DateTime.UtcNow:yyyy-MM-dd}";
+                student.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+
+            // ── Alumni record ─────────────────────────────────────────────────
+            Guid? alumniId = null;
+            string? alumniMessage = null;
+            if (isTransfer)
+            {
+                try
+                {
+                    await _alumniService.TryAutoRegisterFromStudentAsync(
+                        schoolId, studentId, request.Reason ?? "Transfer", DateTime.UtcNow.Year.ToString());
+                    // Fetch the created alumni record
+                    var alumni = await _context.AlumniRecords
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.StudentId == studentId);
+                    alumniId      = alumni?.Id;
+                    alumniMessage = alumni != null ? "Alumni record created." : "Alumni record could not be created.";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to auto-register alumni for dropout student {StudentId}", studentId);
+                    alumniMessage = "Alumni registration failed — please add manually.";
+                }
+            }
+
+            var generatedDocs = BuildGeneratedDocuments(request.DocumentsToGenerate, student, isTransfer ? "dropout_transfer" : "dropout_detain");
+
+            return new StudentExitResponse
+            {
+                StudentId          = studentId,
+                StudentName        = student.Name,
+                ExitType           = "dropout",
+                SubType            = isTransfer ? "transfer" : "detain",
+                NewStatus          = student.Status,
+                AlumniId           = alumniId,
+                AlumniMessage      = alumniMessage,
+                GeneratedDocuments = generatedDocs,
+                Message            = isTransfer
+                    ? $"{student.Name} has been marked as dropped-out (transfer). Alumni record registered."
+                    : $"{student.Name} has been detained in {student.Class}-{student.Section}."
+            };
+        }
+
+        public async Task<StudentExitResponse> ProcessPassoutAsync(
+            Guid studentId, Guid schoolId, StudentPassoutRequest request, Guid processedBy)
+        {
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            // ── Create Transfer Certificate record ───────────────────────────
+            var existingTc = await _context.TransferCertificates
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(tc => tc.StudentId == studentId && tc.SchoolId == schoolId && !tc.IsDeleted);
+
+            if (existingTc == null)
+            {
+                var tcFields = request.DocumentsToGenerate
+                    .FirstOrDefault(d => d.DocumentKey == "transfer_certificate")?.Fields
+                    ?? new Dictionary<string, string>();
+
+                _context.TransferCertificates.Add(new TransferCertificate
+                {
+                    Id                        = Guid.NewGuid(),
+                    SchoolId                  = schoolId,
+                    StudentId                 = studentId,
+                    ApplicationDate           = DateTime.UtcNow,
+                    IssuedDate                = DateTime.UtcNow,
+                    ExitAcademicYear          = request.AcademicYear,
+                    ExitClass                 = student.Class,
+                    ExitSection               = student.Section,
+                    ReasonForLeaving          = request.Reason ?? "Passed Out / Completion",
+                    Conduct                   = request.Conduct ?? tcFields.GetValueOrDefault("conduct") ?? "Good",
+                    IsTCIssued                = true,
+                    IsFailedInLastClass       = false,
+                    LastAnnualExamResult      = tcFields.GetValueOrDefault("lastExamResult"),
+                    IsQualifiedForHigherClass = true,
+                    AdditionalRemarks         = request.Remarks ?? tcFields.GetValueOrDefault("additionalRemarks"),
+                    IsCharacterCertificateIssued = request.DocumentsToGenerate.Any(d => d.DocumentKey == "character_certificate"),
+                    CreatedAt                 = DateTime.UtcNow,
+                    UpdatedAt                 = DateTime.UtcNow
+                });
+            }
+
+            // Mark student inactive
+            student.Status    = "inactive";
+            student.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            // ── Alumni record ─────────────────────────────────────────────────
+            Guid? alumniId = null;
+            string? alumniMessage = null;
+            try
+            {
+                await _alumniService.TryAutoRegisterFromStudentAsync(
+                    schoolId, studentId, request.Reason ?? "Passed Out", request.AcademicYear);
+                var alumni = await _context.AlumniRecords
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.StudentId == studentId);
+                alumniId      = alumni?.Id;
+                alumniMessage = alumni != null ? "Alumni record created." : "Alumni record could not be created.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to auto-register alumni for passout student {StudentId}", studentId);
+                alumniMessage = "Alumni registration failed — please add manually.";
+            }
+
+            var generatedDocs = BuildGeneratedDocuments(request.DocumentsToGenerate, student, "passout");
+
+            return new StudentExitResponse
+            {
+                StudentId          = studentId,
+                StudentName        = student.Name,
+                ExitType           = "passout",
+                SubType            = "passout",
+                NewStatus          = student.Status,
+                AlumniId           = alumniId,
+                AlumniMessage      = alumniMessage,
+                GeneratedDocuments = generatedDocs,
+                Message            = $"{student.Name} has been marked as passed out. Alumni record registered."
+            };
+        }
+
+        /// <summary>
+        /// Builds the list of generated-document DTOs from the requested documents.
+        /// Merges any user-edited fields with student data.
+        /// </summary>
+        private static List<GeneratedDocumentDto> BuildGeneratedDocuments(
+            List<ExitDocumentRequest> requested, Student student, string context)
+        {
+            var result = new List<GeneratedDocumentDto>();
+            foreach (var doc in requested)
+            {
+                result.Add(new GeneratedDocumentDto
+                {
+                    DocumentKey = doc.DocumentKey,
+                    Title       = doc.DocumentKey switch
+                    {
+                        "transfer_certificate"  => "Transfer Certificate",
+                        "character_certificate" => "Character Certificate",
+                        "bonafide_certificate"  => "Bonafide Certificate",
+                        "progress_report"       => "Progress Report",
+                        "no_dues_certificate"   => "No Dues Certificate",
+                        _                       => doc.DocumentKey
+                    },
+                    Fields  = doc.Fields,
+                    FileUrl = null  // server-side PDF generation can be added later
+                });
+            }
+            return result;
         }
     }
 }

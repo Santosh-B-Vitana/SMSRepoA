@@ -18,7 +18,7 @@ import {
   FileText, CalendarDays, CreditCard, Banknote, Filter, Link2, PackagePlus
 } from "lucide-react";
 import { toast } from "sonner";
-import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure } from "@/services/api/feeApi";
+import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById } from "@/services/api/feeApi";
 import { academicApi, ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import apiClient from "@/services/api/apiClient";
@@ -141,6 +141,33 @@ function CollectPaymentDialog({
   }>({ amount: "", method: "", date: "", chequeNumber: "", bankName: "", gatewayRef: "", remarks: "", editReason: "" });
   const [editing, setEditing] = useState(false);
 
+  // ── Module fee editing (transport / hostel monthly rate override) ──
+  const [editingModule, setEditingModule] = useState<"transport" | "hostel" | null>(null);
+  const [editingModuleVal, setEditingModuleVal] = useState("");
+  const [savingModule, setSavingModule] = useState(false);
+
+  const handleSaveModuleFee = async (module: "transport" | "hostel") => {
+    if (!activeRecord) return;
+    const newRate = parseFloat(editingModuleVal);
+    if (isNaN(newRate) || newRate < 0) { toast.error("Invalid amount"); return; }
+    setSavingModule(true);
+    try {
+      await patchModuleFees(activeRecord.id, module === "transport"
+        ? { transportMonthlyFee: newRate }
+        : { hostelMonthlyFee: newRate }
+      );
+      // Reload the record to get recalculated pro-rata values
+      const fresh = await getFeeRecordById(activeRecord.id);
+      setLiveRecord(fresh);
+      setEditingModule(null);
+      toast.success(`${module === "transport" ? "Transport" : "Hostel"} fee updated`);
+    } catch {
+      toast.error("Failed to update fee");
+    } finally {
+      setSavingModule(false);
+    }
+  };
+
   // ── Extra charges ──
   const [extraChargesOpen, setExtraChargesOpen] = useState(false);
   const [extraItems, setExtraItems] = useState<Array<{ label: string; amount: number }>>([]);
@@ -179,7 +206,12 @@ function CollectPaymentDialog({
       // Fetch fresh record so payments array is populated (list endpoint omits payments for perf)
       setFetchingRecord(true);
       feeApi.getFeeRecordById(record.id)
-        .then(fresh => setLiveRecord(fresh))
+        .then(fresh => {
+          setLiveRecord(fresh);
+          // Pre-fill amount with effective outstanding including transport & hostel module fees
+          const effectiveOutstanding = (fresh.pendingAmount ?? 0) + (fresh.transportFee ?? 0) + (fresh.hostelFee ?? 0);
+          setAmount(String(effectiveOutstanding));
+        })
         .catch(() => {}) // keep the stale record if fetch fails
         .finally(() => setFetchingRecord(false));
       // Auto-link structure if record has no structure
@@ -207,7 +239,8 @@ function CollectPaymentDialog({
   const structure = structures.find(s => s.id === activeRecord.feeStructureId);
   const feeHeads = FEE_HEADS.filter(h => structure && (structure as any)[h.key] > 0);
   const discountRatio = activeRecord.discountAmount && activeRecord.totalAmount ? activeRecord.discountAmount / activeRecord.totalAmount : 0;
-  const outstanding = activeRecord.pendingAmount ?? 0;
+  // Include transport & hostel pro-rata module fees in the outstanding balance
+  const outstanding = (activeRecord.pendingAmount ?? 0) + (activeRecord.transportFee ?? 0) + (activeRecord.hostelFee ?? 0);
 
   // Compute adjustment delta from headOverrides
   const adjustmentDelta = Object.entries(headOverrides).reduce((acc, [key, overrideNet]) => {
@@ -756,7 +789,34 @@ function CollectPaymentDialog({
                             {inr(activeRecord.transportMonthlyFee ?? 0)}<span className="text-[9px] text-blue-400">/mo</span>
                           </td>
                           <td className="py-1.5 text-right tabular-nums font-bold text-blue-800">
-                            {inr(activeRecord.transportFee ?? 0)}
+                            {editingModule === "transport" ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="text-[9px] text-blue-500 mb-0.5">Monthly rate →</div>
+                                <div className="flex items-center gap-1 justify-end">
+                                  <Input
+                                    type="number" min={0} className="h-6 w-20 text-xs px-1.5 text-right"
+                                    value={editingModuleVal}
+                                    onChange={e => setEditingModuleVal(e.target.value)}
+                                    autoFocus
+                                    onKeyDown={e => { if (e.key === "Enter") handleSaveModuleFee("transport"); if (e.key === "Escape") setEditingModule(null); }}
+                                  />
+                                  <button onClick={() => handleSaveModuleFee("transport")} disabled={savingModule}
+                                    className="text-[10px] font-bold text-green-700 hover:text-green-800 disabled:opacity-50">
+                                    {savingModule ? "…" : "✓"}
+                                  </button>
+                                  <button onClick={() => setEditingModule(null)}
+                                    className="text-[10px] text-muted-foreground hover:text-red-600">✕</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="flex items-center gap-1 justify-end">
+                                {inr(activeRecord.transportFee ?? 0)}
+                                <button onClick={() => { setEditingModule("transport"); setEditingModuleVal(String(activeRecord.transportMonthlyFee ?? 0)); }}
+                                  className="text-blue-400 hover:text-blue-700 ml-1" title="Override pro-rata (edit monthly rate)">
+                                  <Pencil className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -775,7 +835,34 @@ function CollectPaymentDialog({
                             {inr(activeRecord.hostelMonthlyFee ?? 0)}<span className="text-[9px] text-blue-400">/mo</span>
                           </td>
                           <td className="py-1.5 text-right tabular-nums font-bold text-blue-800">
-                            {inr(activeRecord.hostelFee ?? 0)}
+                            {editingModule === "hostel" ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="text-[9px] text-blue-500 mb-0.5">Monthly rate →</div>
+                                <div className="flex items-center gap-1 justify-end">
+                                  <Input
+                                    type="number" min={0} className="h-6 w-20 text-xs px-1.5 text-right"
+                                    value={editingModuleVal}
+                                    onChange={e => setEditingModuleVal(e.target.value)}
+                                    autoFocus
+                                    onKeyDown={e => { if (e.key === "Enter") handleSaveModuleFee("hostel"); if (e.key === "Escape") setEditingModule(null); }}
+                                  />
+                                  <button onClick={() => handleSaveModuleFee("hostel")} disabled={savingModule}
+                                    className="text-[10px] font-bold text-green-700 hover:text-green-800 disabled:opacity-50">
+                                    {savingModule ? "…" : "✓"}
+                                  </button>
+                                  <button onClick={() => setEditingModule(null)}
+                                    className="text-[10px] text-muted-foreground hover:text-red-600">✕</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="flex items-center gap-1 justify-end">
+                                {inr(activeRecord.hostelFee ?? 0)}
+                                <button onClick={() => { setEditingModule("hostel"); setEditingModuleVal(String(activeRecord.hostelMonthlyFee ?? 0)); }}
+                                  className="text-blue-400 hover:text-blue-700 ml-1" title="Override pro-rata (edit monthly rate)">
+                                  <Pencil className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -1164,11 +1251,14 @@ function CollectPaymentDialog({
                     </div>
                     {amt > 0 && amt <= adjustedOutstanding + 0.01 && (
                       <div className="text-right">
-                        <div className="text-[10px] text-muted-foreground uppercase font-semibold">After This Payment</div>
-                        <div className={`text-xl font-bold tabular-nums mt-0.5 ${afterPayment === 0 ? "text-green-600" : "text-amber-600"}`}>
-                          {afterPayment === 0 ? "✓ Cleared" : inr(afterPayment)}
+                        <div className="text-[10px] text-muted-foreground uppercase font-semibold">Balance After Payment</div>
+                        <div className={`text-xl font-bold tabular-nums mt-0.5 ${afterPayment === 0 ? "text-blue-600" : "text-amber-600"}`}>
+                          {afterPayment === 0 ? "Will be cleared" : inr(afterPayment)}
                         </div>
-                        {amt < adjustedOutstanding && <div className="text-xs text-muted-foreground">{inr(afterPayment)} remaining</div>}
+                        {afterPayment === 0
+                          ? <div className="text-xs text-blue-500">Full balance will clear on submission</div>
+                          : <div className="text-xs text-muted-foreground">{inr(afterPayment)} remaining</div>
+                        }
                       </div>
                     )}
                   </div>

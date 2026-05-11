@@ -11,7 +11,7 @@ namespace SmsApi.Services
 {
     public interface IAssignmentService
     {
-        Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10);
+        Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10);
         Task<AssignmentResponse?> GetAssignmentByIdAsync(Guid id, Guid schoolId);
         Task<AssignmentResponse> CreateAssignmentAsync(CreateAssignmentRequest request);
         Task<AssignmentResponse?> UpdateAssignmentAsync(Guid id, Guid schoolId, UpdateAssignmentRequest request);
@@ -32,29 +32,31 @@ namespace SmsApi.Services
             _context = context;
         }
 
-        public async Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10)
+        public async Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10)
         {
             // Normalize pagination bounds
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 10;
             if (pageSize > 100) pageSize = 100;
 
-            var query = _context.Assignments.Where(a => a.SchoolId == schoolId);
+            var query = _context.Assignments
+                .Include(a => a.Class)
+                .Include(a => a.Section)
+                .Include(a => a.Subject)
+                .Include(a => a.AssignedBy)
+                .Where(a => a.SchoolId == schoolId);
 
             if (classId.HasValue)
-            {
                 query = query.Where(a => a.ClassId == classId.Value);
-            }
+
+            if (sectionId.HasValue)
+                query = query.Where(a => a.SectionId == sectionId.Value || a.SectionId == null);
 
             if (subjectId.HasValue)
-            {
                 query = query.Where(a => a.SubjectId == subjectId.Value);
-            }
 
             if (assignedById.HasValue)
-            {
                 query = query.Where(a => a.AssignedById == assignedById.Value);
-            }
 
             var total = await query.CountAsync();
             var assignments = await query
@@ -63,9 +65,27 @@ namespace SmsApi.Services
                 .Take(pageSize)
                 .ToListAsync();
 
+            // Fetch submission counts in one query
+            var assignmentIds = assignments.Select(a => a.Id).ToList();
+            var submissionStats = await _context.AssignmentSubmissions
+                .Where(s => assignmentIds.Contains(s.AssignmentId))
+                .GroupBy(s => s.AssignmentId)
+                .Select(g => new { AssignmentId = g.Key, Total = g.Count(), Graded = g.Count(s => s.Status == "graded") })
+                .ToListAsync();
+            var statsMap = submissionStats.ToDictionary(s => s.AssignmentId);
+
             return new AssignmentListResponse
             {
-                Assignments = assignments.Select(MapToResponse).ToList(),
+                Assignments = assignments.Select(a =>
+                {
+                    var resp = MapToResponse(a);
+                    if (statsMap.TryGetValue(a.Id, out var stats))
+                    {
+                        resp.SubmissionCount = stats.Total;
+                        resp.GradedCount = stats.Graded;
+                    }
+                    return resp;
+                }).ToList(),
                 Total = total,
                 Page = page,
                 PageSize = pageSize
@@ -75,9 +95,26 @@ namespace SmsApi.Services
         public async Task<AssignmentResponse?> GetAssignmentByIdAsync(Guid id, Guid schoolId)
         {
             var assignment = await _context.Assignments
+                .Include(a => a.Class)
+                .Include(a => a.Section)
+                .Include(a => a.Subject)
+                .Include(a => a.AssignedBy)
                 .FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId);
 
-            return assignment == null ? null : MapToResponse(assignment);
+            if (assignment == null) return null;
+
+            var resp = MapToResponse(assignment);
+            var stats = await _context.AssignmentSubmissions
+                .Where(s => s.AssignmentId == id)
+                .GroupBy(s => s.AssignmentId)
+                .Select(g => new { Total = g.Count(), Graded = g.Count(s => s.Status == "graded") })
+                .FirstOrDefaultAsync();
+            if (stats != null)
+            {
+                resp.SubmissionCount = stats.Total;
+                resp.GradedCount = stats.Graded;
+            }
+            return resp;
         }
 
         public async Task<AssignmentResponse> CreateAssignmentAsync(CreateAssignmentRequest request)
@@ -242,9 +279,10 @@ namespace SmsApi.Services
             // Normalize pagination bounds
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 10;
-            if (pageSize > 100) pageSize = 100;
+            if (pageSize > 200) pageSize = 200;
 
             var query = _context.AssignmentSubmissions
+                .Include(s => s.Student)
                 .Where(s => s.AssignmentId == assignmentId);
 
             var total = await query.CountAsync();
@@ -356,9 +394,17 @@ namespace SmsApi.Services
                 Id = assignment.Id,
                 SchoolId = assignment.SchoolId,
                 ClassId = assignment.ClassId,
+                ClassName = assignment.Class?.Name ?? string.Empty,
                 SectionId = assignment.SectionId,
+                SectionName = assignment.Section?.Name,
                 SubjectId = assignment.SubjectId,
+                SubjectName = assignment.Subject?.Name ?? string.Empty,
                 AssignedById = assignment.AssignedById,
+                AssignedByName = assignment.AssignedBy != null
+                    ? (!string.IsNullOrWhiteSpace(assignment.AssignedBy.FirstName)
+                        ? $"{assignment.AssignedBy.FirstName} {assignment.AssignedBy.LastName}".Trim()
+                        : assignment.AssignedBy.Name)
+                    : string.Empty,
                 Title = assignment.Title,
                 Description = assignment.Description,
                 AssignedDate = assignment.AssignedDate,
@@ -373,11 +419,18 @@ namespace SmsApi.Services
 
         private static SubmissionResponse MapToSubmissionResponse(AssignmentSubmission submission)
         {
+            var studentName = submission.Student != null
+                ? (!string.IsNullOrWhiteSpace(submission.Student.FirstName)
+                    ? $"{submission.Student.FirstName} {submission.Student.LastName}".Trim()
+                    : submission.Student.Name)
+                : string.Empty;
             return new SubmissionResponse
             {
                 Id = submission.Id,
                 AssignmentId = submission.AssignmentId,
                 StudentId = submission.StudentId,
+                StudentName = studentName,
+                StudentRollNo = submission.Student?.RollNumber,
                 SubmissionDate = submission.SubmissionDate,
                 Content = submission.Content,
                 AttachmentUrl = submission.AttachmentUrl,

@@ -397,4 +397,85 @@ export const studentApi = {
 
   setGuardianStaff: (studentId: string, staffId: string | null) =>
     apiPost<{ message: string }>(`/students/${studentId}/guardian-staff`, { staffId }),
+
+  // ── Exit (Dropout / Passout) ─────────────────────────────────────────────
+  getExitClearance: (studentId: string) =>
+    apiGet<ExitClearanceResponse>(`/students/${studentId}/exit-clearance`),
+
+  processDropout: (studentId: string, data: StudentDropoutRequest) =>
+    apiPost<StudentExitResponse>(`/students/${studentId}/dropout`, data),
+
+  processPassout: (studentId: string, data: StudentPassoutRequest) =>
+    apiPost<StudentExitResponse>(`/students/${studentId}/passout`, data),
 };
+
+// ── Exit feature types ───────────────────────────────────────────────────────
+
+export interface ExitPendingFee {
+  feeRecordId: string;
+  feeType: string;
+  academicYear: string;
+  totalAmount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  dueDate?: string;
+}
+
+export interface ExitDocument {
+  documentKey: string;
+  title: string;
+  isMandatory: boolean;
+  fields: Record<string, string>;
+}
+
+export interface ExitClearanceResponse {
+  studentId: string;
+  studentName: string;
+  currentClass: string;
+  currentSection: string;
+  academicYear: string;
+  isFeeClear: boolean;
+  totalPendingAmount: number;
+  pendingFees: ExitPendingFee[];
+  availableDocuments: ExitDocument[];
+}
+
+export interface StudentDropoutRequest {
+  dropoutType: 'transfer' | 'detain';
+  destinationSchool?: string;
+  reason?: string;
+  conduct?: string;
+  feeClearanceConfirmed: boolean;
+  documentsToGenerate: Array<{ documentKey: string; fields: Record<string, string> }>;
+  remarks?: string;
+}
+
+export interface StudentPassoutRequest {
+  academicYear?: string;
+  passingClass?: string;
+  destinationSchool?: string;
+  reason?: string;
+  conduct?: string;
+  feeClearanceConfirmed: boolean;
+  documentsToGenerate: Array<{ documentKey: string; fields: Record<string, string> }>;
+  remarks?: string;
+}
+
+export interface GeneratedDocumentInfo {
+  documentKey: string;
+  title: string;
+  fields: Record<string, string>;
+  fileUrl?: string;
+}
+
+export interface StudentExitResponse {
+  studentId: string;
+  studentName: string;
+  exitType: string;
+  subType?: string;
+  newStatus: string;
+  alumniId?: string;
+  alumniMessage?: string;
+  generatedDocuments: GeneratedDocumentInfo[];
+  message: string;
+}

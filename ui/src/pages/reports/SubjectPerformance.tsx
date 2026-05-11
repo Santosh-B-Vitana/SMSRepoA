@@ -247,7 +247,3 @@ export default function SubjectPerformance() {
     </div>
   );
 }
-
-    </div>
-  );
-}

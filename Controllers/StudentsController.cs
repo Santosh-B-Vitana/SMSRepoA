@@ -17,11 +17,13 @@ namespace SmsApi.Controllers
     {
         private readonly IStudentService _studentService;
         private readonly ITenantContext _tenant;
+        private readonly IParentAuthorizationService _parentAuth;
 
-        public StudentsController(IStudentService studentService, ITenantContext tenant)
+        public StudentsController(IStudentService studentService, ITenantContext tenant, IParentAuthorizationService parentAuth)
         {
             _studentService = studentService;
             _tenant = tenant;
+            _parentAuth = parentAuth;
         }
 
         /// <summary>
@@ -584,13 +586,13 @@ namespace SmsApi.Controllers
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
 
-                // Parent role: verify the student is their linked child via StudentGuardians
+                // Parent role: verify the student is their linked child (direct guardian or sibling)
                 var role = _tenant.Role ?? string.Empty;
                 if (role.Equals("Parent", StringComparison.OrdinalIgnoreCase))
                 {
-                    var parentEmail = _tenant.UserEmail;
-                    var guardians = await _studentService.GetGuardiansAsync(id, schoolId);
-                    if (!guardians.Any(g => string.Equals(g.Email, parentEmail, StringComparison.OrdinalIgnoreCase)))
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, id);
+                    if (!canAccess)
                         return StatusCode(403, new { message = "Parents can only access their own child's profile." });
                 }
                 var summary = await _studentService.GetStudentProfileSummaryAsync(id, schoolId);
@@ -1185,6 +1187,73 @@ namespace SmsApi.Controllers
         {
             var userIdClaim = User.FindFirst("UserId")?.Value ?? User.FindFirst("sub")?.Value;
             return Guid.TryParse(userIdClaim, out var id) ? id : Guid.Empty;
+        }
+
+        // =================================================================
+        // STUDENT EXIT — Exit Clearance, Drop-Out, Pass-Out
+        // =================================================================
+
+        /// <summary>
+        /// Returns pending fee dues and pre-populated exit document data
+        /// for a student.  Called before showing the dropout/passout dialog.
+        /// </summary>
+        [HttpGet("{id}/exit-clearance")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<ActionResult<ExitClearanceResponse>> GetExitClearance(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _studentService.GetExitClearanceAsync(id, schoolId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error fetching exit clearance.", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Processes a student drop-out.
+        /// - "transfer"  → marks student inactive, creates TC + alumni record.
+        /// - "detain"    → records detention remark; student stays active.
+        /// </summary>
+        [HttpPost("{id}/dropout")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult<StudentExitResponse>> DropoutStudent(
+            Guid id, [FromBody] StudentDropoutRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId    = _tenant.GetEffectiveSchoolId();
+                var processedBy = GetCurrentUserId();
+                var result = await _studentService.ProcessDropoutAsync(id, schoolId, request, processedBy);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error processing dropout.", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Processes a student pass-out (successful completion / leaving after passing).
+        /// Marks student inactive, creates TC + alumni record.
+        /// </summary>
+        [HttpPost("{id}/passout")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult<StudentExitResponse>> PassoutStudent(
+            Guid id, [FromBody] StudentPassoutRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId    = _tenant.GetEffectiveSchoolId();
+                var processedBy = GetCurrentUserId();
+                var result = await _studentService.ProcessPassoutAsync(id, schoolId, request, processedBy);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error processing pass-out.", error = ex.Message }); }
         }
     }
 }

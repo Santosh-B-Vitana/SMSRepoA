@@ -19,12 +19,14 @@ namespace SmsApi.Controllers
         private readonly IGradeService _gradeService;
         private readonly ITenantContext _tenant;
         private readonly AppDbContext _context;
+        private readonly IParentAuthorizationService _parentAuth;
 
-        public GradesController(IGradeService gradeService, ITenantContext tenant, AppDbContext context)
+        public GradesController(IGradeService gradeService, ITenantContext tenant, AppDbContext context, IParentAuthorizationService parentAuth)
         {
             _gradeService = gradeService;
             _tenant = tenant;
             _context = context;
+            _parentAuth = parentAuth;
         }
 
         private Guid GetSchoolId() => _tenant.GetEffectiveSchoolId();
@@ -208,19 +210,13 @@ namespace SmsApi.Controllers
             [FromQuery] int pageSize = 50)
         {
             var schoolId = GetSchoolId();
-            var parentEmail = _tenant.UserEmail;
+            var parentEmail = _tenant.UserEmail ?? string.Empty;
 
             if (string.IsNullOrEmpty(parentEmail))
                 return Unauthorized(new { message = "Parent email not found in token." });
 
-            var isLinked = await _context.StudentGuardians
-                .AnyAsync(g => g.StudentId == studentId
-                            && g.SchoolId == schoolId
-                            && !g.IsDeleted
-                            && g.Email != null
-                            && g.Email.ToLower() == parentEmail.ToLower());
-
-            if (!isLinked)
+            var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId);
+            if (!canAccess)
                 return StatusCode(403, new { message = "Parents can only access their own child's grades." });
 
             var result = await _gradeService.GetStudentGradesAsync(schoolId, gradeItemId, studentId, page, pageSize);

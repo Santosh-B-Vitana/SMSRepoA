@@ -19,12 +19,14 @@ namespace SmsApi.Controllers
         private readonly IAssignmentService _assignmentService;
         private readonly ITenantContext _tenant;
         private readonly AppDbContext _context;
+        private readonly IParentAuthorizationService _parentAuth;
 
-        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant, AppDbContext context)
+        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant, AppDbContext context, IParentAuthorizationService parentAuth)
         {
             _assignmentService = assignmentService;
             _tenant = tenant;
             _context = context;
+            _parentAuth = parentAuth;
         }
 
         // Assignment Endpoints
@@ -32,10 +34,11 @@ namespace SmsApi.Controllers
         [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<AssignmentListResponse>> GetAssignments(
             [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? sectionId = null,
             [FromQuery] Guid? subjectId = null,
             [FromQuery] Guid? assignedById = null,
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 50)
         {
             try
             {
@@ -48,10 +51,16 @@ namespace SmsApi.Controllers
                     ?? User.Claims.FirstOrDefault(c => c.Type == "role")?.Value?.ToLower();
                 if (userRole is "staff" or "teacher")
                 {
-                    effectiveAssignedById = _tenant.UserId;
+                    // Must resolve StaffMember.Id (not UserLogin.Id) to match what CreateAssignment stores
+                    var userEmail = _tenant.UserEmail;
+                    var staffMember = await _context.StaffMembers
+                        .FirstOrDefaultAsync(s => s.SchoolId == schoolId
+                                               && s.Email != null
+                                               && s.Email.ToLower() == userEmail.ToLower());
+                    effectiveAssignedById = staffMember?.Id ?? _tenant.UserId;
                 }
 
-                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, subjectId, effectiveAssignedById, page, pageSize);
+                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, sectionId, subjectId, effectiveAssignedById, page, pageSize);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -210,14 +219,9 @@ namespace SmsApi.Controllers
                 // Parent role: verify this student is their linked child
                 if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
                 {
-                    var parentEmail = _tenant.UserEmail;
-                    var isLinked = await _context.StudentGuardians
-                        .AnyAsync(g => g.StudentId == studentId
-                                   && g.SchoolId == schoolId
-                                   && !g.IsDeleted
-                                   && g.Email != null
-                                   && g.Email.ToLower() == parentEmail.ToLower());
-                    if (!isLinked)
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId);
+                    if (!canAccess)
                         return StatusCode(403, new { error = "Parents can only access their own child's submissions." });
                 }
 

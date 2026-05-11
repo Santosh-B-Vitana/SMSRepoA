@@ -153,6 +153,89 @@ export interface CreateAcademicYearRequest {
   schoolId?: string;
 }
 
+// =========== Grade Tiers ===========
+export interface GradeTierResponse {
+  id: string;
+  schoolId: string;
+  classId: string;
+  grade: string;
+  minMarks: number;
+  maxMarks: number;
+  gpa: number;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GradeTierListResponse {
+  gradeTiers: GradeTierResponse[];
+  total: number;
+}
+
+export interface CreateGradeTierRequest {
+  classId: string;
+  grade: string;
+  minMarks: number;
+  maxMarks: number;
+  gpa: number;
+  displayOrder?: number;
+}
+
+export interface UpdateGradeTierRequest {
+  grade?: string;
+  minMarks?: number;
+  maxMarks?: number;
+  gpa?: number;
+  displayOrder?: number;
+}
+
+// =========== Class Settings ===========
+export interface ClassSettingsResponse {
+  id: string;
+  schoolId: string;
+  classId: string;
+  passingPercentage: number;
+  minimumAttendance: number;
+  gradingScale: string;
+  promotionPolicy: string;
+  customPromotionPolicy?: string;
+  enableAutoPromotion: boolean;
+  enableSupplementaryExams: boolean;
+  enableGradingForPromotion: boolean;
+  minSubjectsToPass?: number;
+  notes?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateClassSettingsRequest {
+  classId: string;
+  passingPercentage: number;
+  minimumAttendance: number;
+  gradingScale: string;
+  promotionPolicy: string;
+  customPromotionPolicy?: string;
+  enableAutoPromotion: boolean;
+  enableSupplementaryExams: boolean;
+  enableGradingForPromotion: boolean;
+  minSubjectsToPass?: number;
+  notes?: string;
+}
+
+export interface UpdateClassSettingsRequest {
+  passingPercentage?: number;
+  minimumAttendance?: number;
+  gradingScale?: string;
+  promotionPolicy?: string;
+  customPromotionPolicy?: string;
+  enableAutoPromotion?: boolean;
+  enableSupplementaryExams?: boolean;
+  enableGradingForPromotion?: boolean;
+  minSubjectsToPass?: number;
+  notes?: string;
+}
+
 // =========== Class-Subject Assignment ===========
 export interface ClassSubjectResponse {
   id: string;
@@ -308,4 +391,27 @@ export const academicApi = {
   // ========== All assignments for a specific staff (admin view) ==========
   getTeacherAssignmentsForStaff: (staffId: string) =>
     apiGet<TeacherAssignmentListResponse>('/academics/teacher-assignments', { staffId, pageSize: 100 }),
+
+  // ========== Grade Tiers ==========
+  getGradeTiers: (classId: string) =>
+    apiGet<GradeTierListResponse>(`/academics/classes/${classId}/grade-tiers`),
+
+  createGradeTier: (data: CreateGradeTierRequest) =>
+    apiPost<GradeTierResponse>('/academics/grade-tiers', data),
+
+  updateGradeTier: (id: string, data: UpdateGradeTierRequest) =>
+    apiPut<GradeTierResponse>(`/academics/grade-tiers/${id}`, data),
+
+  deleteGradeTier: (id: string) =>
+    apiDelete<void>(`/academics/grade-tiers/${id}`),
+
+  // ========== Class Settings ==========
+  getClassSettings: (classId: string) =>
+    apiGet<ClassSettingsResponse>(`/academics/classes/${classId}/settings`),
+
+  createClassSettings: (data: CreateClassSettingsRequest) =>
+    apiPost<ClassSettingsResponse>('/academics/classes/settings', data),
+
+  updateClassSettings: (settingsId: string, data: UpdateClassSettingsRequest) =>
+    apiPut<ClassSettingsResponse>(`/academics/classes/settings/${settingsId}`, data),
 };

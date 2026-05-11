@@ -31,6 +31,7 @@ namespace SmsApi.Services
     public class LeaveManagementService : ILeaveManagementService
     {
         private readonly AppDbContext _context;
+        private readonly IParentAuthorizationService _parentAuth;
         private static readonly HashSet<string> AllowedApplicableTo = new(StringComparer.OrdinalIgnoreCase)
         {
             "All", "Staff", "Teacher", "Student"
@@ -40,9 +41,10 @@ namespace SmsApi.Services
             "Staff", "Student"
         };
 
-        public LeaveManagementService(AppDbContext context)
+        public LeaveManagementService(AppDbContext context, IParentAuthorizationService parentAuth)
         {
             _context = context;
+            _parentAuth = parentAuth;
         }
 
         public async Task<List<LeaveTypeResponse>> GetLeaveTypesAsync(Guid schoolId, string? applicableTo = null)
@@ -585,15 +587,18 @@ namespace SmsApi.Services
 
         public async Task<StudentLeaveResponse> CreateStudentLeaveAsync(string parentEmail, CreateStudentLeaveRequest request, Guid schoolId)
         {
-            // Validate the parent is a guardian of the student
+            // Validate the parent is a guardian or sibling-guardian of the student
+            var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, request.StudentId);
+            if (!canAccess)
+                throw new InvalidOperationException("You are not authorised to request leave for this student.");
+
+            // Fetch guardian record for response mapping (may be null if accessing via sibling link)
             var guardian = await _context.StudentGuardians
                 .FirstOrDefaultAsync(g => g.StudentId == request.StudentId
                                        && g.SchoolId == schoolId
                                        && g.Email != null
                                        && g.Email.ToLower() == parentEmail.ToLower()
                                        && !g.IsDeleted);
-            if (guardian == null)
-                throw new InvalidOperationException("You are not authorised to request leave for this student.");
 
             // Load student
             var student = await _context.Students

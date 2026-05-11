@@ -224,7 +224,11 @@ namespace SmsApi.Services
             {
                 Id = ts.Id,
                 StudentId = ts.StudentId,
-                StudentName = ts.Student != null ? $"{ts.Student.FirstName} {ts.Student.LastName}" : "Unknown",
+                StudentName = ts.Student != null
+                    ? (!string.IsNullOrWhiteSpace(ts.Student.FirstName)
+                        ? $"{ts.Student.FirstName} {ts.Student.LastName}".Trim()
+                        : ts.Student.Name)
+                    : "Unknown",
                 StudentClass = ts.Student?.Class ?? "N/A",
                 StudentSection = ts.Student?.Section ?? "N/A",
                 RouteId = ts.RouteId,

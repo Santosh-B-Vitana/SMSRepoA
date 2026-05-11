@@ -27,6 +27,7 @@ namespace SmsApi.Controllers
         private readonly AppDbContext _context;
         private readonly ITenantContext _tenant;
         private readonly ILogger<FeesController> _logger;
+        private readonly IParentAuthorizationService _parentAuth;
 
         public FeesController(
             IFeeService feeService, 
@@ -36,7 +37,8 @@ namespace SmsApi.Controllers
             IFeeCalculationEngine calcEngine,
             AppDbContext context, 
             ITenantContext tenant,
-            ILogger<FeesController> logger)
+            ILogger<FeesController> logger,
+            IParentAuthorizationService parentAuth)
         {
             _feeService = feeService;
             _paymentGatewayService = paymentGatewayService;
@@ -46,6 +48,7 @@ namespace SmsApi.Controllers
             _context = context;
             _tenant = tenant;
             _logger = logger;
+            _parentAuth = parentAuth;
         }
 
         /// <summary>
@@ -223,14 +226,9 @@ namespace SmsApi.Controllers
                     if (!studentId.HasValue)
                         return BadRequest(new { message = "studentId is required for Parent/Student role." });
 
-                    var parentEmail = _tenant.UserEmail;
-                    var isLinked = await _context.StudentGuardians
-                        .AnyAsync(g => g.StudentId == studentId.Value
-                                   && g.SchoolId == schoolId
-                                   && !g.IsDeleted
-                                   && g.Email != null
-                                   && g.Email.ToLower() == parentEmail.ToLower());
-                    if (!isLinked)
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId.Value);
+                    if (!canAccess)
                         return StatusCode(403, new { message = "Parents can only access their own child's fee records." });
                 }
 
@@ -324,20 +322,31 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("records/{id}")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Teacher")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Teacher,Parent,Student")]
         public async Task<ActionResult<FeeRecordResponse>> GetFeeRecord(Guid id)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var record = await _feeService.GetFeeRecordByIdAsync(id, schoolId);
-                
-                if (record == null)
+
+                // Parent/Student: ensure they can only access their own child's record
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                if (userRole == "Parent" || userRole == "Student")
                 {
-                    return NotFound(new { message = "Fee record not found." });
+                    var record = await _feeService.GetFeeRecordByIdAsync(id, schoolId);
+                    if (record == null) return NotFound(new { message = "Fee record not found." });
+
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, record.StudentId);
+                    if (!canAccess)
+                        return StatusCode(403, new { message = "Parents can only access their own child's fee records." });
+
+                    return Ok(record);
                 }
 
-                return Ok(record);
+                var result = await _feeService.GetFeeRecordByIdAsync(id, schoolId);
+                if (result == null) return NotFound(new { message = "Fee record not found." });
+                return Ok(result);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -345,6 +354,20 @@ namespace SmsApi.Controllers
             }
             catch (Exception) { return StatusCode(500, new { message = "An error occurred while fetching the fee record." });
             }
+        }
+
+        [HttpPatch("records/{id}/module-fees")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        public async Task<ActionResult<FeeRecordResponse>> UpdateModuleFees(Guid id, [FromBody] UpdateModuleFeesRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _feeService.UpdateModuleFeesAsync(id, schoolId, request.TransportMonthlyFee, request.HostelMonthlyFee);
+                if (result == null) return NotFound(new { message = "Fee record not found." });
+                return Ok(result);
+            }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred while updating module fees." }); }
         }
 
         [HttpPost("records")]

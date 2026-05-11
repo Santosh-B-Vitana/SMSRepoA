@@ -611,14 +611,14 @@ namespace SmsApi.Data
                     .WithOne(s => s.Person)
                     .HasForeignKey<Student>(s => s.PersonId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // One Person → at most one Staff profile (nullable FK on Staff side)
                 entity.HasOne(p => p.StaffProfile)
                     .WithOne(s => s.Person)
                     .HasForeignKey<Staff>(s => s.PersonId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // Performance indexes
                 entity.HasIndex(e => new { e.SchoolId, e.Email });
@@ -907,7 +907,7 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(f => f.StudentEnrollmentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // Lookup by enrollment makes year-based fee queries fast
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.StudentEnrollmentId });
@@ -1188,7 +1188,7 @@ namespace SmsApi.Data
                 entity.HasOne(c => c.BoardConfig)
                     .WithMany()
                     .HasForeignKey(c => c.BoardConfigurationId)
-                    .OnDelete(DeleteBehavior.SetNull)
+                    .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired(false);
 
                 entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
@@ -1259,12 +1259,12 @@ namespace SmsApi.Data
                 entity.HasOne(ta => ta.Section)
                     .WithMany()
                     .HasForeignKey(ta => ta.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(ta => ta.Subject)
                     .WithMany()
                     .HasForeignKey(ta => ta.SubjectId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // StudentEnrollment — FK-based class/section/year tracking (Theme 2).
@@ -1310,13 +1310,13 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(ss => ss.AcademicYearId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(ss => ss.StudentEnrollment)
                     .WithMany()
                     .HasForeignKey(ss => ss.StudentEnrollmentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // Fast lookup by student + year
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.AcademicYearId });
@@ -1330,37 +1330,37 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(p => p.PreviousClassId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.PreviousSectionRef)
                     .WithMany()
                     .HasForeignKey(p => p.PreviousSectionId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.NewClassRef)
                     .WithMany()
                     .HasForeignKey(p => p.NewClassId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.NewSectionRef)
                     .WithMany()
                     .HasForeignKey(p => p.NewSectionId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.AcademicYearRef)
                     .WithMany()
                     .HasForeignKey(p => p.AcademicYearId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.ResultingEnrollment)
                     .WithMany()
                     .HasForeignKey(p => p.ResultingEnrollmentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.PromotionDate });
             });
@@ -1776,7 +1776,7 @@ namespace SmsApi.Data
                 entity.HasOne(t => t.Section)
                     .WithMany()
                     .HasForeignKey(t => t.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.ClassId, e.SectionId, e.AcademicYear }).IsUnique();
             });
@@ -1791,12 +1791,12 @@ namespace SmsApi.Data
                 entity.HasOne(tp => tp.Subject)
                     .WithMany()
                     .HasForeignKey(tp => tp.SubjectId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(tp => tp.Teacher)
                     .WithMany()
                     .HasForeignKey(tp => tp.TeacherId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.TimetableId, e.DayOfWeek, e.PeriodNumber }).IsUnique();
             });
@@ -1819,7 +1819,7 @@ namespace SmsApi.Data
                 entity.HasOne(a => a.Section)
                     .WithMany()
                     .HasForeignKey(a => a.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(a => a.Subject)
                     .WithMany()
@@ -1847,7 +1847,7 @@ namespace SmsApi.Data
                 entity.HasOne(asub => asub.GradedBy)
                     .WithMany()
                     .HasForeignKey(asub => asub.GradedById)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.AssignmentId, e.StudentId }).IsUnique();
             });
@@ -1880,7 +1880,7 @@ namespace SmsApi.Data
                 entity.HasOne(gi => gi.Section)
                     .WithMany()
                     .HasForeignKey(gi => gi.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(gi => gi.Subject)
                     .WithMany()
@@ -1908,7 +1908,7 @@ namespace SmsApi.Data
                 entity.HasOne(sg => sg.EnteredBy)
                     .WithMany()
                     .HasForeignKey(sg => sg.EnteredById)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.GradeItemId, e.StudentId }).IsUnique();
             });
@@ -1933,12 +1933,12 @@ namespace SmsApi.Data
                 entity.HasOne(cce => cce.Section)
                     .WithMany()
                     .HasForeignKey(cce => cce.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(cce => cce.AssessedBy)
                     .WithMany()
                     .HasForeignKey(cce => cce.AssessedById)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
             });
         }
 
@@ -1959,12 +1959,12 @@ namespace SmsApi.Data
                 entity.HasOne(a => a.TargetClass)
                     .WithMany()
                     .HasForeignKey(a => a.TargetClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(a => a.TargetSection)
                     .WithMany()
                     .HasForeignKey(a => a.TargetSectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.PublishedDate });
                 entity.HasIndex(e => new { e.SchoolId, e.IsActive });
@@ -2056,22 +2056,22 @@ namespace SmsApi.Data
                 entity.HasOne(d => d.RelatedClass)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(d => d.RelatedSection)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedSectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(d => d.RelatedStudent)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedStudentId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(d => d.RelatedStaff)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedStaffId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.CategoryId });
                 entity.HasIndex(e => new { e.SchoolId, e.IsActive });
@@ -2111,12 +2111,12 @@ namespace SmsApi.Data
                 entity.HasOne(r => r.Class)
                     .WithMany()
                     .HasForeignKey(r => r.ClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(r => r.Section)
                     .WithMany()
                     .HasForeignKey(r => r.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.ReportType, e.GeneratedAt });
                 entity.HasIndex(e => new { e.SchoolId, e.Status });
@@ -2146,12 +2146,12 @@ namespace SmsApi.Data
                 entity.HasOne(a => a.Class)
                     .WithMany()
                     .HasForeignKey(a => a.ClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(a => a.Section)
                     .WithMany()
                     .HasForeignKey(a => a.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.MetricType, e.PeriodStart });
                 entity.HasIndex(e => new { e.SchoolId, e.Period });
@@ -2186,12 +2186,12 @@ namespace SmsApi.Data
                 entity.HasOne(c => c.Class)
                     .WithMany()
                     .HasForeignKey(c => c.ClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(c => c.Section)
                     .WithMany()
                     .HasForeignKey(c => c.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(c => c.Template)
                     .WithMany()
@@ -2439,7 +2439,7 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(vl => vl.StudentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => e.VisitNumber).IsUnique();
                 entity.HasIndex(e => new { e.SchoolId, e.CheckInTime, e.Status });

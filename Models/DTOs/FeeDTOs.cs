@@ -119,6 +119,12 @@ namespace SmsApi.Models.DTOs
     }
 
     // Fee Record DTOs
+    public class UpdateModuleFeesRequest
+    {
+        public decimal? TransportMonthlyFee { get; set; }
+        public decimal? HostelMonthlyFee { get; set; }
+    }
+
     public class CreateFeeRecordRequest
     {
         [Required]

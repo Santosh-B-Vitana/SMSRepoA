@@ -350,6 +350,19 @@ export const updateFeeRecord = async (
 };
 
 /**
+ * Patch module (transport/hostel) monthly fees for a fee record.
+ * Updates the monthly rate on the student's transport/hostel assignment,
+ * which recalculates the pro-rata amount.
+ */
+export const patchModuleFees = async (
+  recordId: string,
+  data: { transportMonthlyFee?: number; hostelMonthlyFee?: number }
+): Promise<FeeRecord> => {
+  const response = await apiClient.patch(`${BASE_PATH}/records/${recordId}/module-fees`, data);
+  return response.data;
+};
+
+/**
  * Delete a fee record
  */
 export const deleteFeeRecord = async (recordId: string): Promise<void> => {
@@ -746,6 +759,7 @@ export const feeApi = {
   getFeeRecordById,
   createFeeRecord,
   updateFeeRecord,
+  patchModuleFees,
   deleteFeeRecord,
   createPayment,
   getLateFeeConfig,

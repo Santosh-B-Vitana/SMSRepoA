@@ -18,6 +18,7 @@ namespace SmsApi.Services
         Task<FeeStructureResponse> CreateFeeStructureAsync(CreateFeeStructureRequest request);
         Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status);
         Task<FeeRecordResponse?> GetFeeRecordByIdAsync(Guid id, Guid schoolId);
+        Task<FeeRecordResponse?> UpdateModuleFeesAsync(Guid feeRecordId, Guid schoolId, decimal? transportMonthlyFee, decimal? hostelMonthlyFee);
         Task<FeeRecordResponse> CreateFeeRecordAsync(CreateFeeRecordRequest request);
         Task<PaymentResponse> CreatePaymentAsync(CreatePaymentRequest request);
         Task<FeeStatsResponse> GetFeeStatsAsync(Guid schoolId, string? academicYear);
@@ -305,19 +306,25 @@ namespace SmsApi.Services
                 .Take(pageSize)
                 .ToListAsync();
 
-            // Auto-apply late fees for overdue records
-            foreach (var record in feeRecords.Where(f => f.Status != "paid" && f.DueDate.Date < DateTime.UtcNow.Date))
+            // Recompute PendingAmount for all non-paid records to fix any stale values.
+            // Also apply late fees for overdue records.
+            foreach (var record in feeRecords.Where(f => f.Status != "paid"))
             {
-                var calculatedLateFee = await CalculateLateFeeAsync(record.Id, schoolId);
-                if (calculatedLateFee > 0 && record.LateFeeAmount != calculatedLateFee)
+                if (record.DueDate.Date < DateTime.UtcNow.Date)
                 {
-                    record.LateFeeAmount = calculatedLateFee;
-                    record.PendingAmount = record.TotalAmount - record.PaidAmount - record.DiscountAmount + record.LateFeeAmount;
+                    var calculatedLateFee = await CalculateLateFeeAsync(record.Id, schoolId);
+                    if (calculatedLateFee > 0 && record.LateFeeAmount != calculatedLateFee)
+                        record.LateFeeAmount = calculatedLateFee;
+                }
+                var freshPending = Math.Max(0, record.TotalAmount + record.LateFeeAmount - record.PaidAmount - record.DiscountAmount);
+                if (record.PendingAmount != freshPending)
+                {
+                    record.PendingAmount = freshPending;
                     record.UpdatedAt = DateTime.UtcNow;
                 }
             }
-            
-            // Save changes if any late fees were updated
+
+            // Save changes if any values were updated
             if (_context.ChangeTracker.HasChanges())
             {
                 await _context.SaveChangesAsync();
@@ -364,14 +371,20 @@ namespace SmsApi.Services
             if (record == null)
                 return null;
 
-            // Auto-apply late fee if overdue and not paid
-            if (record.Status != "paid" && record.DueDate.Date < DateTime.UtcNow.Date)
+            // Always recompute PendingAmount from actual values to fix any stale data.
+            // Also apply late fee for overdue records.
+            if (record.Status != "paid")
             {
-                var calculatedLateFee = await CalculateLateFeeAsync(id, schoolId);
-                if (calculatedLateFee > 0 && record.LateFeeAmount != calculatedLateFee)
+                if (record.DueDate.Date < DateTime.UtcNow.Date)
                 {
-                    record.LateFeeAmount = calculatedLateFee;
-                    record.PendingAmount = record.TotalAmount - record.PaidAmount - record.DiscountAmount + record.LateFeeAmount;
+                    var calculatedLateFee = await CalculateLateFeeAsync(id, schoolId);
+                    if (calculatedLateFee > 0 && record.LateFeeAmount != calculatedLateFee)
+                        record.LateFeeAmount = calculatedLateFee;
+                }
+                var freshPending = Math.Max(0, record.TotalAmount + record.LateFeeAmount - record.PaidAmount - record.DiscountAmount);
+                if (record.PendingAmount != freshPending)
+                {
+                    record.PendingAmount = freshPending;
                     record.UpdatedAt = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
                 }
@@ -474,6 +487,42 @@ namespace SmsApi.Services
             var fullMonths = 0;
             for (var m = nextMonth; m < firstMonthAfterEnd; m = m.AddMonths(1)) fullMonths++;
             return prorataThisMonth + fullMonths * monthlyFee;
+        }
+
+        public async Task<FeeRecordResponse?> UpdateModuleFeesAsync(Guid feeRecordId, Guid schoolId, decimal? transportMonthlyFee, decimal? hostelMonthlyFee)
+        {
+            var record = await _context.FeeRecords
+                .FirstOrDefaultAsync(r => r.Id == feeRecordId && r.SchoolId == schoolId && !r.IsDeleted);
+            if (record == null) return null;
+
+            if (transportMonthlyFee.HasValue)
+            {
+                var transportAssignment = await _context.TransportStudents
+                    .Where(ts => ts.StudentId == record.StudentId && ts.SchoolId == schoolId && !ts.IsDeleted && ts.Status == "active")
+                    .OrderByDescending(ts => ts.UpdatedAt)
+                    .FirstOrDefaultAsync();
+                if (transportAssignment != null)
+                {
+                    transportAssignment.MonthlyFee = transportMonthlyFee.Value;
+                    transportAssignment.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            if (hostelMonthlyFee.HasValue)
+            {
+                var hostelAssignment = await _context.HostelStudents
+                    .Where(hs => hs.StudentId == record.StudentId && hs.SchoolId == schoolId && !hs.IsDeleted && hs.Status == "active")
+                    .OrderByDescending(hs => hs.UpdatedAt)
+                    .FirstOrDefaultAsync();
+                if (hostelAssignment != null)
+                {
+                    hostelAssignment.MonthlyFee = hostelMonthlyFee.Value;
+                    hostelAssignment.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return await GetFeeRecordByIdAsync(feeRecordId, schoolId);
         }
 
         public async Task<FeeRecordResponse> CreateFeeRecordAsync(CreateFeeRecordRequest request)

@@ -9,9 +9,13 @@ export interface AssignmentResponse {
   id: string;
   schoolId: string;
   classId: string;
+  className: string;
   sectionId?: string;
+  sectionName?: string;
   subjectId: string;
+  subjectName: string;
   assignedById: string;
+  assignedByName: string;
   title: string;
   description: string;
   assignedDate: string;
@@ -19,6 +23,8 @@ export interface AssignmentResponse {
   maxMarks: number;
   status: string;
   attachmentUrl?: string;
+  submissionCount: number;
+  gradedCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +65,8 @@ export interface SubmissionResponse {
   assignmentTitle?: string;
   assignmentMaxMarks?: number;
   studentId: string;
+  studentName: string;
+  studentRollNo?: string;
   submissionDate: string;
   content: string;
   attachmentUrl?: string;
@@ -187,8 +195,8 @@ export interface UpdateStudentGradePayload {
 
 export const assignmentApi = {
   // --- Assignments ---
-  getAssignments: (classId?: string, subjectId?: string, page = 1, pageSize = 50) =>
-    apiGet<AssignmentListResponse>('/assignments', { classId, subjectId, page, pageSize }),
+  getAssignments: (classId?: string, sectionId?: string, subjectId?: string, page = 1, pageSize = 50) =>
+    apiGet<AssignmentListResponse>('/assignments', { classId, sectionId, subjectId, page, pageSize }),
 
   getAssignment: (id: string) =>
     apiGet<AssignmentResponse>(`/assignments/${id}`),

@@ -241,7 +241,3 @@ export default function GradeDistribution() {
     </div>
   );
 }
-
-    </div>
-  );
-}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Users, UserCheck, UserX, Clock, Fingerprint, Download, FileText, CalendarDays } from "lucide-react";
+import { Calendar as CalendarIcon, Users, UserCheck, UserX, Clock, Fingerprint, Download, FileText, CalendarDays, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BiometricAttendanceManager } from "./BiometricAttendanceManager";
 import { ExportButton, DateRangePicker, EmptyState, ErrorBoundary } from "@/components/common";
@@ -18,159 +18,133 @@ import { LeaveManagementDialog } from "./LeaveManagementDialog";
 import { AnimatedBackground } from "@/components/common/AnimatedBackground";
 import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
+import { attendanceApi, type AttendanceRecordBasic } from "@/services/api/attendanceApi";
+import { studentApi } from "@/services/api/studentApi";
+import { academicApi, type ClassResponse } from "@/services/api/academicApi";
 
-interface AttendanceRecord {
-  studentId: string;
-  studentName: string;
-  class: string;
-  status: 'present' | 'absent' | 'late';
-  timestamp?: string;
-  method?: 'manual' | 'biometric' | 'rfid';
-  manualOverride?: boolean;
-}
-
-interface ClassAttendance {
-  classId: string;
-  className: string;
-  totalStudents: number;
-  presentCount: number;
-  absentCount: number;
-  lateCount: number;
-  attendancePercentage: number;
+interface StudentRow {
+  id: string;
+  name: string;
+  admissionNumber?: string;
 }
 
 export function AttendanceManager() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [selectedClass, setSelectedClass] = useState<string>("10-A");
+  const [selectedClass, setSelectedClass] = useState<string>("");
   const dateRange = useDateRange();
-  
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([
-    {
-      studentId: "STU001",
-      studentName: "Alice Johnson", 
-      class: "10-A",
-      status: "present",
-      timestamp: "08:15:00",
-      method: "biometric",
-      manualOverride: false
-    },
-    {
-      studentId: "STU002",
-      studentName: "David Chen",
-      class: "10-A", 
-      status: "late",
-      timestamp: "08:45:00",
-      method: "manual",
-      manualOverride: false
-    },
-    {
-      studentId: "STU003",
-      studentName: "Emma Wilson",
-      class: "10-A",
-      status: "absent",
-      method: "manual",
-      manualOverride: false
-    }
-  ]);
 
-  const [classAttendance] = useState<ClassAttendance[]>([
-    {
-      classId: "10-A",
-      className: "Class 10-A", 
-      totalStudents: 32,
-      presentCount: 28,
-      absentCount: 3,
-      lateCount: 1,
-      attendancePercentage: 87.5
-    },
-    {
-      classId: "10-B",
-      className: "Class 10-B",
-      totalStudents: 30, 
-      presentCount: 29,
-      absentCount: 1,
-      lateCount: 0,
-      attendancePercentage: 96.7
-    },
-    {
-      classId: "9-A",
-      className: "Class 9-A",
-      totalStudents: 35,
-      presentCount: 33,
-      absentCount: 2, 
-      lateCount: 0,
-      attendancePercentage: 94.3
-    }
-  ]);
+  // API-driven state
+  const [classes, setClasses] = useState<ClassResponse[]>([]);
+  const [students, setStudents] = useState<StudentRow[]>([]);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, 'present' | 'absent' | 'late' | 'excused'>>({});
+  const [existingRecords, setExistingRecords] = useState<Record<string, AttendanceRecordBasic>>({});
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null); // studentId being saved
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const { toast } = useToast();
 
-  // Check if biometric attendance is enabled
-  const [biometricEnabled, setBiometricEnabled] = useState(true);
-  const [manualOverride, setManualOverride] = useState(false);
-  
-  const markAttendance = (studentId: string, status: 'present' | 'absent' | 'late') => {
-    // If biometric is enabled and this is admin/staff/super admin, prevent manual entry
-    if (biometricEnabled) {
-      toast({
-        title: "Manual Entry Disabled",
-        description: "Attendance is managed through biometric devices. Please use the biometric sync feature.",
-        variant: "destructive"
-      });
-      return;
-    }
+  // Load classes on mount
+  useEffect(() => {
+    academicApi.listClasses(1, 200).then(r => {
+      const list = r.classes ?? [];
+      setClasses(list);
+      if (list.length > 0 && !selectedClass) setSelectedClass(list[0].name);
+    }).catch(() => { /* silently ignore if classes api fails */ });
+  }, []);
 
-    setAttendanceRecords(prev => {
-      const updated = prev.map(record =>
-        record.studentId === studentId
-          ? { ...record, status, timestamp: new Date().toLocaleTimeString(), method: 'manual' as 'manual' }
-          : record
-      );
-      return updated;
-    });
-    toast({
-      title: "Attendance Updated",
-      description: `Student marked as ${status}`,
-    });
+  // Load students + attendance when class/date changes
+  useEffect(() => {
+    if (!selectedClass) return;
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    setLoadingStudents(true);
+    Promise.all([
+      studentApi.list({ classFilter: selectedClass, pageSize: 200 }),
+      attendanceApi.listRecords({ dateFrom: dateStr, dateTo: dateStr, pageSize: 200 }),
+    ]).then(([studRes, attRes]) => {
+      const studs: StudentRow[] = (studRes.students ?? studRes.data ?? []).map((s: any) => ({
+        id: s.id,
+        name: s.name ?? `${s.firstName ?? ''} ${s.lastName ?? ''}`.trim(),
+        admissionNumber: s.admissionNumber,
+      }));
+      setStudents(studs);
+
+      const aMap: Record<string, 'present' | 'absent' | 'late' | 'excused'> = {};
+      const rMap: Record<string, AttendanceRecordBasic> = {};
+      (attRes.items ?? []).forEach((r: AttendanceRecordBasic) => {
+        // Match by class name — backend returns class field on each record
+        if (!r.class || r.class.toLowerCase() === selectedClass.toLowerCase()) {
+          aMap[r.studentId] = r.status as any;
+          rMap[r.studentId] = r;
+        }
+      });
+      setAttendanceMap(aMap);
+      setExistingRecords(rMap);
+    }).catch(() => {
+      toast({ title: 'Failed to load attendance', variant: 'destructive' });
+    }).finally(() => setLoadingStudents(false));
+  }, [selectedClass, selectedDate]);
+
+  const markAttendance = async (studentId: string, status: 'present' | 'absent' | 'late') => {
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    setSaving(studentId);
+    try {
+      const existing = existingRecords[studentId];
+      let updated: AttendanceRecordBasic;
+      if (existing) {
+        updated = await attendanceApi.updateRecord(existing.id, { status, isManualOverride: true });
+      } else {
+        updated = await attendanceApi.markAttendance({ studentId, date: dateStr, status, isManualOverride: true });
+      }
+      setAttendanceMap(prev => ({ ...prev, [studentId]: status }));
+      setExistingRecords(prev => ({ ...prev, [studentId]: updated }));
+      toast({ title: 'Attendance updated', description: `Marked as ${status}` });
+    } catch {
+      toast({ title: 'Failed to mark attendance', variant: 'destructive' });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleBulkMarkAbsent = async () => {
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
+    const unmarked = students.filter(s => !attendanceMap[s.id]);
+    if (unmarked.length === 0) { toast({ title: 'All students already marked' }); return; }
+    setBulkSaving(true);
+    try {
+      await attendanceApi.markBulkAttendance({
+        date: dateStr,
+        attendances: unmarked.map(s => ({ studentId: s.id, date: dateStr, status: 'absent' as const, isManualOverride: true })),
+      });
+      setAttendanceMap(prev => {
+        const n = { ...prev };
+        unmarked.forEach(s => { n[s.id] = 'absent'; });
+        return n;
+      });
+      toast({ title: `Marked ${unmarked.length} students absent` });
+    } catch {
+      toast({ title: 'Bulk save failed', variant: 'destructive' });
+    } finally {
+      setBulkSaving(false);
+    }
   };
 
   const syncBiometricData = () => {
-    toast({
-      title: "Syncing Biometric Data",
-      description: "Importing attendance from biometric devices...",
-    });
-    
-    // Simulate biometric sync
+    toast({ title: 'Syncing Biometric Data', description: 'Importing attendance from biometric devices...' });
     setTimeout(() => {
-      toast({
-        title: "Sync Complete",
-        description: "Successfully imported 15 attendance records from biometric devices",
-      });
-    }, 2000);
+      toast({ title: 'Sync Complete', description: 'Biometric sync is managed by the Biometric System tab' });
+    }, 1500);
   };
 
   const generateReport = () => {
-    toast({
-      title: "Generating Report",
-      description: `Attendance report for ${selectedClass} on ${format(selectedDate, "PP")} is being generated...`,
-    });
+    toast({ title: 'Generating Report', description: `Attendance report for ${selectedClass} on ${format(selectedDate, 'PP')} is being generated...` });
   };
 
-  const getTotalStats = () => {
-    const totals = classAttendance.reduce((acc, cls) => ({
-      totalStudents: acc.totalStudents + cls.totalStudents,
-      presentCount: acc.presentCount + cls.presentCount,
-      absentCount: acc.absentCount + cls.absentCount,
-      lateCount: acc.lateCount + cls.lateCount
-    }), { totalStudents: 0, presentCount: 0, absentCount: 0, lateCount: 0 });
-
-    return {
-      ...totals,
-      attendancePercentage: (totals.presentCount / totals.totalStudents) * 100
-    };
-  };
-
-  const totalStats = getTotalStats();
+  const presentCount = students.filter(s => attendanceMap[s.id] === 'present').length;
+  const absentCount = students.filter(s => attendanceMap[s.id] === 'absent').length;
+  const lateCount = students.filter(s => attendanceMap[s.id] === 'late').length;
+  const markedCount = students.filter(s => !!attendanceMap[s.id]).length;
+  const attendancePct = students.length > 0 ? (presentCount / students.length) * 100 : 0;
 
   return (
     <ErrorBoundary>
@@ -217,7 +191,7 @@ export function AttendanceManager() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalStats.totalStudents}</div>
+            <div className="text-2xl font-bold">{students.length}</div>
           </CardContent>
         </ModernCard>
         
@@ -227,7 +201,7 @@ export function AttendanceManager() {
             <UserCheck className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{totalStats.presentCount}</div>
+            <div className="text-2xl font-bold text-green-600">{presentCount}</div>
           </CardContent>
         </ModernCard>
         
@@ -237,7 +211,7 @@ export function AttendanceManager() {
             <UserX className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{totalStats.absentCount}</div>
+            <div className="text-2xl font-bold text-red-600">{absentCount}</div>
           </CardContent>
         </ModernCard>
         
@@ -247,7 +221,7 @@ export function AttendanceManager() {
             <Clock className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{totalStats.lateCount}</div>
+            <div className="text-2xl font-bold text-yellow-600">{lateCount}</div>
           </CardContent>
         </ModernCard>
         
@@ -257,7 +231,7 @@ export function AttendanceManager() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{totalStats.attendancePercentage.toFixed(1)}%</div>
+            <div className="text-2xl font-bold text-blue-600">{attendancePct.toFixed(1)}%</div>
           </CardContent>
         </ModernCard>
       </div>
@@ -282,18 +256,20 @@ export function AttendanceManager() {
         <TabsContent value="daily" className="space-y-4">
           <ModernCard variant="glass">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Daily Attendance - {selectedClass}</CardTitle>
-                <div className="flex items-center gap-4">
+<div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle>Daily Attendance - {selectedClass || 'Select a class'}</CardTitle>
+                <div className="flex items-center gap-4 flex-wrap">
                   <Select value={selectedClass} onValueChange={setSelectedClass}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="Select class" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="10-A">Class 10-A</SelectItem>
-                      <SelectItem value="10-B">Class 10-B</SelectItem>
-                      <SelectItem value="9-A">Class 9-A</SelectItem>
-                      <SelectItem value="9-B">Class 9-B</SelectItem>
+                      {classes.length > 0
+                        ? classes.map(c => (
+                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                          ))
+                        : <SelectItem value="" disabled>No classes found</SelectItem>
+                      }
                     </SelectContent>
                   </Select>
                   
@@ -317,86 +293,84 @@ export function AttendanceManager() {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student Name</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {attendanceRecords
-                    .filter(record => record.class === selectedClass)
-                    .map((record) => (
-                    <TableRow key={record.studentId}>
-                      <TableCell className="font-medium">{record.studentName}</TableCell>
-                      <TableCell>{record.class}</TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          record.status === 'present' ? 'default' :
-                          record.status === 'late' ? 'secondary' : 'destructive'
-                        }>
-                          {record.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{record.timestamp || '-'}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {record.method === 'biometric' && <Fingerprint className="h-3 w-3" />}
-                          <span className="capitalize">{record.method}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => markAttendance(record.studentId, 'present')}
-                            className={`bg-green-50 hover:bg-green-100 ${(record.method === 'biometric' && !record.manualOverride) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            disabled={record.method === 'biometric' && !record.manualOverride}
-                          >
-                            P
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => markAttendance(record.studentId, 'absent')}
-                            className={`bg-red-50 hover:bg-red-100 ${(record.method === 'biometric' && !record.manualOverride) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            disabled={record.method === 'biometric' && !record.manualOverride}
-                          >
-                            A
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => markAttendance(record.studentId, 'late')}
-                            className={`bg-yellow-50 hover:bg-yellow-100 ${(record.method === 'biometric' && !record.manualOverride) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            disabled={record.method === 'biometric' && !record.manualOverride}
-                          >
-                            L
-                          </Button>
-                          {record.method === 'biometric' && !record.manualOverride && (
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => {
-                                setAttendanceRecords(prev => prev.map(r => r.studentId === record.studentId ? { ...r, manualOverride: true } : r));
-                                toast({ title: 'Manual Edit Enabled', description: `Manual editing enabled for ${record.studentName}.`, variant: 'default' });
-                              }}
-                            >
-                              Edit
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              {loadingStudents ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Loading students…</span>
+                </div>
+              ) : students.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground">
+                  {selectedClass ? 'No students found in this class' : 'Select a class to view students'}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-muted-foreground">
+                      {markedCount} / {students.length} marked
+                    </span>
+                    <Button size="sm" variant="outline" onClick={handleBulkMarkAbsent} disabled={bulkSaving}>
+                      {bulkSaving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+                      Mark Remaining Absent
+                    </Button>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>#</TableHead>
+                        <TableHead>Student Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {students.map((student, idx) => {
+                        const status = attendanceMap[student.id];
+                        const isSaving = saving === student.id;
+                        return (
+                          <TableRow key={student.id}>
+                            <TableCell className="text-muted-foreground w-10">{idx + 1}</TableCell>
+                            <TableCell className="font-medium">
+                              {student.name}
+                              {student.admissionNumber && <span className="text-xs text-muted-foreground ml-1">({student.admissionNumber})</span>}
+                            </TableCell>
+                            <TableCell>
+                              {status ? (
+                                <Badge variant={status === 'present' ? 'default' : status === 'late' ? 'secondary' : 'destructive'}>
+                                  {status}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">Not marked</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="outline" size="sm"
+                                  className={`bg-green-50 hover:bg-green-100 ${status === 'present' ? 'ring-1 ring-green-500' : ''}`}
+                                  onClick={() => markAttendance(student.id, 'present')}
+                                  disabled={isSaving}>
+                                  {isSaving && status !== 'present' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'P'}
+                                </Button>
+                                <Button variant="outline" size="sm"
+                                  className={`bg-red-50 hover:bg-red-100 ${status === 'absent' ? 'ring-1 ring-red-500' : ''}`}
+                                  onClick={() => markAttendance(student.id, 'absent')}
+                                  disabled={isSaving}>
+                                  {isSaving && status !== 'absent' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'A'}
+                                </Button>
+                                <Button variant="outline" size="sm"
+                                  className={`bg-yellow-50 hover:bg-yellow-100 ${status === 'late' ? 'ring-1 ring-yellow-500' : ''}`}
+                                  onClick={() => markAttendance(student.id, 'late')}
+                                  disabled={isSaving}>
+                                  {isSaving && status !== 'late' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'L'}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
             </CardContent>
           </ModernCard>
         </TabsContent>
@@ -411,35 +385,19 @@ export function AttendanceManager() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Class</TableHead>
-                    <TableHead>Total Students</TableHead>
-                    <TableHead>Present</TableHead>
-                    <TableHead>Absent</TableHead>
-                    <TableHead>Late</TableHead>
-                    <TableHead>Attendance %</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {classAttendance.map((cls) => (
-                    <TableRow key={cls.classId}>
-                      <TableCell className="font-medium">{cls.className}</TableCell>
-                      <TableCell>{cls.totalStudents}</TableCell>
-                      <TableCell className="text-green-600">{cls.presentCount}</TableCell>
-                      <TableCell className="text-red-600">{cls.absentCount}</TableCell>
-                      <TableCell className="text-yellow-600">{cls.lateCount}</TableCell>
+                  {classes.length === 0 ? (
+                    <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground py-8">No classes found</TableCell></TableRow>
+                  ) : classes.map(cls => (
+                    <TableRow key={cls.id}>
+                      <TableCell className="font-medium">{cls.name}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className="bg-blue-600 h-2 rounded-full" 
-                              style={{width: `${cls.attendancePercentage}%`}}
-                            ></div>
-                          </div>
-                          <span className="text-sm font-medium">{cls.attendancePercentage}%</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm">View Details</Button>
+                        <Button variant="outline" size="sm"
+                          onClick={() => { setSelectedClass(cls.name); }}
+                        >View &amp; Mark</Button>
                       </TableCell>
                     </TableRow>
                   ))}

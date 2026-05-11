@@ -23,11 +23,20 @@ import {
   GraduationCap,
   RotateCcw,
   Award,
-  ArrowUp
+  ArrowUp,
+  MoreVertical
 } from "lucide-react";
 import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
-import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto } from "@/services/api/studentApi";
+import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto, StudentExitResponse } from "@/services/api/studentApi";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { StudentExitDialog } from "@/components/students/StudentExitDialog";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
 import { StudentLeaveRequests } from "@/components/leave-management/StudentLeaveRequests";
@@ -133,6 +142,8 @@ export default function StudentProfile() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showAllDetailsExpanded, setShowAllDetailsExpanded] = useState(false);
   const [showPromoteDialog, setShowPromoteDialog] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  const [exitType, setExitType] = useState<'dropout' | 'passout'>('dropout');
   const [promoteData, setPromoteData] = useState({
     newClass: student?.class || '',
     newSection: student?.section || '',
@@ -372,30 +383,9 @@ export default function StudentProfile() {
           </div>
         </div>
         
-        <div className="flex flex-wrap gap-2">
-          {student.status === 'active' && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={actionLoading}
-              onClick={() => {
-                setPromoteData({
-                  newClass: '',
-                  newSection: student.section || '',
-                  resetRollNumber: false,
-                  remarks: ''
-                });
-                setShowPromoteDialog(true);
-              }}
-              className="whitespace-nowrap"
-              title="Promote student to next class/section"
-            >
-              <ArrowUp className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span className="truncate">Promote</span>
-            </Button>
-          )}
-
-          <Button 
+        <div className="flex items-center gap-2">
+          {/* Edit Profile — always visible */}
+          <Button
             onClick={() => navigate(`/students/${student.id}/edit`)}
             variant="default"
             size="sm"
@@ -404,29 +394,73 @@ export default function StudentProfile() {
             <Edit className="h-4 w-4 mr-2 flex-shrink-0" />
             <span className="truncate">{t('studentProfilePage.editProfile')}</span>
           </Button>
-          
-          {student.status === 'active' ? (
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={actionLoading}
-              onClick={() => handleStatusChange('inactive')}
-              className="whitespace-nowrap"
-            >
-              {t('studentProfilePage.deactivate')}
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={actionLoading}
-              onClick={() => handleStatusChange('active')}
-              className="whitespace-nowrap"
-            >
-              <RotateCcw className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span className="truncate">{t('studentProfilePage.reactivate')}</span>
-            </Button>
-          )}
+
+          {/* Three-dot menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" aria-label="More actions">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {student.status === 'active' && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setPromoteData({
+                        newClass: '',
+                        newSection: student.section || '',
+                        resetRollNumber: false,
+                        remarks: ''
+                      });
+                      setShowPromoteDialog(true);
+                    }}
+                  >
+                    <ArrowUp className="h-4 w-4 mr-2" />
+                    Promote
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    className="text-orange-600 focus:text-orange-600"
+                    onSelect={() => { setExitType('dropout'); setShowExitDialog(true); }}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Drop Out
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    className="text-blue-600 focus:text-blue-600"
+                    onSelect={() => { setExitType('passout'); setShowExitDialog(true); }}
+                  >
+                    <GraduationCap className="h-4 w-4 mr-2" />
+                    Passed Out
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    disabled={actionLoading}
+                    onSelect={() => handleStatusChange('inactive')}
+                  >
+                    {t('studentProfilePage.deactivate')}
+                  </DropdownMenuItem>
+                </>
+              )}
+
+              {student.status !== 'active' && (
+                <DropdownMenuItem
+                  disabled={actionLoading}
+                  onSelect={() => handleStatusChange('active')}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  {t('studentProfilePage.reactivate')}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -1878,6 +1912,21 @@ export default function StudentProfile() {
         pdfUrl={pdfUrl}
         fileName={pdfFileName}
       />
+
+      {/* Student Exit Dialog (Dropout / Passout) */}
+      {student && (
+        <StudentExitDialog
+          student={student}
+          exitType={exitType}
+          open={showExitDialog}
+          onClose={() => setShowExitDialog(false)}
+          onComplete={(_result: StudentExitResponse) => {
+            setShowExitDialog(false);
+            // Refresh student data so status badge updates
+            void studentApi.getById(student.id).then((s) => setStudent(s));
+          }}
+        />
+      )}
     </div>
   );
 }

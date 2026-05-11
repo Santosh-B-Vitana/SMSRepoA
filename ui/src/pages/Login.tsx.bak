@@ -1,0 +1,481 @@
+﻿import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useSchool } from '../contexts/SchoolContext';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Loader2, Eye, EyeOff, Sun, Moon, Monitor,
+  Shield, Users, GraduationCap, AlertTriangle, ArrowRight,
+  CheckCircle2, Lock, Zap, BarChart3, Globe,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { loginSchema, checkRateLimit } from '@/utils/authValidation';
+
+const PORTALS = [
+  { id: 'admin',  label: 'Administration', icon: Shield,        color: 'from-violet-600 to-indigo-600' },
+  { id: 'staff',  label: 'Staff',          icon: GraduationCap, color: 'from-blue-600 to-cyan-600' },
+  { id: 'parent', label: 'Parent',         icon: Users,         color: 'from-emerald-600 to-teal-600' },
+] as const;
+
+type PortalId = typeof PORTALS[number]['id'];
+
+const TRUST_MARKS = [
+  { icon: Lock,      label: '256-bit SSL' },
+  { icon: Shield,    label: 'SOC 2 Ready' },
+  { icon: CheckCircle2, label: 'DPDP Compliant' },
+];
+
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [rateLimitWarning, setRateLimitWarning] = useState<string | null>(null);
+  const [loginType, setLoginType] = useState<PortalId>('admin');
+  const loginTypeRef = useRef<PortalId>('admin');
+  loginTypeRef.current = loginType;
+
+  const { login, logout, loading, isAuthenticated, user } = useAuth();
+  const { schoolInfo } = useSchool();
+  const { t } = useLanguage();
+  const { theme, setTheme } = useTheme();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('expired') === 'true') {
+      setError('Your session has expired. Please log in again.');
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const role = user.role?.toLowerCase() ?? '';
+      const staffRoles = ['staff', 'teacher'];
+      const isStaffRole = staffRoles.includes(role);
+      const isParentRole = role === 'parent';
+      const currentPortal = loginTypeRef.current;
+
+      if (currentPortal === 'parent' && !isParentRole) {
+        setError('This portal is for parents/guardians only. Please use the Administration or Staff login.');
+        logout(); return;
+      }
+      if (currentPortal === 'staff' && !isStaffRole) {
+        setError('This portal is for teaching and non-teaching staff only. Please use the Administration login.');
+        logout(); return;
+      }
+      if (currentPortal === 'admin' && (isStaffRole || isParentRole)) {
+        const hint = isStaffRole ? 'Staff members must use the Staff Login portal.' : 'Parents must use the Parent Portal.';
+        setError(hint); logout(); return;
+      }
+
+      const dashboardRoutes: Record<string, string> = {
+        staff: '/staff-dashboard', admin: '/admin-dashboard',
+        parent: '/parent-dashboard', super_admin: '/super-admin-dashboard',
+      };
+      const returnUrl = searchParams.get('returnUrl');
+      navigate(returnUrl || dashboardRoutes[user.role?.toLowerCase()] || '/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, user, navigate, searchParams, logout]);
+
+  useEffect(() => {
+    if (email.includes('@')) {
+      const rateLimitStatus = checkRateLimit(email.toLowerCase());
+      setRateLimitWarning(rateLimitStatus.message);
+      if (!rateLimitStatus.allowed) setError(rateLimitStatus.message || 'Too many attempts. Please try again later.');
+    } else {
+      setRateLimitWarning(null);
+    }
+  }, [email]);
+
+  const validateForm = (): boolean => {
+    const result = loginSchema.safeParse({ email, password });
+    if (!result.success) {
+      const errors: { email?: string; password?: string } = {};
+      result.error.errors.forEach((err) => {
+        const field = err.path[0] as 'email' | 'password';
+        errors[field] = err.message;
+      });
+      setFieldErrors(errors);
+      return false;
+    }
+    setFieldErrors({});
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const rateLimitStatus = checkRateLimit(email.toLowerCase());
+    if (!rateLimitStatus.allowed) {
+      setError(rateLimitStatus.message || 'Too many login attempts. Please try again later.');
+      return;
+    }
+    if (!validateForm()) return;
+    try {
+      await login(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+    }
+  };
+
+  const demoUsers = [
+    { email: 'admin@vitanaschools.edu', role: 'Admin',   password: 'admin-dev-change-me', portal: 'admin'  as PortalId },
+    { email: 'amit.k@demo.edu',         role: 'Teacher', password: 'Teacher@123',          portal: 'staff'  as PortalId },
+    { email: 'aj@gmail.com',            role: 'Parent',  password: 'Veda#834Nh7J',         portal: 'parent' as PortalId },
+  ];
+
+  const fillDemoCredentials = (demoEmail: string, demoPassword: string) => {
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setError('');
+    setFieldErrors({});
+  };
+
+  const activePortal = PORTALS.find(p => p.id === loginType)!;
+
+  return (
+    <div className="min-h-screen flex bg-background">
+
+      {/* ── Left branding panel ── */}
+      <div className="hidden lg:flex lg:w-[52%] xl:w-[55%] relative overflow-hidden flex-col">
+        {/* Base dark gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]" />
+
+        {/* Glowing orbs */}
+        <div className="absolute -top-40 -left-20 w-[500px] h-[500px] rounded-full bg-violet-600/20 blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-600/15 blur-[80px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-blue-600/8 blur-[120px] pointer-events-none" />
+
+        {/* Grid overlay */}
+        <div className="absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.6) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.6) 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+
+        {/* Content */}
+        <div className="relative z-10 flex flex-col h-full p-10 xl:p-14">
+
+          {/* Brand */}
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/40">
+                <img src="/favicon.ico" alt="VEDA" className="h-5 w-5 filter brightness-0 invert" />
+              </div>
+              <div className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-400 border-2 border-[#0f172a]" />
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-white tracking-tight">VEDA</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-violet-300 bg-violet-500/20 border border-violet-500/30 px-2 py-0.5 rounded-full">Pro</span>
+            </div>
+          </div>
+
+          {/* Hero */}
+          <div className="flex-1 flex flex-col justify-center py-16">
+            <div className="space-y-3 mb-10">
+              <div className="flex items-center gap-2">
+                <div className="h-px w-8 bg-violet-400/60" />
+                <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-violet-400">School Management Suite</span>
+              </div>
+              <h1 className="text-4xl xl:text-5xl font-black text-white leading-[1.1] tracking-tight">
+                Run your school<br />
+                <span className="bg-gradient-to-r from-violet-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+                  like a pro.
+                </span>
+              </h1>
+              <p className="text-slate-400 text-base leading-relaxed max-w-sm">
+                A unified command centre for admissions, academics, finance, and communication — built for India's modern schools.
+              </p>
+            </div>
+
+            {/* Feature list */}
+            <div className="space-y-3 mb-10">
+              {[
+                { icon: BarChart3, label: 'Real-time analytics & live dashboards',      color: 'text-violet-400' },
+                { icon: Zap,       label: 'Automated fee collection & reminders',        color: 'text-amber-400'  },
+                { icon: Globe,     label: 'Parent & staff mobile apps included',         color: 'text-cyan-400'   },
+                { icon: Shield,    label: 'Role-based access with audit trails',         color: 'text-emerald-400'},
+              ].map((f, i) => (
+                <div key={i} className="flex items-center gap-3 group">
+                  <div className={`h-8 w-8 rounded-lg bg-white/5 border border-white/8 flex items-center justify-center shrink-0 group-hover:bg-white/10 transition-colors`}>
+                    <f.icon className={`h-3.5 w-3.5 ${f.color}`} />
+                  </div>
+                  <span className="text-sm text-slate-300">{f.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { value: '50K+',  label: 'Students',      sub: 'Across institutions' },
+                { value: '98%',   label: 'Uptime',        sub: 'SLA guaranteed'      },
+                { value: '< 2s',  label: 'Load time',     sub: 'P95 response'        },
+              ].map((s, i) => (
+                <div key={i} className="rounded-xl bg-white/[0.04] border border-white/[0.07] p-3.5 hover:bg-white/[0.07] transition-colors">
+                  <p className="text-xl font-black text-white">{s.value}</p>
+                  <p className="text-[11px] font-semibold text-slate-300 leading-tight">{s.label}</p>
+                  <p className="text-[10px] text-slate-500 leading-tight mt-0.5">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Trust marks + footer */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-5">
+              {TRUST_MARKS.map((tm, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-slate-500 text-[11px]">
+                  <tm.icon className="h-3 w-3 text-emerald-500" />
+                  <span>{tm.label}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-slate-600 text-xs">© 2026 Vitana Private Limited. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right login panel ── */}
+      <div className="flex-1 flex flex-col relative">
+        {/* Subtle top-right theme toggle */}
+        <div className="absolute top-6 right-6 z-10">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl border border-border/60 bg-background/80 backdrop-blur hover:bg-muted">
+                {theme === 'light' && <Sun className="h-4 w-4" />}
+                {theme === 'dark'  && <Moon className="h-4 w-4" />}
+                {theme === 'system'&& <Monitor className="h-4 w-4" />}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-xl min-w-[140px]">
+              <DropdownMenuItem onClick={() => setTheme('light')} className="rounded-lg gap-2">
+                <Sun className="h-4 w-4" /> {t('settings.light')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme('dark')} className="rounded-lg gap-2">
+                <Moon className="h-4 w-4" /> {t('settings.dark')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme('system')} className="rounded-lg gap-2">
+                <Monitor className="h-4 w-4" /> {t('settings.system')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Mobile header */}
+        <div className="lg:hidden flex items-center gap-2 px-6 pt-6">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow shadow-violet-500/40">
+            <img src="/favicon.ico" alt="VEDA" className="h-4 w-4 filter brightness-0 invert" />
+          </div>
+          <span className="font-black text-lg text-foreground tracking-tight">VEDA</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest text-violet-600 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded-full">Pro</span>
+        </div>
+
+        {/* Centered form */}
+        <div className="flex-1 flex items-center justify-center px-6 py-12 lg:px-12 xl:px-20">
+          <div className="w-full max-w-[420px]">
+
+            {/* Portal selector */}
+            <div className="flex gap-1 p-1 rounded-2xl bg-muted/60 border border-border mb-8">
+              {PORTALS.map(portal => {
+                const Icon = portal.icon;
+                const active = loginType === portal.id;
+                return (
+                  <button
+                    key={portal.id}
+                    type="button"
+                    onClick={() => { setLoginType(portal.id); setError(''); setFieldErrors({}); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                      active
+                        ? 'bg-background text-foreground shadow-sm border border-border ring-0'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                    }`}
+                  >
+                    <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-primary' : ''}`} />
+                    <span className="hidden sm:inline">{portal.label}</span>
+                    <span className="sm:hidden">{portal.id === 'admin' ? 'Admin' : portal.id === 'staff' ? 'Staff' : 'Parent'}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Heading */}
+            <div className="mb-8">
+              {/* School logo if available */}
+              {schoolInfo?.logoUrl && (
+                <div className="mb-4 h-12 w-12 rounded-xl overflow-hidden border border-border bg-muted/40 flex items-center justify-center">
+                  <img src={schoolInfo.logoUrl} alt={schoolInfo.name} className="h-10 w-10 object-contain" />
+                </div>
+              )}
+              <h2 className="text-2xl xl:text-3xl font-black text-foreground tracking-tight">
+                {loginType === 'staff' ? 'Staff Portal' : loginType === 'parent' ? 'Parent Portal' : 'Welcome back'}
+              </h2>
+              <p className="text-muted-foreground text-sm mt-1">
+                {loginType === 'staff'
+                  ? 'For principals, teachers, wardens & all school staff'
+                  : loginType === 'parent'
+                  ? 'Sign in to track your child\'s progress'
+                  : schoolInfo?.name
+                    ? <>Signing into <span className="font-semibold text-foreground">{schoolInfo.name}</span></>
+                    : 'Sign in to your admin account'}
+              </p>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <label htmlFor="email" className="text-sm font-semibold text-foreground">
+                  Email address
+                </label>
+                <div className="relative">
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: undefined }));
+                    }}
+                    placeholder="you@school.edu"
+                    required
+                    autoComplete="email"
+                    aria-invalid={!!fieldErrors.email}
+                    aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+                    className={`h-12 rounded-xl text-sm bg-muted/40 border-border placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-all ${
+                      fieldErrors.email ? 'border-destructive focus-visible:ring-destructive/20 focus-visible:border-destructive' : ''
+                    }`}
+                  />
+                </div>
+                {fieldErrors.email && (
+                  <p id="email-error" className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {fieldErrors.email}
+                  </p>
+                )}
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <label htmlFor="password" className="text-sm font-semibold text-foreground">
+                  Password
+                </label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: undefined }));
+                    }}
+                    placeholder="Enter your password"
+                    required
+                    autoComplete="current-password"
+                    aria-invalid={!!fieldErrors.password}
+                    aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+                    className={`h-12 rounded-xl text-sm bg-muted/40 border-border placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary pr-12 transition-all ${
+                      fieldErrors.password ? 'border-destructive focus-visible:ring-destructive/20 focus-visible:border-destructive' : ''
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {fieldErrors.password && (
+                  <p id="password-error" className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {fieldErrors.password}
+                  </p>
+                )}
+              </div>
+
+              {/* Rate limit / error alerts */}
+              {rateLimitWarning && !error && (
+                <Alert className="rounded-xl border-amber-500/40 bg-amber-500/8 py-2.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-amber-700 dark:text-amber-400 text-sm">{rateLimitWarning}</AlertDescription>
+                </Alert>
+              )}
+              {error && (
+                <Alert variant="destructive" className="rounded-xl border-destructive/40 bg-destructive/8 py-2.5">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="text-sm">{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {/* Submit */}
+              <Button
+                type="submit"
+                className={`w-full h-12 rounded-xl text-sm font-bold shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] bg-gradient-to-r ${activePortal.color} text-white border-0 mt-2`}
+                disabled={loading}
+              >
+                {loading
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in…</>
+                  : <>
+                      Sign in to {activePortal.label}
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
+                }
+              </Button>
+            </form>
+
+            {/* Demo credentials */}
+            <div className="mt-6 rounded-2xl border border-border/60 bg-muted/25 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Demo access</span>
+              </div>
+              <div className="space-y-2">
+                {demoUsers.filter(d => d.portal === loginType).map((du, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-foreground">{du.role}</span>
+                      <p className="text-[11px] text-muted-foreground">{du.email}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fillDemoCredentials(du.email, du.password)}
+                      className="h-7 px-3 text-[11px] font-semibold rounded-lg hover:bg-primary/5 hover:border-primary/40 hover:text-primary transition-colors"
+                    >
+                      Use
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Security note + super admin link */}
+            <div className="mt-5 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Lock className="h-3 w-3" />
+                <span>Secured with 256-bit SSL encryption</span>
+              </div>
+              <Link
+                to="/super-admin-login"
+                className="text-[11px] text-muted-foreground hover:text-primary transition-colors font-medium"
+              >
+                {t('auth.superAdminAccess')}
+              </Link>
+            </div>
+
+            {/* Mobile footer */}
+            <p className="mt-8 text-center text-[11px] text-muted-foreground lg:hidden">
+              © 2026 Vitana Private Limited
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

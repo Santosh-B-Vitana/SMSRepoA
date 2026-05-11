@@ -10,6 +10,9 @@
 
 | Area | Change |
 |------|--------|
+| **Assignments (Staff UI)** | Complete rewrite: assignments grouped by class name (not class ID), sections listed under each class; colour-coded class pills in filter bar; section sub-tabs when a class has multiple sections; every assignment card is now clickable → side panel shows submission count, grading count, progress bar, description, assigned-by; section label shown on each card tile |
+| **Parent Fee Portal** | Fee breakdown now shows: listed components sub-total + "Other fee heads (not itemised)" gap line + Fee Structure Total + Module Fees (pro-rata) + **Grand Total** — all numbers reconcile to the Pending balance; percentage bars use component sum not stale DB total |
+| **Report Pages Bugfix** | Orphaned JSX closing blocks removed from `SubjectPerformance.tsx`, `GradeDistribution.tsx`, `StudentMarks.tsx` — these caused "Failed to fetch dynamically imported module" for the entire Assignments page via Vite's module graph |
 | Academic Year Management | Current column removed; status now driven by `isCurrent` flag only; one active year enforced at DB level |
 | Academic Year Selector (Header) | Extended to Principal role; amber "Historical" indicator when viewing a past year |
 | Subjects Tab (Class Profile) | Subjects loaded from real school API; teacher assignment uses live search bar instead of static dropdown |
@@ -182,8 +185,15 @@
 - Print-ready timetable PDF
 
 ### 5.4 Assignments
-- Create assignments per subject/class
-- Set due dates, maximum marks
+- Create assignments per subject/class (select class then subject populates from staff's teaching load)
+- Set due dates, maximum marks, publish now or save as draft
+- **Staff "My Assignments" dashboard** (new May 2026):
+  - 4 stat cards: Total Created, Due This Week, Active, Students Reached
+  - Assignments grouped by **class name** at top level; sections listed underneath (with sub-header when multiple sections exist)
+  - Per-class colour coding with filter pills and section sub-tabs
+  - Clickable cards → slide-in detail panel showing: full title, subject + class/section tags, due date countdown, submission count, graded count, grading progress bar, description/instructions
+  - Section label (`Class 10 · B`) shown on each card tile
+  - Search by title or subject; status filter (Active / Draft / Completed / Overdue)
 - Student submission tracking
 - Marks entry + feedback
 
@@ -274,6 +284,16 @@
 - Define fee components per class per academic year
 - Tuition fee, lab fee, sports fee, hostel fee, etc.
 - Set due dates, late fee rules
+
+### 8.1a Parent Fee Breakdown (new May 2026)
+The fee breakdown section in the parent portal now shows a fully reconciled breakdown:
+1. **Listed components** — each itemised fee head with % and amount
+2. **Other fee heads (not itemised)** — gap between listed components and the fee structure total (shown only if > ₹0)
+3. **Fee Structure Total** — the base billed amount from the fee record
+4. **Module Fees (pro-rata)** — transport + hostel monthly fees prorated to month join date (shown only if applicable)
+5. **Grand Total** — equals `Fee Structure Total + Module Fees`, matching the Pending balance exactly
+
+Percentage bars use the listed component sum as denominator for accuracy.
 
 ### 8.2 Online Fee Payment (Cashfree Integration)
 - Student/parent initiates payment from portal

@@ -1303,6 +1303,19 @@ namespace SmsApi.Services
             var riyaId  = Guid.Parse("c0a80101-0000-4000-8000-000000000001");
             var rohanId = Guid.Parse("67e1d74f-5eab-42a8-918b-bf30c64111c3");
 
+            // Guard: only proceed if both students exist in this database
+            var existingStudentIds = await _context.Students
+                .IgnoreQueryFilters()
+                .Where(s => s.SchoolId == _schoolId && (s.Id == riyaId || s.Id == rohanId))
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            if (!existingStudentIds.Contains(riyaId) && !existingStudentIds.Contains(rohanId))
+            {
+                _logger.LogInformation("Parent demo students not found in this database — skipping parent transport/hostel seed.");
+                return;
+            }
+
             // ── Transport ───────────────────────────────────────────────────
             var route = await _context.TransportRoutes
                 .Where(r => r.SchoolId == _schoolId && r.Status == "active" && !r.IsDeleted)
@@ -1318,7 +1331,7 @@ namespace SmsApi.Services
 
                 var toAddTransport = new List<TransportStudent>();
                 var routeFee = route.MonthlyFee ?? route.Fare;
-                if (!existingTransport.Contains(riyaId))
+                if (existingStudentIds.Contains(riyaId) && !existingTransport.Contains(riyaId))
                     toAddTransport.Add(new TransportStudent
                     {
                         Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = riyaId,
@@ -1326,7 +1339,7 @@ namespace SmsApi.Services
                         MonthlyFee = routeFee, Fare = routeFee,
                         Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
                     });
-                if (!existingTransport.Contains(rohanId))
+                if (existingStudentIds.Contains(rohanId) && !existingTransport.Contains(rohanId))
                     toAddTransport.Add(new TransportStudent
                     {
                         Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = rohanId,
@@ -1345,6 +1358,7 @@ namespace SmsApi.Services
 
             // ── Hostel ──────────────────────────────────────────────────────
             // Give Rohan (typically male) a hostel assignment if not already assigned
+            if (!existingStudentIds.Contains(rohanId)) return; // student doesn't exist in this DB
             var existingHostel = await _context.HostelStudents
                 .AnyAsync(hs => hs.SchoolId == _schoolId && hs.StudentId == rohanId && hs.Status == "active");
 
