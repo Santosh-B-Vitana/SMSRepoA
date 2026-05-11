@@ -504,6 +504,7 @@ const translations = {
     'staff.staffList': 'Staff List',
     'staff.designation': 'Designation',
     'staff.department': 'Department',
+    'staff.departments': 'Departments',
     'staff.joiningDate': 'Joining Date',
     'staff.totalStaff': 'Total Staff',
     'staff.staffDetails': 'Staff Details',

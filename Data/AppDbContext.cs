@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmsApi.Models.Entities;
 using SmsApi.Services;
 
-#pragma warning disable CS0618 // 'StudentAttendance' is obsolete
+#pragma warning disable CS0618 // Obsolete members kept intentionally for backward compat (StudentAttendance, ExamResult, etc.)
 namespace SmsApi.Data
 {
     public class AppDbContext : DbContext
@@ -46,7 +46,9 @@ namespace SmsApi.Data
         // Audit
         public DbSet<AuditLog> AuditLogs { get; set; }
         public DbSet<Student> Students { get; set; }
-        public DbSet<StudentGuardian> StudentGuardians { get; set; }
+        public DbSet<StudentGuardian> StudentGuardians { get; set; }  // Legacy — use Guardians + GuardianStudents
+        public DbSet<Guardian> Guardians { get; set; }                // Theme 4: normalised guardian identity
+        public DbSet<GuardianStudent> GuardianStudents { get; set; }  // Theme 4: per-student permission flags
         public DbSet<StudentDocument> StudentDocuments { get; set; }
         public DbSet<StudentSibling> StudentSiblings { get; set; }
         public DbSet<StudentAnnualHealth> StudentAnnualHealthRecords { get; set; }
@@ -125,6 +127,7 @@ namespace SmsApi.Data
         public DbSet<ExamType> ExamTypes { get; set; }
         public DbSet<ClassSubject> ClassSubjects { get; set; }
         public DbSet<StudentSubject> StudentSubjects { get; set; }
+        public DbSet<StudentEnrollment> StudentEnrollments { get; set; }  // Theme 2: FK-based class/section/year tracking
         public DbSet<TeacherAssignment> TeacherAssignments { get; set; }
         public DbSet<ClassSettings> ClassSettings { get; set; }
         public DbSet<GradeTier> GradeTiers { get; set; }
@@ -365,19 +368,30 @@ namespace SmsApi.Data
                     var schoolIdPropInfo = entityType.ClrType.GetProperty("SchoolId");
                     if (schoolIdPropInfo != null && schoolIdPropInfo.PropertyType == typeof(Guid))
                     {
-                        // Capture loop variable for closure safety
-                        var capturedSchoolId   = _currentSchoolId;
-                        var capturedSuperAdmin = _isSuperAdmin;
+                        // BUG FIX: Use Expression.Field to access instance fields at query-execution time.
+                        // Previously Expression.Constant(capturedValue) baked the Guid into the expression
+                        // tree at model-compilation time (called once at startup), causing every subsequent
+                        // request to see the first school's data regardless of the authenticated user.
+                        // Expression.Field(Expression.Constant(this), fieldInfo) creates a MemberExpression
+                        // that EF Core re-evaluates against the current (Scoped) DbContext instance on every
+                        // query, providing correct per-request tenant isolation.
+                        var dbContextExpr         = System.Linq.Expressions.Expression.Constant(this);
+                        var schoolIdFieldInfo      = typeof(AppDbContext).GetField("_currentSchoolId",
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+                        var isSuperAdminFieldInfo  = typeof(AppDbContext).GetField("_isSuperAdmin",
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+                        var schoolIdAccess         = System.Linq.Expressions.Expression.Field(dbContextExpr, schoolIdFieldInfo);
+                        var isSuperAdminAccess     = System.Linq.Expressions.Expression.Field(dbContextExpr, isSuperAdminFieldInfo);
 
                         var schoolIdProp       = System.Linq.Expressions.Expression.Property(parameter, schoolIdPropInfo);
-                        var schoolIdConst      = System.Linq.Expressions.Expression.Constant(capturedSchoolId, typeof(Guid?));
-                        var isSuperAdminConst  = System.Linq.Expressions.Expression.Constant(capturedSuperAdmin);
-                        var hasNoSchoolFilter  = System.Linq.Expressions.Expression.Equal(schoolIdConst, System.Linq.Expressions.Expression.Constant(null, typeof(Guid?)));
+                        var hasNoSchoolFilter  = System.Linq.Expressions.Expression.Equal(
+                            schoolIdAccess,
+                            System.Linq.Expressions.Expression.Constant(null, typeof(Guid?)));
                         var schoolIdAsNullable = System.Linq.Expressions.Expression.Convert(schoolIdProp, typeof(Guid?));
-                        var schoolIdMatches    = System.Linq.Expressions.Expression.Equal(schoolIdAsNullable, schoolIdConst);
+                        var schoolIdMatches    = System.Linq.Expressions.Expression.Equal(schoolIdAsNullable, schoolIdAccess);
                         // Pass if: isSuperAdmin OR schoolId filter is null (design-time) OR schoolId matches
                         var schoolFilter = System.Linq.Expressions.Expression.OrElse(
-                            isSuperAdminConst,
+                            isSuperAdminAccess,
                             System.Linq.Expressions.Expression.OrElse(hasNoSchoolFilter, schoolIdMatches));
 
                         body = System.Linq.Expressions.Expression.AndAlso(notDeleted, schoolFilter);
@@ -721,6 +735,47 @@ namespace SmsApi.Data
                 entity.HasIndex(e => new { e.SchoolId, e.TCNumber }).IsUnique();
                 entity.HasIndex(e => new { e.SchoolId, e.AutoTCNumber });
             });
+
+            // Guardian — normalised guardian identity linked to Person (Theme 4).
+            modelBuilder.Entity<Guardian>(entity =>
+            {
+                entity.HasOne(g => g.School)
+                    .WithMany()
+                    .HasForeignKey(g => g.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(g => g.Person)
+                    .WithOne(p => p.GuardianProfile)
+                    .HasForeignKey<Guardian>(g => g.PersonId)
+                    .IsRequired(true)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.PersonId }).IsUnique();
+            });
+
+            // GuardianStudent — per-relationship permission flags (Theme 4).
+            modelBuilder.Entity<GuardianStudent>(entity =>
+            {
+                entity.HasOne(gs => gs.School)
+                    .WithMany()
+                    .HasForeignKey(gs => gs.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(gs => gs.Guardian)
+                    .WithMany(g => g.StudentLinks)
+                    .HasForeignKey(gs => gs.GuardianId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(gs => gs.Student)
+                    .WithMany()
+                    .HasForeignKey(gs => gs.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // One guardian ↔ one student link per school (no duplicate rows)
+                entity.HasIndex(e => new { e.SchoolId, e.GuardianId, e.StudentId }).IsUnique();
+                // Fast lookup of all guardians for a student
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId });
+            });
         }
 
         private void ConfigureStaff(ModelBuilder modelBuilder)
@@ -773,6 +828,33 @@ namespace SmsApi.Data
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.Date }).IsUnique();
             });
 
+            // AttendanceRecord: unified polymorphic table (Theme 3).
+            // StudentId is now nullable (staff records leave it null); StaffId is nullable (student records).
+            modelBuilder.Entity<AttendanceRecord>(entity =>
+            {
+                entity.HasOne(a => a.School)
+                    .WithMany()
+                    .HasForeignKey(a => a.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(a => a.Student)
+                    .WithMany()
+                    .HasForeignKey(a => a.StudentId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(a => a.Staff)
+                    .WithMany()
+                    .HasForeignKey(a => a.StaffId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // Unique attendance per entity per day — partial unique enforced per EntityType
+                entity.HasIndex(e => new { e.SchoolId, e.EntityType, e.StudentId, e.Date });
+                entity.HasIndex(e => new { e.SchoolId, e.EntityType, e.StaffId, e.Date });
+                entity.HasIndex(e => new { e.SchoolId, e.Date, e.EntityType });
+            });
+
             modelBuilder.Entity<StaffAttendance>(entity =>
             {
                 entity.HasOne(a => a.School)
@@ -820,6 +902,15 @@ namespace SmsApi.Data
                     .HasForeignKey(f => f.FeeStructureId)
                     .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired(false);
+
+                entity.HasOne(f => f.StudentEnrollment)
+                    .WithMany()
+                    .HasForeignKey(f => f.StudentEnrollmentId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                // Lookup by enrollment makes year-based fee queries fast
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.StudentEnrollmentId });
             });
 
             modelBuilder.Entity<PaymentTransaction>(entity =>
@@ -1174,6 +1265,104 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(ta => ta.SubjectId)
                     .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // StudentEnrollment — FK-based class/section/year tracking (Theme 2).
+            // At most one active enrollment per student per academic year.
+            modelBuilder.Entity<StudentEnrollment>(entity =>
+            {
+                entity.HasOne(e => e.School)
+                    .WithMany()
+                    .HasForeignKey(e => e.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Student)
+                    .WithMany()
+                    .HasForeignKey(e => e.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.AcademicYear)
+                    .WithMany()
+                    .HasForeignKey(e => e.AcademicYearId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Class)
+                    .WithMany()
+                    .HasForeignKey(e => e.ClassId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Section)
+                    .WithMany()
+                    .HasForeignKey(e => e.SectionId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // One active enrollment per student per academic year
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.AcademicYearId, e.Status });
+                // Fast lookup by class/section for a given year (e.g. for attendance marking)
+                entity.HasIndex(e => new { e.SchoolId, e.AcademicYearId, e.ClassId, e.SectionId });
+            });
+
+            // StudentSubject — add AcademicYearId and StudentEnrollmentId FK columns.
+            // The legacy string AcademicYear is kept for backward compatibility.
+            modelBuilder.Entity<StudentSubject>(entity =>
+            {
+                entity.HasOne(ss => ss.AcademicYearRef)
+                    .WithMany()
+                    .HasForeignKey(ss => ss.AcademicYearId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(ss => ss.StudentEnrollment)
+                    .WithMany()
+                    .HasForeignKey(ss => ss.StudentEnrollmentId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                // Fast lookup by student + year
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.AcademicYearId });
+            });
+
+            // PromotionHistory — optional FKs to Class/Section/AcademicYear/StudentEnrollment.
+            // String fields remain as backward-compat columns for legacy rows.
+            modelBuilder.Entity<PromotionHistory>(entity =>
+            {
+                entity.HasOne(p => p.PreviousClassRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.PreviousClassId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.PreviousSectionRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.PreviousSectionId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.NewClassRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.NewClassId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.NewSectionRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.NewSectionId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.AcademicYearRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.AcademicYearId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.ResultingEnrollment)
+                    .WithMany()
+                    .HasForeignKey(p => p.ResultingEnrollmentId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.PromotionDate });
             });
         }
 

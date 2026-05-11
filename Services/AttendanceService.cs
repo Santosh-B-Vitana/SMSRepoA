@@ -129,7 +129,7 @@ namespace SmsApi.Services
                 .Select(a => new AttendanceRecordBasicDto
                 {
                     Id = a.Id,
-                    StudentId = a.StudentId,
+                    StudentId = a.StudentId ?? Guid.Empty,
                     StudentName = a.Student != null ? a.Student.Name : "",
                     Class = a.Student != null ? a.Student.Class : "",
                     Date = a.Date,
@@ -159,7 +159,7 @@ namespace SmsApi.Services
             {
                 Id = record.Id,
                 SchoolId = record.SchoolId,
-                StudentId = record.StudentId,
+                StudentId = record.StudentId ?? Guid.Empty,
                 StudentName = record.Student != null ? record.Student.Name : "",
                 Class = record.Student?.Class ?? "",
                 Section = record.Student?.Section ?? "",
@@ -262,7 +262,7 @@ namespace SmsApi.Services
             {
                 Id = record.Id,
                 SchoolId = record.SchoolId,
-                StudentId = record.StudentId,
+                StudentId = record.StudentId ?? Guid.Empty,
                 StudentName = studentEnrollment.Name,
                 Class = studentEnrollment.Class,
                 Section = studentEnrollment.Section,
@@ -312,8 +312,8 @@ namespace SmsApi.Services
             var existingRecordsDict = await _context.AttendanceRecords
                 .Where(a => a.SchoolId == schoolId && 
                            a.Date.Date == date &&
-                           studentIds.Contains(a.StudentId))
-                .ToDictionaryAsync(a => a.StudentId, a => a);
+                           a.StudentId.HasValue && studentIds.Contains(a.StudentId.Value))
+                .ToDictionaryAsync(a => a.StudentId!.Value, a => a);
 
             var recordsToAdd = new List<AttendanceRecord>();
             var recordsToUpdate = new List<AttendanceRecord>();
@@ -405,7 +405,7 @@ namespace SmsApi.Services
                 .Select(a => new AttendanceRecordBasicDto
                 {
                     Id = a.Id,
-                    StudentId = a.StudentId,
+                    StudentId = a.StudentId ?? Guid.Empty,
                     StudentName = a.Student != null ? a.Student.Name : "Unknown",
                     Date = a.Date,
                     Status = a.Status
@@ -739,7 +739,7 @@ namespace SmsApi.Services
                 {
                     Id = a.Id,
                     SchoolId = a.SchoolId,
-                    StudentId = a.StudentId,
+                    StudentId = a.StudentId ?? Guid.Empty,
                     Date = a.Date,
                     Status = a.Status,
                     Remarks = a.Remarks,
@@ -780,7 +780,7 @@ namespace SmsApi.Services
             {
                 Id = attendance.Id,
                 SchoolId = attendance.SchoolId,
-                StudentId = attendance.StudentId,
+                StudentId = attendance.StudentId ?? Guid.Empty,
                 Date = attendance.Date,
                 Status = attendance.Status,
                 Remarks = attendance.Remarks,

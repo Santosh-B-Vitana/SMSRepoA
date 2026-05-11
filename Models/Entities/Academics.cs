@@ -442,9 +442,26 @@ namespace SmsApi.Models.Entities
 
         public Guid? SubjectTypeId { get; set; }
 
+        /// <summary>
+        /// FK to AcademicYear entity — the structured replacement for the legacy string field.
+        /// Populated on all new enrollments. Null on rows created before this column was added.
+        /// </summary>
+        public Guid? AcademicYearId { get; set; }
+
+        /// <summary>
+        /// Legacy free-text academic year (e.g. "2025-26"). Kept for backward compatibility.
+        /// New code should use AcademicYearId and read the name from AcademicYearRef.Name.
+        /// </summary>
         [Required]
         [MaxLength(20)]
         public string AcademicYear { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Optional link to the StudentEnrollment row for this student/year.
+        /// When populated, provides the authoritative class+section context without
+        /// needing to join through Student.Class/Section strings.
+        /// </summary>
+        public Guid? StudentEnrollmentId { get; set; }
 
         /// <summary>Whether this is a mandatory or elective enrollment.</summary>
         public bool IsMandatory { get; set; } = true;
@@ -466,6 +483,87 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("SubjectTypeId")]
         public virtual SubjectType? SubjectType { get; set; }
+
+        [ForeignKey("AcademicYearId")]
+        public virtual AcademicYear? AcademicYearRef { get; set; }
+
+        [ForeignKey("StudentEnrollmentId")]
+        public virtual StudentEnrollment? StudentEnrollment { get; set; }
+    }
+
+    /// <summary>
+    /// Tracks a student's enrollment in a specific class and section for a given academic year.
+    /// <para>
+    /// This is the authoritative source for "which class is this student in?" — replacing the
+    /// legacy string Class/Section fields on the Student entity. By creating a new row per year,
+    /// the full promotion history is preserved: when a student is promoted the current row is
+    /// closed (Status = "promoted", ExitDate = promotion date) and a new active row is opened.
+    /// </para>
+    /// <para>
+    /// Migration note: existing Student.Class and Student.Section strings are kept for backward
+    /// compatibility but new code should always read from StudentEnrollment.
+    /// </para>
+    /// </summary>
+    public class StudentEnrollment : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        /// <summary>The student being enrolled.</summary>
+        [Required]
+        public Guid StudentId { get; set; }
+
+        /// <summary>FK to AcademicYear — replaces the legacy string AcademicYear field.</summary>
+        [Required]
+        public Guid AcademicYearId { get; set; }
+
+        /// <summary>FK to Class entity — replaces Student.Class string field.</summary>
+        [Required]
+        public Guid ClassId { get; set; }
+
+        /// <summary>FK to Section entity — replaces Student.Section string field.</summary>
+        [Required]
+        public Guid SectionId { get; set; }
+
+        /// <summary>Roll number within this class/section for this academic year.</summary>
+        [MaxLength(20)]
+        public string? RollNumber { get; set; }
+
+        /// <summary>
+        /// Lifecycle status: active | promoted | transferred | dropped | completed.
+        /// Only one row per student per academic year should be "active" at a time.
+        /// </summary>
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = "active";
+
+        /// <summary>Date the student was enrolled/admitted into this class.</summary>
+        public DateTime EnrollmentDate { get; set; }
+
+        /// <summary>
+        /// Set when the student leaves this class (promoted, transferred, or dropped).
+        /// Null means the enrollment is still active.
+        /// </summary>
+        public DateTime? ExitDate { get; set; }
+
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+
+        // ── Navigation properties ─────────────────────────────────────────────
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("StudentId")]
+        public virtual Student? Student { get; set; }
+
+        [ForeignKey("AcademicYearId")]
+        public virtual AcademicYear? AcademicYear { get; set; }
+
+        [ForeignKey("ClassId")]
+        public virtual Class? Class { get; set; }
+
+        [ForeignKey("SectionId")]
+        public virtual Section? Section { get; set; }
     }
 
     // Academic Year Entity

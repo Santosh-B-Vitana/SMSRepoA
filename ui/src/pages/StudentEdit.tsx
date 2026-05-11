@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
-import { Student, CreateStudentRequest, studentApi } from "@/services/api/studentApi";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { Student, CreateStudentRequest, studentApi, GuardianStaffDto, StudentBasic } from "@/services/api/studentApi";
+import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 
 /** Convert ISO datetime string from backend to YYYY-MM-DD for date inputs */
 function toDateInput(iso?: string): string {
@@ -16,10 +18,113 @@ function toDateInput(iso?: string): string {
 export default function StudentEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { toast } = useToast();
   const [student, setStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Guardian email (stored in StudentGuardians table, not directly on student)
+  const [guardianEmail, setGuardianEmail] = useState("");
+
+  // Siblings state
+  const [siblings, setSiblings] = useState<StudentBasic[]>([]);
+  const [siblingSearch, setSiblingSearch] = useState("");
+  const [siblingResults, setSiblingResults] = useState<StudentBasic[]>([]);
+  const [siblingSearching, setSiblingSearching] = useState(false);
+  const [siblingWorking, setSiblingWorking] = useState(false);
+
+  const searchSiblings = async (q: string) => {
+    if (!q.trim()) { setSiblingResults([]); return; }
+    setSiblingSearching(true);
+    try {
+      const res = await studentApi.list({ search: q, pageSize: 10 });
+      const currentSiblingIds = new Set(siblings.map(s => s.id));
+      setSiblingResults((res.students || []).filter(s => s.id !== id && !currentSiblingIds.has(s.id)));
+    } catch {
+      setSiblingResults([]);
+    } finally {
+      setSiblingSearching(false);
+    }
+  };
+
+  const handleAddSibling = async (sib: StudentBasic) => {
+    if (!id) return;
+    setSiblingWorking(true);
+    try {
+      await studentApi.addSibling(id, sib.id);
+      setSiblings(prev => [...prev, sib]);
+      setSiblingSearch("");
+      setSiblingResults([]);
+      toast.success(`${sib.name} linked as sibling`);
+    } catch {
+      toast.error("Failed to link sibling");
+    } finally {
+      setSiblingWorking(false);
+    }
+  };
+
+  const handleRemoveSibling = async (sibId: string, sibName: string) => {
+    if (!id) return;
+    setSiblingWorking(true);
+    try {
+      await studentApi.removeSibling(id, sibId);
+      setSiblings(prev => prev.filter(s => s.id !== sibId));
+      toast.success(`${sibName} unlinked`);
+    } catch {
+      toast.error("Failed to unlink sibling");
+    } finally {
+      setSiblingWorking(false);
+    }
+  };
+
+  // Guardian staff link state
+  const [guardianStaff, setGuardianStaff] = useState<GuardianStaffDto | null>(null);
+  const [staffSearch, setStaffSearch] = useState("");
+  const [staffResults, setStaffResults] = useState<StaffBasic[]>([]);
+  const [staffSearching, setStaffSearching] = useState(false);
+  const [linkingStaff, setLinkingStaff] = useState(false);
+
+  const searchStaff = async (q: string) => {
+    if (!q.trim()) { setStaffResults([]); return; }
+    setStaffSearching(true);
+    try {
+      const res = await staffApi.list({ search: q, pageSize: 10 });
+      setStaffResults(res.staff || []);
+    } catch {
+      setStaffResults([]);
+    } finally {
+      setStaffSearching(false);
+    }
+  };
+
+  const handleLinkStaff = async (s: StaffBasic) => {
+    if (!id) return;
+    setLinkingStaff(true);
+    try {
+      await studentApi.setGuardianStaff(id, s.id);
+      setGuardianStaff({ id: s.id, name: `${s.firstName} ${s.lastName}`.trim(), designation: s.designation, department: s.department });
+      setStaffSearch("");
+      setStaffResults([]);
+      toast.success(`${s.firstName} ${s.lastName} linked as guardian`);
+    } catch {
+      toast.error("Failed to link staff");
+    } finally {
+      setLinkingStaff(false);
+    }
+  };
+
+  const handleUnlinkStaff = async () => {
+    if (!id) return;
+    setLinkingStaff(true);
+    try {
+      await studentApi.setGuardianStaff(id, null);
+      setGuardianStaff(null);
+      toast.success("Guardian staff removed");
+    } catch {
+      toast.error("Failed to unlink staff");
+    } finally {
+      setLinkingStaff(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchStudent() {
@@ -27,8 +132,16 @@ export default function StudentEdit() {
       try {
         const data = await studentApi.getById(id);
         setStudent(data);
+        // Pre-fill guardian email from the guardians relation
+        if (data.guardians && data.guardians.length > 0) {
+          setGuardianEmail(data.guardians[0].email || "");
+        }
+        // Load sibling list
+        try { const sibs = await studentApi.getSiblings(id); setSiblings(sibs); } catch { /* ok */ }
+        // Load current guardian staff
+        try { const gs = await studentApi.getGuardianStaff(id); setGuardianStaff(gs); } catch { /* ok */ }
       } catch {
-        toast({ title: "Error", description: "Failed to load student", variant: "destructive" });
+        toast.error("Failed to load student");
       } finally {
         setLoading(false);
       }
@@ -65,6 +178,7 @@ export default function StudentEdit() {
         email: student.email || undefined,
         guardianName: student.guardianName,
         guardianPhone: student.guardianPhone,
+        guardianEmail: guardianEmail || undefined,
         previousSchool: student.previousSchool || undefined,
         previousClass: student.previousClass || undefined,
         transferReason: student.transferReason || undefined,
@@ -89,17 +203,16 @@ export default function StudentEdit() {
         specialNeeds: student.specialNeeds || undefined,
         transportRequired: student.transportRequired,
         hostelRequired: student.hostelRequired,
-        siblingIds: student.siblingIds || undefined,
       };
       await studentApi.update(student.id, payload);
-      toast({ title: "Saved", description: "Student updated successfully" });
+      toast.success("Student updated successfully");
       navigate(`/students/${student.id}`);
     } catch {
-      toast({ title: "Error", description: "Failed to save changes", variant: "destructive" });
+      toast.error("Failed to save changes");
     } finally {
       setSaving(false);
     }
-  };
+  };;
 
   if (loading) {
     return <div className="p-8 text-center">Loading student...</div>;
@@ -122,12 +235,14 @@ export default function StudentEdit() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="personal" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="personal">Personal</TabsTrigger>
               <TabsTrigger value="academic">Academic</TabsTrigger>
               <TabsTrigger value="guardian">Guardian</TabsTrigger>
+              <TabsTrigger value="siblings">Siblings</TabsTrigger>
               <TabsTrigger value="medical">Medical</TabsTrigger>
               <TabsTrigger value="documents">Documents</TabsTrigger>
+              <TabsTrigger value="staff-parent">Staff Parent</TabsTrigger>
             </TabsList>
 
             {/* Personal */}
@@ -233,6 +348,18 @@ export default function StudentEdit() {
                   <label className="block text-sm font-medium mb-1">Guardian Phone *</label>
                   <Input value={student.guardianPhone} onChange={e => handleChange("guardianPhone", e.target.value)} placeholder="Guardian Phone" />
                 </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1">Parent Portal Login Email *</label>
+                  <Input
+                    type="email"
+                    value={guardianEmail}
+                    onChange={e => setGuardianEmail(e.target.value)}
+                    placeholder="parent@example.com"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This email is used as the parent&apos;s username for the Parent Portal.
+                  </p>
+                </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Address (Local/Current) *</label>
                   <Input value={student.address} onChange={e => handleChange("address", e.target.value)} placeholder="Address" />
@@ -260,6 +387,76 @@ export default function StudentEdit() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Emergency Phone</label>
                   <Input value={student.emergencyPhone || ""} onChange={e => handleChange("emergencyPhone", e.target.value)} placeholder="Emergency Phone" />
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Siblings */}
+            <TabsContent value="siblings" className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-1">Siblings in School</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Link brothers or sisters of this student who are also enrolled in the school.
+                  </p>
+                </div>
+
+                {siblings.length > 0 ? (
+                  <div className="space-y-2">
+                    {siblings.map(sib => (
+                      <div key={sib.id} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                        <div>
+                          <p className="font-medium text-sm">{sib.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {sib.class} – {sib.section}
+                            {sib.rollNumber ? ` · Roll ${sib.rollNumber}` : ""}
+                            {sib.admissionNumber ? ` · Adm# ${sib.admissionNumber}` : ""}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive border-destructive hover:bg-destructive hover:text-white"
+                          disabled={siblingWorking}
+                          onClick={() => handleRemoveSibling(sib.id, sib.name)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">No siblings linked yet.</p>
+                )}
+
+                <div className="space-y-2 pt-2 border-t">
+                  <label className="block text-sm font-medium">Search &amp; Link Sibling</label>
+                  <Input
+                    placeholder="Type student name…"
+                    value={siblingSearch}
+                    onChange={e => { setSiblingSearch(e.target.value); searchSiblings(e.target.value); }}
+                  />
+                  {siblingSearching && <p className="text-xs text-muted-foreground">Searching…</p>}
+                  {siblingResults.length > 0 && (
+                    <div className="border rounded-md overflow-hidden max-h-56 overflow-y-auto">
+                      {siblingResults.map(s => (
+                        <div key={s.id} className="flex items-center justify-between px-4 py-3 hover:bg-accent text-sm">
+                          <div>
+                            <p className="font-medium">{s.name}</p>
+                            <p className="text-xs text-muted-foreground">{s.class} – {s.section} · Adm# {s.admissionNumber}</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={siblingWorking}
+                            onClick={() => handleAddSibling(s)}
+                          >
+                            {siblingWorking ? "Linking…" : "Link as Sibling"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </TabsContent>
@@ -323,6 +520,79 @@ export default function StudentEdit() {
                     <label htmlFor={key} className="text-sm capitalize">{key.replace(/([A-Z])/g, " $1")}</label>
                   </div>
                 ))}
+              </div>
+            </TabsContent>
+
+            {/* Staff Parent Link */}
+            <TabsContent value="staff-parent" className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-1">Parent / Guardian — Staff Member Link</h4>
+                  <p className="text-sm text-muted-foreground">
+                    If this student's parent is a staff member at the school, link them here to enable staff-child fee concessions.
+                  </p>
+                </div>
+
+                {guardianStaff ? (
+                  <div className="flex items-center justify-between p-4 border rounded-lg bg-blue-50">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-blue-200 flex items-center justify-center font-bold text-blue-700">
+                        {guardianStaff.name?.charAt(0) || "S"}
+                      </div>
+                      <div>
+                        <p className="font-semibold">{guardianStaff.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {guardianStaff.designation}{guardianStaff.department ? ` · ${guardianStaff.department}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Badge variant="default">Linked</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive border-destructive hover:bg-destructive hover:text-white"
+                        disabled={linkingStaff}
+                        onClick={handleUnlinkStaff}
+                      >
+                        {linkingStaff ? "Unlinking…" : "Unlink"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">No staff member linked as guardian.</p>
+                )}
+
+                {/* Search for staff */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium">Search Staff Member</label>
+                  <Input
+                    placeholder="Type staff name…"
+                    value={staffSearch}
+                    onChange={e => { setStaffSearch(e.target.value); searchStaff(e.target.value); }}
+                  />
+                  {staffSearching && <p className="text-xs text-muted-foreground">Searching…</p>}
+                  {staffResults.length > 0 && (
+                    <div className="border rounded-md overflow-hidden max-h-56 overflow-y-auto">
+                      {staffResults.map(s => (
+                        <div key={s.id} className="flex items-center justify-between px-4 py-3 hover:bg-accent text-sm">
+                          <div>
+                            <p className="font-medium">{s.firstName} {s.lastName}</p>
+                            <p className="text-xs text-muted-foreground">{s.designation} · {s.department}</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={linkingStaff || guardianStaff?.id === s.id}
+                            onClick={() => handleLinkStaff(s)}
+                          >
+                            {guardianStaff?.id === s.id ? "Current" : linkingStaff ? "Linking…" : "Link as Guardian"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
           </Tabs>

@@ -5,13 +5,29 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace SmsApi.Models.Entities
 {
     // ========== ATTENDANCE RECORD ==========
+    /// <summary>
+    /// Unified attendance record for both students and staff.
+    /// Set EntityType = "Student" (default) and populate StudentId for student records.
+    /// Set EntityType = "Staff" and populate StaffId for staff records.
+    /// </summary>
     public class AttendanceRecord : BaseEntity
     {
         [Required]
         public Guid SchoolId { get; set; }
         
+        /// <summary>
+        /// Discriminator: "Student" (default) or "Staff".
+        /// Allows a single table to cover both entity types.
+        /// </summary>
         [Required]
-        public Guid StudentId { get; set; }
+        [MaxLength(20)]
+        public string EntityType { get; set; } = "Student";
+        
+        /// <summary>FK to Student — populate for EntityType = "Student", null for staff records.</summary>
+        public Guid? StudentId { get; set; }
+        
+        /// <summary>FK to Staff — populate for EntityType = "Staff", null for student records.</summary>
+        public Guid? StaffId { get; set; }
         
         [Required]
         public DateTime Date { get; set; }
@@ -40,9 +56,19 @@ namespace SmsApi.Models.Entities
         
         [ForeignKey("StudentId")]
         public virtual Student? Student { get; set; }
+        
+        [ForeignKey("StaffId")]
+        public virtual Staff? Staff { get; set; }
     }
 
-    // ========== STUDENT LEAVE REQUEST ==========
+    // ========== STUDENT LEAVE REQUEST (deprecated) ==========
+    /// <summary>
+    /// Use <see cref="StaffLeaveRequest"/> with ApplicantType = "Student" instead.
+    /// StaffLeaveRequest already supports both staff and students via its ApplicantType
+    /// discriminator and LeaveTypeId FK. StudentLeaveRequest is retained for backward
+    /// compatibility only.
+    /// </summary>
+    [Obsolete("Use StaffLeaveRequest with ApplicantType = 'Student' instead.")]
     public class StudentLeaveRequest : BaseEntity
     {
         [Required]
@@ -136,7 +162,12 @@ namespace SmsApi.Models.Entities
         public string Source { get; set; } = "manual";
     }
 
-    // ========== STAFF ATTENDANCE (unchanged) ==========
+    // ========== STAFF ATTENDANCE (deprecated) ==========
+    /// <summary>
+    /// Use <see cref="AttendanceRecord"/> with EntityType = "Staff" and StaffId populated.
+    /// StaffAttendance is kept for backward compatibility while data migration is in progress.
+    /// </summary>
+    [Obsolete("Use AttendanceRecord with EntityType='Staff' instead. StaffAttendance will be removed after migration.")]
     public class StaffAttendance : BaseEntity
     {
         [Required]

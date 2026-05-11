@@ -334,7 +334,7 @@ namespace SmsApi.Services
                 if (!string.IsNullOrEmpty(cachedJson))
                 {
                     try { return JsonSerializer.Deserialize<DashboardSummaryResponse>(cachedJson)!; }
-                    catch { }
+                    catch { /* Corrupted cache entry — fall through to DB fetch */ }
                 }
             }
 

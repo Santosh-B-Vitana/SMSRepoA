@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 8, 2026 | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 11, 2026 | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -20,13 +20,14 @@
 
 | Module | Status | Unit Tests | Notes |
 |--------|--------|-----------|-------|
-| **Auth / JWT** | ✅ Production Ready | ✅ | Role-based, brute-force lockout, Redis-backed |
-| **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export |
-| **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts |
+| **Auth / JWT** | ✅ Production Ready | ✅ | Role-based, brute-force lockout, Redis-backed; principal role can now switch academic year context |
+| **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export; Staff Parent tab (GuardianStaffId) added May 2026 |
+| **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix |
 | **Admissions** | ✅ Production Ready | ✅ | 5-step wizard, RTE support, CSV export |
-| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions |
+| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId |
 | **Attendance** | ✅ Production Ready | 16/16 | Staff + student tracking |
-| **Academics** | ✅ Production Ready | 70/70 | Classes, subjects, grades, timetable |
+| **Academics** | ✅ Production Ready | 70/70 | Classes (school-wide, no year filter), subjects from live API, teacher search bar in assign dialog |
+| **Academic Year Management** | ✅ Production Ready | ✅ | Single active year enforced; status driven by IsCurrent flag; admin + principal header selector with historical indicator |
 | **Leave Management** | ✅ Production Ready | 30/30 | Balance tracking, approvals, overlap detection |
 | **Communication** | ✅ Production Ready | 89/89 | Messages, announcements, templates |
 | **Payroll** | ✅ Production Ready | 30/30 | Salary slips, allowances, deductions |
@@ -34,6 +35,7 @@
 | **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation |
 | **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash |
 | **Reports** | ✅ Production Ready | ✅ | PDF/CSV export for all modules |
+| **Staff-Student Guardian Relationship** | ✅ Production Ready | ✅ | GuardianStaffId on Student entity; bidirectional link/unlink UI; fee concession eligible |
 
 ---
 

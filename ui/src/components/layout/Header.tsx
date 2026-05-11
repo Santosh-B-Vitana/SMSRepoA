@@ -140,22 +140,23 @@ export function Header() {
       {/* Super Admin School Context Switcher — shown only for super_admin */}
       {isSuperAdmin && <SuperAdminSchoolSwitcher />}
 
-      {/* Academic Year Selector — admin can switch; staff/parent see current year as read-only badge */}
-      {user?.role === 'admin' && availableYears.length > 0 && (
+      {/* Academic Year Selector — admin & principal can switch; staff/parent see current year as read-only badge */}
+      {(user?.role === 'admin' || user?.role === 'principal') && availableYears.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
               size="sm"
-              className="flex items-center gap-1.5 h-8 px-2 sm:px-3 text-xs font-semibold border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary transition-all rounded-lg"
+              className={`flex items-center gap-1.5 h-8 px-2 sm:px-3 text-xs font-semibold border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary transition-all rounded-lg ${!currentYear?.isCurrent ? 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100' : ''}`}
             >
               <GraduationCap className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden md:inline">{currentYear?.name ?? 'Year'}</span>
               <span className="md:hidden">{currentYear?.name?.slice(-4) ?? 'Yr'}</span>
+              {!currentYear?.isCurrent && <span className="hidden sm:inline text-[9px] font-bold uppercase tracking-wider ml-0.5 opacity-75">Historical</span>}
               <ChevronDown className="h-3 w-3 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44 z-[10000]">
+          <DropdownMenuContent align="end" className="w-52 z-[10000]">
             <DropdownMenuLabel className="text-xs text-muted-foreground pb-1">Academic Year</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {availableYears.map((yr) => (
@@ -167,10 +168,18 @@ export function Header() {
                 <GraduationCap className="h-3.5 w-3.5 mr-2 opacity-60" />
                 {yr.name}
                 {yr.isCurrent && (
-                  <span className="ml-auto text-[10px] bg-green-100 text-green-700 px-1 rounded">Current</span>
+                  <span className="ml-auto text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold">Active</span>
                 )}
               </DropdownMenuItem>
             ))}
+            {!currentYear?.isCurrent && (
+              <>
+                <DropdownMenuSeparator />
+                <div className="px-3 py-1.5 text-[10px] text-amber-600 bg-amber-50">
+                  Viewing historical data — changes won&apos;t affect the current year
+                </div>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}

@@ -95,6 +95,12 @@ namespace SmsApi.Models.Entities
         public virtual BoardConfiguration? BoardConfig { get; set; }
     }
 
+    /// <summary>
+    /// DEPRECATED — use <see cref="Result"/> instead. <c>Result</c> has a non-nullable
+    /// <c>SubjectId</c> FK and a cleaner marks model. <c>ExamResult</c> is kept to avoid
+    /// breaking existing queries; new code must write to and read from <c>Results</c>.
+    /// </summary>
+    [Obsolete("Use Result (DbSet: Results) instead. ExamResult will be removed in a future migration.")]
     public class ExamResult : BaseEntity
     {
         [Required]

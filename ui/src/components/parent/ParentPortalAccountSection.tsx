@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -26,18 +28,27 @@ import {
   AlertCircle,
   Mail,
   Phone,
+  Plus,
 } from 'lucide-react';
 import { authApi, type GuardianAccountStatus, type ProvisionParentAccountResponse } from '@/services/api/authApi';
+import { studentApi } from '@/services/api/studentApi';
 import { toast } from 'sonner';
 
 interface Props {
   studentId: string;
+  guardianName?: string;
+  guardianPhone?: string;
 }
 
-export function ParentPortalAccountSection({ studentId }: Props) {
+export function ParentPortalAccountSection({ studentId, guardianName, guardianPhone }: Props) {
   const [accounts, setAccounts] = useState<GuardianAccountStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Guardian email add form (for existing students with no guardian record)
+  const [addEmailMode, setAddEmailMode] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
 
   // Credential dialog state
   const [credentialDialog, setCredentialDialog] = useState<{
@@ -47,6 +58,30 @@ export function ParentPortalAccountSection({ studentId }: Props) {
 
   const [actionLoading, setActionLoading] = useState<string | null>(null); // guardianId
   const [copied, setCopied] = useState(false);
+
+  const handleSaveGuardianEmail = async () => {
+    if (!newEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail.trim())) {
+      toast.error('Enter a valid email address');
+      return;
+    }
+    setSavingEmail(true);
+    try {
+      await studentApi.update(studentId, {
+        guardianEmail: newEmail.trim().toLowerCase(),
+        ...(guardianName ? { guardianName } : {}),
+        ...(guardianPhone ? { guardianPhone } : {}),
+      } as never);
+      toast.success('Guardian email saved. Reload the accounts list.');
+      setAddEmailMode(false);
+      setNewEmail('');
+      await load();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e?.response?.data?.message ?? 'Failed to save guardian email.');
+    } finally {
+      setSavingEmail(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,9 +177,42 @@ export function ParentPortalAccountSection({ studentId }: Props) {
           )}
 
           {accounts.length === 0 && !error && (
-            <p className="text-sm text-muted-foreground">
-              No guardians found for this student. Add guardian details first.
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                No guardian record found for this student. Add the guardian's email below to enable parent portal access.
+              </p>
+              {addEmailMode ? (
+                <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
+                  {guardianName && (
+                    <p className="text-sm font-medium">{guardianName}{guardianPhone ? ` · ${guardianPhone}` : ''}</p>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Guardian Email *</Label>
+                    <Input
+                      type="email"
+                      placeholder="guardian@example.com"
+                      value={newEmail}
+                      onChange={e => setNewEmail(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveGuardianEmail(); } }}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleSaveGuardianEmail} disabled={savingEmail} className="gap-1">
+                      {savingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                      Save & Create Guardian
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setAddEmailMode(false); setNewEmail(''); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setAddEmailMode(true)} className="gap-1">
+                  <Plus className="h-3.5 w-3.5" />Add Guardian Email
+                </Button>
+              )}
+            </div>
           )}
 
           {accounts.map(account => (

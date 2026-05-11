@@ -714,6 +714,27 @@ export const applySiblingDiscount = async (data: SiblingDiscountRequest): Promis
   return response.data;
 };
 
+export interface StaffDiscountRequest {
+  studentId: string;
+  discountType: 'percentage' | 'flat';
+  discountValue: number;
+  reason?: string;
+}
+
+export interface StaffDiscountResponse {
+  message: string;
+  applied: number;
+  totalSaved: number;
+  studentName: string;
+  discountType: string;
+  discountValue: number;
+}
+
+export const applyStaffDiscount = async (data: StaffDiscountRequest): Promise<StaffDiscountResponse> => {
+  const response = await apiClient.post(`${BASE_PATH}/staff-discount`, data);
+  return response.data;
+};
+
 // Export all functions as a single object for convenience
 export const feeApi = {
   getFeeStructures,
@@ -747,6 +768,7 @@ export const feeApi = {
   editPayment,
   linkStructure,
   applySiblingDiscount,
+  applyStaffDiscount,
 };
 
 export default feeApi;

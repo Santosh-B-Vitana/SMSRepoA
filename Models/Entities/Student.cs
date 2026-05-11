@@ -31,11 +31,22 @@ namespace SmsApi.Models.Entities
         [MaxLength(50)]
         public string? AdmissionNumber { get; set; }
         
-        [Required]
+        /// <summary>
+        /// Legacy: stores the student's current class name as a plain string.
+        /// DEPRECATED — derive the current class from the active <see cref="StudentEnrollment"/>
+        /// row instead. This field is still written during promotions for backward compatibility
+        /// and will be removed once all queries are migrated to StudentEnrollment.
+        /// </summary>
+        [Obsolete("Read Class from the active StudentEnrollment row. This field will be removed in a future release.")]
         [MaxLength(20)]
         public string Class { get; set; } = string.Empty;
         
-        [Required]
+        /// <summary>
+        /// Legacy: stores the student's current section name as a plain string.
+        /// DEPRECATED — derive the current section from the active <see cref="StudentEnrollment"/>
+        /// row instead.
+        /// </summary>
+        [Obsolete("Read Section from the active StudentEnrollment row. This field will be removed in a future release.")]
         [MaxLength(10)]
         public string Section { get; set; } = string.Empty;
         
@@ -254,6 +265,15 @@ namespace SmsApi.Models.Entities
         
         // Siblings (kept for backward compat; new code uses StudentSibling table)
         public string? SiblingIds { get; set; }
+
+        /// <summary>
+        /// If the student's parent/guardian is also a staff member of this school,
+        /// link them here. Used to:
+        ///   1. Show "Staff Parent" section in the student profile
+        ///   2. Show "Children in School" section in the staff profile
+        ///   3. Derive eligibility for staff-child fee concession
+        /// </summary>
+        public Guid? GuardianStaffId { get; set; }
         
         // Status flag
         public bool IsActive { get; set; } = true;
@@ -269,6 +289,9 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("PersonId")]
         public virtual Person? Person { get; set; }
+
+        [ForeignKey("GuardianStaffId")]
+        public virtual Staff? GuardianStaff { get; set; }
         
         public virtual ICollection<StudentGuardian>? Guardians { get; set; }
         public virtual ICollection<StudentDocument>? Documents { get; set; }
@@ -279,6 +302,12 @@ namespace SmsApi.Models.Entities
         public virtual TransferCertificate? TransferCertificate { get; set; }
     }
     
+    /// <summary>
+    /// Legacy per-student guardian record — superseded by <see cref="Guardian"/> +
+    /// <see cref="GuardianStudent"/> which normalise the relationship and link to the
+    /// Person identity layer. Keep for backward compatibility only.
+    /// </summary>
+    [Obsolete("Use Guardian + GuardianStudent instead. StudentGuardian will be migrated in a future release.")]
     public class StudentGuardian : BaseEntity
     {
         public Guid StudentId { get; set; }
@@ -628,6 +657,125 @@ namespace SmsApi.Models.Entities
         public string? CharacterCertificateNumber { get; set; }
         
         public Guid? IssuedBy { get; set; }  // Staff ID
+
+        [ForeignKey("StudentId")]
+        public virtual Student? Student { get; set; }
+    }
+
+    // ─── Guardian (normalised identity-linked model) ──────────────────────────────
+    /// <summary>
+    /// A guardian record that is linked to the Person identity layer.
+    /// <para>
+    /// One Guardian record per real-world person — if a parent has two children at the same
+    /// school, there is still only ONE Guardian row (avoiding the duplication problem of the
+    /// legacy StudentGuardian approach). The GuardianStudent join table records the per-student
+    /// relationship and permission flags.
+    /// </para>
+    /// <para>
+    /// Migration note: legacy StudentGuardian rows are kept for backward compatibility.
+    /// New code should create Guardian + GuardianStudent rows instead.
+    /// </para>
+    /// </summary>
+    public class Guardian : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        /// <summary>FK to Person — all personal/contact data (name, phone, email, address) lives there.</summary>
+        [Required]
+        public Guid PersonId { get; set; }
+
+        /// <summary>Relationship to the student(s): Father, Mother, Uncle, Aunt, Grandparent, Other.</summary>
+        [Required]
+        [MaxLength(50)]
+        public string PrimaryRelation { get; set; } = string.Empty;
+
+        [MaxLength(100)]
+        public string? Qualification { get; set; }
+
+        [MaxLength(100)]
+        public string? Occupation { get; set; }
+
+        [MaxLength(50)]
+        public string? EmploymentType { get; set; }  // Govt, Private, Self-employed, Business
+
+        [MaxLength(200)]
+        public string? Employer { get; set; }
+
+        [MaxLength(200)]
+        public string? OfficeAddress { get; set; }
+
+        [MaxLength(100)]
+        public string? AnnualIncome { get; set; }
+
+        /// <summary>Whether this guardian has access to the parent portal application.</summary>
+        public bool HasPortalAccess { get; set; } = false;
+
+        /// <summary>FK to UserLogin — populated when the guardian registers on the portal.</summary>
+        public Guid? UserLoginId { get; set; }
+
+        // ── Navigation properties ─────────────────────────────────────────────
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("PersonId")]
+        public virtual Person? Person { get; set; }
+
+        /// <summary>All student relationships for this guardian (via GuardianStudent).</summary>
+        public virtual ICollection<GuardianStudent>? StudentLinks { get; set; }
+    }
+
+    /// <summary>
+    /// Join table linking Guardian → Student with per-relationship permission flags.
+    /// <para>
+    /// A single guardian can be linked to multiple students (e.g., two siblings).
+    /// Each link carries independent permission flags — e.g., you can allow a guardian
+    /// to view Child A's grades but not Child B's fees.
+    /// </para>
+    /// </summary>
+    public class GuardianStudent : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid GuardianId { get; set; }
+
+        [Required]
+        public Guid StudentId { get; set; }
+
+        /// <summary>Overrides the guardian's PrimaryRelation for this specific child (optional).</summary>
+        [MaxLength(50)]
+        public string? Relation { get; set; }
+
+        /// <summary>True if this guardian is the primary/emergency contact for the student.</summary>
+        public bool IsPrimary { get; set; } = false;
+
+        // ── Permission flags ──────────────────────────────────────────────────
+        /// <summary>Can this guardian view the student's grades and report cards?</summary>
+        public bool CanViewGrades { get; set; } = true;
+
+        /// <summary>Can this guardian view fee records and make payments?</summary>
+        public bool CanViewFees { get; set; } = true;
+
+        /// <summary>Can this guardian receive attendance notifications for this student?</summary>
+        public bool CanReceiveAttendanceAlerts { get; set; } = true;
+
+        /// <summary>Is this guardian authorised to pick up the student from school?</summary>
+        public bool IsAuthorisedPickup { get; set; } = false;
+
+        /// <summary>Can this guardian submit leave requests on behalf of the student?</summary>
+        public bool CanSubmitLeaveRequests { get; set; } = false;
+
+        [MaxLength(500)]
+        public string? Notes { get; set; }
+
+        // ── Navigation properties ─────────────────────────────────────────────
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("GuardianId")]
+        public virtual Guardian? Guardian { get; set; }
 
         [ForeignKey("StudentId")]
         public virtual Student? Student { get; set; }

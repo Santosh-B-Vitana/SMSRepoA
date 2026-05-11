@@ -113,20 +113,44 @@ function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose
 // ─── Assign Student Dialog ────────────────────────────────────────────────────
 
 function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[]; onClose: () => void; onSaved: () => void }) {
-  const [students, setStudents] = useState<StudentBasic[]>([]);
+  const [searchResults, setSearchResults] = useState<StudentBasic[]>([]);
   const [assignedStudentIds, setAssignedStudentIds] = useState<Set<string>>(new Set());
+  const [loadingAssigned, setLoadingAssigned] = useState(true);
+  const [searching, setSearching] = useState(false);
   const [form, setForm] = useState<AssignStudentDto>({ studentId: "", roomId: "", checkInDate: new Date().toISOString().split("T")[0], monthlyFee: 5000, status: "active" });
   const [saving, setSaving] = useState(false);
   const [studentQuery, setStudentQuery] = useState("");
   const [studentOpen, setStudentOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<StudentBasic | null>(null);
   const studentRef = useRef<HTMLDivElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Load assigned student IDs once on mount
   useEffect(() => {
-    studentApi.list({ page: 1, pageSize: 500 }).then(r => setStudents(r.students ?? [])).catch(() => {});
+    setLoadingAssigned(true);
     hostelApiClient.getAllHostelStudents().then(hs => {
       setAssignedStudentIds(new Set(hs.map(h => h.studentId)));
-    }).catch(() => {});
+    }).catch(() => {
+      toast.error("Failed to load current hostel assignments");
+    }).finally(() => setLoadingAssigned(false));
   }, []);
+
+  // Debounced server-side search
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!studentQuery.trim()) { setSearchResults([]); return; }
+    setSearching(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await studentApi.list({ search: studentQuery.trim(), status: "active", pageSize: 20 });
+        setSearchResults(res.students ?? []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+  }, [studentQuery]);
 
   useEffect(() => {
     function onOutsideClick(e: MouseEvent) {
@@ -136,25 +160,21 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
     return () => document.removeEventListener("mousedown", onOutsideClick);
   }, []);
 
-  const availableStudents = students.filter(s =>
-    s.status?.toLowerCase() === "active" && !assignedStudentIds.has(s.id)
-  );
-  const filteredStudents = availableStudents.filter(s =>
-    !studentQuery ||
-    s.name?.toLowerCase().includes(studentQuery.toLowerCase()) ||
-    s.admissionNumber?.toLowerCase().includes(studentQuery.toLowerCase())
-  ).slice(0, 8);
-  const selectedStudent = students.find(s => s.id === form.studentId);
+  const filteredResults = searchResults.filter(s => !assignedStudentIds.has(s.id));
   const availableRooms = rooms.filter(r => r.status === "available" && r.occupied < r.capacity);
 
   function pickStudent(s: StudentBasic) {
+    setSelectedStudent(s);
     setForm(p => ({ ...p, studentId: s.id }));
     setStudentQuery("");
     setStudentOpen(false);
+    setSearchResults([]);
   }
   function clearStudent() {
+    setSelectedStudent(null);
     setForm(p => ({ ...p, studentId: "" }));
     setStudentQuery("");
+    setSearchResults([]);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -166,7 +186,9 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
       toast.success("Student assigned to hostel room");
       onSaved(); onClose();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to assign student");
+      const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        ?? (err instanceof Error ? err.message : "Failed to assign student");
+      toast.error(msg);
     } finally { setSaving(false); }
   }
 
@@ -181,16 +203,17 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 className="pl-9 pr-8"
-                placeholder={students.length === 0 ? "Loading students..." : "Search by name or admission number..."}
+                placeholder={loadingAssigned ? "Loading..." : "Type name or admission number to search…"}
                 value={selectedStudent && !studentOpen
                   ? `${selectedStudent.name} — ${selectedStudent.class} ${selectedStudent.section} (${selectedStudent.admissionNumber})`
                   : studentQuery}
                 onChange={e => {
                   setStudentQuery(e.target.value);
-                  if (selectedStudent) setForm(p => ({ ...p, studentId: "" }));
+                  if (selectedStudent) clearStudent();
                   setStudentOpen(true);
                 }}
                 onFocus={() => setStudentOpen(true)}
+                disabled={loadingAssigned}
               />
               {selectedStudent && (
                 <button type="button" onClick={clearStudent}
@@ -198,12 +221,14 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
                   <X className="h-4 w-4" />
                 </button>
               )}
-              {studentOpen && (
+              {studentOpen && studentQuery.trim().length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
-                  {students.length === 0 ? (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">Loading students...</div>
-                  ) : filteredStudents.length > 0 ? (
-                    filteredStudents.map(s => (
+                  {searching ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />Searching…
+                    </div>
+                  ) : filteredResults.length > 0 ? (
+                    filteredResults.map(s => (
                       <button key={s.id} type="button"
                         onMouseDown={e => { e.preventDefault(); pickStudent(s); }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between gap-2">
@@ -211,8 +236,10 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
                         <span className="text-xs text-muted-foreground shrink-0">{s.class} {s.section} · {s.admissionNumber}</span>
                       </button>
                     ))
+                  ) : searchResults.length > 0 ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">All matching students are already assigned to hostel</div>
                   ) : (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No students found</div>
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">No active students found for "{studentQuery}"</div>
                   )}
                 </div>
               )}
@@ -566,9 +593,19 @@ export function HostelManager() {
           ) : filteredStudents.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No hostel students</p>
-              <p className="text-sm">Assign students to hostel rooms</p>
-              <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>
+              {search ? (
+                <>
+                  <p className="font-medium">No assigned student matches "{search}"</p>
+                  <p className="text-sm mt-1">This student may not be assigned to a hostel room yet.</p>
+                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Hostel</Button>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">No hostel students</p>
+                  <p className="text-sm">Assign students to hostel rooms</p>
+                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>
+                </>
+              )}
             </CardContent></Card>
           ) : (
             <div className="border rounded-lg">

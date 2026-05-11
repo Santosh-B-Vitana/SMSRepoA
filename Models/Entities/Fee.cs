@@ -117,6 +117,12 @@ namespace SmsApi.Models.Entities
         [Required]
         [MaxLength(20)]
         public string AcademicYear { get; set; } = string.Empty;
+
+        /// <summary>
+        /// FK to the StudentEnrollment row for this fee record — provides year + class context
+        /// without joining through Student. Null on rows created before this column was added.
+        /// </summary>
+        public Guid? StudentEnrollmentId { get; set; }
         
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
@@ -126,6 +132,9 @@ namespace SmsApi.Models.Entities
         
         [ForeignKey("FeeStructureId")]
         public virtual FeeStructure? FeeStructure { get; set; }
+
+        [ForeignKey("StudentEnrollmentId")]
+        public virtual StudentEnrollment? StudentEnrollment { get; set; }
     }
 
     public class PaymentTransaction : BaseEntity

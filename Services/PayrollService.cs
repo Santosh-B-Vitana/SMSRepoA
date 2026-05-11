@@ -442,7 +442,7 @@ namespace SmsApi.Services
                         breakdown = JsonSerializer.Deserialize<SalaryBreakdown>(record.Notes)
                             ?? new SalaryBreakdown();
                     }
-                    catch { }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to deserialize salary breakdown for payroll {Id} — using defaults", record.Id); }
                 }
 
                 if (breakdown.Allowances == null) breakdown.Allowances = new AllowanceBreakdownDto();
@@ -843,7 +843,7 @@ namespace SmsApi.Services
                         allowanceConfig = JsonSerializer.Deserialize<AllowanceConfigDto>(structure.AllowanceConfig)
                             ?? new AllowanceConfigDto();
                     }
-                    catch { }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to deserialize AllowanceConfig for structure {Id} — using defaults", structure.Id); }
                 }
 
                 if (!string.IsNullOrEmpty(structure.DeductionConfig))
@@ -853,7 +853,7 @@ namespace SmsApi.Services
                         deductionConfig = JsonSerializer.Deserialize<DeductionConfigDto>(structure.DeductionConfig)
                             ?? new DeductionConfigDto();
                     }
-                    catch { }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to deserialize DeductionConfig for structure {Id} — using defaults", structure.Id); }
                 }
 
                 return new SalaryStructureDto

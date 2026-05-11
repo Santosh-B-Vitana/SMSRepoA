@@ -42,7 +42,7 @@ namespace SmsApi.Controllers
         {
             // Clamp pagination to safe bounds
             page = Math.Max(1, page);
-            pageSize = Math.Clamp(pageSize, 1, 100);
+            pageSize = Math.Clamp(pageSize, 1, 2000);
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
@@ -1135,6 +1135,49 @@ namespace SmsApi.Controllers
             var schoolId = _tenant.GetEffectiveSchoolId();
             await _studentService.BulkAssignRollNumbersAsync(schoolId, request);
             return Ok(new { message = "Roll numbers assigned successfully." });
+        }
+
+        // ── Guardian Staff Link ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Get the staff member who is the guardian/parent of this student (if linked).
+        /// </summary>
+        [HttpGet("{studentId:guid}/guardian-staff")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetGuardianStaff(Guid studentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            try
+            {
+                var student = await _studentService.GetStudentByIdAsync(schoolId, studentId);
+                if (student == null) return NotFound(new { message = "Student not found." });
+                if (student.GuardianStaffId == null)
+                    return Ok(null);
+                var staff = await _studentService.GetGuardianStaffAsync(schoolId, student.GuardianStaffId.Value);
+                return Ok(staff);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error fetching guardian staff.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Link or unlink a staff member as the guardian/parent of this student.
+        /// Pass null staffId to unlink.
+        /// </summary>
+        [HttpPut("{studentId:guid}/guardian-staff")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<IActionResult> SetGuardianStaff(Guid studentId, [FromBody] SetGuardianStaffRequest request)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            try
+            {
+                await _studentService.SetGuardianStaffAsync(schoolId, studentId, request.StaffId);
+                return Ok(new { message = request.StaffId.HasValue ? "Guardian staff linked." : "Guardian staff unlinked." });
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error updating guardian staff.", error = ex.Message }); }
         }
 
         // ── Helper ────────────────────────────────────────────────────────────

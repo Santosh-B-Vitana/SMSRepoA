@@ -25,6 +25,7 @@ import {
   RotateCcw
 } from "lucide-react";
 import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
+import { StaffChildDto } from "@/services/api/studentApi";
 import { academicApi, MyClassAssignment, TeacherAssignmentResponse } from "@/services/api/academicApi";
 import { attendanceApi, StaffAttendanceResponse } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
@@ -82,6 +83,8 @@ export default function StaffProfile() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
+  const [childrenInSchool, setChildrenInSchool] = useState<StaffChildDto[]>([]);
+  const [showChildrenExpanded, setShowChildrenExpanded] = useState(false);
   const [assignedClasses, setAssignedClasses] = useState<TeacherAssignmentResponse[]>([]);
   const [classesLoading, setClassesLoading] = useState(false);
   const { toast } = useToast();
@@ -125,6 +128,7 @@ export default function StaffProfile() {
       fetchStaff();
       fetchAssignedClasses();
       fetchStaffAttendance();
+      fetchChildrenInSchool();
     }
   }, [id]);
 
@@ -138,6 +142,16 @@ export default function StaffProfile() {
       setStaffAttendance([]);
     } finally {
       setAttendanceLoading(false);
+    }
+  };
+
+  const fetchChildrenInSchool = async () => {
+    if (!id) return;
+    try {
+      const children = await staffApi.getChildren(id);
+      setChildrenInSchool(Array.isArray(children) ? children : []);
+    } catch {
+      setChildrenInSchool([]);
     }
   };
 
@@ -752,6 +766,53 @@ export default function StaffProfile() {
           </CardContent>
         )}
       </Card>
+
+      {/* Children in School — dropdown, shown only when staff has linked students */}
+      {childrenInSchool.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader
+            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => setShowChildrenExpanded(!showChildrenExpanded)}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <GraduationCap className="h-5 w-5 flex-shrink-0 text-blue-600" />
+                <span className="truncate">Children in School</span>
+                <Badge variant="secondary" className="ml-1">{childrenInSchool.length}</Badge>
+              </CardTitle>
+              <Badge variant="outline" className="flex-shrink-0 text-xs">
+                {showChildrenExpanded ? 'Hide' : 'Show'}
+              </Badge>
+            </div>
+          </CardHeader>
+          {showChildrenExpanded && (
+            <CardContent className="border-t pt-4">
+              <p className="text-sm text-muted-foreground mb-3">
+                {childrenInSchool.length === 1 ? 'This staff member has 1 child' : `This staff member has ${childrenInSchool.length} children`} studying in this school.
+              </p>
+              <div className="grid gap-3">
+                {childrenInSchool.map(child => (
+                  <div key={child.id} className="flex items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm flex-shrink-0">
+                        {child.name?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm">{child.name}</p>
+                        <p className="text-xs text-muted-foreground">{child.admissionNumber} • Class {child.class}-{child.section} • Roll: {child.rollNumber || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={child.status === 'active' ? 'default' : 'secondary'} className="text-xs">{child.status}</Badge>
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/students/${child.id}`)}>View →</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* Tabs for detailed information */}
       <Tabs defaultValue="classes" className="space-y-4">

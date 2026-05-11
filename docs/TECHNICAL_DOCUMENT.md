@@ -1,7 +1,21 @@
 # sms-api — Technical Document
 
-> **Version 2.1** · ASP.NET Core 8 · .NET 8 · React 19 · PostgreSQL · **Release Candidate**  
-> **Last Updated:** May 8, 2026 | **Project:** SMSRepoA
+> **Version 2.2** · ASP.NET Core 8 · .NET 8 · React 19 · PostgreSQL · **Release Candidate**  
+> **Last Updated:** May 11, 2026 | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 10–11, 2026
+
+| Area | Change |
+|------|--------|
+| `Student` entity | Added `GuardianStaffId (Guid?)` FK → `Staff.Id`; EF migration `20260510082118_AddGuardianStaffIdToStudent` |
+| `AcademicYears` | `IsCurrent (bool)` flag is now the single source of truth for the active year; UI status column removed |
+| Academic Year enforcement | `SetCurrentAcademicYearAsync` atomically clears all other rows' `IsCurrent` before marking the new one |
+| `X-Academic-Year` header | Injected by `apiClient.ts` from `localStorage['selectedAcademicYearName']` on every request |
+| Header selector access | Expanded from `admin` to `admin + principal` roles |
+| Staff Form — PAN | `onChange` handler now calls `.toUpperCase()` before the Zod resolver runs (prevents silent uppercase-mismatch validation failures) |
+| Classes — no year filter | Frontend no longer filters classes by academic year (Classes are school-wide, not year-scoped) |
 
 ---
 
@@ -106,9 +120,10 @@ sms-api/
 - JWT Bearer tokens (configurable expiry)
 - Redis-backed login attempt tracking (5 attempts → 15 min lockout)
 - Rate limiting via ASP.NET Core middleware
-- RBAC: `super_admin`, `admin`, `staff`, `student`, `parent`
+- RBAC: `super_admin`, `admin`, `principal`, `staff`, `student`, `parent`
+- **Academic year context**: All API requests carry `X-Academic-Year` header (set by `apiClient.ts` from localStorage). Backend controllers scope queries to the requested year. `principal` role can switch years via the header dropdown; `staff`/`student`/`parent` are locked to the current year.
 - Aadhaar masking (first 8 digits replaced with `****`)
-- PAN masking (middle 5 chars masked)
+- PAN masking (middle 5 chars masked); input validation enforces `[A-Z]{5}[0-9]{4}[A-Z]{1}` — input auto-uppercased before validation
 
 ### 5.2 Academic Management
 | Feature | Endpoints |
@@ -121,12 +136,16 @@ sms-api/
 | Grades & CCE | `/api/grades`, `/api/cce` |
 | Attendance | `/api/attendance`, `/api/staffattendance` |
 
+> **Classes are school-wide** — no `AcademicYearId` FK on the `Classes` table. The year context scopes transactional data (fees, exams, enrollments) but not the class catalogue itself.
+
 ### 5.3 Student & Staff Management
 - Student lifecycle: admission → enrollment → profile → TC
 - Staff employment: contract, permanent, guest, probation
 - PF, ESI, UAN compliance fields
 - Emergency contacts + medical information
 - Bank account details (encrypted at rest)
+- **Staff → Children link:** `Student.GuardianStaffId` (nullable FK to `Staff.Id`). Set via `PATCH /api/students/{id}/guardian-staff`. Used by fee concession module to flag staff-child students.
+- **Guardian search endpoints:** `GET /api/staff/{id}/children` returns linked students; `GET /api/students?guardianStaffId=...` filters by guardian staff.
 
 ### 5.4 Finance Management
 - Double-entry accounts (ASSET, LIABILITY, EQUITY, INCOME, EXPENSE)
@@ -225,31 +244,74 @@ const mutation = useMutation({
 
 ## 7. Database Schema (Key Tables)
 
+All entities extend `BaseEntity`:
+```sql
+-- BaseEntity columns (present on every table)
+Id          UUID           PRIMARY KEY DEFAULT gen_random_uuid()
+CreatedAt   TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+UpdatedAt   TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+CreatedBy   UUID           NULLABLE (FK → Users.Id)
+UpdatedBy   UUID           NULLABLE (FK → Users.Id)
+IsDeleted   BOOLEAN        NOT NULL DEFAULT FALSE
+DeletedAt   TIMESTAMPTZ    NULLABLE
+RowVersion  BYTEA          -- optimistic concurrency
+```
+
 ```sql
 -- Core entities
-Students (Id, FirstName, LastName, DateOfBirth, AadharNumber[masked], Gender,
-          Category, ClassId, SectionId, ParentId, AcademicYearId, ...)
-Staff    (Id, FirstName, LastName, Designation, Department, AadharNumber[masked],
-          PanNumber[masked], BankAccountNumber[encrypted], PfNumber, EsiNumber, ...)
-Classes  (Id, Name, SectionCount, AcademicYearId)
-Sections (Id, ClassId, Name, MaxStrength)
+Students (Id, SchoolId, Name, FirstName, MiddleName, LastName,
+          AdmissionNumber, DateOfBirth, Gender, Status,
+          ClassId, SectionId, AcademicYearId,
+          GuardianStaffId UUID NULLABLE REFERENCES Staff(Id),  -- ← new May 2026
+          AadharNumber[masked], ParentId, PhotoUrl, ...)
+
+Staff    (Id, SchoolId, EmployeeId, FirstName, LastName, Email, Phone,
+          DateOfBirth, Gender, Department, Designation,
+          PanNumber[masked], AadharNumber[masked],
+          BankAccountNumber[encrypted], PfNumber, EsiNumber, UanNumber, ...)
+
+AcademicYears (Id, SchoolId, Name, StartDate, EndDate,
+               IsCurrent BOOLEAN NOT NULL DEFAULT FALSE,  -- single true per school
+               Status VARCHAR(20), ...)
+
+-- Note: Only ONE AcademicYear per school may have IsCurrent=TRUE at any time.
+-- SetCurrentAcademicYearAsync atomically updates this with a single transaction.
+
+Classes  (Id, SchoolId, Name, SectionCount, ...)
+-- Note: No AcademicYearId — classes are school-wide configurations.
+
+Sections (Id, ClassId, Name, MaxStrength, ...)
+
+Subjects       (Id, SchoolId, Name, Code, Type[Core/Elective], ...)
+ClassSubjects  (Id, ClassId, SubjectId, TeacherId NULLABLE, AcademicYearId, ...)
 
 -- Finance
-FinanceAccounts    (Id, Name, Type[ASSET/LIABILITY/...], Balance)
-FinanceTransactions(Id, AccountId, CategoryId, Amount, Type[DEBIT/CREDIT], Date, ...)
-FinanceCategories  (Id, Name, Type[INCOME/EXPENSE], Budget)
-PettyCashEntries   (Id, Amount, Purpose, Status[PENDING/APPROVED/REJECTED], ...)
-StoreSales         (Id, Amount, ItemsCount, PaymentMethod, InvoiceNumber, ...)
+FinanceAccounts    (Id, SchoolId, Name, Type[ASSET/LIABILITY/EQUITY/INCOME/EXPENSE], Balance)
+FinanceTransactions(Id, AccountId, CategoryId, Amount, Type[DEBIT/CREDIT], Date, Description, ...)
+FinanceCategories  (Id, SchoolId, Name, Type[INCOME/EXPENSE], Budget)
+PettyCashEntries   (Id, SchoolId, Amount, Purpose, Status[PENDING/APPROVED/REJECTED], ...)
+StoreSales         (Id, SchoolId, Amount, ItemsCount, PaymentMethod, InvoiceNumber, ...)
 
 -- Fees
-FeeStructures    (Id, ClassId, AcademicYearId, Amount, DueDate)
-FeePayments      (Id, StudentId, Amount, Status, CashfreeOrderId, ...)
-FeeConcessions   (Id, StudentId, Type[RTE/MERIT/...], DiscountAmount)
+FeeStructures (Id, ClassId, AcademicYearId, ComponentName, Amount, DueDate, LateFeePct)
+FeePayments   (Id, StudentId, AcademicYearId, Amount, Status[PENDING/PAID/FAILED],
+               CashfreeOrderId, PaymentDate, ...)
+FeeConcessions(Id, StudentId, Type[RTE/MERIT/STAFF_CHILD/OTHER], DiscountAmount, ApprovedBy)
 
 -- Academic
-Examinations  (Id, Name, ClassId, SubjectId, MaxMarks, PassMarks, ...)
-ExamResults   (Id, ExaminationId, StudentId, MarksObtained, Grade)
-Attendance    (Id, StudentId, Date, Status[Present/Absent/Late])
+Examinations (Id, SchoolId, ClassId, SubjectId, Name, MaxMarks, PassMarks, ExamDate, ...)
+ExamResults  (Id, ExaminationId, StudentId, MarksObtained, Grade, ...)
+Attendance   (Id, StudentId, ClassId, SectionId, Date, Status[Present/Absent/Late/Excused])
+```
+
+**Key index recommendations:**
+```sql
+CREATE INDEX idx_students_school ON "Students"("SchoolId") WHERE "IsDeleted" = FALSE;
+CREATE INDEX idx_students_guardian_staff ON "Students"("GuardianStaffId") WHERE "GuardianStaffId" IS NOT NULL;
+CREATE INDEX idx_academic_years_current ON "AcademicYears"("SchoolId") WHERE "IsCurrent" = TRUE;
+CREATE INDEX idx_class_subjects_class ON "ClassSubjects"("ClassId");
+CREATE INDEX idx_attendance_student_date ON "Attendance"("StudentId", "Date");
+CREATE INDEX idx_fee_payments_student ON "FeePayments"("StudentId");
 ```
 
 ---
@@ -304,6 +366,7 @@ For detailed test architecture, known issues, and templates see [TESTING_INFRAST
 |----------|---------|
 | [TECHNICAL_DOCUMENT.md](./TECHNICAL_DOCUMENT.md) | Architecture, stack, database schema |
 | [FUNCTIONAL_DOCUMENT.md](./FUNCTIONAL_DOCUMENT.md) | Feature reference for all modules |
+| [AWS_MIGRATION_GUIDE.md](./AWS_MIGRATION_GUIDE.md) | AWS RDS setup, full schema, seed data for fresh deployment |
 | [API_DOCS.md](./API_DOCS.md) | REST API reference with examples |
 | [CODING_AGENT_GUIDELINES.md](./CODING_AGENT_GUIDELINES.md) | Patterns for developers and AI agents |
 | [DEFAULT_CREDENTIALS.md](./DEFAULT_CREDENTIALS.md) | Development credentials and JWT config |

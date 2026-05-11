@@ -51,7 +51,7 @@ namespace SmsApi.Services
         Task<List<StudentBasicResponse>> GetMyChildrenAsync(Guid schoolId, string parentEmail);
 
         // ─── Sibling Management ───────────────────────────────────────────────
-        Task<List<StudentSiblingDto>> GetSiblingsAsync(Guid schoolId, Guid studentId);
+        Task<List<StudentBasicResponse>> GetSiblingsAsync(Guid schoolId, Guid studentId);
         Task AddSiblingAsync(Guid schoolId, Guid studentId, Guid siblingStudentId);
         Task RemoveSiblingAsync(Guid schoolId, Guid studentId, Guid siblingStudentId);
 
@@ -84,6 +84,11 @@ namespace SmsApi.Services
         // ─── Roll Number Assignment ────────────────────────────────────────────
         Task<List<RollNumberStudentDto>> GetStudentsForRollAssignmentAsync(Guid schoolId, string className, string section);
         Task BulkAssignRollNumbersAsync(Guid schoolId, RollNumberAssignmentRequest request);
+
+        // ─── Guardian Staff Link ───────────────────────────────────────────────
+        Task<GuardianStaffDto?> GetGuardianStaffAsync(Guid schoolId, Guid staffId);
+        Task SetGuardianStaffAsync(Guid schoolId, Guid studentId, Guid? staffId);
+        Task<List<StaffChildDto>> GetChildrenOfStaffAsync(Guid schoolId, Guid staffId);
     }
 
     public class StudentService : IStudentService
@@ -321,6 +326,7 @@ namespace SmsApi.Services
                 CharacterCertificateNumber = student.CharacterCertificateNumber,
                 
                 SiblingIds = student.SiblingIds,
+                GuardianStaffId = student.GuardianStaffId,
                 
                 // Legacy fields for backward compatibility
                 GuardianName = student.GuardianName,
@@ -521,6 +527,28 @@ namespace SmsApi.Services
                     await _context.SaveChangesAsync();
                     
                     _logger.LogInformation("Student created: {StudentId}, Admission: {AdmissionNumber}", student.Id, student.AdmissionNumber);
+
+                    // AUTO-CREATE GUARDIAN RECORD from mandatory guardian fields (required for parent portal tab)
+                    // Email is optional — record is created even without email so the parent portal tab
+                    // shows the guardian and prompts admin to add email for portal login
+                    if (!string.IsNullOrWhiteSpace(request.GuardianName))
+                    {
+                        var guardian = new StudentGuardian
+                        {
+                            Id = Guid.NewGuid(),
+                            SchoolId = request.SchoolId,
+                            StudentId = student.Id,
+                            Name = request.GuardianName,
+                            Phone = request.GuardianPhone ?? "",
+                            Email = string.IsNullOrWhiteSpace(request.GuardianEmail) ? null : request.GuardianEmail.Trim().ToLower(),
+                            Relation = "guardian",
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        _context.StudentGuardians.Add(guardian);
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation("Guardian record created for student {StudentId}", student.Id);
+                    }
 
                     // AUTO-CREATE FEE RECORD based on class fee structure
                     await CreateInitialFeeRecordAsync(student);
@@ -980,6 +1008,38 @@ namespace SmsApi.Services
 
             await _context.SaveChangesAsync();
 
+            // Upsert guardian email in StudentGuardians table (required for parent portal login)
+            if (!string.IsNullOrWhiteSpace(request.GuardianEmail))
+            {
+                var normalizedEmail = request.GuardianEmail.Trim().ToLower();
+                var existingGuardian = await _context.StudentGuardians
+                    .FirstOrDefaultAsync(g => g.StudentId == id && g.SchoolId == schoolId && !g.IsDeleted);
+
+                if (existingGuardian != null)
+                {
+                    existingGuardian.Email = normalizedEmail;
+                    if (request.GuardianName != null) existingGuardian.Name = request.GuardianName;
+                    if (request.GuardianPhone != null) existingGuardian.Phone = request.GuardianPhone;
+                    existingGuardian.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _context.StudentGuardians.Add(new StudentGuardian
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        StudentId = id,
+                        Name = request.GuardianName ?? student.GuardianName,
+                        Phone = request.GuardianPhone ?? student.GuardianPhone,
+                        Email = normalizedEmail,
+                        Relation = "guardian",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+                await _context.SaveChangesAsync();
+            }
+
             // Auto-register as alumni when student leaves (TC / dropped out)
             if (request.Status != null
                 && previousStatus != request.Status
@@ -988,6 +1048,37 @@ namespace SmsApi.Services
                 var graduationYear = DateTime.UtcNow.Year.ToString();
                 var reason = request.Status == "transferred" ? "tc_issued" : "left_school";
                 await _alumniService.TryAutoRegisterFromStudentAsync(schoolId, id, reason, graduationYear);
+            }
+
+            // Cascade inactive status to transport and hostel assignments
+            // When a student is marked inactive/left/transferred/dropped_out, their transport and hostel
+            // assignments are also deactivated. Fee records are intentionally NOT cascaded.
+            var inactiveStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "inactive", "left", "transferred", "dropped_out", "on_leave" };
+
+            if (request.Status != null
+                && previousStatus != request.Status
+                && inactiveStatuses.Contains(request.Status))
+            {
+                var activeTransportAssignments = await _context.TransportStudents
+                    .Where(ts => ts.StudentId == id && ts.SchoolId == schoolId && ts.Status == "active")
+                    .ToListAsync();
+                foreach (var ts in activeTransportAssignments)
+                    ts.Status = "inactive";
+
+                var activeHostelAssignments = await _context.HostelStudents
+                    .Where(hs => hs.StudentId == id && hs.SchoolId == schoolId && hs.Status == "active")
+                    .ToListAsync();
+                foreach (var hs in activeHostelAssignments)
+                    hs.Status = "inactive";
+
+                if (activeTransportAssignments.Count > 0 || activeHostelAssignments.Count > 0)
+                {
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Cascaded inactive status for student {StudentId}: {TransportCount} transport, {HostelCount} hostel assignments deactivated.",
+                        id, activeTransportAssignments.Count, activeHostelAssignments.Count);
+                }
             }
 
             return await GetStudentByIdAsync(id, schoolId);
@@ -1183,6 +1274,44 @@ namespace SmsApi.Services
             var now = DateTime.UtcNow;
             var class12Passouts = new List<Guid>();
             var promotionHistories = new List<PromotionHistory>();
+            var newEnrollments = new List<StudentEnrollment>();
+
+            // ── Resolve all FK entities up-front in BATCH queries (no N+1) ──────────
+            // Target class/section/year: same for the whole batch
+            var newClassEntity     = await _context.Classes.FirstOrDefaultAsync(c => c.SchoolId == schoolId && c.Name == request.NewClass);
+            var newSectionEntity   = newClassEntity != null
+                ? await _context.Sections.FirstOrDefaultAsync(s => s.ClassId == newClassEntity.Id && s.Name == request.NewSection)
+                : null;
+            var academicYearEntity = await _context.AcademicYears
+                .FirstOrDefaultAsync(y => y.SchoolId == schoolId && (y.Name == academicYear || y.IsCurrent));
+
+            // Previous classes/sections: load all distinct values in two batch queries
+            var distinctPrevClasses  = students.Select(s => s.Class).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+            var distinctPrevSections = students.Select(s => s.Section).Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
+
+            var prevClassMap = await _context.Classes
+                .Where(c => c.SchoolId == schoolId && distinctPrevClasses.Contains(c.Name))
+                .ToDictionaryAsync(c => c.Name, c => c);
+
+            // Build a composite key lookup for sections: "ClassName|SectionName" → Section
+            var prevClassIds = prevClassMap.Values.Select(c => c.Id).ToList();
+            var prevSectionList = await _context.Sections
+                .Where(s => prevClassIds.Contains(s.ClassId) && distinctPrevSections.Contains(s.Name))
+                .ToListAsync();
+            var prevSectionMap = prevSectionList
+                .GroupBy(s => $"{s.ClassId}|{s.Name}")
+                .ToDictionary(g => g.Key, g => g.First());
+
+            // Close all active enrollments for the students being promoted in bulk
+            var studentIds = students.Select(s => s.Id).ToList();
+            var activeEnrollments = await _context.StudentEnrollments
+                .Where(e => studentIds.Contains(e.StudentId) && e.SchoolId == schoolId && e.Status == "active")
+                .ToListAsync();
+            foreach (var enrollment in activeEnrollments)
+            {
+                enrollment.Status  = "promoted";
+                enrollment.ExitDate = now;
+            }
 
             foreach (var student in students)
             {
@@ -1199,24 +1328,56 @@ namespace SmsApi.Services
                     if (IsClass12(oldClass) && !IsClass12(request.NewClass))
                         class12Passouts.Add(student.Id);
 
+                    // Resolve per-student previous class/section from pre-loaded dictionaries (O(1) lookups)
+                    prevClassMap.TryGetValue(oldClass ?? "", out var prevClassEntity);
+                    SmsApi.Models.Entities.Section? prevSectionEntity = null;
+                    if (prevClassEntity != null)
+                        prevSectionMap.TryGetValue($"{prevClassEntity.Id}|{oldSection}", out prevSectionEntity);
+
+                    // Create new StudentEnrollment row
+                    StudentEnrollment? newEnrollment = null;
+                    if (newClassEntity != null && newSectionEntity != null && academicYearEntity != null)
+                    {
+                        newEnrollment = new StudentEnrollment
+                        {
+                            Id             = Guid.NewGuid(),
+                            SchoolId       = schoolId,
+                            StudentId      = student.Id,
+                            AcademicYearId = academicYearEntity.Id,
+                            ClassId        = newClassEntity.Id,
+                            SectionId      = newSectionEntity.Id,
+                            Status         = "active",
+                            EnrollmentDate = now,
+                            CreatedAt      = now,
+                            UpdatedAt      = now
+                        };
+                        newEnrollments.Add(newEnrollment);
+                    }
+
                     // CRITICAL FIX: Create PromotionHistory record for audit trail
                     promotionHistories.Add(new PromotionHistory
                     {
-                        Id = Guid.NewGuid(),
-                        StudentId = student.Id,
-                        SchoolId = schoolId,
-                        PreviousClass = oldClass,
-                        PreviousSection = oldSection,
-                        NewClass = request.NewClass,
-                        NewSection = request.NewSection,
-                        AcademicYear = academicYear,
-                        PromotionDate = now,
-                        PromotionStatus = "completed",
-                        Remarks = "Bulk promotion",
-                        PromotionReason = "regular_promotion",
-                        ApprovalRemarks = "",
-                        MetaData = "{}",
-                        CreatedAt = now
+                        Id                    = Guid.NewGuid(),
+                        StudentId             = student.Id,
+                        SchoolId              = schoolId,
+                        PreviousClass         = oldClass,
+                        PreviousSection       = oldSection,
+                        NewClass              = request.NewClass,
+                        NewSection            = request.NewSection,
+                        PreviousClassId       = prevClassEntity?.Id,
+                        PreviousSectionId     = prevSectionEntity?.Id,
+                        NewClassId            = newClassEntity?.Id,
+                        NewSectionId          = newSectionEntity?.Id,
+                        AcademicYearId        = academicYearEntity?.Id,
+                        ResultingEnrollmentId = newEnrollment?.Id,
+                        AcademicYear          = academicYear,
+                        PromotionDate         = now,
+                        PromotionStatus       = "completed",
+                        Remarks               = "Bulk promotion",
+                        PromotionReason       = "regular_promotion",
+                        ApprovalRemarks       = "",
+                        MetaData              = "{}",
+                        CreatedAt             = now
                     });
 
                     result.SuccessCount++;
@@ -1232,6 +1393,8 @@ namespace SmsApi.Services
             if (result.SuccessCount > 0)
             {
                 _context.PromotionHistories.AddRange(promotionHistories);
+                if (newEnrollments.Count > 0)
+                    _context.StudentEnrollments.AddRange(newEnrollments);
                 await _context.SaveChangesAsync();
             }
 
@@ -1695,23 +1858,74 @@ namespace SmsApi.Services
                 student.UpdatedAt = DateTime.UtcNow;
 
                 // ===== Create Promotion History Record for Audit Trail =====
+
+                // Resolve FK references for the new structured columns (best-effort — no failure if not found)
+                var newClassEntity     = await _context.Classes.FirstOrDefaultAsync(c => c.SchoolId == schoolId && c.Name == request.NewClass);
+                var newSectionEntity   = newClassEntity != null
+                    ? await _context.Sections.FirstOrDefaultAsync(s => s.ClassId == newClassEntity.Id && s.Name == (request.NewSection ?? oldSection))
+                    : null;
+                var prevClassEntity    = await _context.Classes.FirstOrDefaultAsync(c => c.SchoolId == schoolId && c.Name == oldClass);
+                var prevSectionEntity  = prevClassEntity != null
+                    ? await _context.Sections.FirstOrDefaultAsync(s => s.ClassId == prevClassEntity.Id && s.Name == oldSection)
+                    : null;
+                var academicYearEntity = await _context.AcademicYears
+                    .FirstOrDefaultAsync(y => y.SchoolId == schoolId && (y.Name == academicYear || y.IsCurrent));
+
+                // Close the current active StudentEnrollment row and open a new one
+                StudentEnrollment? newEnrollment = null;
+                if (newClassEntity != null && newSectionEntity != null && academicYearEntity != null)
+                {
+                    // Close any currently active enrollment for this student
+                    var currentEnrollment = await _context.StudentEnrollments
+                        .FirstOrDefaultAsync(e => e.StudentId == studentId
+                                               && e.SchoolId == schoolId
+                                               && e.Status == "active");
+                    if (currentEnrollment != null)
+                    {
+                        currentEnrollment.Status   = "promoted";
+                        currentEnrollment.ExitDate = DateTime.UtcNow;
+                    }
+
+                    newEnrollment = new StudentEnrollment
+                    {
+                        Id             = Guid.NewGuid(),
+                        SchoolId       = schoolId,
+                        StudentId      = studentId,
+                        AcademicYearId = academicYearEntity.Id,
+                        ClassId        = newClassEntity.Id,
+                        SectionId      = newSectionEntity.Id,
+                        Status         = "active",
+                        EnrollmentDate = DateTime.UtcNow,
+                        CreatedAt      = DateTime.UtcNow,
+                        UpdatedAt      = DateTime.UtcNow
+                    };
+                    _context.StudentEnrollments.Add(newEnrollment);
+                }
+
                 var promotionHistory = new PromotionHistory
                 {
-                    Id = Guid.NewGuid(),
-                    StudentId = studentId,
-                    SchoolId = schoolId,
-                    PreviousClass = oldClass,
-                    PreviousSection = oldSection,
-                    NewClass = request.NewClass,
-                    NewSection = request.NewSection ?? student.Section,
-                    AcademicYear = academicYear,
-                    PromotionDate = DateTime.UtcNow,
-                    PromotionStatus = "completed",
-                    Remarks = request.Remarks ?? "",
-                    PromotionReason = "regular_promotion",
-                    ApprovalRemarks = "",
-                    MetaData = "{}",
-                    CreatedAt = DateTime.UtcNow
+                    Id                  = Guid.NewGuid(),
+                    StudentId           = studentId,
+                    SchoolId            = schoolId,
+                    PreviousClass       = oldClass,
+                    PreviousSection     = oldSection,
+                    NewClass            = request.NewClass,
+                    NewSection          = request.NewSection ?? student.Section,
+                    // Structured FK columns — populated when entities resolve
+                    PreviousClassId     = prevClassEntity?.Id,
+                    PreviousSectionId   = prevSectionEntity?.Id,
+                    NewClassId          = newClassEntity?.Id,
+                    NewSectionId        = newSectionEntity?.Id,
+                    AcademicYearId      = academicYearEntity?.Id,
+                    ResultingEnrollmentId = newEnrollment?.Id,
+                    AcademicYear        = academicYear,
+                    PromotionDate       = DateTime.UtcNow,
+                    PromotionStatus     = "completed",
+                    Remarks             = request.Remarks ?? "",
+                    PromotionReason     = "regular_promotion",
+                    ApprovalRemarks     = "",
+                    MetaData            = "{}",
+                    CreatedAt           = DateTime.UtcNow
                 };
 
                 // Add to context (assuming PromotionHistory entity exists)
@@ -2203,20 +2417,20 @@ namespace SmsApi.Services
                 .Where(ts => ts.StudentId == studentId && ts.SchoolId == schoolId && ts.Status == "active")
                 .FirstOrDefaultAsync();
 
-            if (transport?.Route != null)
+            if (transport != null)
             {
                 summary.Transport = new StudentTransportInfo
                 {
                     AssignmentId = transport.Id,
-                    RouteName = transport.Route.RouteName,
-                    RouteNumber = transport.Route.RouteNumber,
+                    RouteName = transport.Route?.RouteName ?? "(Route unavailable)",
+                    RouteNumber = transport.Route?.RouteNumber ?? "—",
                     PickupPoint = transport.PickupPoint,
                     DropPoint = transport.DropPoint,
                     MonthlyFee = transport.MonthlyFee ?? transport.Fare,
                     Status = transport.Status,
-                    VehicleNumber = transport.Route.VehicleNumber,
-                    DriverName = transport.Route.DriverName,
-                    DriverPhone = transport.Route.DriverPhone ?? transport.Route.DriverContact
+                    VehicleNumber = transport.Route?.VehicleNumber,
+                    DriverName = transport.Route?.DriverName,
+                    DriverPhone = transport.Route?.DriverPhone ?? transport.Route?.DriverContact
                 };
             }
 
@@ -2226,14 +2440,14 @@ namespace SmsApi.Services
                 .Where(hs => hs.StudentId == studentId && hs.SchoolId == schoolId && hs.Status == "active")
                 .FirstOrDefaultAsync();
 
-            if (hostel?.Room != null)
+            if (hostel != null)
             {
                 summary.Hostel = new StudentHostelInfo
                 {
                     AssignmentId = hostel.Id,
-                    RoomNumber = hostel.Room.RoomNumber,
-                    RoomType = hostel.Room.RoomType,
-                    Floor = hostel.Room.Floor,
+                    RoomNumber = hostel.Room?.RoomNumber ?? "(Room unavailable)",
+                    RoomType = hostel.Room?.RoomType,
+                    Floor = hostel.Room?.Floor,
                     MonthlyFee = hostel.MonthlyFee,
                     Status = hostel.Status,
                     CheckInDate = hostel.CheckInDate,
@@ -2333,18 +2547,20 @@ namespace SmsApi.Services
 
         // ─── Sibling Management ───────────────────────────────────────────────
 
-        public async Task<List<StudentSiblingDto>> GetSiblingsAsync(Guid schoolId, Guid studentId)
+        public async Task<List<StudentBasicResponse>> GetSiblingsAsync(Guid schoolId, Guid studentId)
         {
             return await _context.StudentSiblings
                 .Include(ss => ss.Sibling)
                 .Where(ss => ss.SchoolId == schoolId && ss.StudentId == studentId)
-                .Select(ss => new StudentSiblingDto
+                .Select(ss => new StudentBasicResponse
                 {
-                    SiblingId = ss.SiblingId,
+                    Id = ss.SiblingId,
                     Name = ss.Sibling != null ? ss.Sibling.Name : string.Empty,
-                    AdmissionNumber = ss.Sibling != null ? ss.Sibling.AdmissionNumber : null,
-                    Class = ss.Sibling != null ? ss.Sibling.Class : string.Empty,
+                    AdmissionNumber = ss.Sibling != null ? ss.Sibling.AdmissionNumber : string.Empty,
+                    Class = ss.Sibling != null ? (ss.Sibling.Class ?? string.Empty) : string.Empty,
                     Section = ss.Sibling != null ? ss.Sibling.Section : string.Empty,
+                    RollNumber = ss.Sibling != null ? ss.Sibling.RollNumber : null,
+                    Status = ss.Sibling != null ? (ss.Sibling.Status ?? string.Empty) : string.Empty,
                     PhotoUrl = ss.Sibling != null ? ss.Sibling.PhotoUrl : null
                 })
                 .ToListAsync();
@@ -2850,6 +3066,63 @@ namespace SmsApi.Services
             if (string.IsNullOrWhiteSpace(className)) return false;
             var c = className.Trim().ToUpperInvariant();
             return c == "12" || c == "XII" || c.StartsWith("12 ") || c.StartsWith("12-") || c.StartsWith("XII ");
+        }
+
+        // ─── Guardian Staff Link ───────────────────────────────────────────────
+
+        public async Task<GuardianStaffDto?> GetGuardianStaffAsync(Guid schoolId, Guid staffId)
+        {
+            var staff = await _context.StaffMembers
+                .Where(s => s.Id == staffId && s.SchoolId == schoolId && !s.IsDeleted)
+                .Select(s => new GuardianStaffDto
+                {
+                    Id = s.Id,
+                    Name = s.Name,
+                    Designation = s.Designation,
+                    Department = s.Department,
+                    Phone = s.Phone,
+                    Email = s.Email,
+                    ProfilePhoto = s.ProfilePhoto
+                })
+                .FirstOrDefaultAsync();
+            return staff;
+        }
+
+        public async Task SetGuardianStaffAsync(Guid schoolId, Guid studentId, Guid? staffId)
+        {
+            var student = await _context.Students
+                .FirstOrDefaultAsync(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            if (staffId.HasValue)
+            {
+                var staffExists = await _context.StaffMembers
+                    .AnyAsync(s => s.Id == staffId.Value && s.SchoolId == schoolId && !s.IsDeleted);
+                if (!staffExists)
+                    throw new KeyNotFoundException("Staff member not found.");
+            }
+
+            student.GuardianStaffId = staffId;
+            student.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<List<StaffChildDto>> GetChildrenOfStaffAsync(Guid schoolId, Guid staffId)
+        {
+            return await _context.Students
+                .Where(s => s.SchoolId == schoolId && s.GuardianStaffId == staffId && !s.IsDeleted)
+                .Select(s => new StaffChildDto
+                {
+                    Id = s.Id,
+                    Name = s.Name,
+                    AdmissionNumber = s.AdmissionNumber,
+                    Class = s.Class,
+                    Section = s.Section,
+                    RollNumber = s.RollNumber,
+                    Status = s.Status,
+                    PhotoUrl = s.PhotoUrl
+                })
+                .ToListAsync();
         }
     }
 }

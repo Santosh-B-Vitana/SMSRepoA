@@ -1,5 +1,5 @@
 ﻿
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,6 +49,7 @@ import {
   type StaffFormData,
 } from "@/schemas/staffSchema";
 import { staffApi, type Staff } from "@/services/api/staffApi";
+import { studentApi, type StudentBasic } from "@/services/api/studentApi";
 
 // â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -84,42 +84,44 @@ function StepIndicator({
   onStepClick: (step: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 overflow-x-auto pb-2">
+    <div className="flex items-center gap-0.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
       {STAFF_STEP_LABELS.map((label, idx) => {
         const Icon = STEP_ICONS[idx];
         const isActive    = idx === currentStep;
         const isCompleted = idx < currentStep;
+        const canClick    = isEditMode || idx <= currentStep;
         return (
           <div key={idx} className="flex items-center shrink-0">
             <button
               type="button"
-              onClick={() => isEditMode && onStepClick(idx)}
-              disabled={!isEditMode && idx > currentStep}
+              onClick={() => canClick && onStepClick(idx)}
+              disabled={!canClick}
               className={cn(
-                "flex flex-col items-center gap-1 px-2 py-2 rounded-lg transition-all min-w-[64px]",
-                isActive    && "bg-primary text-primary-foreground",
-                isCompleted && "bg-primary/20 text-primary cursor-pointer hover:bg-primary/30",
-                !isActive && !isCompleted && "text-muted-foreground"
+                "flex flex-col items-center gap-1 px-2.5 py-2 rounded-xl transition-all duration-200 min-w-[68px]",
+                isActive    && "bg-white/20 text-white shadow-sm",
+                isCompleted && "bg-white/10 text-white/80 cursor-pointer hover:bg-white/20",
+                !isActive && !isCompleted && "text-white/40 cursor-default",
+                canClick && !isActive && "cursor-pointer"
               )}
             >
               <div className={cn(
-                "w-6 h-6 rounded-full flex items-center justify-center",
-                isActive    && "bg-primary-foreground/20",
-                isCompleted && "bg-primary",
-                !isActive && !isCompleted && "bg-muted"
+                "w-7 h-7 rounded-full flex items-center justify-center transition-colors",
+                isActive    && "bg-white/30",
+                isCompleted && "bg-white/80",
+                !isActive && !isCompleted && "bg-white/10"
               )}>
                 {isCompleted ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-primary-foreground" />
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
                 ) : (
-                  <Icon className="h-3 w-3" />
+                  <Icon className="h-3.5 w-3.5" />
                 )}
               </div>
-              <span className="text-[9px] font-medium leading-tight text-center">{label}</span>
+              <span className="text-[9px] font-semibold leading-tight text-center tracking-wide uppercase">{label}</span>
             </button>
             {idx < STAFF_STEPS_COUNT - 1 && (
               <div className={cn(
-                "h-0.5 w-4 mx-0.5 rounded transition-colors",
-                idx < currentStep ? "bg-primary" : "bg-muted"
+                "h-0.5 w-3 mx-0.5 rounded-full transition-colors duration-300",
+                idx < currentStep ? "bg-white/60" : "bg-white/20"
               )} />
             )}
           </div>
@@ -135,6 +137,13 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [submitting, setSubmitting]   = useState(false);
   const isEditMode = !!staff;
+
+  // Children management (edit mode only)
+  const [linkedChildren, setLinkedChildren] = useState<StudentBasic[]>([]);
+  const [childSearch, setChildSearch]       = useState("");
+  const [childResults, setChildResults]     = useState<StudentBasic[]>([]);
+  const [childSearching, setChildSearching] = useState(false);
+  const [linkingChildId, setLinkingChildId] = useState<string | null>(null);
 
   const form = useForm<StaffFormData>({
     resolver:      zodResolver(staffSchema),
@@ -197,6 +206,62 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   });
 
   const { formState: { errors } } = form;
+
+  // Load children when in edit mode
+  useEffect(() => {
+    if (!isEditMode || !staff?.id) return;
+    staffApi.getChildren(staff.id)
+      .then(children => setLinkedChildren(children.map(c => ({
+        id: c.id,
+        name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim(),
+        class: c.class || "",
+        section: c.section || "",
+        admissionNumber: c.admissionNumber || "",
+        status: c.status || "active",
+      } as StudentBasic))))
+      .catch(() => setLinkedChildren([]));
+  }, [isEditMode, staff?.id]);
+
+  const searchStudentsForChild = async (query: string) => {
+    if (!query.trim()) { setChildResults([]); return; }
+    setChildSearching(true);
+    try {
+      const res = await studentApi.list({ search: query, pageSize: 10 });
+      setChildResults(res.students || []);
+    } catch {
+      setChildResults([]);
+    } finally {
+      setChildSearching(false);
+    }
+  };
+
+  const handleLinkChild = async (student: StudentBasic) => {
+    if (!staff?.id) return;
+    setLinkingChildId(student.id);
+    try {
+      await studentApi.setGuardianStaff(student.id, staff.id);
+      setLinkedChildren(prev => [...prev, student]);
+      setChildResults(prev => prev.filter(s => s.id !== student.id));
+      toast.success(`${student.name} linked as staff's child`);
+    } catch {
+      toast.error("Failed to link student");
+    } finally {
+      setLinkingChildId(null);
+    }
+  };
+
+  const handleUnlinkChild = async (student: StudentBasic) => {
+    setLinkingChildId(student.id);
+    try {
+      await studentApi.setGuardianStaff(student.id, null);
+      setLinkedChildren(prev => prev.filter(s => s.id !== student.id));
+      toast.success(`${student.name} unlinked`);
+    } catch {
+      toast.error("Failed to unlink student");
+    } finally {
+      setLinkingChildId(null);
+    }
+  };
 
   const stepErrorCount = () => {
     const stepKeys = Object.keys((STAFF_STEP_SCHEMAS[currentStep] as any).shape ?? {});
@@ -263,34 +328,37 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   const progress = ((currentStep + 1) / STAFF_STEPS_COUNT) * 100;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 overflow-y-auto py-4 px-2">
-      <Card className="w-full max-w-3xl max-h-[95vh] overflow-y-auto">
-        <CardHeader className="pb-4 sticky top-0 bg-card z-10 border-b">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-xl">
-              {isEditMode ? "Edit Staff Member" : "Add New Staff Member"}
-            </CardTitle>
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="space-y-2 mt-3">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Step {currentStep + 1} of {STAFF_STEPS_COUNT} â€” {STAFF_STEP_LABELS[currentStep]}</span>
-              <span>{Math.round(progress)}% complete</span>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto py-4 px-2">
+      <div className="w-full max-w-3xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground px-6 py-5 shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-bold">
+                {isEditMode ? "Edit Staff Member" : "Add New Staff Member"}
+              </h2>
+              <p className="text-primary-foreground/70 text-sm mt-0.5">
+                Step {currentStep + 1} of {STAFF_STEPS_COUNT} — {STAFF_STEP_LABELS[currentStep]}
+              </p>
             </div>
-            <Progress value={progress} className="h-1.5" />
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 transition-colors flex items-center justify-center"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
+          <Progress value={progress} className="h-1.5 bg-white/20 [&>div]:bg-white mb-3" />
           <StepIndicator
             currentStep={currentStep}
             isEditMode={isEditMode}
             onStepClick={setCurrentStep}
           />
-        </CardHeader>
+        </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <CardContent className="space-y-5 pt-5">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
 
               {stepErrorCount() > 0 && (
                 <Alert variant="destructive">
@@ -579,8 +647,15 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                         <FormItem>
                           <FormLabel>PAN Number</FormLabel>
                           <FormControl>
-                            <Input placeholder="ABCDE1234F" maxLength={10} {...field} style={{ textTransform: "uppercase" }} />
+                            <Input
+                              placeholder="ABCDE1234F"
+                              maxLength={10}
+                              {...field}
+                              onChange={e => field.onChange(e.target.value.toUpperCase())}
+                              style={{ textTransform: "uppercase" }}
+                            />
                           </FormControl>
+                          <FormDescription>Format: ABCDE1234F</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )} />
@@ -802,43 +877,135 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                       <span className="text-foreground font-medium">{form.watch("department") || "â€”"}</span>
                       <span>Email:</span>
                       <span className="text-foreground font-medium">{form.watch("email") || "â€”"}</span>
+
+                  {/* Children â€” edit mode only */}
+                  {isEditMode && (
+                    <div className="space-y-3">
+                      <Separator />
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Badge variant="outline">Staff's Children (Students)</Badge>
+                      </h4>
+                      <p className="text-xs text-muted-foreground">
+                        Link enrolled students who are children of this staff member. This enables staff-child fee concessions.
+                      </p>
+
+                      {linkedChildren.length > 0 && (
+                        <div className="space-y-2">
+                          {linkedChildren.map(child => (
+                            <div key={child.id} className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                              <div>
+                                <p className="text-sm font-medium">{child.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Class {child.class}{child.section ? ` - ${child.section}` : ""}
+                                  {child.admissionNumber ? ` · ${child.admissionNumber}` : ""}
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive text-xs"
+                                disabled={linkingChildId === child.id}
+                                onClick={() => handleUnlinkChild(child)}
+                              >
+                                {linkingChildId === child.id ? "…" : "Unlink"}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium">Search Student to Link</label>
+                        <Input
+                          placeholder="Type student name…"
+                          value={childSearch}
+                          onChange={e => {
+                            setChildSearch(e.target.value);
+                            searchStudentsForChild(e.target.value);
+                          }}
+                          className="text-sm"
+                        />
+                        {childSearching && <p className="text-xs text-muted-foreground">Searchingâ€¦</p>}
+                        {childResults.length > 0 && (
+                          <div className="border rounded-md overflow-hidden max-h-48 overflow-y-auto">
+                            {childResults
+                              .filter(s => !linkedChildren.find(lc => lc.id === s.id))
+                              .map(s => (
+                                <div key={s.id} className="flex items-center justify-between px-3 py-2 hover:bg-accent text-sm">
+                                  <div>
+                                    <p className="font-medium">{s.name}</p>
+                                    <p className="text-xs text-muted-foreground">Class {s.class}{s.section ? ` - ${s.section}` : ""}</p>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs"
+                                    disabled={linkingChildId === s.id}
+                                    onClick={() => { handleLinkChild(s); setChildSearch(""); setChildResults([]); }}
+                                  >
+                                    {linkingChildId === s.id ? "Linking…" : "Link as Child"}
+                                  </Button>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                     </div>
                   </div>
                 </div>
               )}
 
-            </CardContent>
+            </div>
 
             {/* â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-            <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/20 sticky bottom-0">
+            <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/30 shrink-0">
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 onClick={currentStep === 0 ? onClose : handleBack}
                 disabled={submitting}
+                className="gap-2"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
+                <ChevronLeft className="h-4 w-4" />
                 {currentStep === 0 ? "Cancel" : "Back"}
               </Button>
+
+              <div className="flex items-center gap-1.5">
+                {Array.from({ length: STAFF_STEPS_COUNT }).map((_, i) => (
+                  <div key={i} className={[
+                    "h-1.5 rounded-full transition-all duration-300",
+                    i === currentStep ? "w-6 bg-primary" : i < currentStep ? "w-3 bg-primary/50" : "w-3 bg-muted-foreground/20",
+                  ].join(" ")} />
+                ))}
+              </div>
+
               <div className="flex gap-2">
                 {currentStep < STAFF_STEPS_COUNT - 1 ? (
-                  <Button type="button" onClick={handleNext} disabled={submitting}>
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  <Button type="button" onClick={handleNext} disabled={submitting} className="gap-2">
+                    Next<ChevronRight className="h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button type="submit" disabled={submitting} className="min-w-[130px]">
-                    {submitting
-                      ? "Savingâ€¦"
-                      : isEditMode
-                      ? "Update Staff Member"
-                      : "Add Staff Member"}
+                  <Button type="submit" disabled={submitting} className="min-w-[140px] gap-2">
+                    {submitting ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                        </svg>
+                        Saving…
+                      </span>
+                    ) : isEditMode ? "Update Staff Member" : "Add Staff Member"}
                   </Button>
                 )}
               </div>
             </div>
           </form>
         </Form>
-      </Card>
+      </div>
     </div>
   );
 }

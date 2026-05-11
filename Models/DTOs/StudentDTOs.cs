@@ -179,6 +179,9 @@ namespace SmsApi.Models.DTOs
         public string? CharacterCertificateNumber { get; set; }
         
         public string? SiblingIds { get; set; } // legacy JSON; prefer Siblings collection
+
+        /// <summary>Staff ID of the parent/guardian who is also a school staff member.</summary>
+        public Guid? GuardianStaffId { get; set; }
         
         // Relations
         public List<GuardianDto>? Guardians { get; set; }
@@ -317,6 +320,11 @@ namespace SmsApi.Models.DTOs
         [Required]
         [MaxLength(20)]
         public string GuardianPhone { get; set; } = string.Empty;
+
+        /// <summary>Guardian email — used as the username for parent portal login.</summary>
+        [MaxLength(255)]
+        [EmailAddress]
+        public string? GuardianEmail { get; set; }
         
         // Academic History
         [MaxLength(200)]
@@ -491,6 +499,11 @@ namespace SmsApi.Models.DTOs
         
         [MaxLength(20)]
         public string? GuardianPhone { get; set; }
+
+        /// <summary>Guardian email — used as the username for parent portal login.</summary>
+        [MaxLength(255)]
+        [EmailAddress]
+        public string? GuardianEmail { get; set; }
         
         // Academic
         [MaxLength(200)]
@@ -1251,5 +1264,34 @@ namespace SmsApi.Models.DTOs
         public StudentHostelInfo? Hostel { get; set; }
         public List<StudentHealthInfo> HealthRecords { get; set; } = new();
         public List<StudentVisitorRecord> VisitorHistory { get; set; } = new();
+    }
+
+    public class SetGuardianStaffRequest
+    {
+        /// <summary>Staff member ID who is the parent/guardian. Null to unlink.</summary>
+        public Guid? StaffId { get; set; }
+    }
+
+    public class GuardianStaffDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Designation { get; set; }
+        public string? Department { get; set; }
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+        public string? ProfilePhoto { get; set; }
+    }
+
+    public class StaffChildDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? AdmissionNumber { get; set; }
+        public string Class { get; set; } = string.Empty;
+        public string Section { get; set; } = string.Empty;
+        public string? RollNumber { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? PhotoUrl { get; set; }
     }
 }

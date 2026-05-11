@@ -14,6 +14,7 @@ import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/ser
 import { attendanceApi } from "@/services/api/attendanceApi";
 import { getResults, type ResultBasic } from "@/services/api/examinationApi";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
+import { assignmentApi, type SubmissionResponse } from "@/services/api/assignmentApi";
 import { ParentLeaveTab } from "@/components/leave-management/ParentLeaveTab";
 import { toast } from "sonner";
 
@@ -62,6 +63,10 @@ export function ChildProfileManager() {
   // Grades state
   const [gradeRecords, setGradeRecords] = useState<StudentGradeResponse[]>([]);
   const [gradesLoading, setGradesLoading] = useState(false);
+
+  // Assignment submissions state
+  const [submissions, setSubmissions] = useState<SubmissionResponse[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
 
   useEffect(() => {
     studentApi.getMyChildren()
@@ -170,6 +175,20 @@ export function ChildProfileManager() {
       setGradeRecords([]);
     } finally {
       setGradesLoading(false);
+    }
+  };
+
+  const loadSubmissions = async () => {
+    if (!selectedChildId) return;
+    setSubmissionsLoading(true);
+    try {
+      const res = await assignmentApi.getStudentSubmissions(selectedChildId);
+      setSubmissions(res.data ?? []);
+    } catch {
+      toast.error("Failed to load assignment submissions");
+      setSubmissions([]);
+    } finally {
+      setSubmissionsLoading(false);
     }
   };
 
@@ -301,6 +320,10 @@ export function ChildProfileManager() {
             <TabsTrigger value="grades" onClick={() => { if (gradeRecords.length === 0) loadGrades(); }}>
               <BarChart2 className="h-4 w-4 mr-1.5" />
               Grades
+            </TabsTrigger>
+            <TabsTrigger value="assignments" onClick={() => { if (submissions.length === 0) loadSubmissions(); }}>
+              <BookOpen className="h-4 w-4 mr-1.5" />
+              Assignments
             </TabsTrigger>
             <TabsTrigger value="leave">
               <CalendarDays className="h-4 w-4 mr-1.5" />
@@ -711,6 +734,85 @@ export function ChildProfileManager() {
                             <TableCell className="text-muted-foreground text-sm">{g.remarks ?? "—"}</TableCell>
                             <TableCell className="text-muted-foreground text-sm">
                               {new Date(g.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* ── Assignments Tab ── */}
+          <TabsContent value="assignments">
+            {submissionsLoading ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+                  <p className="text-muted-foreground">Loading assignments...</p>
+                </CardContent>
+              </Card>
+            ) : submissions.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="font-medium text-muted-foreground">No assignment submissions yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Graded assignments will appear here.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    Assignment Submissions ({submissions.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Assignment</TableHead>
+                        <TableHead className="text-center">Marks</TableHead>
+                        <TableHead className="text-center">Max</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead>Feedback</TableHead>
+                        <TableHead>Submitted</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {submissions.map(s => {
+                        const pct = s.assignmentMaxMarks && s.assignmentMaxMarks > 0 && s.marksObtained != null
+                          ? Math.round((s.marksObtained / s.assignmentMaxMarks) * 100) : null;
+                        return (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-medium">{s.assignmentTitle ?? "—"}</TableCell>
+                            <TableCell className="text-center font-bold">
+                              {s.marksObtained != null ? s.marksObtained : "—"}
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground">
+                              {s.assignmentMaxMarks ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant={
+                                s.status === "graded" ? "default" :
+                                s.status === "submitted" ? "secondary" : "outline"
+                              }>
+                                {s.status}
+                              </Badge>
+                              {pct !== null && (
+                                <span className={`ml-1 text-xs font-semibold ${pct >= 50 ? "text-green-600" : "text-red-600"}`}>
+                                  ({pct}%)
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                              {s.feedback ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {new Date(s.submissionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                             </TableCell>
                           </TableRow>
                         );

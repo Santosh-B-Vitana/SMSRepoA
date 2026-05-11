@@ -127,6 +127,8 @@ namespace SmsApi.Models.Entities
         // Reverse navigation — one Person may have at most one Student, Staff, or Guardian record
         public Student? StudentProfile { get; set; }
         public Staff? StaffProfile { get; set; }
+        /// <summary>Set when this Person is also registered as a guardian (parent portal user).</summary>
+        public Guardian? GuardianProfile { get; set; }
 
         // === Computed helpers ===
 

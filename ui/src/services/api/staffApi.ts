@@ -184,4 +184,8 @@ export const staffApi = {
   /** Reset a staff member's login password (Admin/Principal only) */
   resetPassword: (id: string, newPassword: string) =>
     apiPost<{ message: string }>(`/staff/${id}/reset-password`, { newPassword }),
+
+  /** Returns students who have this staff member as their parent/guardian */
+  getChildren: (staffId: string) =>
+    apiGet<import('./studentApi').StaffChildDto[]>(`/staff/${staffId}/children`),
 };

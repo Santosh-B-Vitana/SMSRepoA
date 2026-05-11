@@ -73,8 +73,9 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
   const loadExistingAttendance = async () => {
     setLoading(true);
     try {
-      const attendanceDate = new Date(selectedDate + 'T00:00:00Z').toISOString();
-      // Try to load existing records for this date
+      // Build a set of student IDs for THIS class so we only show/save their records
+      const classStudentIds = new Set(students.map(s => s.id));
+
       const response = await attendanceApi.listRecords({
         dateFrom: selectedDate,
         dateTo: selectedDate,
@@ -82,20 +83,31 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
       });
 
       if (response.items && response.items.length > 0) {
-        // Convert API response to attendance format
         const existingAttendance: Record<string, AttendanceEntry> = {};
+        let relevantCount = 0;
+
         response.items.forEach(record => {
-          existingAttendance[record.studentId] = {
-            studentId: record.studentId,
-            status: record.status as AttendanceStatus,
-            reason: record.remarks || ''
-          };
+          // Only load records belonging to students in THIS class
+          if (classStudentIds.has(record.studentId)) {
+            existingAttendance[record.studentId] = {
+              studentId: record.studentId,
+              status: record.status as AttendanceStatus,
+              reason: record.remarks || ''
+            };
+            relevantCount++;
+          }
         });
-        
-        setAttendance(existingAttendance);
-        setHasExistingRecords(true);
-        setIsEditMode(true);
-        toast.info(`Loaded ${response.items.length} existing records for ${selectedDate}`);
+
+        if (relevantCount > 0) {
+          setAttendance(existingAttendance);
+          setHasExistingRecords(true);
+          setIsEditMode(true);
+          toast.info(`Loaded ${relevantCount} existing records for ${selectedDate}`);
+        } else {
+          setAttendance({});
+          setHasExistingRecords(false);
+          setIsEditMode(false);
+        }
       } else {
         setAttendance({});
         setHasExistingRecords(false);
@@ -103,7 +115,6 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
       }
     } catch (error) {
       console.error('Error loading attendance:', error);
-      // Don't show error toast for first load - likely no records yet
       setAttendance({});
       setHasExistingRecords(false);
     } finally {
@@ -173,14 +184,17 @@ export default function AttendanceRoster({ classId, students }: AttendanceRoster
       // Convert date to ISO 8601 format with time (midnight UTC)
       const attendanceDate = new Date(selectedDate + 'T00:00:00Z').toISOString();
 
-      // Convert attendance to API format
-      const attendanceEntries: MarkAttendanceDto[] = Object.values(attendance).map(entry => ({
-        studentId: entry.studentId,
-        date: attendanceDate,
-        status: entry.status,
-        remarks: entry.reason || undefined,
-        isManualOverride: true
-      }));
+      // Only include students from THIS class — prevent cross-class contamination
+      const classStudentIds = new Set(students.map(s => s.id));
+      const attendanceEntries: MarkAttendanceDto[] = Object.values(attendance)
+        .filter(entry => classStudentIds.has(entry.studentId))
+        .map(entry => ({
+          studentId: entry.studentId,
+          date: attendanceDate,
+          status: entry.status,
+          remarks: entry.reason || undefined,
+          isManualOverride: true
+        }));
 
       const payload = {
         date: attendanceDate,

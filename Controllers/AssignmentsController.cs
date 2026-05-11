@@ -192,6 +192,69 @@ namespace SmsApi.Controllers
             return Ok(submission);
         }
 
+        /// <summary>
+        /// Get all submissions for a specific student.
+        /// Admin/Staff can access any student. Parents can only access their linked child.
+        /// </summary>
+        [HttpGet("student-submissions")]
+        public async Task<ActionResult<List<SubmissionResponse>>> GetStudentSubmissions(
+            [FromQuery] Guid studentId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+
+                // Parent role: verify this student is their linked child
+                if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parentEmail = _tenant.UserEmail;
+                    var isLinked = await _context.StudentGuardians
+                        .AnyAsync(g => g.StudentId == studentId
+                                   && g.SchoolId == schoolId
+                                   && !g.IsDeleted
+                                   && g.Email != null
+                                   && g.Email.ToLower() == parentEmail.ToLower());
+                    if (!isLinked)
+                        return StatusCode(403, new { error = "Parents can only access their own child's submissions." });
+                }
+
+                var submissions = await _context.AssignmentSubmissions
+                    .Where(s => s.StudentId == studentId)
+                    .Include(s => s.Assignment)
+                    .OrderByDescending(s => s.SubmissionDate)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(s => new
+                    {
+                        s.Id,
+                        s.AssignmentId,
+                        AssignmentTitle = s.Assignment != null ? s.Assignment.Title : "",
+                        AssignmentMaxMarks = s.Assignment != null ? s.Assignment.MaxMarks : 0,
+                        s.StudentId,
+                        s.SubmissionDate,
+                        s.Content,
+                        s.AttachmentUrl,
+                        s.MarksObtained,
+                        s.Status,
+                        s.Feedback,
+                        s.GradedById,
+                        s.GradedDate,
+                        s.CreatedAt,
+                        s.UpdatedAt,
+                    })
+                    .ToListAsync();
+
+                return Ok(new { data = submissions, total = submissions.Count });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
         [HttpPost("submissions")]
         public async Task<ActionResult<SubmissionResponse>> CreateSubmission([FromBody] CreateSubmissionRequest request)
         {

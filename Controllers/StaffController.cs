@@ -872,5 +872,46 @@ namespace SmsApi.Controllers
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
             catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while resetting password.", error = ex.Message }); }
         }
+
+        // ── Staff Children (students whose parent is this staff member) ──────
+
+        /// <summary>
+        /// Returns students who have this staff member as their guardian/parent.
+        /// Used to display "Children in School" in the staff profile.
+        /// </summary>
+        [HttpGet("{id:guid}/children")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> GetChildren(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            try
+            {
+                // Verify staff exists
+                var staffExists = await _dbContext.StaffMembers
+                    .AnyAsync(s => s.Id == id && s.SchoolId == schoolId && !s.IsDeleted);
+                if (!staffExists) return NotFound(new { message = "Staff member not found." });
+
+                var children = await _dbContext.Students
+                    .Where(s => s.SchoolId == schoolId && s.GuardianStaffId == id && !s.IsDeleted)
+                    .Select(s => new StaffChildDto
+                    {
+                        Id = s.Id,
+                        Name = s.Name,
+                        AdmissionNumber = s.AdmissionNumber,
+                        Class = s.Class,
+                        Section = s.Section,
+                        RollNumber = s.RollNumber,
+                        Status = s.Status,
+                        PhotoUrl = s.PhotoUrl
+                    })
+                    .ToListAsync();
+
+                return Ok(children);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error fetching children.", error = ex.Message });
+            }
+        }
     }
 }

@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Plus, Edit, Trash2, Calendar, Loader2, Star } from "lucide-react";
+import { Plus, Edit, Trash2, Calendar, Loader2, Star, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { academicApi, AcademicYearResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
@@ -40,11 +40,16 @@ export default function AcademicYearManager() {
     fetchAcademicYears();
   }, [fetchAcademicYears]);
 
-  const getYearStatus = (startDate: string, endDate: string) => {
+  /**
+   * Derive display status:
+   * - If isCurrent flag is set by admin → "active"
+   * - Otherwise use dates: upcoming / completed
+   */
+  const getYearStatus = (year: AcademicYearResponse) => {
+    if (year.isCurrent) return 'active';
     const now = new Date();
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    if (now >= start && now <= end) return 'active';
+    const start = new Date(year.startDate);
+    const end = new Date(year.endDate);
     if (now < start) return 'upcoming';
     return 'completed';
   };
@@ -128,10 +133,10 @@ export default function AcademicYearManager() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
-      case 'upcoming': return 'bg-blue-100 text-blue-800';
-      case 'completed': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'active':    return 'bg-green-100 text-green-800 border-green-200';
+      case 'upcoming':  return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'completed': return 'bg-gray-100 text-gray-700 border-gray-200';
+      default:          return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
@@ -219,48 +224,51 @@ export default function AcademicYearManager() {
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Current</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {academicYears.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                     No academic years created yet. Click "Add Academic Year" to get started.
                   </TableCell>
                 </TableRow>
               ) : (
                 academicYears.map((year) => {
-                  const status = getYearStatus(year.startDate, year.endDate);
+                  const status = getYearStatus(year);
                   return (
-                    <TableRow key={year.id}>
-                      <TableCell className="font-medium">{year.name}</TableCell>
+                    <TableRow key={year.id} className={year.isCurrent ? 'bg-green-50/50' : ''}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {year.name}
+                          {year.isCurrent && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+                              <Star className="h-2.5 w-2.5 fill-current" /> Current
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{new Date(year.startDate).toLocaleDateString()}</TableCell>
                       <TableCell>{new Date(year.endDate).toLocaleDateString()}</TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(status)}>
-                          {status}
+                          {status === 'active' && <CheckCircle className="h-3 w-3 mr-1" />}
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
                         </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {year.isCurrent ? (
-                          <Badge className="bg-green-100 text-green-800 flex items-center gap-1 w-fit">
-                            <Star className="h-3 w-3 fill-current" /> Current
-                          </Badge>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 px-2"
-                            onClick={() => handleSetCurrent(year)}
-                          >
-                            <Star className="h-3 w-3 mr-1" /> Set Current
-                          </Button>
-                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          {!year.isCurrent && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 px-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                              onClick={() => handleSetCurrent(year)}
+                            >
+                              <Star className="h-3 w-3 mr-1" /> Set Active
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -272,6 +280,8 @@ export default function AcademicYearManager() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleDelete(year.id)}
+                            disabled={year.isCurrent}
+                            title={year.isCurrent ? 'Cannot delete the active year' : 'Delete'}
                           >
                             <Trash2 className="h-4 w-4 text-red-500" />
                           </Button>

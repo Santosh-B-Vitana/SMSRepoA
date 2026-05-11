@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { mockApi } from "../services/mockApi";
+import { academicApi } from "@/services/api/academicApi";
+import { studentApi, type Student } from "@/services/api/studentApi";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,12 +33,6 @@ interface ClassInfo {
   academicYear: string;
   classTeacher: string;
   totalStudents: number;
-  students: Array<{
-    id: string;
-    name: string;
-    rollNo: string;
-    photoUrl?: string;
-  }>;
 }
 
 export default function ClassProfile() {
@@ -94,6 +89,8 @@ export default function ClassProfile() {
   const { classId } = useParams();
   const navigate = useNavigate();
   const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("attendance");
@@ -108,30 +105,43 @@ export default function ClassProfile() {
     classTeacher: ""
   });
 
+  const loadStudents = async (standard: string, section: string) => {
+    setStudentsLoading(true);
+    try {
+      const res = await studentApi.list({ classFilter: standard, sectionFilter: section, pageSize: 500 });
+      setStudents(res.students || []);
+    } catch {
+      setStudents([]);
+    } finally {
+      setStudentsLoading(false);
+    }
+  };
+
   useEffect(() => {
+    if (!classId) return;
     setLoading(true);
-    (async () => {
-      try {
-        const cls = await mockApi.getClass(classId);
-        if (cls) {
-          setClassInfo({
-            ...cls,
-            students: Array.isArray((cls as any).students) ? (cls as any).students : []
-          });
-          setEditForm({
-            standard: cls.standard,
-            section: cls.section,
-            academicYear: cls.academicYear,
-            classTeacher: cls.classTeacher || ""
-          });
-        } else {
-          setClassInfo(null);
-        }
-      } catch (err) {
-        setClassInfo(null);
-      }
-      setLoading(false);
-    })();
+    academicApi.getClass(classId)
+      .then(cls => {
+        const info: ClassInfo = {
+          id: cls.id,
+          standard: cls.standard || cls.name || "",
+          section: cls.section || "",
+          academicYear: cls.academicYear || "",
+          classTeacher: cls.classTeacher || "",
+          totalStudents: cls.totalStudents || 0,
+        };
+        setClassInfo(info);
+        setEditForm({
+          standard: info.standard,
+          section: info.section,
+          academicYear: info.academicYear,
+          classTeacher: info.classTeacher,
+        });
+        // Load students for this class
+        loadStudents(info.standard, info.section);
+      })
+      .catch(() => setClassInfo(null))
+      .finally(() => setLoading(false));
   }, [classId]);
 
   if (loading) {
@@ -196,31 +206,23 @@ export default function ClassProfile() {
                 onSubmit={async (e) => {
                   e.preventDefault();
                   try {
-                    // Fetch all classes to check for duplicates
-                    const allClasses = await mockApi.getClasses();
-                    const duplicate = allClasses.find(cls =>
-                      cls.id !== classId &&
-                      cls.standard === editForm.standard &&
-                      cls.section === editForm.section &&
-                      cls.academicYear === editForm.academicYear
-                    );
-                    if (duplicate) {
-                      toast.error("Another class with this standard, section, and academic year already exists.");
-                      return;
-                    }
-                    await mockApi.updateClass(classId, {
+                    await academicApi.updateClass(classId!, {
                       standard: editForm.standard,
                       section: editForm.section,
                       academicYear: editForm.academicYear,
-                      classTeacher: editForm.classTeacher
+                      classTeacher: editForm.classTeacher,
                     });
                     toast.success("Class updated successfully");
-                    // Reload class info
-                    const updated = await mockApi.getClass(classId);
-                    setClassInfo({
-                      ...updated,
-                      students: Array.isArray((updated as any).students) ? (updated as any).students : []
-                    });
+                    const updated = await academicApi.getClass(classId!);
+                    const info: ClassInfo = {
+                      id: updated.id,
+                      standard: updated.standard || updated.name || "",
+                      section: updated.section || "",
+                      academicYear: updated.academicYear || "",
+                      classTeacher: updated.classTeacher || "",
+                      totalStudents: updated.totalStudents || 0,
+                    };
+                    setClassInfo(info);
                     setEditDialogOpen(false);
                   } catch {
                     toast.error("Failed to update class");
@@ -320,7 +322,7 @@ export default function ClassProfile() {
               </div>
               <div>
                 <div className="text-sm text-muted-foreground">Class Teacher</div>
-                <div className="text-sm font-medium">{classInfo.classTeacher}</div>
+                <div className="text-sm font-medium">{classInfo.classTeacher || "Not assigned"}</div>
               </div>
             </div>
           </div>
@@ -367,7 +369,15 @@ export default function ClassProfile() {
                         </Badge>
                       </div>
                     </div>
-                    <AttendanceRoster classId={classInfo.id} students={classInfo.students} />
+                    <AttendanceRoster
+                    classId={classInfo.id}
+                    students={students.map(s => ({
+                      id: s.id,
+                      name: s.name,
+                      rollNo: s.rollNumber || "",
+                      photoUrl: s.photoUrl,
+                    }))}
+                  />
                   </div>
                 </TabsContent>
 
@@ -451,55 +461,75 @@ export default function ClassProfile() {
         <TabsContent value="students">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Class Students
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Class Students
+                </span>
+                <span className="text-sm font-normal text-muted-foreground">
+                  {studentsLoading ? "Loading…" : `${students.length} student${students.length !== 1 ? "s" : ""}`}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Roll No</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {classInfo.students.map((student) => (
-                      <TableRow key={student.id}>
-                        <TableCell className="font-medium">{student.rollNo}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-                              {student.photoUrl ? (
-                                <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover rounded-full" />
-                              ) : (
-                                <span className="text-xs font-medium">{student.name.charAt(0)}</span>
-                              )}
-                            </div>
-                            {student.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="default">Active</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => navigate(`/students/${student.id}`)}
-                          >
-                            Manage Student
-                          </Button>
-                        </TableCell>
+              {studentsLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                </div>
+              ) : students.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">No students enrolled</p>
+                  <p className="text-sm mt-1">Students added to Class {classInfo?.standard}-{classInfo?.section} will appear here automatically.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16">Roll No</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {students.map((student) => (
+                        <TableRow key={student.id}>
+                          <TableCell className="font-medium text-muted-foreground">{student.rollNumber || "-"}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                {student.photoUrl ? (
+                                  <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-xs font-semibold text-primary">{student.name?.charAt(0)?.toUpperCase()}</span>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">{student.name}</p>
+                                {student.admissionNumber && (
+                                  <p className="text-xs text-muted-foreground">{student.admissionNumber}</p>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={student.status === "active" ? "default" : "secondary"} className="capitalize">
+                              {student.status || "Active"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="outline" onClick={() => navigate(`/students/${student.id}`)}>
+                              Manage Student
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

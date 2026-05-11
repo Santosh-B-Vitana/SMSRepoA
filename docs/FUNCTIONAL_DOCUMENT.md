@@ -2,6 +2,23 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
+**Version:** 2.2 | **Last Updated:** May 11, 2026 | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 10–11, 2026
+
+| Area | Change |
+|------|--------|
+| Academic Year Management | Current column removed; status now driven by `isCurrent` flag only; one active year enforced at DB level |
+| Academic Year Selector (Header) | Extended to Principal role; amber "Historical" indicator when viewing a past year |
+| Subjects Tab (Class Profile) | Subjects loaded from real school API; teacher assignment uses live search bar instead of static dropdown |
+| Student Form | Class dropdown no longer filtered by year (classes are school-wide); defaults to current academic year for enrollment |
+| Staff Form — PAN | PAN input now converts to uppercase before Zod validation (fixes silent rejection of lowercase input) |
+| Staff Form — Children | Edit mode: link/unlink enrolled students as staff member's children (enables fee concession eligibility) |
+| Student Edit | New "Staff Parent" tab: search and link a staff member as the student's guardian |
+| Guardian-Staff Relationship | `GuardianStaffId` on `Student` entity; bidirectional: staff profile shows linked children, student profile shows linked staff guardian |
+
 ---
 
 ## 🔑 Demo Credentials (Testing & Development)
@@ -81,6 +98,7 @@
 - Fee payment history
 - Examination marks + grade reports
 - Certificates & documents
+- **Guardian Staff Link (new May 2026):** From the "Staff Parent" tab in Student Edit, an admin can search for and link a staff member as the student's guardian. This creates a `GuardianStaffId` FK on the student record and is used for staff-child fee concession eligibility.
 
 ### 3.2 ID Cards
 - Auto-generate student ID cards (PDF)
@@ -125,6 +143,7 @@
 **Step 6 — Compliance**
 - Highest Qualification, University, Year of Passing
 - Verification checklist: Background check, Police clearance, Medical checkup, Document consent
+- **Staff's Children (edit mode only, new May 2026):** Link enrolled students as the staff member's children. Search students by name and link/unlink them. Linked children appear in the staff profile and qualify for staff-child fee concessions. Uses the same `GuardianStaffId` FK on the Student entity.
 
 ### 4.2 Staff Attendance
 - Daily attendance marking (Present / Absent / Late / Half-day)
@@ -147,27 +166,35 @@
 - Add sections with max strength
 - Assign class teacher
 - Subject-class-section mapping
+- Classes are **school-wide** configurations (not tied to a specific academic year); the same class structure applies across all years
 
-### 5.2 Timetable
+### 5.2 Subjects & Class Profile
+- School-level subject catalogue (Maths, Science, English, Hindi, Social Studies, Physics, Chemistry, Biology, Computer Science, Physical Education, etc.)
+- Assign subjects to specific classes
+- Each assignment records the subject, class, and an optional assigned teacher
+- **Subject assignment dialog (updated May 2026):** Teacher field is now a live **search bar** — type a name and matching staff appear in a dropdown. Replaces the old static dropdown. Subject list loads from the real school database (no mock data).
+- Subjects visible in class profile across Timetable, Exam, and Grade modules
+
+### 5.3 Timetable
 - Period-wise timetable per class/section
 - Teacher schedule view
 - Conflict detection (same teacher in two classes)
 - Print-ready timetable PDF
 
-### 5.3 Assignments
+### 5.4 Assignments
 - Create assignments per subject/class
 - Set due dates, maximum marks
 - Student submission tracking
 - Marks entry + feedback
 
-### 5.4 Examinations
+### 5.5 Examinations
 - Create exams per class/subject
 - Set max marks, pass marks, exam dates
 - Batch marks entry
 - Auto-grade calculation
 - Result publication
 
-### 5.5 Grades & CCE
+### 5.6 Grades & CCE
 - Letter grades with GPA calculation
 - CCE (Continuous Comprehensive Evaluation) support
 - Co-scholastic areas grading
@@ -375,12 +402,23 @@
 
 ### 16.2 School Settings
 - School profile (name, logo, address, contact)
-- Academic year management
+- **Academic Year Management (updated May 2026)**
+  - Create, edit, and delete academic years
+  - Exactly **one** year is active at a time (`IsCurrent = true`); setting a new year active automatically deactivates all others at the DB level
+  - Status column reflects the `isCurrent` flag, not date arithmetic
+  - Active year cannot be deleted (protected in UI)
+  - Previous / upcoming years show as "Inactive"
 - Working days configuration
 - Grade scale definition
 - Email/SMS gateway configuration
 
-### 16.3 Security Dashboard
+### 16.3 Academic Year Selector (Global Header)
+- Admins and Principals can switch the viewing context to any configured year via the header dropdown
+- When viewing a **historical year**, the selector turns amber and shows a "Historical" label — a warning note clarifies that no changes affect the current live year
+- Staff and Parents are locked to the active year (read-only badge, no dropdown)
+- The selected year is persisted in `localStorage` (`selectedAcademicYearName`) and sent as the `X-Academic-Year` header on every API request, enabling all modules (fees, exams, students, attendance) to scope data to the selected year
+
+### 16.4 Security Dashboard
 - Live login attempt monitoring
 - Failed login alerts by IP / user
 - Redis-backed lockout management
@@ -423,7 +461,7 @@
 ## 19. India Compliance Checklist
 
 - [x] Aadhaar number validation and display masking
-- [x] PAN number validation and display masking
+- [x] PAN number validation (`[A-Z]{5}[0-9]{4}[A-Z]{1}`) — input auto-converts to uppercase before validation (updated May 2026)
 - [x] IFSC code validation
 - [x] RTE (Right to Education) fee concession workflow
 - [x] Category fields: General, OBC, SC, ST, EWS

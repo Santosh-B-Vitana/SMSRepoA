@@ -1117,6 +1117,100 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { message = "Failed to apply sibling discount.", error = ex.Message });
             }
         }
+
+        // ── Staff Child Discount ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Apply a staff-child discount to all pending fee records for the specified student.
+        /// The student must have GuardianStaffId set (i.e., be a child of a staff member).
+        /// Respects the 75% total concession stacking cap.
+        /// </summary>
+        [HttpPost("staff-discount")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<IActionResult> ApplyStaffDiscount([FromBody] StaffDiscountRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+
+            try
+            {
+                if (request.DiscountValue <= 0)
+                    throw new ArgumentException("Discount value must be positive.");
+                if (request.DiscountType == "percentage" && request.DiscountValue > 100)
+                    throw new ArgumentException("Percentage cannot exceed 100.");
+
+                // Verify student exists and is a staff child
+                var student = await _context.Students
+                    .Where(s => s.Id == request.StudentId && s.SchoolId == schoolId && !s.IsDeleted)
+                    .Select(s => new { s.Id, s.Name, s.GuardianStaffId, s.Class, s.Section })
+                    .FirstOrDefaultAsync()
+                    ?? throw new KeyNotFoundException("Student not found.");
+
+                if (student.GuardianStaffId == null)
+                    throw new InvalidOperationException("Student is not linked to a staff member. Set GuardianStaffId first.");
+
+                // Verify the staff member exists in this school
+                var staffExists = await _context.StaffMembers
+                    .AnyAsync(s => s.Id == student.GuardianStaffId && s.SchoolId == schoolId && !s.IsDeleted);
+                if (!staffExists)
+                    throw new InvalidOperationException("Linked staff member not found in this school.");
+
+                // Load all pending fee records for student
+                var records = await _context.FeeRecords
+                    .Where(r => r.StudentId == request.StudentId && r.SchoolId == schoolId
+                                && !r.IsDeleted && r.PendingAmount > 0)
+                    .ToListAsync();
+
+                if (records.Count == 0)
+                    throw new InvalidOperationException("No pending fee records found for this student.");
+
+                int applied = 0;
+                decimal totalSaved = 0m;
+
+                foreach (var rec in records)
+                {
+                    // Enforce 75% max concession cap across all discounts already applied
+                    var totalFee = rec.TotalAmount;
+                    var alreadyDiscounted = rec.DiscountAmount;
+                    var maxAdditionalDiscount = (totalFee * 0.75m) - alreadyDiscounted;
+                    if (maxAdditionalDiscount <= 0) continue;
+
+                    decimal discountAmt = request.DiscountType == "percentage"
+                        ? Math.Round(totalFee * request.DiscountValue / 100m, 2)
+                        : request.DiscountValue;
+
+                    discountAmt = Math.Min(discountAmt, rec.PendingAmount);
+                    discountAmt = Math.Min(discountAmt, maxAdditionalDiscount);
+                    if (discountAmt <= 0) continue;
+
+                    rec.DiscountAmount += discountAmt;
+                    rec.PendingAmount = Math.Max(0, rec.TotalAmount + rec.LateFeeAmount - rec.PaidAmount - rec.DiscountAmount);
+                    rec.UpdatedAt = DateTime.UtcNow;
+
+                    totalSaved += discountAmt;
+                    applied++;
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = $"Staff child discount applied to {applied} fee record(s).",
+                    applied,
+                    totalSaved,
+                    studentName = student.Name,
+                    discountType = request.DiscountType,
+                    discountValue = request.DiscountValue,
+                });
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to apply staff discount.", error = ex.Message });
+            }
+        }
     }
 
     public class SiblingDiscountRequest
@@ -1128,6 +1222,16 @@ namespace SmsApi.Controllers
         public decimal DiscountValue { get; set; }
         public string? Reason { get; set; }
         public string? AppliedBy { get; set; }
+    }
+
+    public class StaffDiscountRequest
+    {
+        public Guid StudentId { get; set; }
+        /// <summary>"percentage" or "flat"</summary>
+        public string DiscountType { get; set; } = "percentage";
+        /// <summary>Value: percentage (e.g. 10 = 10%) or flat amount in INR</summary>
+        public decimal DiscountValue { get; set; }
+        public string? Reason { get; set; }
     }
 }
 

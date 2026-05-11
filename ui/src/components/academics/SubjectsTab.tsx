@@ -2,13 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { BookOpen, Plus, Trash2, Search, X } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { academicApi } from "@/services/api/academicApi";
 import { apiClient } from "@/services/api";
 
 interface Subject {
@@ -58,6 +58,8 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
+  const [teacherSearch, setTeacherSearch] = useState("");
+  const [teacherDropdownOpen, setTeacherDropdownOpen] = useState(false);
   const [maxMarks, setMaxMarks] = useState("100");
   const [credits, setCredits] = useState("4");
 
@@ -71,19 +73,34 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
   const loadSubjects = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/academics/subjects');
-      setAvailableSubjects(response.data.subjects || response.data || []);
-    } catch (error: any) {
-      console.error("Failed to load subjects:", error);
-      // Fallback to mock data if API fails
-      setAvailableSubjects([
-        { id: "1", name: "Mathematics", code: "MATH", type: "Core", board: "CBSE", description: "Core Mathematics subject" },
-        { id: "2", name: "English", code: "ENG", type: "Language", board: "CBSE", description: "English Language subject" },
-        { id: "3", name: "Science", code: "SCI", type: "Core", board: "CBSE", description: "Integrated Science" },
-        { id: "4", name: "Social Studies", code: "SS", type: "Core", board: "CBSE", description: "Social Science subject" },
-        { id: "5", name: "Computer Science", code: "CS", type: "Elective", board: "CBSE", description: "Computer Science" },
-        { id: "6", name: "Hindi", code: "HIN", type: "Language", board: "CBSE", description: "Hindi Language" },
-      ]);
+      // Use academicApi which has proper auth and handles pagination
+      const result = await academicApi.listSubjects(1, 500);
+      const subjects = result.subjects || [];
+      setAvailableSubjects(subjects.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code || "",
+        type: (s.type || "Core") as Subject["type"],
+        board: s.board || "",
+        description: s.description,
+      })));
+    } catch {
+      // Fallback: try raw apiClient
+      try {
+        const response = await apiClient.get('/academics/subjects', { params: { page: 1, pageSize: 500 } });
+        const list = response.data?.subjects || response.data || [];
+        setAvailableSubjects(list.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          code: s.code || "",
+          type: (s.type || "Core") as Subject["type"],
+          board: s.board || "",
+          description: s.description,
+        })));
+      } catch {
+        setAvailableSubjects([]);
+        toast.error("Failed to load school subjects. Please configure them in Academics → Subjects.");
+      }
     } finally {
       setLoading(false);
     }
@@ -135,6 +152,23 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
     s => !assignedSubjects.find(as => as.subjectId === s.id)
   );
 
+  // Teacher search filter
+  const filteredTeachers = teacherSearch.trim()
+    ? staffList.filter(s =>
+        `${s.firstName} ${s.lastName}`.toLowerCase().includes(teacherSearch.toLowerCase()) ||
+        (s.email || "").toLowerCase().includes(teacherSearch.toLowerCase())
+      )
+    : staffList;
+
+  const resetAssignForm = () => {
+    setSelectedSubjectId("");
+    setSelectedTeacherId("");
+    setTeacherSearch("");
+    setTeacherDropdownOpen(false);
+    setMaxMarks("100");
+    setCredits("4");
+  };
+
   const handleAssignSubject = async () => {
     if (!selectedSubjectId || !selectedTeacherId) {
       toast.error("Please select a subject and teacher");
@@ -177,10 +211,7 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
       toast.success(`${subject.name} assigned to ${teacherName} successfully`);
 
       // Reset form
-      setSelectedSubjectId("");
-      setSelectedTeacherId("");
-      setMaxMarks("100");
-      setCredits("4");
+      resetAssignForm();
       setIsAssignDialogOpen(false);
     } catch (error: any) {
       // Still update UI locally if API fails
@@ -200,10 +231,7 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
       toast.success(`${subject.name} assigned to ${teacherName} successfully`);
 
       // Reset form
-      setSelectedSubjectId("");
-      setSelectedTeacherId("");
-      setMaxMarks("100");
-      setCredits("4");
+      resetAssignForm();
       setIsAssignDialogOpen(false);
     }
   };
@@ -228,7 +256,10 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
           <h3 className="text-lg font-semibold">Assigned Subjects</h3>
           <p className="text-sm text-muted-foreground mt-1">Map subjects created at school level to this class</p>
         </div>
-        <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
+        <Dialog open={isAssignDialogOpen} onOpenChange={(open) => {
+            setIsAssignDialogOpen(open);
+            if (!open) resetAssignForm();
+          }}>
           <DialogTrigger asChild>
             <Button disabled={unassignedSubjects.length === 0}>
               <Plus className="h-4 w-4 mr-2" />
@@ -242,40 +273,87 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
             <div className="space-y-4">
               <div>
                 <Label>Select Subject</Label>
-                <Select value={selectedSubjectId} onValueChange={setSelectedSubjectId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unassignedSubjects.map(subject => (
-                      <SelectItem key={subject.id} value={subject.id}>
-                        {subject.name} ({subject.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <select
+                  className="w-full mt-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={selectedSubjectId}
+                  onChange={e => setSelectedSubjectId(e.target.value)}
+                >
+                  <option value="">Choose a subject</option>
+                  {unassignedSubjects.map(subject => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name} ({subject.code})
+                    </option>
+                  ))}
+                </select>
                 {selectedSubjectId && (
-                  <p className="text-xs text-muted-foreground mt-2">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Type: {availableSubjects.find(s => s.id === selectedSubjectId)?.type}
                   </p>
                 )}
               </div>
+
+              {/* Teacher search */}
               <div>
                 <Label>Select Teacher</Label>
-                <Select value={selectedTeacherId} onValueChange={setSelectedTeacherId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a teacher" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staffList.map(staff => (
-                      <SelectItem key={staff.id} value={staff.id}>
-                        {staff.firstName} {staff.lastName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative mt-1">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Search by name or email…"
+                      className="pl-8 pr-8"
+                      value={teacherSearch}
+                      onChange={e => {
+                        setTeacherSearch(e.target.value);
+                        setSelectedTeacherId("");
+                        setTeacherDropdownOpen(true);
+                      }}
+                      onFocus={() => setTeacherDropdownOpen(true)}
+                    />
+                    {teacherSearch && (
+                      <button
+                        type="button"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onClick={() => { setTeacherSearch(""); setSelectedTeacherId(""); setTeacherDropdownOpen(false); }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {teacherDropdownOpen && teacherSearch && (
+                    <div className="absolute z-50 w-full bg-popover border rounded-md shadow-md mt-1 max-h-48 overflow-y-auto">
+                      {filteredTeachers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-3 py-2">No teachers found</p>
+                      ) : (
+                        filteredTeachers.map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+                            onClick={() => {
+                              setSelectedTeacherId(s.id);
+                              setTeacherSearch(`${s.firstName} ${s.lastName}`);
+                              setTeacherDropdownOpen(false);
+                            }}
+                          >
+                            <span className="font-medium">{s.firstName} {s.lastName}</span>
+                            {s.email && <span className="text-xs text-muted-foreground ml-2">{s.email}</span>}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {selectedTeacherId && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    ✓ {staffList.find(s => s.id === selectedTeacherId)
+                        ? `${staffList.find(s => s.id === selectedTeacherId)!.firstName} ${staffList.find(s => s.id === selectedTeacherId)!.lastName}`
+                        : ""} selected
+                  </p>
+                )}
                 {staffList.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-2">No staff members available. Please add staff first.</p>
+                  <p className="text-xs text-amber-600 mt-1">No staff members available. Please add staff first.</p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -300,7 +378,7 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
               </div>
               <div className="flex gap-2">
                 <Button onClick={handleAssignSubject}>Assign Subject</Button>
-                <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setIsAssignDialogOpen(false); resetAssignForm(); }}>Cancel</Button>
               </div>
             </div>
           </DialogContent>

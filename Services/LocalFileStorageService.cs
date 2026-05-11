@@ -13,8 +13,9 @@ public class LocalFileStorageService : IFileStorageService
 
     public LocalFileStorageService(IConfiguration configuration, ILogger<LocalFileStorageService> logger)
     {
-        _basePath = configuration["FileStorage:BasePath"]
-            ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+        _basePath = Path.GetFullPath(
+            configuration["FileStorage:BasePath"]
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads"));
         _baseUrl = configuration["FileStorage:BaseUrl"] ?? "/files";
         _logger = logger;
 
@@ -22,11 +23,34 @@ public class LocalFileStorageService : IFileStorageService
             Directory.CreateDirectory(_basePath);
     }
 
+    /// <summary>
+    /// Guards against path traversal attacks by verifying the resolved absolute path
+    /// starts with the configured base path. Throws if the path escapes the root.
+    /// </summary>
+    private string ResolveAndGuard(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+            throw new ArgumentException("File path must not be empty.");
+
+        // Normalize separators and resolve to absolute
+        var fullPath = Path.GetFullPath(Path.Combine(_basePath, relativePath));
+
+        // Ensure the resolved path is inside _basePath (path traversal guard)
+        if (!fullPath.StartsWith(_basePath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            && !fullPath.Equals(_basePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Path traversal attempt blocked. Attempted path: {Attempted}", relativePath);
+            throw new UnauthorizedAccessException("Invalid file path.");
+        }
+
+        return fullPath;
+    }
+
     public async Task<bool> SaveFileAsync(string key, Stream content)
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, key);
+            var fullPath = ResolveAndGuard(key);
             var dir = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
@@ -34,6 +58,10 @@ public class LocalFileStorageService : IFileStorageService
             using var fs = new FileStream(fullPath, FileMode.Create);
             await content.CopyToAsync(fs);
             return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw; // Re-throw traversal attempts — callers should handle as 400/403
         }
         catch (Exception ex)
         {
@@ -46,9 +74,13 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, filePath);
+            var fullPath = ResolveAndGuard(filePath);
             if (!File.Exists(fullPath)) return null;
             return await File.ReadAllBytesAsync(fullPath);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -61,7 +93,7 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = Path.Combine(_basePath, filePath);
+            var fullPath = ResolveAndGuard(filePath);
             if (File.Exists(fullPath))
             {
                 File.Delete(fullPath);
@@ -69,6 +101,10 @@ public class LocalFileStorageService : IFileStorageService
                 return Task.FromResult(true);
             }
             return Task.FromResult(false);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -79,8 +115,15 @@ public class LocalFileStorageService : IFileStorageService
 
     public Task<bool> ExistsAsync(string filePath)
     {
-        var fullPath = Path.Combine(_basePath, filePath);
-        return Task.FromResult(File.Exists(fullPath));
+        try
+        {
+            var fullPath = ResolveAndGuard(filePath);
+            return Task.FromResult(File.Exists(fullPath));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Task.FromResult(false);
+        }
     }
 
     public string GetPublicUrl(string filePath)
@@ -96,8 +139,12 @@ public class LocalFileStorageService : IFileStorageService
     public (string uploadUrl, string key) GetPresignedUploadUrl(
         string fileName, string folder, Guid schoolId, TimeSpan expiration, string? contentType = null)
     {
-        var extension = Path.GetExtension(fileName);
-        var key = $"{schoolId}/{folder}/{Guid.NewGuid()}{extension}";
+        // Sanitize: take only the extension from the client-supplied filename, never the name itself
+        var rawExtension = Path.GetExtension(fileName ?? string.Empty);
+        var safeExtension = string.IsNullOrEmpty(rawExtension) ? string.Empty
+            : "." + rawExtension.TrimStart('.').ToLowerInvariant().Replace("/", "").Replace("\\", "");
+
+        var key = $"{schoolId}/{folder}/{Guid.NewGuid()}{safeExtension}";
         // For local storage, the "upload URL" is just the API upload endpoint
         return ($"/api/documents/upload?key={Uri.EscapeDataString(key)}", key);
     }

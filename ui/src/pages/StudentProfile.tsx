@@ -27,10 +27,12 @@ import {
 } from "lucide-react";
 import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
-import { Student, StudentBasic, StudentProfileSummary, studentApi } from "@/services/api/studentApi";
+import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto } from "@/services/api/studentApi";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
 import { StudentLeaveRequests } from "@/components/leave-management/StudentLeaveRequests";
+import { getIssues, type BookIssue } from "@/services/api/libraryApi";
+import { applyStaffDiscount } from "@/services/api/feeApi";
 
 import { Input } from "@/components/ui/input";
 import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
@@ -116,6 +118,14 @@ export default function StudentProfile() {
   const navigate = useNavigate();
   const [student, setStudent] = useState<Student | null>(null);
   const [siblings, setSiblings] = useState<StudentBasic[]>([]);
+  const [showSiblingsExpanded, setShowSiblingsExpanded] = useState(false);
+  const [guardianStaff, setGuardianStaff] = useState<GuardianStaffDto | null>(null);
+  const [libraryIssues, setLibraryIssues] = useState<BookIssue[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryStatusFilter, setLibraryStatusFilter] = useState('all');
+  const [staffDiscountType, setStaffDiscountType] = useState<'percentage' | 'flat'>('percentage');
+  const [staffDiscountValue, setStaffDiscountValue] = useState('');
+  const [staffDiscountLoading, setStaffDiscountLoading] = useState(false);
   const [allStudents, setAllStudents] = useState<StudentBasic[]>([]);
   const [profileSummary, setProfileSummary] = useState<StudentProfileSummary | null>(null);
   const [studentGrades, setStudentGrades] = useState<StudentGradeResponse[]>([]);
@@ -153,6 +163,13 @@ export default function StudentProfile() {
       } catch {
         // Siblings not available
         setSiblings([]);
+      }
+      // Load guardian staff link
+      try {
+        const gs = await studentApi.getGuardianStaff(id);
+        setGuardianStaff(gs);
+      } catch {
+        setGuardianStaff(null);
       }
       // Load cross-module summary in parallel
       try {
@@ -234,6 +251,53 @@ export default function StudentProfile() {
       });
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const fetchLibraryIssues = async (studentId: string) => {
+    setLibraryLoading(true);
+    try {
+      const res = await getIssues({ studentId, pageSize: 50 });
+      setLibraryIssues(res.issues ?? []);
+    } catch {
+      setLibraryIssues([]);
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const handleApplyStaffDiscount = async () => {
+    if (!student || !staffDiscountValue) return;
+    const val = parseFloat(staffDiscountValue);
+    if (isNaN(val) || val <= 0) {
+      toast({ title: 'Invalid value', description: 'Enter a valid positive discount amount.', variant: 'destructive' });
+      return;
+    }
+    setStaffDiscountLoading(true);
+    try {
+      const res = await applyStaffDiscount({
+        studentId: student.id,
+        discountType: staffDiscountType,
+        discountValue: val,
+        reason: 'Staff child discount applied from student profile',
+      });
+      toast({
+        title: 'Discount applied',
+        description: `${res.message} — ₹${res.totalSaved.toLocaleString()} saved across ${res.applied} record(s).`,
+      });
+      setStaffDiscountValue('');
+      // Refresh fee summary
+      if (id) {
+        try {
+          const summary = await studentApi.profileSummary(id);
+          setProfileSummary(summary);
+        } catch { /* ignore */ }
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Failed to apply staff discount.';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setStaffDiscountLoading(false);
     }
   };
 
@@ -613,19 +677,90 @@ export default function StudentProfile() {
         )}
       </Card>
 
+      {/* Siblings in School — dropdown, only shown when siblings exist */}
+      {siblings.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader
+            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => setShowSiblingsExpanded(!showSiblingsExpanded)}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 flex-shrink-0 text-pink-600" />
+                <span className="truncate">Siblings in School</span>
+                <Badge variant="secondary" className="ml-1">{siblings.length}</Badge>
+              </CardTitle>
+              <Badge variant="outline" className="flex-shrink-0 text-xs">
+                {showSiblingsExpanded ? 'Hide' : 'Show'}
+              </Badge>
+            </div>
+          </CardHeader>
+          {showSiblingsExpanded && (
+            <CardContent className="border-t pt-4">
+              <div className="flex items-center gap-2 p-3 mb-3 rounded-lg bg-pink-50 border border-pink-200">
+                <Users className="h-4 w-4 text-pink-600 shrink-0" />
+                <p className="text-sm text-pink-800">
+                  <span className="font-semibold">{siblings.length} sibling{siblings.length > 1 ? 's' : ''}</span> studying in this school. Same parent/guardian is responsible for fees.
+                </p>
+              </div>
+              <div className="grid gap-3">
+                {siblings.map(sib => (
+                  <div key={sib.id} className="flex items-center justify-between p-3 border rounded-lg hover:shadow-sm transition-shadow">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-pink-100 flex items-center justify-center text-pink-700 font-bold text-sm flex-shrink-0">
+                        {sib.name?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm">{sib.name}</p>
+                        <p className="text-xs text-muted-foreground">{sib.admissionNumber} • Class {sib.class}-{sib.section} • Roll: {sib.rollNumber || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={sib.status === 'active' ? 'default' : 'secondary'} className="text-xs">{sib.status}</Badge>
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/students/${sib.id}`)}>View →</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {/* Guardian Staff Link — shown only when linked */}
+      {guardianStaff && (
+        <Card className="mb-6">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold flex-shrink-0">
+              {guardianStaff.name?.charAt(0) || 'S'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">Parent / Guardian — Staff Member</span>
+              </div>
+              <p className="font-semibold truncate">{guardianStaff.name}</p>
+              <p className="text-sm text-muted-foreground truncate">
+                {guardianStaff.designation}{guardianStaff.department ? ` · ${guardianStaff.department}` : ''}
+                {guardianStaff.phone ? ` · ${guardianStaff.phone}` : ''}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigate(`/staff/${guardianStaff.id}`)}>
+              Staff Profile →
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs for detailed information */}
       <Tabs defaultValue="attendance" className="space-y-4">
         <div className="overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-muted-foreground/20">
           <TabsList className="inline-flex h-10 items-center gap-1 rounded-md bg-muted p-1 text-muted-foreground w-max">
             <TabsTrigger value="attendance" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.attendance')}</TabsTrigger>
             <TabsTrigger value="academic" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Academic</TabsTrigger>
-            <TabsTrigger value="siblings" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium flex items-center gap-1">
-              <Users className="h-3.5 w-3.5" />
-              Siblings {siblings.length > 0 && <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{siblings.length}</Badge>}
-            </TabsTrigger>
+            <TabsTrigger value="library" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium" onClick={() => { if (id && libraryIssues.length === 0) fetchLibraryIssues(id); }}>Library</TabsTrigger>
             <TabsTrigger value="fee" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.fee')}</TabsTrigger>
-            <TabsTrigger value="transport" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Transport</TabsTrigger>
-            <TabsTrigger value="hostel" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Hostel</TabsTrigger>
+            <TabsTrigger value="transport" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium" onClick={() => { if (id) studentApi.profileSummary(id).then(setProfileSummary).catch(() => {}); }}>Transport</TabsTrigger>
+            <TabsTrigger value="hostel" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium" onClick={() => { if (id) studentApi.profileSummary(id).then(setProfileSummary).catch(() => {}); }}>Hostel</TabsTrigger>
             <TabsTrigger value="health" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Health</TabsTrigger>
             <TabsTrigger value="visitors" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Visitors</TabsTrigger>
             <TabsTrigger value="communication" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.communication')}</TabsTrigger>
@@ -666,6 +801,53 @@ export default function StudentProfile() {
                 </div>
               )}
               <ParentFeePayment studentId={student?.id || ""} />
+
+              {/* Staff Child Discount Panel — only for Admin/Principal when guardian is a staff member */}
+              {guardianStaff && isAdmin && (
+                <div className="mt-6 p-4 border border-blue-200 rounded-lg bg-blue-50">
+                  <h3 className="font-semibold text-blue-800 mb-1 flex items-center gap-2">
+                    <CreditCard className="h-4 w-4" />
+                    Staff Child Discount
+                  </h3>
+                  <p className="text-xs text-blue-700 mb-3">
+                    Parent <strong>{guardianStaff.name}</strong> is a staff member. Apply a staff-child concession to all pending fee records (max 75% total stacking).
+                  </p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Type</label>
+                      <select
+                        className="border rounded px-2 py-1.5 text-sm"
+                        value={staffDiscountType}
+                        onChange={e => setStaffDiscountType(e.target.value as 'percentage' | 'flat')}
+                      >
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="flat">Flat Amount (₹)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">
+                        Value {staffDiscountType === 'percentage' ? '(%)' : '(₹)'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={staffDiscountType === 'percentage' ? 100 : undefined}
+                        className="border rounded px-2 py-1.5 text-sm w-32"
+                        placeholder={staffDiscountType === 'percentage' ? 'e.g. 10' : 'e.g. 500'}
+                        value={staffDiscountValue}
+                        onChange={e => setStaffDiscountValue(e.target.value)}
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleApplyStaffDiscount}
+                      disabled={staffDiscountLoading || !staffDiscountValue}
+                    >
+                      {staffDiscountLoading ? 'Applying…' : 'Apply Discount'}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -861,62 +1043,116 @@ export default function StudentProfile() {
           </div>
         </TabsContent>
 
-        <TabsContent value="siblings">
+        <TabsContent value="library">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Siblings in School
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                  Library Books
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="border rounded px-2 py-1 text-sm"
+                    value={libraryStatusFilter}
+                    onChange={e => setLibraryStatusFilter(e.target.value)}
+                  >
+                    <option value="all">All</option>
+                    <option value="issued">Issued</option>
+                    <option value="overdue">Overdue</option>
+                    <option value="returned">Returned</option>
+                  </select>
+                  <Button variant="outline" size="sm" onClick={() => id && fetchLibraryIssues(id)} disabled={libraryLoading}>
+                    {libraryLoading ? 'Loading…' : 'Refresh'}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              {siblings.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                  <p className="font-medium">No siblings found</p>
-                  <p className="text-sm mt-1">This student does not have any linked siblings currently studying in the school.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-pink-50 border border-pink-200">
-                    <Users className="h-5 w-5 text-pink-600 shrink-0" />
-                    <div className="text-sm text-pink-800">
-                      <span className="font-semibold">{siblings.length} sibling{siblings.length > 1 ? "s" : ""}</span> studying in this school.
-                      Same parent/guardian is responsible for their fees.
+              {libraryLoading ? (
+                <div className="text-center py-12 text-muted-foreground">Loading library records…</div>
+              ) : (() => {
+                const filtered = libraryIssues.filter(i => libraryStatusFilter === 'all' || i.status === libraryStatusFilter);
+                const totalFine = libraryIssues.reduce((s, i) => s + (i.fine ?? 0), 0);
+                const unpaidFine = libraryIssues.filter(i => !i.finePaid).reduce((s, i) => s + (i.fine ?? 0), 0);
+                const currentIssued = libraryIssues.filter(i => i.status === 'issued' || i.status === 'overdue').length;
+                return (
+                  <>
+                    {/* Summary bar */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-muted rounded-lg">
+                      <div className="text-center">
+                        <div className="text-lg font-bold">{libraryIssues.length}</div>
+                        <div className="text-xs text-muted-foreground">Total Issued</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-amber-600">{currentIssued}</div>
+                        <div className="text-xs text-muted-foreground">Currently with Student</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-red-600">₹{totalFine.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">Total Fine</div>
+                      </div>
+                      <div className="text-center">
+                        <div className={`text-lg font-bold ${unpaidFine > 0 ? 'text-red-600' : 'text-green-600'}`}>₹{unpaidFine.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">Unpaid Fine</div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="grid gap-3">
-                    {siblings.map(sib => (
-                      <Card key={sib.id} className="overflow-hidden hover:shadow-md transition-shadow">
-                        <CardContent className="p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="h-10 w-10 rounded-full bg-pink-100 flex items-center justify-center text-pink-700 font-bold text-sm">
-                              {sib.name?.charAt(0) || "?"}
-                            </div>
-                            <div>
-                              <p className="font-semibold">{sib.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {sib.admissionNumber} • {sib.class}-{sib.section} • Roll: {sib.rollNumber || "—"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={sib.status === 'active' ? 'default' : 'secondary'}>{sib.status}</Badge>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => navigate(`/students/${sib.id}`)}
-                              className="gap-1"
-                            >
-                              View Profile →
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
+
+                    {filtered.length === 0 ? (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <svg className="h-12 w-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                        <p>No library records found</p>
+                        <p className="text-sm mt-1">Books issued to this student will appear here</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Book</TableHead>
+                              <TableHead>ISBN</TableHead>
+                              <TableHead>Issue Date</TableHead>
+                              <TableHead>Due Date</TableHead>
+                              <TableHead>Return Date</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="text-right">Fine</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filtered.map(issue => (
+                              <TableRow key={issue.id}>
+                                <TableCell className="font-medium">{issue.bookTitle}</TableCell>
+                                <TableCell className="text-muted-foreground text-sm">{issue.bookIsbn ?? '—'}</TableCell>
+                                <TableCell className="text-sm">{issue.issueDate.split('T')[0]}</TableCell>
+                                <TableCell className="text-sm">{issue.dueDate.split('T')[0]}</TableCell>
+                                <TableCell className="text-sm">{issue.returnDate ? issue.returnDate.split('T')[0] : '—'}</TableCell>
+                                <TableCell>
+                                  <Badge variant={
+                                    issue.status === 'returned' ? 'default' :
+                                    issue.status === 'overdue' ? 'destructive' : 'secondary'
+                                  }>
+                                    {issue.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {issue.fine > 0 ? (
+                                    <div className="flex flex-col items-end">
+                                      <span className="font-semibold text-red-600">₹{issue.fine}</span>
+                                      <span className={`text-xs ${issue.finePaid ? 'text-green-600' : 'text-red-500'}`}>
+                                        {issue.finePaid ? 'Paid' : 'Unpaid'}
+                                      </span>
+                                    </div>
+                                  ) : '—'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1525,7 +1761,11 @@ export default function StudentProfile() {
 
         {isAdmin && student?.id && (
           <TabsContent value="portal">
-            <ParentPortalAccountSection studentId={student.id} />
+            <ParentPortalAccountSection
+              studentId={student.id}
+              guardianName={student.guardianName}
+              guardianPhone={student.guardianPhone}
+            />
           </TabsContent>
         )}
 

@@ -228,6 +228,7 @@ export interface StudentFilters {
   pageSize?: number;
   search?: string;
   classFilter?: string;
+  sectionFilter?: string;
   status?: string;
 }
 
@@ -255,6 +256,8 @@ export interface CreateStudentRequest {
   email?: string;
   guardianName: string;
   guardianPhone: string;
+  /** Guardian email — used as the parent portal login username. Required for parent portal access. */
+  guardianEmail?: string;
   previousSchool?: string;
   previousClass?: string;
   transferReason?: string;
@@ -295,6 +298,27 @@ export interface BulkOperationResult {
   errors?: string[];
 }
 
+export interface GuardianStaffDto {
+  id: string;
+  name: string;
+  designation?: string;
+  department?: string;
+  phone?: string;
+  email?: string;
+  profilePhoto?: string;
+}
+
+export interface StaffChildDto {
+  id: string;
+  name: string;
+  admissionNumber: string;
+  class: string;
+  section: string;
+  rollNumber?: string;
+  status: string;
+  photoUrl?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Service functions
 // ---------------------------------------------------------------------------
@@ -323,6 +347,12 @@ export const studentApi = {
 
   getSiblings: (studentId: string) =>
     apiGet<StudentBasic[]>(`/students/${studentId}/siblings`),
+
+  addSibling: (studentId: string, siblingStudentId: string) =>
+    apiPost<{ message: string }>(`/students/${studentId}/siblings`, { siblingStudentId }),
+
+  removeSibling: (studentId: string, siblingId: string) =>
+    apiDelete<void>(`/students/${studentId}/siblings/${siblingId}`),
 
   /** Parent endpoint — returns students linked to the logged-in parent via guardian email */
   getMyChildren: () =>
@@ -361,4 +391,10 @@ export const studentApi = {
 
   profileSummary: (studentId: string) =>
     apiGet<StudentProfileSummary>(`/students/${studentId}/profile-summary`),
+
+  getGuardianStaff: (studentId: string) =>
+    apiGet<GuardianStaffDto | null>(`/students/${studentId}/guardian-staff`),
+
+  setGuardianStaff: (studentId: string, staffId: string | null) =>
+    apiPost<{ message: string }>(`/students/${studentId}/guardian-staff`, { staffId }),
 };

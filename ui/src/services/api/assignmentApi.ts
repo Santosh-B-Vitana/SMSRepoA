@@ -56,6 +56,8 @@ export interface UpdateAssignmentPayload {
 export interface SubmissionResponse {
   id: string;
   assignmentId: string;
+  assignmentTitle?: string;
+  assignmentMaxMarks?: number;
   studentId: string;
   submissionDate: string;
   content: string;
@@ -206,6 +208,9 @@ export const assignmentApi = {
 
   gradeSubmission: (submissionId: string, data: GradeSubmissionPayload) =>
     apiPut<SubmissionResponse>(`/assignments/submissions/${submissionId}/grade`, data),
+
+  getStudentSubmissions: (studentId: string, page = 1, pageSize = 50) =>
+    apiGet<{ data: SubmissionResponse[]; total: number }>('/assignments/student-submissions', { studentId, page, pageSize }),
 
   // --- Grade Categories ---
   getGradeCategories: (page = 1, pageSize = 50) =>
