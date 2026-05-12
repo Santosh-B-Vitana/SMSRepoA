@@ -14,8 +14,8 @@ namespace SmsApi.Services
         Task<AssignmentListResponse> GetAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, Guid? subjectId = null, Guid? assignedById = null, int page = 1, int pageSize = 10);
         Task<AssignmentResponse?> GetAssignmentByIdAsync(Guid id, Guid schoolId);
         Task<AssignmentResponse> CreateAssignmentAsync(CreateAssignmentRequest request);
-        Task<AssignmentResponse?> UpdateAssignmentAsync(Guid id, Guid schoolId, UpdateAssignmentRequest request);
-        Task<bool> DeleteAssignmentAsync(Guid id, Guid schoolId);
+        Task<AssignmentResponse?> UpdateAssignmentAsync(Guid id, Guid schoolId, UpdateAssignmentRequest request, string userRole = "admin", Guid? staffMemberId = null);
+        Task<bool> DeleteAssignmentAsync(Guid id, Guid schoolId, string userRole = "admin", Guid? staffMemberId = null);
         
         Task<SubmissionListResponse> GetSubmissionsAsync(Guid assignmentId, int page = 1, int pageSize = 10);
         Task<SubmissionResponse?> GetSubmissionByIdAsync(Guid id);
@@ -198,12 +198,21 @@ namespace SmsApi.Services
             return MapToResponse(assignment);
         }
 
-        public async Task<AssignmentResponse?> UpdateAssignmentAsync(Guid id, Guid schoolId, UpdateAssignmentRequest request)
+        public async Task<AssignmentResponse?> UpdateAssignmentAsync(Guid id, Guid schoolId, UpdateAssignmentRequest request, string userRole = "admin", Guid? staffMemberId = null)
         {
             var assignment = await _context.Assignments
                 .FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId);
 
             if (assignment == null) return null;
+
+            // AUTHORIZATION CHECK: Only admin/principal or the staff member who created the assignment can edit it
+            if (userRole != "admin" && userRole != "principal")
+            {
+                if (!staffMemberId.HasValue || assignment.AssignedById != staffMemberId.Value)
+                {
+                    throw new UnauthorizedAccessException("You don't have permission to edit this assignment. Only the creator can modify it.");
+                }
+            }
 
             // VALIDATION 1: Title validation if provided
             if (!string.IsNullOrWhiteSpace(request.Title))
@@ -261,12 +270,21 @@ namespace SmsApi.Services
             return MapToResponse(assignment);
         }
 
-        public async Task<bool> DeleteAssignmentAsync(Guid id, Guid schoolId)
+        public async Task<bool> DeleteAssignmentAsync(Guid id, Guid schoolId, string userRole = "admin", Guid? staffMemberId = null)
         {
             var assignment = await _context.Assignments
                 .FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId);
 
             if (assignment == null) return false;
+
+            // AUTHORIZATION CHECK: Only admin/principal or the staff member who created the assignment can delete it
+            if (userRole != "admin" && userRole != "principal")
+            {
+                if (!staffMemberId.HasValue || assignment.AssignedById != staffMemberId.Value)
+                {
+                    throw new UnauthorizedAccessException("You don't have permission to delete this assignment. Only the creator can remove it.");
+                }
+            }
 
             _context.Assignments.Remove(assignment);
             await _context.SaveChangesAsync();

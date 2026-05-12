@@ -748,6 +748,172 @@ export const applyStaffDiscount = async (data: StaffDiscountRequest): Promise<St
   return response.data;
 };
 
+// ========== FEE HEADS ==========
+
+export interface FeeHead {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  isVisibleOnReceipt: boolean;
+  isMandatory: boolean;
+  displayOrder: number;
+  isActive: boolean;
+}
+
+export interface CreateFeeHeadDto {
+  name: string;
+  code: string;
+  description?: string;
+  isVisibleOnReceipt?: boolean;
+  isMandatory?: boolean;
+  displayOrder?: number;
+}
+
+export const getFeeHeads = async (): Promise<FeeHead[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/heads`);
+  return response.data;
+};
+
+export const createFeeHead = async (data: CreateFeeHeadDto): Promise<FeeHead> => {
+  const response = await apiClient.post(`${BASE_PATH}/heads`, data);
+  return response.data;
+};
+
+export const updateFeeHead = async (id: string, data: Partial<CreateFeeHeadDto> & { isActive?: boolean }): Promise<FeeHead> => {
+  const response = await apiClient.put(`${BASE_PATH}/heads/${id}`, data);
+  return response.data;
+};
+
+export const deleteFeeHead = async (id: string): Promise<void> => {
+  await apiClient.delete(`${BASE_PATH}/heads/${id}`);
+};
+
+// ========== FEE TERMS ==========
+
+export interface FeeTerm {
+  id: string;
+  feeStructureId: string;
+  name: string;
+  termNumber: number;
+  amount: number;
+  dueDate: string;
+  status: string;
+  remarks?: string;
+}
+
+export interface CreateFeeTermDto {
+  name: string;
+  termNumber: number;
+  amount: number;
+  dueDate: string;
+  remarks?: string;
+}
+
+export const getFeeTerms = async (feeStructureId: string): Promise<FeeTerm[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/structures/${feeStructureId}/terms`);
+  return response.data;
+};
+
+export const createFeeTerm = async (feeStructureId: string, data: CreateFeeTermDto): Promise<FeeTerm> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${feeStructureId}/terms`, data);
+  return response.data;
+};
+
+// ========== RECEIPT TEMPLATES ==========
+
+export interface ReceiptTemplate {
+  id: string;
+  name: string;
+  headerText?: string;
+  footerText?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  columnConfigJson?: string;
+  isDefault: boolean;
+  isActive: boolean;
+}
+
+export interface CreateReceiptTemplateDto {
+  name: string;
+  headerText?: string;
+  footerText?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  columnConfigJson?: string;
+  isDefault?: boolean;
+}
+
+export const getReceiptTemplates = async (): Promise<ReceiptTemplate[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/receipt-templates`);
+  return response.data;
+};
+
+export const createReceiptTemplate = async (data: CreateReceiptTemplateDto): Promise<ReceiptTemplate> => {
+  const response = await apiClient.post(`${BASE_PATH}/receipt-templates`, data);
+  return response.data;
+};
+
+export const updateReceiptTemplate = async (id: string, data: Partial<CreateReceiptTemplateDto> & { isActive?: boolean }): Promise<ReceiptTemplate> => {
+  const response = await apiClient.put(`${BASE_PATH}/receipt-templates/${id}`, data);
+  return response.data;
+};
+
+// ========== PROMOTE FEES ==========
+
+export interface PromoteFeesDto {
+  sourceFeeStructureId: string;
+  targetAcademicYear: string;
+  incrementPercent?: number;
+}
+
+export const promoteFeeStructure = async (feeStructureId: string, data: { targetAcademicYear: string; incrementPercent?: number }): Promise<FeeStructure> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${feeStructureId}/promote`, data);
+  return response.data;
+};
+
+// ========== BULK PAYMENT UPLOAD ==========
+
+export interface BulkFeePaymentRow {
+  admissionNumber: string;
+  amount: number;
+  paymentDate: string;
+  paymentMode: string;
+  transactionRef?: string;
+  remarks?: string;
+}
+
+export interface BulkPaymentResult {
+  totalRows: number;
+  successCount: number;
+  failureCount: number;
+  failures: { admissionNumber: string; reason: string }[];
+}
+
+export const bulkUploadPayments = async (rows: BulkFeePaymentRow[]): Promise<BulkPaymentResult> => {
+  const response = await apiClient.post(`${BASE_PATH}/payments/bulk-upload`, { rows });
+  return response.data;
+};
+
+// ========== DELETED TRANSACTIONS AUDIT ==========
+
+export interface DeletedTransaction {
+  id: string;
+  studentName: string;
+  amount: number;
+  paymentDate: string;
+  deletedAt?: string;
+  deletedBy?: string;
+}
+
+export const getDeletedTransactions = async (from?: string, to?: string): Promise<DeletedTransaction[]> => {
+  const params = new URLSearchParams();
+  if (from) params.append('from', from);
+  if (to) params.append('to', to);
+  const response = await apiClient.get(`${BASE_PATH}/deleted-transactions?${params.toString()}`);
+  return response.data;
+};
+
 // Export all functions as a single object for convenience
 export const feeApi = {
   getFeeStructures,
@@ -783,6 +949,19 @@ export const feeApi = {
   linkStructure,
   applySiblingDiscount,
   applyStaffDiscount,
+  // New
+  getFeeHeads,
+  createFeeHead,
+  updateFeeHead,
+  deleteFeeHead,
+  getFeeTerms,
+  createFeeTerm,
+  getReceiptTemplates,
+  createReceiptTemplate,
+  updateReceiptTemplate,
+  promoteFeeStructure,
+  bulkUploadPayments,
+  getDeletedTransactions,
 };
 
 export default feeApi;

@@ -81,6 +81,9 @@ const OfflineAttendance    = lazy(() => import("./pages/OfflineAttendance"));
 const ChildProfile         = lazy(() => import("./pages/ChildProfile"));
 const VisitorManagement    = lazy(() => import("./pages/VisitorManagement"));
 const StaffParentCommunication = lazy(() => import("./pages/StaffParentCommunication"));
+const StaffDiary           = lazy(() => import("./pages/StaffDiary"));
+const StaffMyAttendance    = lazy(() => import("./pages/StaffMyAttendance"));
+const ParentDiaryView      = lazy(() => import("./pages/ParentDiaryView"));
 const SchoolManagement     = lazy(() => import("@/pages/superadmin/SchoolManagement"));
 const UserManagement       = lazy(() => import("@/pages/superadmin/UserManagement"));
 const ExamSummary          = lazy(() => import("@/pages/reports/ExamSummary"));
@@ -155,6 +158,8 @@ function App() {
                   <Route path="/my-class-detail/:classId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClassDetail /></Layout></ProtectedRoute>} />
                   <Route path="/staff-class/:assignmentId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffMyClassDetail /></Layout></ProtectedRoute>} />
                   <Route path="/staff-parent-communication" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffParentCommunication /></Layout></ProtectedRoute>} />
+                  <Route path="/staff-diary" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDiary /></Layout></ProtectedRoute>} />
+                  <Route path="/my-attendance" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffMyAttendance /></Layout></ProtectedRoute>} />
                   <Route path="/attendance" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffAttendanceTeacher /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: parent-facing ──────────────────────────── */}
@@ -164,6 +169,7 @@ function App() {
                   <Route path="/parent-fees/:childId" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeeDetails /></Layout></ProtectedRoute>} />
                   <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeePayment /></Layout></ProtectedRoute>} />
                   <Route path="/parent-notifications" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentNotifications /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-diary" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDiaryView /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: admin + staff shared ──────────────────── */}
                   <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Admissions /></Layout></ProtectedRoute>} />

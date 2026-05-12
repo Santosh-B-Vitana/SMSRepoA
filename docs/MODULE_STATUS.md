@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 11, 2026 (Session 2) | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 13, 2026 (Session 4) | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -24,7 +24,7 @@
 | **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export; Staff Parent tab (GuardianStaffId) added May 2026 |
 | **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix |
 | **Admissions** | ✅ Production Ready | ✅ | 5-step wizard, RTE support, CSV export |
-| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId; Parent portal fee breakdown shows itemised components + non-itemised gap + module fees (transport/hostel pro-rata) with correct Grand Total |
+| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId; Parent portal fee breakdown shows itemised components + non-itemised gap + module fees (transport/hostel pro-rata) with correct Grand Total; **Fee Heads** (normalised label catalogue); **Fee Terms** (installment schedule per structure); **Receipt Templates** (school branding); **Bulk Payment Upload** (CSV, 500 rows); **Promote Fee Structure** (clone to new year with % increment); **Deleted Transactions audit** — all added May 2026 |
 | **Attendance** | ✅ Production Ready | 16/16 | Staff + student tracking |
 | **Academics** | ✅ Production Ready | 70/70 | Classes (school-wide, no year filter), subjects from live API, teacher search bar in assign dialog |
 | **Academic Year Management** | ✅ Production Ready | ✅ | Single active year enforced; status driven by IsCurrent flag; admin + principal header selector with historical indicator |
@@ -32,7 +32,7 @@
 | **Communication** | ✅ Production Ready | 89/89 | Messages, announcements, templates |
 | **Payroll** | ✅ Production Ready | 30/30 | Salary slips, allowances, deductions |
 | **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading; Staff assignments page fully rewritten — class-grouped with per-class colour coding, section sub-tabs, clickable cards with submission/grading detail sheet |
-| **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation |
+| **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation; **Hall Tickets** (bulk-generate with prefix, per-class filter, CSV export, print); **Co-Scholastic Grading** (A+→E grade per area per term, area CRUD); **Promote Exam Structure** — added May 2026; **Exam Marks Entry (admin + staff)** — end-to-end fixed May 13, 2026 |
 | **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash |
 | **Reports** | ✅ Production Ready | ✅ | PDF/CSV export for all modules |
 | **Staff-Student Guardian Relationship** | ✅ Production Ready | ✅ | GuardianStaffId on Student entity; bidirectional link/unlink UI; fee concession eligible |
@@ -51,6 +51,7 @@ All staff-facing modules are production-ready and fully hardened.
 | Communication | 89/89 | Length validation, recipient type, multi-channel |
 | Payroll | 30/30 | Year/month validation, pagination, audit trail |
 | Assignments | 40/40 | Due date, max marks bounds, duplicate prevention; UI: class-grouped sections, clickable cards → detail sheet (submission stats, grading progress, description) |
+| Exam Marks Entry | ✅ | Admin (Examinations → Results tab) and Staff (Grades → Exam Marks tab); email-based staff ID resolution; class-level access; FK-safe audit trail |
 | My Classes | ✅ | Staff class assignment, student lists |
 
 ---

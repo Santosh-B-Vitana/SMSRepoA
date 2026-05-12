@@ -48,7 +48,7 @@ namespace SmsApi.Services
         {
             "Fee", "Attendance", "Exam", "Assignment", "Announcement",
             "Message", "General", "Payment", "Transport", "Library",
-            "Leave", "Hostel", "Certificate", "System"
+            "Leave", "Hostel", "Certificate", "System", "Diary"
         };
 
         public static readonly HashSet<string> ValidPriorities = new(StringComparer.OrdinalIgnoreCase)

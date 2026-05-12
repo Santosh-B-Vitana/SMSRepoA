@@ -2,7 +2,7 @@
 import {
   Bell, Loader2, AlertCircle, CheckCircle, Calendar, Award,
   BadgeIndianRupee, MessageSquare, Check, CheckCheck, Filter,
-  ChevronDown
+  ChevronDown, BookOpen
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notificationApi, type NotificationItem } from "@/services/api/notificationApi";
 import { toast } from "sonner";
 
-const TYPES = ["All", "Fee", "Exam", "Attendance", "Announcement", "Message", "Payment"];
+const TYPES = ["All", "Diary", "Fee", "Exam", "Attendance", "Announcement", "Message", "Payment"];
 
 export default function ParentNotifications() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -201,6 +201,7 @@ export default function ParentNotifications() {
 
 function TypeIcon({ type }: { type: string }) {
   const t = type.toLowerCase();
+  if (t === "diary") return <BookOpen className="h-4 w-4" />;
   if (t.includes("fee") || t.includes("payment")) return <BadgeIndianRupee className="h-4 w-4" />;
   if (t.includes("exam") || t.includes("result")) return <Award className="h-4 w-4" />;
   if (t.includes("attendance")) return <Calendar className="h-4 w-4" />;
@@ -212,6 +213,7 @@ function TypeIcon({ type }: { type: string }) {
 
 function getTypeColor(type: string): string {
   const t = type.toLowerCase();
+  if (t === "diary") return "bg-violet-100 text-violet-600";
   if (t.includes("fee") || t.includes("payment")) return "bg-amber-100 text-amber-600";
   if (t.includes("exam") || t.includes("result")) return "bg-blue-100 text-blue-600";
   if (t.includes("attendance")) return "bg-green-100 text-green-600";

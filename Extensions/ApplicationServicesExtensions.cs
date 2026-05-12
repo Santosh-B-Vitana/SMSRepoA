@@ -41,6 +41,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<IExaminationService, ExaminationService>();
         services.AddScoped<IExaminationReportService, ExaminationReportService>();
+        services.AddScoped<IExamSetupService, ExamSetupService>();
         services.AddScoped<IAcademicsService, AcademicsService>();
         services.AddScoped<IAcademicYearContextService, AcademicYearContextService>();
         services.AddScoped<IBoardConfigurationService, BoardConfigurationService>();

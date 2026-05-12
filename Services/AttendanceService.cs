@@ -44,8 +44,9 @@ namespace SmsApi.Services
         Task<List<StudentAttendanceResponse>> GetStudentAttendancesAsync(Guid schoolId, DateTime? date, Guid? studentId, string? classFilter);
         Task<StudentAttendanceResponse> CreateStudentAttendanceAsync(CreateStudentAttendanceRequest request);
         Task<bool> CreateBulkStudentAttendanceAsync(BulkStudentAttendanceRequest request);
-        Task<List<StaffAttendanceResponse>> GetStaffAttendancesAsync(Guid schoolId, DateTime? date, Guid? staffId);
+        Task<List<StaffAttendanceResponse>> GetStaffAttendancesAsync(Guid schoolId, DateTime? date, Guid? staffId, DateTime? fromDate = null, DateTime? toDate = null);
         Task<StaffAttendanceResponse> CreateStaffAttendanceAsync(CreateStaffAttendanceRequest request);
+        Task<StaffAttendanceResponse> UpdateStaffAttendanceAsync(Guid id, Guid schoolId, UpdateStaffAttendanceRequest request);
     }
 
     public class AttendanceService : IAttendanceService
@@ -120,10 +121,20 @@ namespace SmsApi.Services
             if (filters.DateFrom.HasValue && filters.DateTo.HasValue && filters.DateFrom > filters.DateTo)
                 throw new ArgumentException("DateFrom cannot be after DateTo");
 
-            var totalCount = await query.CountAsync();
-            var items = await query
+            // Deduplicate by (StudentId, Date) to get only the latest record for each student-date combo
+            // Materialize first, then group to avoid EF Core GroupBy with Include issues
+            var allRecords = await query
                 .Include(a => a.Student)
+                .ToListAsync();
+
+            var deduplicatedRecords = allRecords
+                .GroupBy(a => new { a.StudentId, Date = a.Date.Date })
+                .Select(g => g.OrderByDescending(a => a.UpdatedAt).First())
                 .OrderByDescending(a => a.Date)
+                .ToList();
+
+            var totalCount = deduplicatedRecords.Count;
+            var items = deduplicatedRecords
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .Select(a => new AttendanceRecordBasicDto
@@ -135,7 +146,7 @@ namespace SmsApi.Services
                     Date = a.Date,
                     Status = a.Status
                 })
-                .ToListAsync();
+                .ToList();
 
             return new PaginatedResponse<AttendanceRecordBasicDto>
             {
@@ -669,7 +680,12 @@ namespace SmsApi.Services
             if (endDate.HasValue)
                 query = query.Where(a => a.Date <= endDate.Value);
 
-            var records = await query.ToListAsync();
+            // Get records and group by (StudentId, Date) to count unique attendance entries
+            // This prevents counting multiple edits of the same student's attendance on the same date
+            var records = await query
+                .GroupBy(a => new { a.StudentId, a.Date })
+                .Select(g => g.OrderByDescending(a => a.UpdatedAt).First()) // Take the LATEST edit for each student-date combination
+                .ToListAsync();
 
             var totalPresent = records.Count(a => a.Status == "present");
             var totalAbsent = records.Count(a => a.Status == "absent");
@@ -733,7 +749,10 @@ namespace SmsApi.Services
             if (studentId.HasValue)
                 query = query.Where(a => a.StudentId == studentId.Value);
 
+            // Deduplicate by (StudentId, Date) to get only the latest record for each student-date combo
             var attendances = await query
+                .GroupBy(a => new { a.StudentId, Date = a.Date.Date })
+                .Select(g => g.OrderByDescending(a => a.UpdatedAt).First())
                 .OrderByDescending(a => a.Date)
                 .Select(a => new StudentAttendanceResponse
                 {
@@ -810,7 +829,7 @@ namespace SmsApi.Services
         }
 
         public async Task<List<StaffAttendanceResponse>> GetStaffAttendancesAsync(
-            Guid schoolId, DateTime? date, Guid? staffId)
+            Guid schoolId, DateTime? date, Guid? staffId, DateTime? fromDate = null, DateTime? toDate = null)
         {
             var query = _context.StaffAttendances.Where(a => a.SchoolId == schoolId);
 
@@ -818,8 +837,15 @@ namespace SmsApi.Services
                 query = query.Where(a => a.Date.Date == date.Value.Date);
             if (staffId.HasValue)
                 query = query.Where(a => a.StaffId == staffId.Value);
+            if (fromDate.HasValue)
+                query = query.Where(a => a.Date.Date >= fromDate.Value.Date);
+            if (toDate.HasValue)
+                query = query.Where(a => a.Date.Date <= toDate.Value.Date);
 
+            // Deduplicate by (StaffId, Date) to get only the latest record for each staff-date combo
             var attendances = await query
+                .GroupBy(a => new { a.StaffId, Date = a.Date.Date })
+                .Select(g => g.OrderByDescending(a => a.UpdatedAt).First())
                 .OrderByDescending(a => a.Date)
                 .Select(a => new StaffAttendanceResponse
                 {
@@ -882,6 +908,41 @@ namespace SmsApi.Services
         }
 
         private static string NormalizeValue(string? value) => value?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        public async Task<StaffAttendanceResponse> UpdateStaffAttendanceAsync(Guid id, Guid schoolId, UpdateStaffAttendanceRequest request)
+        {
+            var attendance = await _context.StaffAttendances
+                .FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId);
+
+            if (attendance == null)
+                throw new KeyNotFoundException($"Attendance record {id} not found.");
+
+            attendance.Status = request.Status;
+            attendance.CheckInTime = request.CheckInTime.HasValue
+                ? attendance.Date.Add(request.CheckInTime.Value)
+                : (DateTime?)null;
+            attendance.CheckOutTime = request.CheckOutTime.HasValue
+                ? attendance.Date.Add(request.CheckOutTime.Value)
+                : (DateTime?)null;
+            attendance.Remarks = request.Remarks;
+            attendance.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return new StaffAttendanceResponse
+            {
+                Id = attendance.Id,
+                SchoolId = attendance.SchoolId,
+                StaffId = attendance.StaffId,
+                Date = attendance.Date,
+                Status = attendance.Status,
+                CheckInTime = attendance.CheckInTime?.TimeOfDay,
+                CheckOutTime = attendance.CheckOutTime?.TimeOfDay,
+                Remarks = attendance.Remarks,
+                CreatedAt = attendance.CreatedAt,
+                UpdatedAt = attendance.UpdatedAt
+            };
+        }
 
         private static void ValidateAttendanceStatus(string status)
         {

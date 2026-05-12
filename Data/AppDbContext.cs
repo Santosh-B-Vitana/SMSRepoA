@@ -14,6 +14,13 @@ namespace SmsApi.Data
         private readonly bool _isSuperAdmin;
 
         /// <summary>
+        /// Exposed so HasQueryFilter lambdas on non-BaseEntity types (e.g. FeeAuditLog) can
+        /// reference it at query-execution time per context instance.
+        /// </summary>
+        public Guid? CurrentSchoolId => _currentSchoolId;
+        public bool IsSuperAdminContext => _isSuperAdmin;
+
+        /// <summary>
         /// Design-time / migrations constructor — no tenant filtering.
         /// </summary>
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
@@ -77,6 +84,11 @@ namespace SmsApi.Data
         public DbSet<PaymentGatewayLog> PaymentGatewayLogs { get; set; }
         public DbSet<Refund> Refunds { get; set; }
         public DbSet<FeeAuditLog> FeeAuditLogs { get; set; }
+        // Fee module v2
+        public DbSet<FeeHead> FeeHeads { get; set; }
+        public DbSet<FeeStructureComponent> FeeStructureComponents { get; set; }
+        public DbSet<FeeTerm> FeeTerms { get; set; }
+        public DbSet<ReceiptTemplate> ReceiptTemplates { get; set; }
 
         // Examinations
         public DbSet<Exam> Examinations { get; set; }
@@ -85,6 +97,13 @@ namespace SmsApi.Data
         public DbSet<Result> Results { get; set; }
         public DbSet<GradeConfiguration> GradeConfigurations { get; set; }
         public DbSet<ReportCard> ReportCards { get; set; }
+        // Structured multi-subject exam setup (new system)
+        public DbSet<ExamSetup> ExamSetups { get; set; }
+        public DbSet<ExamSetupSubject> ExamSetupSubjects { get; set; }
+        public DbSet<ExamMarksEntry> ExamMarksEntries { get; set; }
+        // Co-Scholastic (CBSE mandated activity assessments)
+        public DbSet<CoScholasticArea> CoScholasticAreas { get; set; }
+        public DbSet<CoScholasticAssessment> CoScholasticAssessments { get; set; }
 
         // Admissions
         public DbSet<Admission> Admissions { get; set; }
@@ -152,6 +171,9 @@ namespace SmsApi.Data
         // Announcements
         public DbSet<Announcement> Announcements { get; set; }
         public DbSet<AnnouncementRecipient> AnnouncementRecipients { get; set; }
+
+        // Diary
+        public DbSet<StudentDiary> StudentDiaries { get; set; }
 
         // Communication
         public DbSet<Message> Messages { get; set; }
@@ -959,6 +981,73 @@ namespace SmsApi.Data
                 entity.Property(a => a.OldValues).HasColumnType(jsonType);
                 entity.Property(a => a.NewValues).HasColumnType(jsonType);
             });
+
+            // FeeAuditLog does not inherit BaseEntity so the dynamic loop skips it.
+            // Apply school-scoping explicitly. SuperAdmin sees all schools.
+            modelBuilder.Entity<FeeAuditLog>().HasQueryFilter(e =>
+                IsSuperAdminContext || CurrentSchoolId == null || e.SchoolId == CurrentSchoolId);
+
+            // ── FeeHead ────────────────────────────────────────────────────────
+            modelBuilder.Entity<FeeHead>(entity =>
+            {
+                entity.HasOne(f => f.School)
+                    .WithMany()
+                    .HasForeignKey(f => f.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+            });
+
+            // ── FeeStructureComponent ──────────────────────────────────────────
+            modelBuilder.Entity<FeeStructureComponent>(entity =>
+            {
+                entity.HasOne(f => f.School)
+                    .WithMany()
+                    .HasForeignKey(f => f.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(f => f.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(f => f.FeeHead)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeHeadId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.FeeStructureId, e.FeeHeadId }).IsUnique();
+            });
+
+            // ── FeeTerm ────────────────────────────────────────────────────────
+            modelBuilder.Entity<FeeTerm>(entity =>
+            {
+                entity.HasOne(f => f.School)
+                    .WithMany()
+                    .HasForeignKey(f => f.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(f => f.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.FeeStructureId, e.TermNumber });
+                entity.Property(e => e.Amount).HasColumnType("decimal(12,2)");
+            });
+
+            // ── ReceiptTemplate ────────────────────────────────────────────────
+            modelBuilder.Entity<ReceiptTemplate>(entity =>
+            {
+                entity.HasOne(r => r.School)
+                    .WithMany()
+                    .HasForeignKey(r => r.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                var jsonType = Database.ProviderName?.Contains("Npgsql") == true
+                    ? "jsonb" : "nvarchar(max)";
+                entity.Property(r => r.ColumnConfigJson).HasColumnType(jsonType);
+            });
         }
 
         private void ConfigureExaminations(ModelBuilder modelBuilder)
@@ -1009,6 +1098,44 @@ namespace SmsApi.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.ExamId, e.StudentId, e.Subject }).IsUnique();
+            });
+
+            // ── CoScholasticArea ───────────────────────────────────────────────
+            modelBuilder.Entity<CoScholasticArea>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+            });
+
+            // ── CoScholasticAssessment ─────────────────────────────────────────
+            modelBuilder.Entity<CoScholasticAssessment>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.Student)
+                    .WithMany()
+                    .HasForeignKey(c => c.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.CoScholasticArea)
+                    .WithMany()
+                    .HasForeignKey(c => c.CoScholasticAreaId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.Exam)
+                    .WithMany()
+                    .HasForeignKey(c => c.ExamId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.CoScholasticAreaId, e.AcademicYear, e.Term });
             });
         }
 

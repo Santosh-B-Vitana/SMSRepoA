@@ -15,13 +15,19 @@ import {
   Plus, Download, RefreshCw, CheckCircle2, Clock, XCircle,
   Printer, Tag, BarChart3, Loader2, Calendar, Building2,
   QrCode, ChevronDown, ChevronUp, Send, Pencil, Trash2,
-  FileText, CalendarDays, CreditCard, Banknote, Filter, Link2, PackagePlus
+  FileText, CalendarDays, CreditCard, Banknote, Filter, Link2, PackagePlus,
+  Tags, Upload
 } from "lucide-react";
 import { toast } from "sonner";
 import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById } from "@/services/api/feeApi";
 import { academicApi, ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import apiClient from "@/services/api/apiClient";
+import { FeeHeadsManager } from "@/components/fees/FeeHeadsManager";
+import { FeeTermsPanel } from "@/components/fees/FeeTermsPanel";
+import { ReceiptTemplateManager } from "@/components/fees/ReceiptTemplateManager";
+import { BulkFeePaymentUpload } from "@/components/fees/BulkFeePaymentUpload";
+import { PromoteFeesDialog } from "@/components/fees/PromoteFeesDialog";
 
 // ─── India‑specific constants ─────────────────────────────
 const PAYMENT_METHODS = [
@@ -2622,7 +2628,7 @@ export default function Fees() {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 h-auto">
+        <TabsList className="grid w-full grid-cols-9 h-auto">
           <TabsTrigger value="collect" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
             <Receipt className="h-4 w-4" /><span>Collect Fees</span>
           </TabsTrigger>
@@ -2632,8 +2638,20 @@ export default function Fees() {
           <TabsTrigger value="structure" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
             <Building2 className="h-4 w-4" /><span>Fee Structure</span>
           </TabsTrigger>
+          <TabsTrigger value="feeheads" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+            <Tags className="h-4 w-4" /><span>Fee Heads</span>
+          </TabsTrigger>
+          <TabsTrigger value="feeterms" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+            <CalendarDays className="h-4 w-4" /><span>Installments</span>
+          </TabsTrigger>
           <TabsTrigger value="concessions" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
             <Tag className="h-4 w-4" /><span>Concessions</span>
+          </TabsTrigger>
+          <TabsTrigger value="bulkpayment" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+            <Upload className="h-4 w-4" /><span>Bulk Upload</span>
+          </TabsTrigger>
+          <TabsTrigger value="receipttemplates" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+            <FileText className="h-4 w-4" /><span>Receipts</span>
           </TabsTrigger>
           <TabsTrigger value="reports" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
             <BarChart3 className="h-4 w-4" /><span>Reports</span>
@@ -2887,6 +2905,31 @@ export default function Fees() {
         {/* ── Concessions Tab ───────────────────────────────── */}
         <TabsContent value="concessions" className="mt-4">
           <ConcessionsTab academicYear={academicYear ?? ""} />
+        </TabsContent>
+
+        {/* ── Fee Heads Tab ─────────────────────────────────── */}
+        <TabsContent value="feeheads" className="mt-4">
+          <FeeHeadsManager />
+        </TabsContent>
+
+        {/* ── Fee Terms / Installments Tab ──────────────────── */}
+        <TabsContent value="feeterms" className="mt-4">
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <PromoteFeesDialog structures={structures} onPromoted={() => loadData(true)} />
+            </div>
+            <FeeTermsPanel structures={structures} />
+          </div>
+        </TabsContent>
+
+        {/* ── Bulk Payment Upload Tab ───────────────────────── */}
+        <TabsContent value="bulkpayment" className="mt-4">
+          <BulkFeePaymentUpload />
+        </TabsContent>
+
+        {/* ── Receipt Templates Tab ─────────────────────────── */}
+        <TabsContent value="receipttemplates" className="mt-4">
+          <ReceiptTemplateManager />
         </TabsContent>
 
         {/* ── Reports Tab ───────────────────────────────────── */}

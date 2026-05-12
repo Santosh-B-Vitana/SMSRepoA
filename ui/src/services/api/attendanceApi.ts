@@ -96,6 +96,13 @@ export interface CreateStaffAttendanceRequest {
   remarks?: string;
 }
 
+export interface UpdateStaffAttendanceRequest {
+  status: StaffAttendanceStatus;
+  checkInTime?: string;
+  checkOutTime?: string;
+  remarks?: string;
+}
+
 // API Service
 export const attendanceApi = {
   /**
@@ -172,9 +179,15 @@ export const attendanceApi = {
     apiDelete(`/Attendance/records/${id}`),
 
   /**
-   * Get staff attendance entries for a date or staff member
+   * GET /api/Attendance/my-attendance — Staff self-view attendance (no staffId needed)
    */
-  getStaffAttendances: (params?: { date?: string; staffId?: string }) =>
+  getMyAttendance: (params?: { fromDate?: string; toDate?: string }) =>
+    apiGet<StaffAttendanceResponse[]>('/Attendance/my-attendance', params as Record<string, unknown>),
+
+  /**
+   * Get staff attendance entries — supports single date, staffId, or date range
+   */
+  getStaffAttendances: (params?: { date?: string; staffId?: string; fromDate?: string; toDate?: string }) =>
     apiGet<StaffAttendanceResponse[]>('/Attendance/staff', params as Record<string, unknown>),
 
   /**
@@ -182,4 +195,10 @@ export const attendanceApi = {
    */
   createStaffAttendance: (data: CreateStaffAttendanceRequest) =>
     apiPost<StaffAttendanceResponse>('/Attendance/staff', data),
+
+  /**
+   * Update an existing staff attendance record
+   */
+  updateStaffAttendance: (id: string, data: UpdateStaffAttendanceRequest) =>
+    apiPut<StaffAttendanceResponse>(`/Attendance/staff/${id}`, data),
 };

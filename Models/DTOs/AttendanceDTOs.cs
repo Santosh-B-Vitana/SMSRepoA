@@ -417,4 +417,15 @@ namespace SmsApi.Models.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }
+
+    public class UpdateStaffAttendanceRequest
+    {
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = string.Empty;
+
+        public TimeSpan? CheckInTime { get; set; }
+        public TimeSpan? CheckOutTime { get; set; }
+        public string? Remarks { get; set; }
+    }
 }

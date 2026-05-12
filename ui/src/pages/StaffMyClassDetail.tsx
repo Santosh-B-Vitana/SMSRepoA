@@ -86,6 +86,7 @@ import assignmentApi, {
   type GradeCategoryResponse,
 } from "@/services/api/assignmentApi";
 import { useAuth } from "@/contexts/AuthContext";
+import { StaffExamMarksTab } from "@/components/examinations/StaffExamMarksTab";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -1141,7 +1142,8 @@ export default function StaffMyClassDetail() {
     { id: "students",    label: "Students",    icon: <Users className="h-4 w-4" /> },
     { id: "timetable",   label: "Timetable",   icon: <Clock className="h-4 w-4" /> },
     { id: "assignments", label: "Assignments", icon: <FileText className="h-4 w-4" /> },
-    { id: "marks",       label: "Marks",       icon: <GraduationCap className="h-4 w-4" /> },
+    { id: "marks",       label: "Grade Items", icon: <GraduationCap className="h-4 w-4" /> },
+    { id: "exam-marks",  label: "Exam Marks",  icon: <Award className="h-4 w-4" /> },
   ];
 
   return (
@@ -1222,6 +1224,15 @@ export default function StaffMyClassDetail() {
             subjects={subjects}
             categories={categories}
             userId={user?.id ?? ""}
+          />
+        </TabsContent>
+
+        <TabsContent value="exam-marks">
+          <StaffExamMarksTab
+            staffId={user?.id ?? ""}
+            classId={assignment.classId}
+            sectionId={assignment.sectionId}
+            academicYear={assignment.academicYear}
           />
         </TabsContent>
       </Tabs>

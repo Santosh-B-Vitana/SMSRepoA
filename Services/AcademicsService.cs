@@ -2109,11 +2109,11 @@ namespace SmsApi.Services
         // ── ExamType ─────────────────────────────────────────────────────────
         public async Task<ExamTypeListResponse> GetExamTypesAsync(Guid schoolId)
         {
-            var items = await _context.ExamTypes
+            var entities = await _context.ExamTypes
                 .Where(e => e.SchoolId == schoolId)
                 .OrderBy(e => e.Name)
-                .Select(e => MapExamType(e))
                 .ToListAsync();
+            var items = entities.Select(MapExamType).ToList();
             return new ExamTypeListResponse { ExamTypes = items, Total = items.Count };
         }
 
@@ -2192,11 +2192,11 @@ namespace SmsApi.Services
         // ── SubjectType ───────────────────────────────────────────────────────
         public async Task<SubjectTypeListResponse> GetSubjectTypesAsync(Guid schoolId)
         {
-            var items = await _context.SubjectTypes
+            var entities = await _context.SubjectTypes
                 .Where(s => s.SchoolId == schoolId)
                 .OrderBy(s => s.Name)
-                .Select(s => MapSubjectType(s))
                 .ToListAsync();
+            var items = entities.Select(MapSubjectType).ToList();
             return new SubjectTypeListResponse { SubjectTypes = items, Total = items.Count };
         }
 

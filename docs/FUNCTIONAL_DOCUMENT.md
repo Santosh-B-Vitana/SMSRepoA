@@ -2,9 +2,25 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.2 | **Last Updated:** May 11, 2026 | **Project:** SMSRepoA
+**Version:** 2.3 | **Last Updated:** May 12, 2026 | **Project:** SMSRepoA
 
 ---
+
+## Changelog — May 12, 2026
+
+| Area | Change |
+|------|--------|
+| **Fee Heads** | New tab in Fee Management: normalised, reusable label catalogue (e.g. Tuition Fee, Lab Fee, Sports Fee). Each head has a name, optional description, and active toggle. School-scoped, unique names enforced. Used as the source of truth when building fee structures, ensuring consistent naming across classes and years. |
+| **Fee Terms / Installment Schedule** | New tab: define installment schedules per fee structure. Select a structure, add named terms (e.g. Q1, Q2, Q3, Q4) each with a due date and amount. Parents see terms in their fee portal. |
+| **Receipt Templates** | New tab: school branding for printed receipts — header/footer text, logo URL, primary colour, default/active flags. Multiple templates supported; one marked as default is used for all system-generated receipts. |
+| **Bulk Fee Payment Upload** | New tab: accountants upload a CSV of fee payments (up to 500 rows) in one shot. Client parses CSV, shows preview table, POSTs to API. Result summary lists successes and failed rows with reasons. CSV template available for download. |
+| **Promote Fee Structure** | New action on Fee Terms tab: clone an entire fee structure (with all component amounts) to a new academic year. Optional % increment applied uniformly to all amounts (e.g. 5% annual hike). |
+| **Deleted Transactions Audit** | Backend admin endpoint `GET /api/fees/deleted-transactions` surfaces soft-deleted payment records via `IgnoreQueryFilters()` — full audit trail for accountants and super-admins. |
+| **Hall Tickets** | New tab in Examination Manager: bulk-generate hall tickets for an exam (select class → exam → enter prefix → generate). Each student gets a unique ticket number (prefix + sequence). View all tickets, export CSV, print. |
+| **Co-Scholastic Grading** | New tab in Examination Manager with two sub-tabs: (1) **Student Grading** — search student, pick term (Term 1/Term 2/Annual), assign A+/A/B+/B/C+/C/D/E grade per area; (2) **Manage Areas** — CRUD for school-defined co-scholastic areas (Sports, Arts, Discipline, etc.). |
+| **Promote Exam Structure** | Clone an existing exam schedule to a new academic year. |
+| **EF Migration applied** | `AddFeeTermsCoScholasticReceiptTemplate` — 6 new tables created and applied on backend startup. |
+| **v1 Gap Audit (read-only)** | Full comparison of v1 (vitana-veda-dotnetf) vs SMSRepoA. Result: 85–90% feature-complete. Three critical gaps identified for India market leadership: GPS transport tracking, biometric attendance integration, background job scheduler. |
 
 ## Changelog — May 10–11, 2026
 
@@ -204,6 +220,31 @@
 - Auto-grade calculation
 - Result publication
 
+### 5.5a Hall Tickets (new May 2026)
+- Bulk-generate hall tickets for any scheduled exam
+- Workflow: select class → select exam → enter ticket prefix (e.g. `MAY26`) → Generate
+- System assigns sequential ticket numbers (prefix + zero-padded sequence, e.g. `MAY26-001`)
+- View all tickets in a table (ticket number, student name, class, section)
+- **Export CSV** of the full ticket list
+- **Print** button triggers browser print with formatted ticket layout
+- Accessible from the **Hall Tickets** tab in Examination Manager
+
+### 5.5b Co-Scholastic Grading (new May 2026)
+Two-tab panel inside Examination Manager:
+
+**Student Grading tab:**
+- Search student by name
+- Select assessment term: Term 1 / Term 2 / Annual
+- View all configured co-scholastic areas for the school
+- Assign a grade (A+, A, B+, B, C+, C, D, E) per area
+- Save all grades in a single batch upsert
+
+**Manage Areas tab:**
+- CRUD for school-defined co-scholastic activity areas
+- Examples: Sports & Games, Art & Craft, Music, Discipline, Community Service
+- Area names are unique per school
+- Areas appear in student grading, report cards, and transcripts
+
 ### 5.6 Grades & CCE
 - Letter grades with GPA calculation
 - CCE (Continuous Comprehensive Evaluation) support
@@ -308,7 +349,36 @@ Percentage bars use the listed component sum as denominator for accuracy.
 - Concession approval workflow
 - Government reporting export
 
-### 8.4 Fee Reports
+### 8.4 Fee Heads Manager (new May 2026)
+- Normalised catalogue of reusable fee head labels at school level
+- Each head: name, optional description, active/inactive toggle
+- Used when building fee structures to ensure consistent naming across classes and years
+- Full CRUD table with inline toggle; unique names enforced per school
+- Accessible from the **Fee Heads** tab in Fee Management
+
+### 8.5 Fee Terms / Installment Schedule (new May 2026)
+- Define installment schedules per fee structure
+- Each term: term name (e.g. Q1 April, Q2 July), due date, amount
+- Multiple terms per structure; students/parents see upcoming due dates in their portal
+- **Promote Fee Structure**: from the Fee Terms panel, clone any structure to a new academic year with optional uniform % increment on all amounts
+- Accessible from the **Fee Terms** tab in Fee Management
+
+### 8.6 Receipt Templates (new May 2026)
+- School branding configuration for printed fee receipts
+- Fields: header text, footer text, logo URL, primary colour
+- One template marked as default is used for all system-generated receipts
+- Multiple templates supported per school (e.g. school fee receipt vs hostel receipt)
+- Accessible from the **Receipt Templates** tab in Fee Management
+
+### 8.7 Bulk Fee Payment Upload (new May 2026)
+- Accountants upload a CSV file with up to 500 payment rows
+- Client-side CSV parse → preview table before confirmation
+- POST to API processes all rows in a single transaction
+- Result summary shows: success count, failed rows with reason
+- CSV template downloadable from the upload panel
+- Accessible from the **Bulk Payment** tab in Fee Management
+
+### 8.8 Fee Reports
 - Class-wise collection summary
 - Defaulter list (overdue payments)
 - Day-book (daily collection report)

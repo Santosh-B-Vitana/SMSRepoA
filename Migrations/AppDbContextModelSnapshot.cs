@@ -2516,6 +2516,144 @@ namespace SmsApi.Migrations
                     b.ToTable("ClassSubjects");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.CoScholasticArea", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("GradeScale")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("CoScholasticAreas");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.CoScholasticAssessment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AcademicYear")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("AssessedByStaffId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CoScholasticAreaId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ExamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Grade")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Term")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoScholasticAreaId");
+
+                    b.HasIndex("ExamId");
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("SchoolId", "StudentId", "CoScholasticAreaId", "AcademicYear", "Term");
+
+                    b.ToTable("CoScholasticAssessments");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.ComplianceReport", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3114,6 +3252,105 @@ namespace SmsApi.Migrations
                     b.ToTable("Examinations");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamMarksEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EnteredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("EnteredByStaffId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ExamSetupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ExamSetupSubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Grade")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<decimal?>("GradePoint")
+                        .HasColumnType("decimal(4,2)");
+
+                    b.Property<decimal?>("InternalMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<bool>("IsAbsent")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPass")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("ObtainedMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("Percentage")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal?>("PracticalMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("TheoryMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnteredByStaffId");
+
+                    b.HasIndex("ExamSetupId");
+
+                    b.HasIndex("ExamSetupSubjectId");
+
+                    b.HasIndex("SchoolId");
+
+                    b.HasIndex("StudentId");
+
+                    b.ToTable("ExamMarksEntries");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.ExamRegistration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3275,6 +3512,197 @@ namespace SmsApi.Migrations
                         .IsUnique();
 
                     b.ToTable("ExamResults");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamSetup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AcademicYear")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("BoardConfigurationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CustomTypeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ExamTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsCustomType")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("PublishedByStaffId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SectionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Term")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardConfigurationId");
+
+                    b.HasIndex("ClassId");
+
+                    b.HasIndex("ExamTypeId");
+
+                    b.HasIndex("SchoolId");
+
+                    b.HasIndex("SectionId");
+
+                    b.ToTable("ExamSetups");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamSetupSubject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AssignedStaffId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EndTime")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime?>("ExamDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ExamSetupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsElective")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("MaxInternalMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal>("MaxPracticalMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal>("MaxTheoryMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal>("MaxTotalMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal>("PassingMarks")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("StartTime")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SubjectOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Venue")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedStaffId");
+
+                    b.HasIndex("ExamSetupId");
+
+                    b.HasIndex("SchoolId");
+
+                    b.HasIndex("SubjectId");
+
+                    b.ToTable("ExamSetupSubjects");
                 });
 
             modelBuilder.Entity("SmsApi.Models.Entities.ExamType", b =>
@@ -3506,6 +3934,71 @@ namespace SmsApi.Migrations
                     b.ToTable("FeeConcessions");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.FeeHead", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsMandatory")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsVisibleOnReceipt")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("FeeHeads");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.FeeRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3697,6 +4190,130 @@ namespace SmsApi.Migrations
                     b.HasIndex("SchoolId");
 
                     b.ToTable("FeeStructures");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.FeeStructureComponent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("FeeHeadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FeeStructureId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeeHeadId");
+
+                    b.HasIndex("SchoolId");
+
+                    b.HasIndex("FeeStructureId", "FeeHeadId")
+                        .IsUnique();
+
+                    b.ToTable("FeeStructureComponents");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.FeeTerm", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("FeeStructureId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("TermNumber")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId");
+
+                    b.HasIndex("FeeStructureId", "TermNumber");
+
+                    b.ToTable("FeeTerms");
                 });
 
             modelBuilder.Entity("SmsApi.Models.Entities.FinanceAccount", b =>
@@ -7121,6 +7738,75 @@ namespace SmsApi.Migrations
                     b.ToTable("PromotionHistory");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.ReceiptTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ColumnConfigJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FooterText")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("HeaderText")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PrimaryColor")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId");
+
+                    b.ToTable("ReceiptTemplates");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7401,6 +8087,9 @@ namespace SmsApi.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<Guid>("ExamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ExamSetupId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsDeleted")
@@ -9969,6 +10658,114 @@ namespace SmsApi.Migrations
                         .IsUnique();
 
                     b.ToTable("StudentAnnualHealthRecords");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.StudentDiary", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AttachmentName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AttachmentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("CategoryEmoji")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<Guid?>("ClassId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ColorTag")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DiaryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DiaryType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsVisibleToParent")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("NotifyParent")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SectionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("StaffId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("StudentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClassId");
+
+                    b.HasIndex("SchoolId");
+
+                    b.HasIndex("SectionId");
+
+                    b.HasIndex("StaffId");
+
+                    b.HasIndex("StudentId");
+
+                    b.ToTable("StudentDiaries");
                 });
 
             modelBuilder.Entity("SmsApi.Models.Entities.StudentDocument", b =>
@@ -12737,6 +13534,51 @@ namespace SmsApi.Migrations
                     b.Navigation("Teacher");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.CoScholasticArea", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("School");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.CoScholasticAssessment", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.CoScholasticArea", "CoScholasticArea")
+                        .WithMany()
+                        .HasForeignKey("CoScholasticAreaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Exam", "Exam")
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Student", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CoScholasticArea");
+
+                    b.Navigation("Exam");
+
+                    b.Navigation("School");
+
+                    b.Navigation("Student");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.ComplianceReport", b =>
                 {
                     b.HasOne("SmsApi.Models.Entities.School", "School")
@@ -12900,6 +13742,47 @@ namespace SmsApi.Migrations
                     b.Navigation("SubjectTypeRef");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamMarksEntry", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.Staff", "EnteredByStaff")
+                        .WithMany()
+                        .HasForeignKey("EnteredByStaffId");
+
+                    b.HasOne("SmsApi.Models.Entities.ExamSetup", "ExamSetup")
+                        .WithMany()
+                        .HasForeignKey("ExamSetupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.ExamSetupSubject", "ExamSetupSubject")
+                        .WithMany("MarksEntries")
+                        .HasForeignKey("ExamSetupSubjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Student", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EnteredByStaff");
+
+                    b.Navigation("ExamSetup");
+
+                    b.Navigation("ExamSetupSubject");
+
+                    b.Navigation("School");
+
+                    b.Navigation("Student");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.ExamRegistration", b =>
                 {
                     b.HasOne("SmsApi.Models.Entities.Exam", "Exam")
@@ -12960,6 +13843,76 @@ namespace SmsApi.Migrations
                     b.Navigation("SubjectRef");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamSetup", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.BoardConfiguration", "BoardConfig")
+                        .WithMany()
+                        .HasForeignKey("BoardConfigurationId");
+
+                    b.HasOne("SmsApi.Models.Entities.Class", "ClassRef")
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.ExamType", "ExamTypeRef")
+                        .WithMany()
+                        .HasForeignKey("ExamTypeId");
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Section", "SectionRef")
+                        .WithMany()
+                        .HasForeignKey("SectionId");
+
+                    b.Navigation("BoardConfig");
+
+                    b.Navigation("ClassRef");
+
+                    b.Navigation("ExamTypeRef");
+
+                    b.Navigation("School");
+
+                    b.Navigation("SectionRef");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamSetupSubject", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.Staff", "AssignedStaff")
+                        .WithMany()
+                        .HasForeignKey("AssignedStaffId");
+
+                    b.HasOne("SmsApi.Models.Entities.ExamSetup", "ExamSetup")
+                        .WithMany("Subjects")
+                        .HasForeignKey("ExamSetupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Subject", "Subject")
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AssignedStaff");
+
+                    b.Navigation("ExamSetup");
+
+                    b.Navigation("School");
+
+                    b.Navigation("Subject");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.ExamType", b =>
                 {
                     b.HasOne("SmsApi.Models.Entities.School", "School")
@@ -13009,6 +13962,17 @@ namespace SmsApi.Migrations
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.FeeHead", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("School");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.FeeRecord", b =>
                 {
                     b.HasOne("SmsApi.Models.Entities.FeeStructure", "FeeStructure")
@@ -13049,6 +14013,52 @@ namespace SmsApi.Migrations
                         .HasForeignKey("SchoolId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("School");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.FeeStructureComponent", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.FeeHead", "FeeHead")
+                        .WithMany()
+                        .HasForeignKey("FeeHeadId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.FeeStructure", "FeeStructure")
+                        .WithMany()
+                        .HasForeignKey("FeeStructureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FeeHead");
+
+                    b.Navigation("FeeStructure");
+
+                    b.Navigation("School");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.FeeTerm", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.FeeStructure", "FeeStructure")
+                        .WithMany()
+                        .HasForeignKey("FeeStructureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FeeStructure");
 
                     b.Navigation("School");
                 });
@@ -13758,6 +14768,17 @@ namespace SmsApi.Migrations
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.Entities.ReceiptTemplate", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("School");
+                });
+
             modelBuilder.Entity("SmsApi.Models.Entities.RefreshToken", b =>
                 {
                     b.HasOne("SmsApi.Models.Entities.UserLogin", "UserLogin")
@@ -14268,6 +15289,43 @@ namespace SmsApi.Migrations
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.StudentDiary", b =>
+                {
+                    b.HasOne("SmsApi.Models.Entities.Class", "Class")
+                        .WithMany()
+                        .HasForeignKey("ClassId");
+
+                    b.HasOne("SmsApi.Models.Entities.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Section", "Section")
+                        .WithMany()
+                        .HasForeignKey("SectionId");
+
+                    b.HasOne("SmsApi.Models.Entities.Staff", "Staff")
+                        .WithMany()
+                        .HasForeignKey("StaffId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.Entities.Student", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId");
+
+                    b.Navigation("Class");
+
+                    b.Navigation("School");
+
+                    b.Navigation("Section");
+
+                    b.Navigation("Staff");
 
                     b.Navigation("Student");
                 });
@@ -14829,6 +15887,16 @@ namespace SmsApi.Migrations
             modelBuilder.Entity("SmsApi.Models.Entities.DocumentCategory", b =>
                 {
                     b.Navigation("Documents");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamSetup", b =>
+                {
+                    b.Navigation("Subjects");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.Entities.ExamSetupSubject", b =>
+                {
+                    b.Navigation("MarksEntries");
                 });
 
             modelBuilder.Entity("SmsApi.Models.Entities.Guardian", b =>

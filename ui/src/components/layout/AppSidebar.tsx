@@ -1,5 +1,5 @@
 ﻿import * as React from "react"
-import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck } from "lucide-react"
+import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck, CalendarCheck } from "lucide-react"
 import { NavMain } from "@/components/sidebar/nav-main"
 import { TeamSwitcher } from "@/components/sidebar/team-switcher"
 import {
@@ -74,6 +74,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
         { title: "LEAVE & ANNOUNCEMENTS", isLabel: true },
         { title: "My Leave", url: "/leave-management", icon: Calendar },
+        { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
         { title: "School Connect", url: "/school-connect", icon: School },
       ]
 
@@ -90,7 +91,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: "Assignments", url: "/assignments", icon: ClipboardList },
           { title: "ADMINISTRATION", isLabel: true },
           { title: "Leave Management", url: "/leave-management", icon: Calendar },
-          { title: "Communication", url: "/communication", icon: MessageSquare },
+          { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
+          { title: "Diary", url: "/staff-diary", icon: BookOpen },
           { title: "Announcements", url: "/announcements", icon: Bell },
           { title: "School Connect", url: "/school-connect", icon: School },
         ]
@@ -107,7 +109,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: "Grades", url: "/grades", icon: BookOpen },
           { title: "Assignments", url: "/assignments", icon: ClipboardList },
           { title: "Staff", url: "/staff", icon: UserCheck },
-          { title: "Message Parents", url: "/staff-parent-communication", icon: MessageSquare },
+          { title: "Diary", url: "/staff-diary", icon: BookOpen },
         ]
       }
 
@@ -121,9 +123,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: "Grades", url: "/grades", icon: BookOpen },
           { title: "Assignments", url: "/assignments", icon: ClipboardList },
           { title: "Timetable", url: "/timetable", icon: Clock },
-          { title: "COMMUNICATION", isLabel: true },
-          { title: "Message Parents", url: "/staff-parent-communication", icon: MessageSquare },
-          { title: "Communication", url: "/communication", icon: MessageSquare },
+          { title: "DIARY", isLabel: true },
+          { title: "Diary", url: "/staff-diary", icon: BookOpen },
         ]
       }
 
@@ -205,7 +206,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "ACADEMIC", isLabel: true },
         { title: "My Classes", url: "/my-classes", icon: GraduationCap },
         { title: "Attendance", url: "/attendance", icon: UserCheck },
-        { title: "Message Parents", url: "/staff-parent-communication", icon: MessageSquare },
+          { title: "Diary", url: "/staff-diary", icon: BookOpen },
       ]
     }
 
@@ -214,6 +215,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('nav.childProfile'), url: "/child-profile", icon: User },
         { title: t('nav.fees'), url: "/parent-fees", icon: DollarSign },
         { title: t('nav.notifications'), url: "/parent-notifications", icon: MessageSquare },
+        { title: "Diary", url: "/parent-diary", icon: BookOpen },
         { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
       ]
     }

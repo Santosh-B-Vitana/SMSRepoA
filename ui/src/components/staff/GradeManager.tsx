@@ -23,6 +23,7 @@ import {
   DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StaffExamMarksTab } from "./StaffExamMarksTab";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -754,16 +755,18 @@ export function GradeManager() {
       </div>
       <StatsBar />
       <Tabs defaultValue="items">
-        <TabsList className="grid grid-cols-4 w-full max-w-xl">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="items">Grade Items</TabsTrigger>
           <TabsTrigger value="grades">Student Grades</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="cce">CCE</TabsTrigger>
+          <TabsTrigger value="exam-marks">Exam Marks</TabsTrigger>
         </TabsList>
         <TabsContent value="items" className="mt-4"><GradeItemsTab /></TabsContent>
         <TabsContent value="grades" className="mt-4"><StudentGradesTab /></TabsContent>
         <TabsContent value="categories" className="mt-4"><CategoriesTab /></TabsContent>
         <TabsContent value="cce" className="mt-4"><CCETab /></TabsContent>
+        <TabsContent value="exam-marks" className="mt-4"><StaffExamMarksTab /></TabsContent>
       </Tabs>
     </div>
   );

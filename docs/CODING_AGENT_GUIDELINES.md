@@ -403,6 +403,9 @@ refactor: simplify attendance entity mapping
 | **Catching all exceptions** | `catch (Exception ex) { return BadRequest(); }` | Let middleware handle it |
 | **N+1 queries** | Loop + lazy load | `.Include()` upfront |
 | **Secrets in config** | `"Secret": "my-real-secret"` in appsettings.Production.json | Environment variable |
+| **Role claim comparison** | `role is "admin"` | `role.ToLowerInvariant() is "admin"` — JWT stores title-case (`"Admin"`, `"Teacher"`) |
+| **UserLogin.Id as StaffMember.Id** | `TeacherAssignment.StaffId == GetUserId()` | Resolve via email: `StaffMembers.Where(s => s.Email == userEmail)` — `UserLogin.Id ≠ StaffMember.Id` |
+| **FK violation on EnteredByStaffId** | Store `UserLogin.Id` | Store resolved `StaffMember.Id` (nullable for admins who have no StaffMember row) |
 
 ---
 
@@ -456,6 +459,6 @@ Before committing any code, verify:
 
 ---
 
-**Last Updated:** May 8, 2026 | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 13, 2026 | **Project:** SMSRepoA (Release Candidate)  
 **For architecture details:** [TECHNICAL_DOCUMENT.md](./TECHNICAL_DOCUMENT.md)  
 **For deployment:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)

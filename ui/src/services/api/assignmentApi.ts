@@ -93,6 +93,39 @@ export interface GradeSubmissionPayload {
   status?: string;
 }
 
+// =========== Parent Portal — Child Assignment Types ===========
+
+export interface ChildSubmissionSnapshot {
+  id: string;
+  submissionDate: string;
+  marksObtained?: number;
+  status: string;
+  feedback?: string;
+  gradedDate?: string;
+}
+
+export interface ChildAssignmentView {
+  id: string;
+  title: string;
+  description: string;
+  subjectName: string;
+  assignedDate: string;
+  dueDate: string;
+  maxMarks: number;
+  assignmentStatus: string;
+  attachmentUrl?: string;
+  isOverdue: boolean;
+  /** Null when the student has not yet submitted */
+  submission: ChildSubmissionSnapshot | null;
+}
+
+export interface ChildAssignmentListResponse {
+  data: ChildAssignmentView[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // =========== Grade Category Types ===========
 
 export interface GradeCategoryResponse {
@@ -219,6 +252,10 @@ export const assignmentApi = {
 
   getStudentSubmissions: (studentId: string, page = 1, pageSize = 50) =>
     apiGet<{ data: SubmissionResponse[]; total: number }>('/assignments/student-submissions', { studentId, page, pageSize }),
+
+  /** Parent portal: all assignments for a child's class with per-student submission status. */
+  getAssignmentsForChild: (studentId: string, page = 1, pageSize = 50) =>
+    apiGet<ChildAssignmentListResponse>('/assignments/for-child', { studentId, page, pageSize }),
 
   // --- Grade Categories ---
   getGradeCategories: (page = 1, pageSize = 50) =>

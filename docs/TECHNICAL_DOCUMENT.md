@@ -1,9 +1,65 @@
 # sms-api — Technical Document
 
-> **Version 2.2** · ASP.NET Core 8 · .NET 8 · React 19 · PostgreSQL · **Release Candidate**  
-> **Last Updated:** May 11, 2026 | **Project:** SMSRepoA
+> **Version 2.4** · ASP.NET Core 8 · .NET 8 · React 19 · PostgreSQL · **Release Candidate**  
+> **Last Updated:** May 13, 2026 | **Project:** SMSRepoA
 
 ---
+
+## Changelog — May 13, 2026
+
+| Area | Change |
+|------|--------|
+| **ExamSetupController** — role comparison | `GetUserId()` role claim is title-case (`"Teacher"`, `"Admin"`). Fixed `isAdmin` check by calling `.ToLowerInvariant()` before comparison; admin was always treated as staff, causing 403 on marks endpoints. |
+| **ExamSetupService — `GetExamSetupsForStaffAsync`** | Replaced `UserLogin.Id`-based lookup with email → `StaffMember.Email` resolution (same pattern as `AcademicsService`). `UserLogin.Id` ≠ `StaffMember.Id`; FK joins use `StaffMember.Id` exclusively. Result: staff now correctly sees exam setups via both explicit subject assignment and class-level teacher assignment. |
+| **ExamSetupService — `GetMarksEntrySheetAsync`** | Access check rewritten: resolves caller email → `StaffMember.Id`; if subject has `AssignedStaffId` that does not match the resolved ID, grants access anyway when the staff has an active `TeacherAssignment` for the exam's class (class-level access). |
+| **ExamSetupService — `SaveBulkMarksAsync`** | Same email-based resolution as above. `EnteredByStaffId` field now stores the resolved `StaffMember.Id` (nullable — null for admins who have no `StaffMember` record), fixing FK constraint violation against `dbo.StaffMembers`. |
+| **Frontend — `StaffExamMarksTab.tsx`** | Fixed field name mismatches: `setup.totalSubjects` → `setup.subjectCount`, `setup.subjectsWithMarks` → `setup.marksEnteredCount` (matching `ExamSetupBasicDto`). |
+| **Frontend — `MarksEntryGrid.tsx`** | Added null-safe rows loading (`data.rows ?? (data as any).students ?? []`) + `Users` icon import + empty-state UI when no students enrolled. |
+
+### Identity resolution pattern (critical — follow for all staff endpoints)
+
+```
+JWT NameIdentifier  =  UserLogin.Id          (login record)
+UserLogin.LinkedEntityId  →  StaffMember.Id  (staff entity)  ← NOT always populated
+StaffMember.Email  =  UserLogin.Email        ← reliable cross-table join
+TeacherAssignment.StaffId  =  StaffMember.Id ← always uses StaffMember.Id
+ExamSetupSubject.AssignedStaffId  =  StaffMember.Id
+ExamMarksEntry.EnteredByStaffId   =  StaffMember.Id (FK)
+```
+
+**Use email-based lookup** (not `LinkedEntityId`) to resolve `UserLogin → StaffMember`:
+```csharp
+var staffMemberId = await _context.StaffMembers
+    .Where(s => s.Email == userEmail && s.SchoolId == schoolId && !s.IsDeleted)
+    .Select(s => (Guid?)s.Id)
+    .FirstOrDefaultAsync();
+```
+
+---
+
+## Changelog — May 12, 2026
+
+| Area | Change |
+|------|--------|
+| **EF Migration** | `AddFeeTermsCoScholasticReceiptTemplate` — adds 6 new tables: `FeeHeads`, `FeeStructureComponents`, `FeeTerms`, `ReceiptTemplates`, `CoScholasticAreas`, `CoScholasticAssessments` |
+| **`FeeHead` entity** | Normalized fee label catalogue per school (name, description, isActive); unique index on `SchoolId + Name`; full CRUD at `GET/POST/PUT/DELETE /api/fees/heads` |
+| **`FeeStructureComponent` entity** | Maps a `FeeHead` to a `FeeStructure` with amount override; unique index on `StructureId + HeadId`; cascade delete when structure deleted |
+| **`FeeTerm` entity** | Installment terms per fee structure (termName, dueDate, amount, decimal 12,2); endpoints `GET/POST /api/fees/structures/{id}/terms` |
+| **`ReceiptTemplate` entity** | School branding for printed receipts (headerText, footerText, logoUrl, primaryColor, isDefault, isActive, nvarchar columnConfigJson); CRUD at `GET/POST/PUT /api/fees/receipt-templates` |
+| **Fees — Promote Fee Structure** | `POST /api/fees/structures/{id}/promote` — clones a fee structure to a new academic year with optional % increment on all component amounts |
+| **Fees — Bulk Payment Upload** | `POST /api/fees/bulk-payment-upload` — accepts up to 500 payment rows as JSON, creates `FeePayment` records in a single transaction |
+| **Fees — Deleted Transactions** | `GET /api/fees/deleted-transactions` — uses `IgnoreQueryFilters()` to surface soft-deleted payment records for audit/admin review |
+| **`FeeAuditLog` query filter fix** | Added explicit `HasQueryFilter(f => f.SchoolId == _currentSchoolId)` in `ConfigureFees` — non-`BaseEntity` table now respects multi-tenant isolation |
+| **`CoScholasticArea` entity** | School-defined activity areas (Sports, Arts, Discipline, etc.); unique index on `SchoolId + Name`; CRUD at `GET/POST/PUT/DELETE /api/examinations/coscholastic/areas` |
+| **`CoScholasticAssessment` entity** | Per-student grade (A+/A/B+/B/C+/C/D/E) per area per term per year; upsert-batch endpoint `POST /api/examinations/coscholastic/batch`; composite index on `SchoolId + StudentId + AreaId + AcademicYear + Term` |
+| **Hall Tickets** | `POST /api/examinations/{examId}/hall-tickets/generate-bulk` (with prefix, class filter); `GET /api/examinations/{examId}/hall-tickets`; `GET /api/examinations/{examId}/hall-tickets/{studentId}` |
+| **Exam — Promote Structure** | `POST /api/examinations/{id}/promote` — clones exam structure to a new academic year |
+| **Frontend — feeApi.ts** | Added types + functions for FeeHead, FeeTerm, ReceiptTemplate, promoteFeeStructure, bulkUploadPayments, getDeletedTransactions |
+| **Frontend — examinationApi.ts** | Added types + functions for HallTicket, generateHallTickets, getHallTickets, getHallTicket, promoteExamStructure, CoScholasticArea, CoScholasticAssessment, getCoScholasticAreas, createCoScholasticArea, getStudentCoScholastic, saveCoScholasticAssessments |
+| **7 new UI components** | `FeeHeadsManager`, `FeeTermsPanel`, `ReceiptTemplateManager`, `BulkFeePaymentUpload`, `PromoteFeesDialog`, `HallTicketManager`, `CoScholasticGrading` |
+| **Fees.tsx** | Tabs expanded from 5 → 9: added `feeheads`, `feeterms` (with inline PromoteFeesDialog), `bulkpayment`, `receipttemplates` |
+| **ExaminationManager.tsx** | Tabs expanded from 4 → 6: added `halltickets`, `coscholastic` |
+| **v1 vs SMSRepoA audit** | Read-only gap analysis: 85–90% feature-complete; 3 critical gaps identified — GPS tracking, biometric integration, background job scheduler |
 
 ## Changelog — May 10–11, 2026
 
@@ -161,6 +217,12 @@ sms-api/
 - RTE fee concessions (income-based eligibility)
 - Partial payments + installments
 - PDF receipt generation (jsPDF on frontend)
+- **Fee Heads**: normalised label catalogue — `GET/POST/PUT/DELETE /api/fees/heads`
+- **Fee Terms**: installment schedule per structure — `GET/POST /api/fees/structures/{id}/terms`
+- **Promote Fee Structure**: clone to new year with % increment — `POST /api/fees/structures/{id}/promote`
+- **Receipt Templates**: school branding — `GET/POST/PUT /api/fees/receipt-templates`
+- **Bulk Payment Upload**: up to 500 rows JSON — `POST /api/fees/bulk-payment-upload`
+- **Deleted Transactions**: soft-delete audit (IgnoreQueryFilters) — `GET /api/fees/deleted-transactions`
 
 ### 5.6 India-Specific Features
 | Feature | Detail |

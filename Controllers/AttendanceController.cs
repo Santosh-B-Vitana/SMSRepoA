@@ -652,16 +652,70 @@ namespace SmsApi.Controllers
             }
         }
 
-        [HttpGet("staff")]
-        [Authorize(Roles = "Admin,Principal,HRManager")]
-        public async Task<ActionResult> GetStaffAttendances(
-            [FromQuery] DateTime? date = null,
-            [FromQuery] Guid? staffId = null)
+        /// <summary>
+        /// GET /api/Attendance/my-attendance — Staff self-view: returns the calling staff member's own attendance records.
+        /// Resolves staffId from JWT (LinkedEntityId or email fallback). View-only; no editing.
+        /// </summary>
+        [HttpGet("my-attendance")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager,Accountant,Librarian")]
+        public async Task<ActionResult> GetMyAttendance(
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var attendances = await _service.GetStaffAttendancesAsync(schoolId, date, staffId);
+                var userId = _tenant.UserId;
+
+                // Resolve this user's Staff record
+                var userLogin = await _context.UserLogins
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+
+                Guid? staffId = null;
+                if (userLogin?.LinkedEntityId != null)
+                {
+                    var linked = await _context.StaffMembers
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.Id == userLogin.LinkedEntityId && s.SchoolId == schoolId);
+                    if (linked != null) staffId = linked.Id;
+                }
+                if (staffId == null)
+                {
+                    var email = _tenant.UserEmail;
+                    if (!string.IsNullOrWhiteSpace(email))
+                    {
+                        var byEmail = await _context.StaffMembers
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == schoolId);
+                        if (byEmail != null) staffId = byEmail.Id;
+                    }
+                }
+                if (staffId == null)
+                    return Ok(new List<object>()); // No staff record found; return empty
+
+                var attendances = await _service.GetStaffAttendancesAsync(schoolId, null, staffId, fromDate, toDate);
+                return Ok(attendances);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetMyAttendance");
+                return StatusCode(500, new { message = "An error occurred while fetching your attendance." });
+            }
+        }
+
+        [HttpGet("staff")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
+        public async Task<ActionResult> GetStaffAttendances(
+            [FromQuery] DateTime? date = null,
+            [FromQuery] Guid? staffId = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var attendances = await _service.GetStaffAttendancesAsync(schoolId, date, staffId, fromDate, toDate);
                 return Ok(attendances);
             }
             catch (UnauthorizedAccessException ex)
@@ -687,6 +741,24 @@ namespace SmsApi.Controllers
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while creating the attendance.", error = ex.Message });
+            }
+        }
+
+        [HttpPut("staff/{id:guid}")]
+        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        public async Task<ActionResult<StaffAttendanceResponse>> UpdateStaffAttendance(Guid id, [FromBody] UpdateStaffAttendanceRequest request)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var attendance = await _service.UpdateStaffAttendanceAsync(id, schoolId, request);
+                return Ok(attendance);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while updating the attendance.", error = ex.Message });
             }
         }
     }

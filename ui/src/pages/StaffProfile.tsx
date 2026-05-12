@@ -1,7 +1,7 @@
-import { UserCheck, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { UserCheck, Clock, ChevronDown, ChevronUp, CheckCircle2, XCircle, CalendarOff, TrendingUp, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StaffIdCardTemplate } from "@/components/id-cards/StaffIdCardTemplate";
-import { useEffect, useState } from "react";
+import { useEffect, useState, ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import {
 import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
 import { StaffChildDto } from "@/services/api/studentApi";
 import { academicApi, MyClassAssignment, TeacherAssignmentResponse } from "@/services/api/academicApi";
-import { attendanceApi, StaffAttendanceResponse } from "@/services/api/attendanceApi";
+import { attendanceApi, StaffAttendanceResponse, CreateStaffAttendanceRequest, StaffAttendanceStatus, UpdateStaffAttendanceRequest } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
 import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
 import { useAuth } from "@/contexts/AuthContext";
@@ -76,6 +76,10 @@ export default function StaffProfile() {
   const [calendarDate, setCalendarDate] = useState("");
   const [staffAttendance, setStaffAttendance] = useState<StaffAttendanceResponse[]>([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+  // Mark today's attendance dialog
+  const [markTodayOpen, setMarkTodayOpen] = useState(false);
+  const [markTodayStatus, setMarkTodayStatus] = useState<StaffAttendanceStatus>('present');
+  const [markTodaySaving, setMarkTodaySaving] = useState(false);
   
   const { id } = useParams();
   const navigate = useNavigate();
@@ -142,6 +146,33 @@ export default function StaffProfile() {
       setStaffAttendance([]);
     } finally {
       setAttendanceLoading(false);
+    }
+  };
+
+  const handleMarkToday = async () => {
+    if (!id || !user?.schoolId) return;
+    setMarkTodaySaving(true);
+    const today = new Date().toISOString().split('T')[0];
+    const todayRecord = staffAttendance.find(r => r.date?.startsWith(today));
+    try {
+      if (todayRecord) {
+        await attendanceApi.updateStaffAttendance(todayRecord.id, { status: markTodayStatus } as UpdateStaffAttendanceRequest);
+        toast({ title: "Attendance updated", description: `Updated to ${markTodayStatus} for ${today}` });
+      } else {
+        await attendanceApi.createStaffAttendance({
+          schoolId: user.schoolId,
+          staffId: id,
+          date: today,
+          status: markTodayStatus,
+        } as CreateStaffAttendanceRequest);
+        toast({ title: "Attendance marked", description: `Marked as ${markTodayStatus} for ${today}` });
+      }
+      setMarkTodayOpen(false);
+      fetchStaffAttendance();
+    } catch {
+      toast({ title: "Failed to save attendance", description: "Could not save the attendance record.", variant: "destructive" });
+    } finally {
+      setMarkTodaySaving(false);
     }
   };
 
@@ -876,18 +907,112 @@ export default function StaffProfile() {
         </TabsContent>
 
         <TabsContent value="attendance">
+          {/* ── Attendance Summary Stats ─────────────────────────────────── */}
+          {!attendanceLoading && staffAttendance.length > 0 && (() => {
+            const total = staffAttendance.length;
+            const presentCount = staffAttendance.filter(r => r.status === 'present').length;
+            const absentCount  = staffAttendance.filter(r => r.status === 'absent').length;
+            const lateCount    = staffAttendance.filter(r => r.status === 'late').length;
+            const leaveCount   = staffAttendance.filter(r => r.status === 'leave').length;
+            const pct = Math.round((presentCount / total) * 100);
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="rounded-xl border bg-emerald-50 dark:bg-emerald-950/30 p-3 flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{presentCount}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-500">Present</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-rose-50 dark:bg-rose-950/30 p-3 flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/40">
+                    <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{absentCount}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-500">Absent</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-amber-50 dark:bg-amber-950/30 p-3 flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/40">
+                    <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-amber-700 dark:text-amber-400">{lateCount}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500">Late</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-violet-50 dark:bg-violet-950/30 p-3 flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-violet-100 dark:bg-violet-900/40">
+                    <TrendingUp className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-violet-700 dark:text-violet-400">{pct}%</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-500">Attendance</p>
+                  </div>
+                </div>
+                {leaveCount > 0 && (
+                  <div className="rounded-xl border bg-blue-50 dark:bg-blue-950/30 p-3 flex items-center gap-3 col-span-2 sm:col-span-1">
+                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/40">
+                      <CalendarOff className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{leaveCount}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-500">On Leave</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Attendance Records Table ─────────────────────────────────── */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <UserCheck className="h-5 w-5" />
-                Attendance Record
-              </CardTitle>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <UserCheck className="h-5 w-5" />
+                  Attendance Record
+                </CardTitle>
+                {isAdmin && (() => {
+                  const todayISO = new Date().toISOString().split('T')[0];
+                  const todayRecord = staffAttendance.find(r => r.date?.startsWith(todayISO));
+                  return (
+                    <Button
+                      size="sm"
+                      className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                      onClick={() => {
+                        setMarkTodayStatus((todayRecord?.status as StaffAttendanceStatus) ?? 'present');
+                        setMarkTodayOpen(true);
+                      }}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {todayRecord ? "Edit Today's Attendance" : "Mark Today"}
+                    </Button>
+                  );
+                })()}
+              </div>
             </CardHeader>
             <CardContent>
               {attendanceLoading ? (
                 <div className="text-center py-6 text-muted-foreground">Loading attendance…</div>
               ) : staffAttendance.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground">No attendance records found.</div>
+                <div className="text-center py-10 space-y-3">
+                  <UserCheck className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+                  <p className="text-sm text-muted-foreground">No attendance records found.</p>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                      onClick={() => { setMarkTodayStatus('present'); setMarkTodayOpen(true); }}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Mark Attendance
+                    </Button>
+                  )}
+                </div>
               ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -901,21 +1026,36 @@ export default function StaffProfile() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {staffAttendance.map((record) => (
+                    {[...staffAttendance]
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .map((record) => (
                       <TableRow key={record.id}>
-                        <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
+                        <TableCell className="font-medium">
+                          {new Date(record.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </TableCell>
                         <TableCell>
-                          <Badge variant={
-                            record.status === 'present' ? 'default' :
-                            record.status === 'late' ? 'secondary' :
-                            'destructive'
-                          } className="capitalize">
+                          <Badge
+                            className={
+                              record.status === 'present'
+                                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 capitalize'
+                                : record.status === 'late'
+                                ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 capitalize'
+                                : record.status === 'leave'
+                                ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-400 capitalize'
+                                : 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-400 capitalize'
+                            }
+                            variant="outline"
+                          >
+                            {record.status === 'present' && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                            {record.status === 'absent'  && <XCircle className="h-3 w-3 mr-1" />}
+                            {record.status === 'late'    && <Clock className="h-3 w-3 mr-1" />}
+                            {record.status === 'leave'   && <CalendarOff className="h-3 w-3 mr-1" />}
                             {record.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>{record.checkInTime ?? '—'}</TableCell>
-                        <TableCell>{record.checkOutTime ?? '—'}</TableCell>
-                        <TableCell>{record.remarks ?? '—'}</TableCell>
+                        <TableCell className="text-muted-foreground">{record.checkInTime ?? '—'}</TableCell>
+                        <TableCell className="text-muted-foreground">{record.checkOutTime ?? '—'}</TableCell>
+                        <TableCell className="text-muted-foreground max-w-[200px] truncate">{record.remarks ?? '—'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -924,6 +1064,74 @@ export default function StaffProfile() {
               )}
             </CardContent>
           </Card>
+
+          {/* ── Mark Today Dialog ──────────────────────────────────────── */}
+          <Dialog open={markTodayOpen} onOpenChange={setMarkTodayOpen}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-violet-600" />
+                  Mark Attendance — Today
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1 font-medium">
+                    {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                  <p className="text-sm font-semibold text-foreground">{staff?.name}</p>
+                  <p className="text-xs text-muted-foreground">{staff?.designation} · {staff?.department}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {((['present', 'absent', 'late', 'leave'] as StaffAttendanceStatus[]).map(s => {
+                    const icons: Record<StaffAttendanceStatus, ReactNode> = {
+                      present: <CheckCircle2 className="h-4 w-4" />,
+                      absent:  <XCircle className="h-4 w-4" />,
+                      late:    <Clock className="h-4 w-4" />,
+                      leave:   <CalendarOff className="h-4 w-4" />,
+                    };
+                    const colors: Record<StaffAttendanceStatus, string> = {
+                      present: 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
+                      absent:  'border-rose-400 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400',
+                      late:    'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400',
+                      leave:   'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400',
+                    };
+                    const active = markTodayStatus === s;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => setMarkTodayStatus(s)}
+                        className={[
+                          'flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all capitalize',
+                          active ? `${colors[s]} shadow-sm` : 'border-border text-muted-foreground hover:bg-muted',
+                        ].join(' ')}
+                      >
+                        {icons[s]}
+                        {s}
+                      </button>
+                    );
+                  }))}
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button variant="outline" size="sm" onClick={() => setMarkTodayOpen(false)} disabled={markTodaySaving}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                    onClick={handleMarkToday}
+                    disabled={markTodaySaving}
+                  >
+                    {markTodaySaving ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
+                    ) : (
+                      <><CheckCircle2 className="h-3.5 w-3.5" /> Save</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="documents">

@@ -2,7 +2,7 @@
 import {
   User, Calendar, Award, BookOpen, Loader2, AlertCircle,
   CheckCircle, XCircle, Timer, GraduationCap, TrendingUp,
-  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home
+  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home, Trophy
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +14,9 @@ import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/ser
 import { attendanceApi } from "@/services/api/attendanceApi";
 import { getResults, type ResultBasic } from "@/services/api/examinationApi";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
-import { assignmentApi, type SubmissionResponse } from "@/services/api/assignmentApi";
+import { assignmentApi, type ChildAssignmentView } from "@/services/api/assignmentApi";
 import { ParentLeaveTab } from "@/components/leave-management/ParentLeaveTab";
+import { ParentExamResultsTab } from "./ParentExamResultsTab";
 import { toast } from "sonner";
 
 interface AttendanceRecord {
@@ -64,9 +65,9 @@ export function ChildProfileManager() {
   const [gradeRecords, setGradeRecords] = useState<StudentGradeResponse[]>([]);
   const [gradesLoading, setGradesLoading] = useState(false);
 
-  // Assignment submissions state
-  const [submissions, setSubmissions] = useState<SubmissionResponse[]>([]);
-  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  // Assignment state (all assignments for child's class with submission status)
+  const [assignments, setAssignments] = useState<ChildAssignmentView[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
 
   useEffect(() => {
     studentApi.getMyChildren()
@@ -178,17 +179,17 @@ export function ChildProfileManager() {
     }
   };
 
-  const loadSubmissions = async () => {
+  const loadAssignments = async () => {
     if (!selectedChildId) return;
-    setSubmissionsLoading(true);
+    setAssignmentsLoading(true);
     try {
-      const res = await assignmentApi.getStudentSubmissions(selectedChildId);
-      setSubmissions(res.data ?? []);
+      const res = await assignmentApi.getAssignmentsForChild(selectedChildId);
+      setAssignments(res.data ?? []);
     } catch {
-      toast.error("Failed to load assignment submissions");
-      setSubmissions([]);
+      toast.error("Failed to load assignments");
+      setAssignments([]);
     } finally {
-      setSubmissionsLoading(false);
+      setAssignmentsLoading(false);
     }
   };
 
@@ -303,35 +304,40 @@ export function ChildProfileManager() {
       )}
 
       {currentChild && (
-        <Tabs defaultValue="attendance" className="space-y-4" onValueChange={(val) => {
+        <Tabs defaultValue="overview" className="space-y-4" onValueChange={(val) => {
           if (val === "attendance" && attendanceRecords.length === 0) loadAttendance();
           if (val === "academics" && examResults.length === 0) loadAcademics();
           if (val === "grades" && gradeRecords.length === 0) loadGrades();
+          if (val === "assignments" && assignments.length === 0) loadAssignments();
         }}>
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="attendance" onClick={() => { if (attendanceRecords.length === 0) loadAttendance(); }}>
+          <TabsList className="grid w-full grid-cols-7">
+            <TabsTrigger value="overview">
+              <User className="h-4 w-4 mr-1.5" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="attendance">
               <Calendar className="h-4 w-4 mr-1.5" />
               Attendance
             </TabsTrigger>
-            <TabsTrigger value="academics" onClick={() => { if (examResults.length === 0) loadAcademics(); }}>
+            <TabsTrigger value="exam-results">
+              <Trophy className="h-4 w-4 mr-1.5" />
+              Exam Results
+            </TabsTrigger>
+            <TabsTrigger value="academics">
               <Award className="h-4 w-4 mr-1.5" />
               Academic Performance
             </TabsTrigger>
-            <TabsTrigger value="grades" onClick={() => { if (gradeRecords.length === 0) loadGrades(); }}>
+            <TabsTrigger value="grades">
               <BarChart2 className="h-4 w-4 mr-1.5" />
               Grades
             </TabsTrigger>
-            <TabsTrigger value="assignments" onClick={() => { if (submissions.length === 0) loadSubmissions(); }}>
+            <TabsTrigger value="assignments">
               <BookOpen className="h-4 w-4 mr-1.5" />
               Assignments
             </TabsTrigger>
             <TabsTrigger value="leave">
               <CalendarDays className="h-4 w-4 mr-1.5" />
               Leave
-            </TabsTrigger>
-            <TabsTrigger value="overview">
-              <User className="h-4 w-4 mr-1.5" />
-              Overview
             </TabsTrigger>
           </TabsList>
 
@@ -747,81 +753,122 @@ export function ChildProfileManager() {
 
           {/* ── Assignments Tab ── */}
           <TabsContent value="assignments">
-            {submissionsLoading ? (
+            {assignmentsLoading ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
                   <p className="text-muted-foreground">Loading assignments...</p>
                 </CardContent>
               </Card>
-            ) : submissions.length === 0 ? (
+            ) : assignments.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="font-medium text-muted-foreground">No assignment submissions yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">Graded assignments will appear here.</p>
+                  <p className="font-medium text-muted-foreground">No assignments found</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Assignments posted by teachers will appear here.
+                  </p>
                 </CardContent>
               </Card>
             ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BookOpen className="h-4 w-4" />
-                    Assignment Submissions ({submissions.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Assignment</TableHead>
-                        <TableHead className="text-center">Marks</TableHead>
-                        <TableHead className="text-center">Max</TableHead>
-                        <TableHead className="text-center">Status</TableHead>
-                        <TableHead>Feedback</TableHead>
-                        <TableHead>Submitted</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {submissions.map(s => {
-                        const pct = s.assignmentMaxMarks && s.assignmentMaxMarks > 0 && s.marksObtained != null
-                          ? Math.round((s.marksObtained / s.assignmentMaxMarks) * 100) : null;
-                        return (
-                          <TableRow key={s.id}>
-                            <TableCell className="font-medium">{s.assignmentTitle ?? "—"}</TableCell>
-                            <TableCell className="text-center font-bold">
-                              {s.marksObtained != null ? s.marksObtained : "—"}
-                            </TableCell>
-                            <TableCell className="text-center text-muted-foreground">
-                              {s.assignmentMaxMarks ?? "—"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge variant={
-                                s.status === "graded" ? "default" :
-                                s.status === "submitted" ? "secondary" : "outline"
-                              }>
-                                {s.status}
-                              </Badge>
-                              {pct !== null && (
-                                <span className={`ml-1 text-xs font-semibold ${pct >= 50 ? "text-green-600" : "text-red-600"}`}>
-                                  ({pct}%)
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                              {s.feedback ?? "—"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {new Date(s.submissionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+              <div className="space-y-3">
+                {/* Summary bar */}
+                <div className="flex flex-wrap gap-3">
+                  <Badge variant="outline" className="text-xs py-1 px-3">
+                    Total: {assignments.length}
+                  </Badge>
+                  <Badge variant="default" className="text-xs py-1 px-3 bg-green-100 text-green-800 border-green-200">
+                    Graded: {assignments.filter(a => a.submission?.status === "graded").length}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs py-1 px-3">
+                    Submitted: {assignments.filter(a => a.submission?.status === "submitted").length}
+                  </Badge>
+                  <Badge variant="destructive" className="text-xs py-1 px-3 opacity-80">
+                    Overdue: {assignments.filter(a => a.isOverdue).length}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs py-1 px-3 text-amber-700 border-amber-300">
+                    Pending: {assignments.filter(a => !a.submission && !a.isOverdue).length}
+                  </Badge>
+                </div>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-primary" />
+                      Assignments ({assignments.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Assignment</TableHead>
+                          <TableHead>Subject</TableHead>
+                          <TableHead className="text-center">Due Date</TableHead>
+                          <TableHead className="text-center">Max Marks</TableHead>
+                          <TableHead className="text-center">Status</TableHead>
+                          <TableHead className="text-center">Score</TableHead>
+                          <TableHead>Feedback</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {assignments.map(a => {
+                          const sub = a.submission;
+                          const pct = sub?.marksObtained != null && a.maxMarks > 0
+                            ? Math.round((sub.marksObtained / a.maxMarks) * 100) : null;
+                          const dueDate = new Date(a.dueDate);
+                          const dueDateStr = dueDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+                          let statusBadge: React.ReactNode;
+                          if (sub?.status === "graded") {
+                            statusBadge = <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">Graded</Badge>;
+                          } else if (sub?.status === "submitted") {
+                            statusBadge = <Badge variant="secondary">Submitted</Badge>;
+                          } else if (a.isOverdue) {
+                            statusBadge = <Badge variant="destructive">Overdue</Badge>;
+                          } else {
+                            statusBadge = <Badge variant="outline" className="text-amber-700 border-amber-300">Pending</Badge>;
+                          }
+
+                          return (
+                            <TableRow key={a.id} className={a.isOverdue && !sub ? "bg-red-50/40" : ""}>
+                              <TableCell className="font-medium max-w-[200px]">
+                                <div className="truncate" title={a.title}>{a.title}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  Assigned: {new Date(a.assignedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm">{a.subjectName || "—"}</TableCell>
+                              <TableCell className={`text-center text-sm font-medium ${a.isOverdue && !sub ? "text-red-600" : "text-muted-foreground"}`}>
+                                {dueDateStr}
+                              </TableCell>
+                              <TableCell className="text-center text-muted-foreground">{a.maxMarks}</TableCell>
+                              <TableCell className="text-center">{statusBadge}</TableCell>
+                              <TableCell className="text-center font-bold">
+                                {sub?.marksObtained != null ? (
+                                  <span className={pct != null && pct >= 50 ? "text-green-700" : "text-red-600"}>
+                                    {sub.marksObtained}/{a.maxMarks}
+                                    {pct != null && <span className="text-xs ml-1">({pct}%)</span>}
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm max-w-[180px] truncate">
+                                {sub?.feedback ?? "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
             )}
+          </TabsContent>
+
+          {/* ── Exam Results Tab ── */}
+          <TabsContent value="exam-results">
+            <ParentExamResultsTab studentId={selectedChildId} />
           </TabsContent>
 
           {/* ── Leave Tab ── */}

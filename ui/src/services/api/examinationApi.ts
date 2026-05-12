@@ -400,6 +400,114 @@ export const calculateGrade = async (percentage: number): Promise<GradeDto> => {
   return response.data;
 };
 
+// ========== HALL TICKETS ==========
+
+export interface HallTicket {
+  id: string;
+  examId: string;
+  studentId: string;
+  studentName: string;
+  hallTicketNumber: string;
+  rollNumber?: string;
+  class: string;
+  section?: string;
+  generatedAt: string;
+}
+
+export interface GenerateHallTicketsDto {
+  prefix?: string;
+}
+
+export const generateHallTickets = async (examId: string, data?: GenerateHallTicketsDto): Promise<HallTicket[]> => {
+  const response = await apiClient.post(`${BASE_PATH}/exams/${examId}/generate-hall-tickets`, data ?? {});
+  return response.data;
+};
+
+export const getHallTicket = async (examId: string, studentId: string): Promise<HallTicket> => {
+  const response = await apiClient.get(`${BASE_PATH}/exams/${examId}/hall-tickets/${studentId}`);
+  return response.data;
+};
+
+export const getHallTickets = async (examId: string): Promise<HallTicket[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/exams/${examId}/hall-tickets`);
+  return response.data;
+};
+
+// ========== PROMOTE EXAM STRUCTURE ==========
+
+export interface PromoteExamStructureDto {
+  sourceAcademicYear: string;
+  targetAcademicYear: string;
+  force?: boolean;
+}
+
+export const promoteExamStructure = async (data: PromoteExamStructureDto): Promise<{ promoted: number; skipped: number }> => {
+  const response = await apiClient.post(`${BASE_PATH}/exams/promote`, data);
+  return response.data;
+};
+
+// ========== CO-SCHOLASTIC ==========
+
+export interface CoScholasticArea {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  gradeScale: string;
+  displayOrder: number;
+  isActive: boolean;
+}
+
+export interface CreateCoScholasticAreaDto {
+  name: string;
+  code: string;
+  description?: string;
+  gradeScale?: string;
+  displayOrder?: number;
+}
+
+export interface CoScholasticAssessment {
+  id: string;
+  studentId: string;
+  coScholasticAreaId: string;
+  areaName: string;
+  areaCode: string;
+  academicYear: string;
+  term: string;
+  grade: string;
+  remarks?: string;
+}
+
+export interface SaveCoScholasticAssessmentDto {
+  studentId: string;
+  academicYear: string;
+  term: string;
+  assessments: { coScholasticAreaId: string; grade: string; remarks?: string }[];
+}
+
+export const getCoScholasticAreas = async (): Promise<CoScholasticArea[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/coscholastic/areas`);
+  return response.data;
+};
+
+export const createCoScholasticArea = async (data: CreateCoScholasticAreaDto): Promise<CoScholasticArea> => {
+  const response = await apiClient.post(`${BASE_PATH}/coscholastic/areas`, data);
+  return response.data;
+};
+
+export const getStudentCoScholastic = async (studentId: string, academicYear?: string, term?: string): Promise<CoScholasticAssessment[]> => {
+  const params = new URLSearchParams();
+  if (academicYear) params.append('academicYear', academicYear);
+  if (term) params.append('term', term);
+  const response = await apiClient.get(`${BASE_PATH}/coscholastic/students/${studentId}?${params.toString()}`);
+  return response.data;
+};
+
+export const saveCoScholasticAssessments = async (data: SaveCoScholasticAssessmentDto): Promise<CoScholasticAssessment[]> => {
+  const response = await apiClient.post(`${BASE_PATH}/coscholastic/assessments`, data);
+  return response.data;
+};
+
 // Export all functions as a single object for convenience
 export const examinationApi = {
   getExams,
@@ -415,6 +523,15 @@ export const examinationApi = {
   generateReportCard,
   getExamStats,
   calculateGrade,
+  // New
+  generateHallTickets,
+  getHallTicket,
+  getHallTickets,
+  promoteExamStructure,
+  getCoScholasticAreas,
+  createCoScholasticArea,
+  getStudentCoScholastic,
+  saveCoScholasticAssessments,
 };
 
 export default examinationApi;

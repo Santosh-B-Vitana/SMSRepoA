@@ -159,4 +159,45 @@ namespace SmsApi.Models.DTOs
         public int Page { get; set; }
         public int PageSize { get; set; }
     }
+
+    /// <summary>
+    /// Submission snapshot embedded in ChildAssignmentView.
+    /// </summary>
+    public class ChildSubmissionSnapshot
+    {
+        public Guid Id { get; set; }
+        public DateTime SubmissionDate { get; set; }
+        public decimal? MarksObtained { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? Feedback { get; set; }
+        public DateTime? GradedDate { get; set; }
+    }
+
+    /// <summary>
+    /// Assignment + submission status for a specific child — used in parent portal.
+    /// </summary>
+    public class ChildAssignmentView
+    {
+        public Guid Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string SubjectName { get; set; } = string.Empty;
+        public DateTime AssignedDate { get; set; }
+        public DateTime DueDate { get; set; }
+        public decimal MaxMarks { get; set; }
+        public string AssignmentStatus { get; set; } = string.Empty;
+        public string? AttachmentUrl { get; set; }
+        public bool IsOverdue { get; set; }
+
+        /// <summary>Null when the student has not yet submitted.</summary>
+        public ChildSubmissionSnapshot? Submission { get; set; }
+    }
+
+    public class ChildAssignmentListResponse
+    {
+        public List<ChildAssignmentView> Data { get; set; } = new();
+        public int Total { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+    }
 }

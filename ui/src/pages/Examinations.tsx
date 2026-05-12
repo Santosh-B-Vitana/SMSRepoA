@@ -1,24 +1,18 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Award, Calendar, TrendingUp, Users, Plus, BarChart3,
-  Clock, CheckCircle2, AlertCircle, BookOpen, GraduationCap, Download,
-  Search, Loader2, RefreshCw, PenLine, ClipboardList,
-  ChevronRight, Eye, Zap, LayoutDashboard, Printer,
+  Award, Calendar, TrendingUp, Plus, BarChart3,
+  Clock, CheckCircle2, AlertCircle, GraduationCap,
+  Loader2, PenLine, ClipboardList,
+  Zap, LayoutDashboard, Trophy,
 } from "lucide-react";
-import ExamTimetableCreator from "@/components/examinations/ExamTimetableCreator";
 import ExamAnalyticsInline from "@/components/examinations/ExamAnalyticsInline";
-import ResultsManager from "@/pages/academics/ResultsManager";
+import { ExamsListTab } from "@/components/examinations/ExamsListTab";
+import { ExamResultsTab } from "@/components/examinations/ExamResultsTab";
 import examinationApi, { ExamBasic, ExamStats } from "@/services/api/examinationApi";
-import { academicApi, ClassResponse } from "@/services/api/academicApi";
-import { studentApi } from "@/services/api/studentApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
-import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────
 interface ExamEvent {
@@ -754,9 +748,7 @@ function AllExamsTab({ events, loading, onEnterMarks, onViewSchedule, onRefresh 
 export default function Examinations() {
   const { academicYear } = useAcademicYear();
   const [activeTab, setActiveTab] = useState("overview");
-  const [triggerNewExam, setTriggerNewExam] = useState(false);
-  const [marksContext, setMarksContext] = useState<{ cls: string; section: string; examName: string } | null>(null);
-  const [scheduleContext, setScheduleContext] = useState<{ cls: string; section: string; examName: string } | null>(null);
+  const [resultsSetupId, setResultsSetupId] = useState<string | undefined>(undefined);
   const [stats, setStats] = useState<Partial<ExamStats>>({});
   const [statsLoading, setStatsLoading] = useState(true);
   const [allEvents, setAllEvents] = useState<ExamEvent[]>([]);
@@ -773,14 +765,11 @@ export default function Examinations() {
       .then(r => setAllEvents(groupExamsIntoEvents(r.items ?? [])))
       .catch(() => setAllEvents([])).finally(() => setEventsLoading(false));
   };
-  useEffect(() => { loadStats(); loadAllEvents(); }, [academicYear]);
+  useEffect(() => { loadStats(); loadAllEvents(); }, [academicYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleNavigate = (tab: string, event?: ExamEvent) => {
-    if (event) {
-      if (tab === "marks") setMarksContext({ cls: event.classGroup, section: event.section || "all", examName: event.examName });
-      if (tab === "schedule") setScheduleContext({ cls: event.classGroup, section: event.section || "all", examName: event.examName });
-    }
-    setActiveTab(tab);
+  const handleEnterMarks = (setupId: string) => {
+    setResultsSetupId(setupId);
+    setActiveTab("results");
   };
 
   return (
@@ -790,21 +779,17 @@ export default function Examinations() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Award className="h-7 w-7 text-primary" /> Examinations
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Plan · Enter Marks · Report Cards · Analytics — full exam lifecycle</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Plan · Timetable · Enter Marks · Results — full exam lifecycle</p>
         </div>
-        <Button onClick={() => { setTriggerNewExam(true); setActiveTab("schedule"); }} className="gap-2 shrink-0">
-          <Plus className="h-4 w-4" /> New Exam
-        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 h-auto">
+        <TabsList className="grid w-full grid-cols-4 h-auto">
           {[
-            { value: "overview",    icon: <LayoutDashboard className="h-4 w-4" />, label: "Overview" },
-            { value: "exams",       icon: <ClipboardList className="h-4 w-4" />,   label: "All Exams" },
-            { value: "marks",       icon: <PenLine className="h-4 w-4" />,         label: "Enter Marks" },
-            { value: "reportcards", icon: <GraduationCap className="h-4 w-4" />,   label: "Report Cards" },
-            { value: "analytics",   icon: <BarChart3 className="h-4 w-4" />,       label: "Analytics" },
+            { value: "overview",  icon: <LayoutDashboard className="h-4 w-4" />, label: "Overview" },
+            { value: "exams",     icon: <ClipboardList className="h-4 w-4" />,   label: "All Exams" },
+            { value: "results",   icon: <PenLine className="h-4 w-4" />,         label: "Results" },
+            { value: "analytics", icon: <BarChart3 className="h-4 w-4" />,       label: "Analytics" },
           ].map(t => (
             <TabsTrigger key={t.value} value={t.value} className="flex-col py-2 gap-0.5 text-xs sm:text-sm sm:flex-row sm:gap-1.5">
               {t.icon}<span>{t.label}</span>
@@ -814,53 +799,22 @@ export default function Examinations() {
 
         <TabsContent value="overview" className="mt-4">
           <OverviewTab stats={stats} statsLoading={statsLoading} events={allEvents}
-            eventsLoading={eventsLoading} academicYear={academicYear ?? ""} onNavigate={handleNavigate} />
+            eventsLoading={eventsLoading} academicYear={academicYear ?? ""} onNavigate={(tab, ev) => {
+              if (tab === "marks") { setActiveTab("results"); }
+              else setActiveTab(tab);
+            }} />
         </TabsContent>
 
         <TabsContent value="exams" className="mt-4">
-          <AllExamsTab events={allEvents} loading={eventsLoading}
-            onEnterMarks={ev => { setMarksContext({ cls: ev.classGroup, section: ev.section || "all", examName: ev.examName }); setActiveTab("marks"); }}
-            onViewSchedule={ev => { setScheduleContext({ cls: ev.classGroup, section: ev.section || "all", examName: ev.examName }); setActiveTab("schedule"); }}
-            onRefresh={loadAllEvents}
-          />
+          <ExamsListTab onEnterMarks={handleEnterMarks} />
         </TabsContent>
 
-        <TabsContent value="marks" className="mt-4">
-          <div className="flex items-start gap-3 p-4 mb-5 rounded-lg bg-blue-50 border border-blue-200">
-            <PenLine className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-blue-800">Marks Entry</p>
-              <p className="text-sm text-blue-700 mt-0.5">Select class and exam to load the grid. Green ≥ 75%, blue ≥ 33%, red = fail. Amber cells have unsaved changes.</p>
-            </div>
-          </div>
-          <ResultsManager
-            key={marksContext ? `${marksContext.cls}|${marksContext.section}|${marksContext.examName}` : "default"}
-            initialClass={marksContext?.cls}
-            initialSection={marksContext?.section}
-            initialExamName={marksContext?.examName}
-          />
-        </TabsContent>
-
-        <TabsContent value="reportcards" className="mt-4">
-          <ReportCardTab academicYear={academicYear ?? ""} />
+        <TabsContent value="results" className="mt-4">
+          <ExamResultsTab initialSetupId={resultsSetupId} />
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-4">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold">Performance Analytics</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">All 6 reports are inline — no page navigation needed.</p>
-          </div>
           <ExamAnalyticsInline />
-        </TabsContent>
-
-        {/* Hidden schedule tab — navigated to programmatically */}
-        <TabsContent value="schedule" className="mt-4">
-          <ExamTimetableCreator
-            openCreateOnMount={triggerNewExam}
-            key={scheduleContext ? `${scheduleContext.cls}|${scheduleContext.examName}` : (triggerNewExam ? "new" : "default")}
-            initialClass={scheduleContext?.cls}
-            initialExamName={scheduleContext?.examName}
-          />
         </TabsContent>
       </Tabs>
     </div>

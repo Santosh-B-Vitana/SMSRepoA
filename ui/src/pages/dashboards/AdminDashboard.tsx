@@ -27,6 +27,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { AdminLeaveManagementEnhanced } from "@/components/leave/AdminLeaveManagementEnhanced";
+import { StaffAttendanceTile } from "@/components/attendance/StaffAttendanceTile";
 import { getFeeStats, getFeeRecords, FeeStats, FeeRecord } from "@/services/api/feeApi";
 import { getExams, ExamBasic } from "@/services/api/examinationApi";
 import { getUpcomingHolidays, HolidayBasic } from "@/services/api/holidayApi";
@@ -351,7 +352,16 @@ export default function AdminDashboard() {
     );
   }
 
-  const s = summary!;
+  if (!summary) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3">
+        <p className="text-sm text-muted-foreground">Dashboard data unavailable. Please refresh.</p>
+        <button onClick={() => loadData()} className="text-sm text-primary underline">Retry</button>
+      </div>
+    );
+  }
+
+  const s = summary;
   const attendancePct = Math.round(s.todayAttendancePercentage ?? 0);
   const attendanceTrend = buildAttendanceTrend(attendanceData, attendancePct, attPeriod);
   const collected = Math.max(0, (s.totalStudents ?? 0) * 8000 - (s.pendingFees ?? 0));
@@ -445,6 +455,9 @@ export default function AdminDashboard() {
           onClick={() => navigate("/examinations")}
         />
       </div>
+
+      {/* Staff Attendance Banner */}
+      <StaffAttendanceTile />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -982,12 +995,11 @@ export default function AdminDashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           {[
-            { label: "Take Attendance", url: "/attendance", primary: true },
-            { label: "Collect Fee",      url: "/fees",       primary: false },
-            { label: "Add Student",      url: "/students",   primary: false },
-            { label: "Add Staff",        url: "/staff",      primary: false },
-            { label: "Issue Book",       url: "/library",    primary: false },
-            { label: "View Analytics",   url: "/analytics",  primary: false },
+            { label: "Collect Fee",    url: "/fees",       primary: false },
+            { label: "Add Student",   url: "/students",   primary: false },
+            { label: "Add Staff",     url: "/staff",      primary: false },
+            { label: "Issue Book",    url: "/library",    primary: false },
+            { label: "View Analytics", url: "/analytics", primary: false },
           ].map(q => (
             <Button key={q.url} variant={q.primary ? "default" : "outline"} size="sm" onClick={() => navigate(q.url)}>
               {q.label}
