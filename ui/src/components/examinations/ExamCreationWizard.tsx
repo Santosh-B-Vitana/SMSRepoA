@@ -483,9 +483,11 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
                           <SelectValue placeholder="Select class" />
                         </SelectTrigger>
                         <SelectContent>
-                          {classes.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}{c.boardName ? ` (${c.boardName})` : ''}</SelectItem>
-                          ))}
+                          {classes
+                            .filter((c, idx, arr) => arr.findIndex(x => x.name === c.name) === idx)
+                            .map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       {errors.classId && <p className="text-xs text-destructive mt-1">{errors.classId}</p>}

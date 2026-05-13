@@ -793,6 +793,42 @@ namespace SmsApi.Services
             _context.ClassSubjects.Add(classSubject);
             await _context.SaveChangesAsync();
 
+            // If a teacher is specified, also create a class-level TeacherAssignment so the
+            // teacher sees this subject in "My Classes" immediately.
+            if (classSubject.TeacherId.HasValue)
+            {
+                var academicYear = !string.IsNullOrWhiteSpace(classSubject.AcademicYear)
+                    ? classSubject.AcademicYear
+                    : $"{DateTime.UtcNow.Year}-{DateTime.UtcNow.Year + 1}";
+
+                var alreadyAssigned = await _context.TeacherAssignments.AnyAsync(ta =>
+                    ta.SchoolId == request.SchoolId
+                    && ta.StaffId == classSubject.TeacherId.Value
+                    && ta.ClassId == classSubject.ClassId
+                    && ta.SectionId == null
+                    && ta.SubjectId == classSubject.SubjectId
+                    && !ta.IsDeleted);
+
+                if (!alreadyAssigned)
+                {
+                    _context.TeacherAssignments.Add(new TeacherAssignment
+                    {
+                        Id            = Guid.NewGuid(),
+                        SchoolId      = request.SchoolId,
+                        StaffId       = classSubject.TeacherId.Value,
+                        ClassId       = classSubject.ClassId,
+                        SectionId     = null,
+                        SubjectId     = classSubject.SubjectId,
+                        IsClassTeacher = false,
+                        AcademicYear  = academicYear,
+                        Status        = "active",
+                        CreatedAt     = DateTime.UtcNow,
+                        UpdatedAt     = DateTime.UtcNow,
+                    });
+                    await _context.SaveChangesAsync();
+                }
+            }
+
             return MapToClassSubjectResponse(classSubject);
         }
 
@@ -974,7 +1010,7 @@ namespace SmsApi.Services
                     .Sum(g => g.Count);
             }
 
-            return assignments.Select(ta => new MyClassAssignmentDto
+            var taList = assignments.Select(ta => new MyClassAssignmentDto
             {
                 AssignmentId = ta.Id,
                 ClassId = ta.ClassId,
@@ -988,6 +1024,54 @@ namespace SmsApi.Services
                 Status = ta.Status,
                 StudentCount = GetStudentCount(ta.Class?.Name, ta.Section?.Name)
             }).ToList();
+
+            // Also surface class-default subjects (ClassSubject.TeacherId) that have no
+            // corresponding TeacherAssignment yet (legacy data or direct DB inserts).
+            var taKeys = new HashSet<(Guid classId, Guid? subjectId)>(
+                taList.Select(t => (t.ClassId, t.SubjectId)));
+
+            var classSubjectsForTeacher = await _context.ClassSubjects
+                .IgnoreQueryFilters()
+                .Include(cs => cs.Class)
+                .Include(cs => cs.Subject)
+                .Where(cs => cs.TeacherId == staffId && cs.SchoolId == schoolId && !cs.IsDeleted)
+                .ToListAsync();
+
+            foreach (var cs in classSubjectsForTeacher)
+            {
+                if (cs.Class == null) continue;
+                if (taKeys.Contains((cs.ClassId, cs.SubjectId))) continue; // already covered
+
+                var extraClassNames = classNames.Contains(cs.Class.Name) ? classNames : classNames.Append(cs.Class.Name).ToList();
+                if (!classNames.Contains(cs.Class.Name))
+                {
+                    // Extend student count groups for this new class
+                    var extra = await _context.Students
+                        .Where(s => s.SchoolId == schoolId && s.Class == cs.Class.Name)
+                        .GroupBy(s => new { s.Class, s.Section })
+                        .Select(g => new { g.Key.Class, g.Key.Section, Count = g.Count() })
+                        .ToListAsync();
+                    studentGroups = studentGroups.Concat(extra).ToList();
+                    classNames = extraClassNames;
+                }
+
+                taList.Add(new MyClassAssignmentDto
+                {
+                    AssignmentId = cs.Id,
+                    ClassId = cs.ClassId,
+                    ClassName = cs.Class.Name,
+                    SectionId = null,
+                    SectionName = null,
+                    SubjectId = cs.SubjectId,
+                    SubjectName = cs.Subject?.Name,
+                    IsClassTeacher = false,
+                    AcademicYear = cs.AcademicYear ?? string.Empty,
+                    Status = cs.Status,
+                    StudentCount = GetStudentCount(cs.Class.Name, null),
+                });
+            }
+
+            return taList;
         }
 
         // Get my class assignments by user email (looks up StaffMember by email)

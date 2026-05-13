@@ -20,11 +20,9 @@ export default function SubjectManager() {
     name: "",
     code: "",
     description: "",
-    board: "CBSE" as "CBSE" | "State Board" | "ICSE",
     type: "Core" as "Core" | "Elective" | "Language" | "Activity"
   });
 
-  const boardOptions = ["CBSE", "State Board", "ICSE"] as const;
   const typeOptions = ["Core", "Elective", "Language", "Activity"] as const;
 
   const fetchSubjects = useCallback(async () => {
@@ -58,7 +56,6 @@ export default function SubjectManager() {
           name: formData.name,
           code: formData.code,
           description: formData.description,
-          board: formData.board,
           type: formData.type
         });
         toast.success("Subject updated successfully");
@@ -67,7 +64,6 @@ export default function SubjectManager() {
           name: formData.name,
           code: formData.code,
           description: formData.description,
-          board: formData.board,
           type: formData.type
         });
         toast.success("Subject created successfully");
@@ -75,7 +71,7 @@ export default function SubjectManager() {
       
       setDialogOpen(false);
       setEditingSubject(null);
-      setFormData({ name: "", code: "", description: "", board: "CBSE", type: "Core" });
+      setFormData({ name: "", code: "", description: "", type: "Core" });
       await fetchSubjects();
     } catch (error: any) {
       toast.error(error?.message || "Failed to save subject");
@@ -88,7 +84,6 @@ export default function SubjectManager() {
       name: subject.name,
       code: subject.code,
       description: subject.description || "",
-      board: (subject.board as any) || "CBSE",
       type: (subject.type as any) || "Core"
     });
     setDialogOpen(true);
@@ -165,21 +160,6 @@ export default function SubjectManager() {
                 />
               </div>
               <div>
-                <Label htmlFor="board">Board</Label>
-                <Select value={formData.board} onValueChange={(value: any) => setFormData(prev => ({ ...prev, board: value }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {boardOptions.map((board) => (
-                      <SelectItem key={board} value={board}>
-                        {board}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
                 <Label htmlFor="type">Type</Label>
                 <Select value={formData.type} onValueChange={(value: any) => setFormData(prev => ({ ...prev, type: value }))}>
                   <SelectTrigger>
@@ -217,7 +197,6 @@ export default function SubjectManager() {
               <TableRow>
                 <TableHead>Subject</TableHead>
                 <TableHead>Code</TableHead>
-                <TableHead>Board</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -225,7 +204,7 @@ export default function SubjectManager() {
             <TableBody>
               {subjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                     No subjects created yet. Click "Add Subject" to get started.
                   </TableCell>
                 </TableRow>
@@ -234,7 +213,6 @@ export default function SubjectManager() {
                   <TableRow key={subject.id}>
                     <TableCell className="font-medium">{subject.name}</TableCell>
                     <TableCell>{subject.code}</TableCell>
-                    <TableCell>{subject.board || "-"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{subject.type || "Core"}</Badge>
                     </TableCell>

@@ -241,7 +241,7 @@ function AssignmentsTab({ assignment, subjects, userId }: AssignmentsTabProps) {
   const loadAssignments = useCallback(() => {
     setLoading(true);
     assignmentApi
-      .getAssignments(assignment.classId, undefined, 1, 100)
+      .getAssignments(assignment.classId, undefined, undefined, 1, 100)
       .then((res) => setAssignments(res.assignments ?? []))
       .catch(() => toast.error("Failed to load assignments"))
       .finally(() => setLoading(false));

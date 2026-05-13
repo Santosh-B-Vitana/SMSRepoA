@@ -2,9 +2,20 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.3 | **Last Updated:** May 12, 2026 | **Project:** SMSRepoA
+**Version:** 2.4 | **Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA
 
 ---
+
+## Changelog — May 13, 2026 (Session 5)
+
+| Area | Change |
+|------|--------|
+| **Parent Notifications — Assignment Graded** | When a staff member grades a student's assignment, the student's parent(s) now automatically receive a real-time notification. The notification appears in the parent portal under **Notifications → Assignments tab**. Content includes the assignment title, marks scored, total marks, percentage, and any feedback left by the teacher. Example: *"Assignment 'Muryphy law' has been graded. Marks: 23/40 (57.5%). Feedback: Good effort."* |
+| **Parent Notifications — New Assignment** | Fixed: when a new assignment is created for a class, the notification broadcast to parents now correctly reaches all parents registered via the `StudentGuardians` table (was querying wrong/empty legacy tables). |
+| **Assignment Tiles — Live Refresh** | Staff assignment tiles (submitted count, graded count, average score) now update immediately when the grading sheet is closed, without requiring a manual page refresh. |
+| **My Classes → Assignments Tab** | Fixed: assignments now correctly load in the staff **My Classes** class profile under the Assignments tab. Previously, no assignments appeared due to an API argument order bug. |
+| **Staff Sidebar** | Removed the standalone **Grades** navigation item from the staff sidebar. Exam results and grade data remain accessible through the **Examinations** module. |
+| **My Classes → Exam Marks Tab** | Renamed from "My Exams" to **"Exams"**. Now shows all published exams for the class (not just exams explicitly assigned to the teacher), ensuring staff can always view and enter marks for their classes. |
 
 ## Changelog — May 12, 2026
 

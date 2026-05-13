@@ -1,11 +1,48 @@
 # sms-api — Technical Document
 
-> **Version 2.4** · ASP.NET Core 8 · .NET 8 · React 19 · PostgreSQL · **Release Candidate**  
-> **Last Updated:** May 13, 2026 | **Project:** SMSRepoA
+> **Version 2.5** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
+> **Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA
 
 ---
 
-## Changelog — May 13, 2026
+## Changelog — May 13, 2026 (Session 5)
+
+| Area | Change |
+|------|--------|
+| **AssignmentService — `NotifyParentOnGradeAsync`** | New private method fires a `Notification` record for each parent when their child's assignment is graded. Looks up parent login IDs via `StudentGuardians → UserLogins` email join (NOT `Guardians`/`GuardianStudents` which are empty). Sets `RecipientType = "Parent"`, `Type = "Assignment"`, `ActionUrl = "/parent-assignments"`. Called from both `GradeSubmissionAsync` (student self-submits then gets graded) and `StaffMarkSubmissionAsync` (staff marks via roster endpoint). |
+| **AssignmentService — `NotifyParentsAsync`** | Existing new-assignment notification method fixed from incorrect `GuardianStudents`/`Guardians` table join to the correct `StudentGuardians → UserLogins` email join. |
+| **Parent schema clarification** | Parent portal accounts live exclusively in `StudentGuardians` (columns: `Id, StudentId, SchoolId, Name, Surname, Email, HasPortalAccess, UserLoginId, ...`). The `Guardians` and `GuardianStudents` tables are empty legacy tables. Always use: `from sg in _context.StudentGuardians join ul in _context.UserLogins on sg.Email equals ul.Email`. |
+| **Frontend — `AssignmentManager.tsx`** | `onClose` handler on `AssignmentGradingSheet` now also calls `loadAssignments()` — assignment tiles (submission count, graded count, avg score) now refresh immediately after closing the grading sheet. |
+| **Frontend — `StaffMyClassDetail.tsx`** | Fixed argument order bug in `loadAssignments`: `.getAssignments(assignment.classId, undefined, undefined, 1, 100)` — the missing `undefined` for `subjectId` caused the `page` argument to be passed as `subjectId`, so no assignments loaded in the My Classes → Assignments tab. |
+| **Frontend — `AppSidebar.tsx`** | Removed `Grades` nav item from all three staff designation blocks (Principal/VP, Head of Department, Class Teacher/Teacher). Grades data is accessible via Examinations; a standalone Grades sidebar entry was redundant. |
+| **Frontend — `StaffExamMarksTab.tsx`** | Rewritten to use `getExamSetups({ classId, academicYear, pageSize: 100 })` instead of `getMyExamAssignments(academicYear)` filtered by classId. This shows all published exams for the class (not just exams explicitly assigned to the teacher), making it consistent with actual school workflows. Sidebar label changed from "My Exams" to "Exams". |
+
+### Parent notification data flow
+
+```
+Staff grades submission
+  → GradeSubmissionAsync / StaffMarkSubmissionAsync
+    → NotifyParentOnGradeAsync(studentId, schoolId, assignment, marks, feedback)
+      → LINQ join: StudentGuardians.Email = UserLogins.Email
+        WHERE sg.StudentId = studentId AND ul.Role = "parent" AND ul.Status = "active"
+      → INSERT Notifications (RecipientId = UserLogin.Id, RecipientType = "Parent",
+                               Type = "Assignment", Title = "Assignment Graded: {title}",
+                               Content = "Marks: X/Y (Z%). Feedback: ...")
+        → Parent sees notification in /api/notifications/my (ParentNotifications.tsx)
+```
+
+### Parent identity resolution pattern
+
+```
+StudentGuardians.Email  =  UserLogins.Email  ← reliable join
+UserLogins.LinkedEntityId  =  StudentGuardians.Id  (when portal access created)
+UserLogins.Role  =  "parent"
+Notifications.RecipientId  =  UserLogins.Id
+```
+
+---
+
+## Changelog — May 13, 2026 (Session 4)
 
 | Area | Change |
 |------|--------|

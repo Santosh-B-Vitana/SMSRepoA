@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Student, studentApi } from "@/services/api/studentApi";
 import { academicApi, ClassResponse, AcademicYearResponse } from "@/services/api/academicApi";
+import { boardApi } from "@/services/api/boardApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { toast } from "sonner";
 import { DOCUMENT_TYPES } from "./StudentDocumentUpload";
@@ -183,6 +184,9 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   const [academicYears, setAcademicYears] = useState<AcademicYearResponse[]>([]);
   // Default to current academic year name; populated once global context loads
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(globalCurrentYear?.name ?? "");
+  // Board filter for the Enrollment step
+  const [selectedBoard, setSelectedBoard] = useState("");
+  const [availableBoards, setAvailableBoards] = useState<{ id: string; name: string }[]>([]);
 
   interface PendingDoc { docType: string; file: File; }
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
@@ -195,7 +199,30 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
       const all = r.students || [];
       setAllStudents((student ? all.filter(s => s.id !== student.id) : all) as Student[]);
     }).catch(() => {});
-    academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(() => {});
+    academicApi.listClasses(1, 500).then(r => {
+      const classes = r.classes || [];
+      setAllClasses(classes);
+      // Derive boards from classes that have boardConfigurationId set
+      const seen = new Set<string>();
+      const boards: { id: string; name: string }[] = [];
+      for (const c of classes) {
+        if (c.boardConfigurationId && !seen.has(c.boardConfigurationId)) {
+          seen.add(c.boardConfigurationId);
+          boards.push({ id: c.boardConfigurationId, name: c.boardName ?? c.boardConfigurationId });
+        }
+      }
+      // If no class has boardConfigurationId, try fetching boards from the board API
+      if (boards.length === 0) {
+        boardApi.getAllBoards().then(res => {
+          if (res.boards && res.boards.length > 1) {
+            // Only show board picker if there are multiple boards the school can use
+            setAvailableBoards(res.boards.map(b => ({ id: b.id, name: b.name })));
+          }
+        }).catch(() => {});
+      } else {
+        setAvailableBoards(boards);
+      }
+    }).catch(() => {});
     academicApi.listAcademicYears(1, 50).then(r => {
       const years = r.academicYears || [];
       setAcademicYears(years);
@@ -215,9 +242,19 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
     }
   }, [globalCurrentYear]);
 
-  // Classes are school-wide (not year-specific in DB) — always show all.
-  // The academic year selector here records which year the student is enrolling in.
-  const filteredClasses = allClasses;
+  // Derive unique board options from allClasses (boards that have explicit boardConfigurationId)
+  // NOTE: availableBoards is now populated in the useEffect above
+
+  // Classes are school-wide (not year-specific in DB) — filter by selected board.
+  // "School Default" (selectedBoard = "") shows classes without a specific board assigned;
+  // if none exist without a board, falls back to all classes.
+  const defaultBoardClasses = allClasses.filter(c => !c.boardConfigurationId);
+  const filteredClasses = !selectedBoard
+    ? (defaultBoardClasses.length > 0 ? defaultBoardClasses : allClasses)
+    : allClasses.filter(c =>
+        c.boardConfigurationId === selectedBoard ||
+        (!c.boardConfigurationId && availableBoards.length > 0 && availableBoards[0]?.id === selectedBoard)
+      );
 
   // Use standard (grade number like "10") falling back to name; filter out blanks
   const getStandard = (c: ClassResponse) => (c.standard || c.name || "").trim();
@@ -432,6 +469,25 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Admission Number"><Input value={formData.admissionNumber} onChange={e => set({ admissionNumber: e.target.value })} placeholder="e.g. ADM-2024-001" /></Field>
             <Field label="Admission Date" required><Input type="date" value={formData.admissionDate} onChange={e => set({ admissionDate: e.target.value })} /></Field>
+            {availableBoards.length > 0 && (
+              <Field label="Board" className="md:col-span-2">
+                <Select
+                  value={selectedBoard || "school_default"}
+                  onValueChange={v => {
+                    setSelectedBoard(v === "school_default" ? "" : v);
+                    set({ class: "", section: "" });
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="school_default">School Default</SelectItem>
+                    {availableBoards.map(b => (
+                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             <Field label="Enrollment Year" required>
               <Select value={selectedAcademicYear} onValueChange={setSelectedAcademicYear}>
                 <SelectTrigger><SelectValue placeholder={globalCurrentYear?.name ?? "Select year"} /></SelectTrigger>

@@ -416,7 +416,9 @@ export function ExamSetupManager() {
                 examSetupId={marksSetup.id}
                 examSetupSubjectId={marksSubject.id}
                 readOnly={marksSubject.status === 'locked'}
+                isAdmin={true}
                 onSaved={loadList}
+                onUnlocked={loadList}
               />
             ) : (
               <p className="text-center text-muted-foreground py-10">No subjects configured for this exam setup.</p>

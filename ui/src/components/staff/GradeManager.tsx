@@ -1,8 +1,8 @@
-﻿import { useState, useCallback } from "react";
+﻿import { useState, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Award, BarChart3, BookOpen, ClipboardList, Plus,
-  Trash2, Filter, RefreshCw, CheckCircle2, AlertCircle
+  Trash2, Filter, RefreshCw, CheckCircle2, AlertCircle, ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -744,6 +744,166 @@ function CCETab() {
   );
 }
 
+// --- STUDENT GRADES HISTORY TAB (grouped by class) ---
+
+function ClassGradeSection({
+  className,
+  grades,
+  itemMap,
+}: {
+  className: string;
+  grades: StudentGradeResponse[];
+  itemMap: Map<string, { className: string; subjectName: string }>;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <Card>
+      <CardHeader
+        className="py-3 px-4 cursor-pointer select-none"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-blue-600" />
+            {className}
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+              {grades.length} grade{grades.length !== 1 ? "s" : ""}
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                expanded ? "rotate-180" : ""
+              }`}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead>Roll No</TableHead>
+                <TableHead>Test / Assessment</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>Marks</TableHead>
+                <TableHead>Grade</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {grades.map(g => {
+                const info = itemMap.get(g.gradeItemId);
+                return (
+                  <TableRow key={g.id}>
+                    <TableCell className="font-medium">{g.studentName ?? "-"}</TableCell>
+                    <TableCell>{g.rollNumber ?? "-"}</TableCell>
+                    <TableCell>{g.gradeItemName ?? "-"}</TableCell>
+                    <TableCell>{info?.subjectName ?? "-"}</TableCell>
+                    <TableCell>
+                      {g.marksObtained}
+                      {g.maxMarks ? (
+                        <span className="text-muted-foreground text-xs"> / {g.maxMarks}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell><GradeBadge grade={g.grade} /></TableCell>
+                    <TableCell><StatusBadge status={g.status} /></TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function StudentGradesHistoryTab() {
+  const { data: itemsData, isLoading: itemsLoading } = useQuery({
+    queryKey: ["grades", "items-for-history"],
+    queryFn: () => gradesApi.getGradeItems(undefined, undefined, 1, 200),
+    staleTime: 60_000,
+  });
+
+  const { data: gradesData, isLoading: gradesLoading, refetch } = useQuery({
+    queryKey: ["grades", "student-grades-history"],
+    queryFn: () => gradesApi.getStudentGrades(undefined, undefined, 1, 500),
+    staleTime: 20_000,
+  });
+
+  const itemMap = useMemo(() => {
+    const map = new Map<string, { className: string; subjectName: string }>();
+    (itemsData?.items ?? []).forEach(item => {
+      map.set(item.id, {
+        className: item.className ?? "Unknown Class",
+        subjectName: item.subjectName ?? "",
+      });
+    });
+    return map;
+  }, [itemsData]);
+
+  const gradesByClass = useMemo(() => {
+    const grouped = new Map<string, StudentGradeResponse[]>();
+    (gradesData?.studentGrades ?? []).forEach(g => {
+      const info = itemMap.get(g.gradeItemId);
+      const cn = info?.className ?? "Unassigned";
+      if (!grouped.has(cn)) grouped.set(cn, []);
+      grouped.get(cn)!.push(g);
+    });
+    return Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [gradesData, itemMap]);
+
+  const isLoading = itemsLoading || gradesLoading;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="py-3 px-4">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  const totalGrades = gradesData?.total ?? 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-muted-foreground">
+          {totalGrades} grade{totalGrades !== 1 ? "s" : ""} recorded across {gradesByClass.length} class{gradesByClass.length !== 1 ? "es" : ""}
+        </p>
+        <Button size="sm" variant="outline" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+        </Button>
+      </div>
+
+      {gradesByClass.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            No student grades recorded yet. Use the Exam Marks tab to record student marks.
+          </CardContent>
+        </Card>
+      ) : (
+        gradesByClass.map(([cn, grades]) => (
+          <ClassGradeSection key={cn} className={cn} grades={grades} itemMap={itemMap} />
+        ))
+      )}
+    </div>
+  );
+}
+
 // --- MAIN COMPONENT ---
 
 export function GradeManager() {
@@ -751,22 +911,19 @@ export function GradeManager() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Grade Management</h1>
-        <p className="text-muted-foreground mt-1">Manage grade items, student grades, CCE assessments and categories</p>
+        <p className="text-muted-foreground mt-1">
+          Enter exam marks and view student grade history by class
+        </p>
       </div>
       <StatsBar />
-      <Tabs defaultValue="items">
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
-          <TabsTrigger value="items">Grade Items</TabsTrigger>
-          <TabsTrigger value="grades">Student Grades</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="cce">CCE</TabsTrigger>
+      <Tabs defaultValue="exam-marks">
+        <TabsList className="grid grid-cols-2 w-full max-w-sm">
           <TabsTrigger value="exam-marks">Exam Marks</TabsTrigger>
+          <TabsTrigger value="student-grades">Student Grades</TabsTrigger>
         </TabsList>
-        <TabsContent value="items" className="mt-4"><GradeItemsTab /></TabsContent>
-        <TabsContent value="grades" className="mt-4"><StudentGradesTab /></TabsContent>
-        <TabsContent value="categories" className="mt-4"><CategoriesTab /></TabsContent>
-        <TabsContent value="cce" className="mt-4"><CCETab /></TabsContent>
         <TabsContent value="exam-marks" className="mt-4"><StaffExamMarksTab /></TabsContent>
+        <TabsContent value="student-grades" className="mt-4"><StudentGradesHistoryTab /></TabsContent>
+        {/* CCE tab is hidden but content is preserved */}
       </Tabs>
     </div>
   );

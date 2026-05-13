@@ -21,6 +21,7 @@ import {
   XCircle,
   Plus,
   Edit,
+  Pencil,
   Trash2,
   Search,
   ArrowRightLeft,
@@ -34,6 +35,7 @@ import {
   AlertCircle,
   Eye,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { academicApi, type SectionResponse, type TeacherAssignmentResponse, type ClassSubjectResponse } from "@/services/api/academicApi";
@@ -106,7 +108,7 @@ export default function SectionDetail() {
   const [teacherPickerQuery, setTeacherPickerQuery] = useState("");
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
 
-  // ── Staff Assignments ──────────────────────────────────────────────────────
+  // ΓöÇΓöÇ Staff Assignments ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [staffAssignments, setStaffAssignments] = useState<TeacherAssignmentResponse[]>([]);
   const [staffAssignmentsLoading, setStaffAssignmentsLoading] = useState(false);
   const [classSubjects, setClassSubjects] = useState<ClassSubjectResponse[]>([]);
@@ -120,11 +122,21 @@ export default function SectionDetail() {
     subjectId: string;
     isClassTeacher: boolean;
   }>({ staffId: "", staffName: "", subjectId: "", isClassTeacher: false });
+
+  // Subject-level section override dialog
+  const [subjectOverrideOpen, setSubjectOverrideOpen] = useState(false);
+  const [overrideSubject, setOverrideSubject] = useState<ClassSubjectResponse | null>(null);
+  const [overrideExistingId, setOverrideExistingId] = useState<string | null>(null);
+  const [overrideStaffId, setOverrideStaffId] = useState("");
+  const [overrideStaffName, setOverrideStaffName] = useState("");
+  const [overrideStaffSearch, setOverrideStaffSearch] = useState("");
+  const [overrideDropdownOpen, setOverrideDropdownOpen] = useState(false);
+  const [overrideSaving, setOverrideSaving] = useState(false);
   const [visibleRecords, setVisibleRecords] = useState(5);
   const [attendanceDetailsOpen, setAttendanceDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
 
-  // ── Add Students Dialog ──────────────────────────────────────────────────
+  // ΓöÇΓöÇ Add Students Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [addStudentsOpen, setAddStudentsOpen] = useState(false);
   const [allClassStudents, setAllClassStudents] = useState<StudentInfo[]>([]);
   const [addSearch, setAddSearch] = useState("");
@@ -132,20 +144,20 @@ export default function SectionDetail() {
   const [addLoading, setAddLoading] = useState(false);
   const [loadingAllStudents, setLoadingAllStudents] = useState(false);
 
-  // ── Transfer Dialog (single / from section) ──────────────────────────────
+  // ΓöÇΓöÇ Transfer Dialog (single / from section) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferStudent, setTransferStudent] = useState<StudentInfo | null>(null);
   const [targetSectionId, setTargetSectionId] = useState("");
   const [allSections, setAllSections] = useState<SectionResponse[]>([]);
   const [transferLoading, setTransferLoading] = useState(false);
 
-  // ── Bulk Transfer from THIS section ─────────────────────────────────────
+  // ΓöÇΓöÇ Bulk Transfer from THIS section ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [selectedInSection, setSelectedInSection] = useState<Set<string>>(new Set());
   const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
   const [bulkTargetSectionId, setBulkTargetSectionId] = useState("");
   const [bulkTransferLoading, setBulkTransferLoading] = useState(false);
 
-  // ── Assignments Tab ──────────────────────────────────────────────────────
+  // ΓöÇΓöÇ Assignments Tab ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [classAssignments, setClassAssignments] = useState<AssignmentResponse[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
@@ -167,7 +179,7 @@ export default function SectionDetail() {
   const [gradeForm, setGradeForm] = useState({ marks: "", feedback: "" });
   const [gradeSaving, setGradeSaving] = useState(false);
 
-  // ── Assignment loaders and handlers ──────────────────────────────────────
+  // ΓöÇΓöÇ Assignment loaders and handlers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const loadAssignments = useCallback(async () => {
     if (!classId || !sectionId) return;
     setAssignmentsLoading(true);
@@ -431,6 +443,46 @@ export default function SectionDetail() {
     }
   };
 
+  const handleSaveSubjectOverride = async () => {
+    if (!overrideStaffId || !overrideSubject || !sectionId || !classId) {
+      toast.error("Please select a staff member");
+      return;
+    }
+    setOverrideSaving(true);
+    try {
+      const years = await academicApi.listAcademicYears(1, 1);
+      const academicYear =
+        years.academicYears?.find(y => y.isCurrent)?.name ??
+        years.academicYears?.[0]?.name ??
+        `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+      if (overrideExistingId) {
+        await academicApi.removeTeacherAssignment(overrideExistingId);
+        setStaffAssignments(prev => prev.filter(a => a.id !== overrideExistingId));
+      }
+      const saved = await academicApi.assignTeacher({
+        staffId: overrideStaffId,
+        classId,
+        sectionId,
+        subjectId: overrideSubject.subjectId,
+        isClassTeacher: false,
+        academicYear,
+      });
+      setStaffAssignments(prev => {
+        if (prev.some(a => a.id === saved.id)) return prev;
+        return [...prev, { ...saved, staffName: overrideStaffName, subjectName: overrideSubject!.subjectName }];
+      });
+      toast.success(`${overrideStaffName} assigned to ${overrideSubject.subjectName} for this section`);
+      setSubjectOverrideOpen(false);
+      setOverrideSubject(null); setOverrideExistingId(null);
+      setOverrideStaffId(""); setOverrideStaffName(""); setOverrideStaffSearch("");
+      loadStaffAssignments();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to save assignment");
+    } finally {
+      setOverrideSaving(false);
+    }
+  };
+
   const filteredStaffForAssign = useMemo(() => {
     const q = staffSearchQuery.toLowerCase();
     return (teachingStaff ?? []).filter(
@@ -438,10 +490,17 @@ export default function SectionDetail() {
     ).slice(0, 8);
   }, [teachingStaff, staffSearchQuery]);
 
+  const filteredStaffForOverride = useMemo(() => {
+    const q = overrideStaffSearch.toLowerCase();
+    return (teachingStaff ?? []).filter(
+      s => !q || (s.name ?? `${s.firstName} ${s.lastName}`).toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [teachingStaff, overrideStaffSearch]);
+
   // Teacher picker for the period dialog.
   // Primary source: teachers configured for subjects in this class (ClassSubjects).
   // Secondary: any additional staff directly assigned to this section (TeacherAssignments).
-  // We do NOT fall back to all teaching staff — only show class-configured teachers.
+  // We do NOT fall back to all teaching staff ΓÇö only show class-configured teachers.
   const periodTeacherOptions = useMemo(() => {
     // Deduplicated list from class subjects (each teacher appears once, labelled with their subject)
     const fromClassSubjects = classSubjects
@@ -472,7 +531,7 @@ export default function SectionDetail() {
     return [...fromClassSubjects, ...fromSectionAssignments];
   }, [classSubjects, staffAssignments]);
 
-  // ── Timetable ──────────────────────────────────────────────────────────────
+  // ΓöÇΓöÇ Timetable ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const loadTimetable = useCallback(async () => {
     if (!classId || !sectionId) return;
     setTimetableLoading(true);
@@ -487,7 +546,7 @@ export default function SectionDetail() {
         setTimetablePeriods([]);
       }
     } catch {
-      // silently degrade — timetable is non-critical
+      // silently degrade ΓÇö timetable is non-critical
     } finally {
       setTimetableLoading(false);
     }
@@ -511,7 +570,7 @@ export default function SectionDetail() {
       setTimetableRecord(record);
       setTimetablePeriods([]);
       setTimetableEditMode(true);
-      toast.success("Timetable created — add periods by clicking cells");
+      toast.success("Timetable created ΓÇö add periods by clicking cells");
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? "Failed to create timetable";
       // If duplicate, just reload
@@ -539,7 +598,7 @@ export default function SectionDetail() {
   };
 
   const openEditPeriod = (period: TimetablePeriod) => {
-    const fmt = (t: string) => t.substring(0, 5); // "HH:MM:SS" → "HH:MM"
+    const fmt = (t: string) => t.substring(0, 5); // "HH:MM:SS" ΓåÆ "HH:MM"
     setPeriodForm({
       day: period.dayOfWeek, periodNumber: period.periodNumber,
       startTime: fmt(period.startTime), endTime: fmt(period.endTime),
@@ -639,7 +698,7 @@ export default function SectionDetail() {
     setVisibleRecords(prev => Math.min(prev + 5, attendanceHistory.length));
   };
 
-  // ── Load all sections in this class (for transfer target dropdown) ────────
+  // ΓöÇΓöÇ Load all sections in this class (for transfer target dropdown) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const loadAllSections = useCallback(async () => {
     if (allSections.length > 0) return;
     try {
@@ -650,7 +709,7 @@ export default function SectionDetail() {
     }
   }, [classId, sectionId, allSections.length]);
 
-  // ── Open "Add Students" dialog: load all class students not in THIS section
+  // ΓöÇΓöÇ Open "Add Students" dialog: load all class students not in THIS section
   const openAddStudents = async () => {
     setAddStudentsOpen(true);
     setSelectedToAdd(new Set());
@@ -673,7 +732,7 @@ export default function SectionDetail() {
     setLoadingAllStudents(false);
   };
 
-  // ── Confirm: assign / transfer selected students into THIS section ────────
+  // ΓöÇΓöÇ Confirm: assign / transfer selected students into THIS section ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const handleAddStudents = async () => {
     if (selectedToAdd.size === 0) return;
     setAddLoading(true);
@@ -693,7 +752,7 @@ export default function SectionDetail() {
     setAddLoading(false);
   };
 
-  // ── Open single-student transfer dialog ───────────────────────────────────
+  // ΓöÇΓöÇ Open single-student transfer dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const openTransfer = async (student: StudentInfo) => {
     setTransferStudent(student);
     setTargetSectionId("");
@@ -701,7 +760,7 @@ export default function SectionDetail() {
     await loadAllSections();
   };
 
-  // ── Confirm single-student transfer ──────────────────────────────────────
+  // ΓöÇΓöÇ Confirm single-student transfer ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const handleTransferStudent = async () => {
     if (!transferStudent || !targetSectionId) return;
     setTransferLoading(true);
@@ -721,14 +780,14 @@ export default function SectionDetail() {
     setTransferLoading(false);
   };
 
-  // ── Open bulk-transfer dialog ────────────────────────────────────────────
+  // ΓöÇΓöÇ Open bulk-transfer dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const openBulkTransfer = async () => {
     setBulkTargetSectionId("");
     setBulkTransferOpen(true);
     await loadAllSections();
   };
 
-  // ── Confirm bulk transfer from THIS section ───────────────────────────────
+  // ΓöÇΓöÇ Confirm bulk transfer from THIS section ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const handleBulkTransfer = async () => {
     if (selectedInSection.size === 0 || !bulkTargetSectionId) return;
     setBulkTransferLoading(true);
@@ -749,7 +808,7 @@ export default function SectionDetail() {
     setBulkTransferLoading(false);
   };
 
-  // ── Select-all helpers ────────────────────────────────────────────────────
+  // ΓöÇΓöÇ Select-all helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const toggleSelectAll = () => {
     if (selectedInSection.size === students.length) {
       setSelectedInSection(new Set());
@@ -807,7 +866,7 @@ export default function SectionDetail() {
               {section.className} - {section.name}
             </h1>
             <p className="text-muted-foreground">
-              Section Management • {section.totalStudents} Students
+              {section.className} &mdash; Section {section.name} &bull; {section.totalStudents} Students
             </p>
           </div>
         </div>
@@ -997,7 +1056,7 @@ export default function SectionDetail() {
                             aria-label={`Select ${student.name}`}
                           />
                         </TableCell>
-                        <TableCell className="font-medium">{student.rollNo || "—"}</TableCell>
+                        <TableCell className="font-medium">{student.rollNo || "ΓÇö"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -1011,7 +1070,7 @@ export default function SectionDetail() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{section.className} – {section.name}</Badge>
+                          <Badge variant="outline">{section.className} ΓÇô {section.name}</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge className="bg-green-500/10 text-green-700 border-green-200" variant="outline">Active</Badge>
@@ -1047,40 +1106,140 @@ export default function SectionDetail() {
 
         {/* Staff Assignment Tab */}
         <TabsContent value="staff" className="space-y-4">
+
+          {/* Subject Teachers card */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
               <CardTitle className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5" />
-                Staff Assignments
-                <Badge variant="secondary" className="ml-1">{staffAssignments.length}</Badge>
+                <BookOpen className="h-5 w-5" />
+                Subject Teachers
+                <Badge variant="secondary" className="ml-1">{classSubjects.length}</Badge>
               </CardTitle>
-              <Button size="sm" onClick={() => { setAssignForm({ staffId: "", staffName: "", subjectId: "", isClassTeacher: false }); setStaffSearchQuery(""); setAssignStaffOpen(true); }} className="gap-1.5">
-                <Plus className="h-4 w-4" />
-                Assign Staff
+              <Button size="sm" variant="ghost" className="gap-1.5 text-xs" onClick={loadStaffAssignments} disabled={staffAssignmentsLoading}>
+                <RefreshCw className={`h-3.5 w-3.5 ${staffAssignmentsLoading ? "animate-spin" : ""}`} />
+                Refresh
               </Button>
             </CardHeader>
             <CardContent>
               {staffAssignmentsLoading ? (
                 <div className="flex items-center justify-center py-10">
                   <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                  <span className="text-muted-foreground">Loading assignments...</span>
+                  <span className="text-muted-foreground">Loading...</span>
                 </div>
-              ) : staffAssignments.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <GraduationCap className="h-12 w-12 mx-auto mb-4 opacity-40" />
-                  <p className="font-medium">No staff assigned to this section yet</p>
-                  <p className="text-sm mt-1">Assign teaching staff and designate a class teacher</p>
-                  <Button size="sm" className="mt-4 gap-1.5" onClick={() => setAssignStaffOpen(true)}>
-                    <Plus className="h-4 w-4" />
-                    Assign Staff
-                  </Button>
+              ) : classSubjects.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                  <p className="font-medium">No subjects configured for this class</p>
+                  <p className="text-sm mt-1">Add subjects in Class setup to manage teachers here.</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Staff Member</TableHead>
                       <TableHead>Subject</TableHead>
+                      <TableHead>Class Default Teacher</TableHead>
+                      <TableHead>Section Teacher</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {classSubjects.map(cs => {
+                      const override = staffAssignments.find(a => a.subjectId === cs.subjectId);
+                      return (
+                        <TableRow key={cs.subjectId}>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="font-medium">{cs.subjectName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {cs.teacherName ? (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center shrink-0">
+                                  <span className="text-[10px] font-bold">{cs.teacherName[0].toUpperCase()}</span>
+                                </div>
+                                <span className="text-sm">{cs.teacherName}</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground/60 italic">Not assigned</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {override ? (
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                  <span className="text-xs font-bold text-primary">{(override.staffName || "?")[0].toUpperCase()}</span>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">{override.staffName}</p>
+                                  <Badge variant="outline" className="text-[10px] py-0 h-4 bg-blue-50 text-blue-700 border-blue-200">Section override</Badge>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground italic">Uses class default</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button size="sm" variant="outline" className="gap-1 h-8 text-xs"
+                                onClick={() => {
+                                  setOverrideSubject(cs);
+                                  setOverrideExistingId(override?.id ?? null);
+                                  setOverrideStaffId(override?.staffId ?? "");
+                                  setOverrideStaffName(override?.staffName ?? "");
+                                  setOverrideStaffSearch("");
+                                  setSubjectOverrideOpen(true);
+                                }}>
+                                {override ? <><Pencil className="h-3 w-3" />Edit</> : <><Plus className="h-3 w-3" />Assign</>}
+                              </Button>
+                              {override && (
+                                <Button size="sm" variant="ghost"
+                                  className="gap-1 h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleRemoveStaffAssignment(override.id, override.staffName)}>
+                                  <Trash2 className="h-3 w-3" />Remove
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Class Teacher & General Assignments card */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+              <CardTitle className="flex items-center gap-2">
+                <GraduationCap className="h-5 w-5" />
+                Class Teacher &amp; Other Assignments
+                <Badge variant="secondary" className="ml-1">{staffAssignments.filter(a => a.isClassTeacher || !a.subjectId).length}</Badge>
+              </CardTitle>
+              <Button size="sm" onClick={() => { setAssignForm({ staffId: "", staffName: "", subjectId: "", isClassTeacher: true }); setStaffSearchQuery(""); setAssignStaffOpen(true); }} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Assign Staff
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {staffAssignmentsLoading ? null : (() => {
+                const general = staffAssignments.filter(a => a.isClassTeacher || !a.subjectId);
+                return general.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <GraduationCap className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                    <p className="font-medium">No class teacher assigned yet</p>
+                    <Button size="sm" className="mt-3 gap-1.5" onClick={() => { setAssignForm({ staffId: "", staffName: "", subjectId: "", isClassTeacher: true }); setStaffSearchQuery(""); setAssignStaffOpen(true); }}>
+                      <Plus className="h-4 w-4" />Assign Class Teacher
+                    </Button>
+                  </div>
+                ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Staff Member</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Academic Year</TableHead>
                       <TableHead>Status</TableHead>
@@ -1088,7 +1247,7 @@ export default function SectionDetail() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {staffAssignments.map((assignment) => (
+                    {general.map((assignment) => (
                       <TableRow key={assignment.id}>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -1097,18 +1256,8 @@ export default function SectionDetail() {
                                 {(assignment.staffName || "?")[0].toUpperCase()}
                               </span>
                             </div>
-                            <span className="font-medium">{assignment.staffName || "—"}</span>
+                            <span className="font-medium">{assignment.staffName || "ΓÇö"}</span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {assignment.subjectName ? (
-                            <div className="flex items-center gap-1.5">
-                              <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span>{assignment.subjectName}</span>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">General</span>
-                          )}
                         </TableCell>
                         <TableCell>
                           {assignment.isClassTeacher ? (
@@ -1146,17 +1295,79 @@ export default function SectionDetail() {
                     ))}
                   </TableBody>
                 </Table>
-              )}
+                );
+              })()}
             </CardContent>
           </Card>
 
-          {/* Assign Staff Dialog */}
+          {/* Subject Override Dialog */}
+          <Dialog open={subjectOverrideOpen} onOpenChange={open => { setSubjectOverrideOpen(open); if (!open) { setOverrideSubject(null); setOverrideExistingId(null); setOverrideStaffId(""); setOverrideStaffName(""); setOverrideStaffSearch(""); } }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5" />
+                  {overrideExistingId ? "Edit Section Teacher" : "Assign Section Teacher"}
+                </DialogTitle>
+                <DialogDescription>
+                  {overrideSubject && (<>Assign a section-specific teacher for <strong>{overrideSubject.subjectName}</strong>.{overrideSubject.teacherName && (<> Class default: <span className="font-medium">{overrideSubject.teacherName}</span>.</>)}</>)}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div>
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</Label>
+                  <div className="mt-1.5 flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 border">
+                    <BookOpen className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">{overrideSubject?.subjectName}</span>
+                  </div>
+                </div>
+                <div>
+                  <Label>Staff Member <span className="text-destructive">*</span></Label>
+                  <div className="relative mt-1">
+                    <div className="flex items-center border rounded-md px-3 h-10">
+                      <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+                      <input className="flex-1 bg-transparent outline-none text-sm" placeholder="Search staff..."
+                        value={overrideStaffId ? overrideStaffName : overrideStaffSearch}
+                        onFocus={() => { setOverrideDropdownOpen(true); if (overrideStaffId) setOverrideStaffSearch(""); }}
+                        onBlur={() => setTimeout(() => setOverrideDropdownOpen(false), 150)}
+                        onChange={e => { setOverrideStaffSearch(e.target.value); setOverrideStaffId(""); setOverrideStaffName(""); setOverrideDropdownOpen(true); }}
+                      />
+                      {overrideStaffId && (
+                        <button className="ml-1 text-muted-foreground hover:text-foreground" onMouseDown={e => { e.preventDefault(); setOverrideStaffId(""); setOverrideStaffName(""); setOverrideStaffSearch(""); }}>×</button>
+                      )}
+                    </div>
+                    {overrideDropdownOpen && !overrideStaffId && (
+                      <div className="absolute z-50 top-full mt-1 w-full bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                        {filteredStaffForOverride.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">No staff found</div>
+                        ) : filteredStaffForOverride.map(s => (
+                          <button key={s.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex flex-col"
+                            onMouseDown={e => { e.preventDefault(); setOverrideStaffId(s.id); setOverrideStaffName(s.name ?? `${s.firstName} ${s.lastName}`); setOverrideDropdownOpen(false); }}>
+                            <span className="font-medium">{s.name ?? `${s.firstName} ${s.lastName}`}</span>
+                            <span className="text-xs text-muted-foreground">{s.designation} · {s.department}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button className="flex-1" onClick={handleSaveSubjectOverride} disabled={!overrideStaffId || overrideSaving}>
+                    {overrideSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {overrideExistingId ? "Update Assignment" : "Assign to Section"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setSubjectOverrideOpen(false)}>Cancel</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Assign Staff Dialog (Class Teacher / General) */}
           <Dialog open={assignStaffOpen} onOpenChange={setAssignStaffOpen}>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <GraduationCap className="h-5 w-5" />
-                  Assign Staff to {section?.className} – {section?.name}
+                  Assign Staff to {section?.className} ΓÇô {section?.name}
                 </DialogTitle>
                 <DialogDescription>
                   Assign a staff member to this section. Optionally link to a subject and designate as class teacher.
@@ -1164,7 +1375,7 @@ export default function SectionDetail() {
               </DialogHeader>
 
               <div className="space-y-4 pt-2">
-                {/* Subject — drives which teacher is pre-filled */}
+                {/* Subject ΓÇö drives which teacher is pre-filled */}
                 <div>
                   <Label>Subject <span className="text-destructive">*</span></Label>
                   <p className="text-xs text-muted-foreground mt-0.5 mb-1">
@@ -1193,7 +1404,7 @@ export default function SectionDetail() {
                       <SelectValue placeholder="Select a subject..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">— Class Teacher (no subject) —</SelectItem>
+                      <SelectItem value="none">ΓÇö Class Teacher (no subject) ΓÇö</SelectItem>
                       {classSubjects.length === 0 && (
                         <div className="px-3 py-2 text-sm text-muted-foreground">
                           No subjects assigned to this class yet
@@ -1201,14 +1412,14 @@ export default function SectionDetail() {
                       )}
                       {classSubjects.map(cs => (
                         <SelectItem key={cs.subjectId} value={cs.subjectId}>
-                          {cs.subjectName}{cs.teacherName ? ` · ${cs.teacherName}` : ""}
+                          {cs.subjectName}{cs.teacherName ? ` ┬╖ ${cs.teacherName}` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Staff Member — auto-filled from subject, override allowed */}
+                {/* Staff Member ΓÇö auto-filled from subject, override allowed */}
                 <div>
                   <Label>
                     Staff Member <span className="text-destructive">*</span>
@@ -1232,7 +1443,7 @@ export default function SectionDetail() {
                           className="ml-1 text-muted-foreground hover:text-foreground"
                           onMouseDown={e => { e.preventDefault(); setAssignForm(f => ({ ...f, staffId: "", staffName: "" })); setStaffSearchQuery(""); }}
                         >
-                          ×
+                          ├ù
                         </button>
                       )}
                     </div>
@@ -1252,7 +1463,7 @@ export default function SectionDetail() {
                             }}
                           >
                             <span className="font-medium">{s.name ?? `${s.firstName} ${s.lastName}`}</span>
-                            <span className="text-xs text-muted-foreground">{s.designation} · {s.department}</span>
+                            <span className="text-xs text-muted-foreground">{s.designation} ┬╖ {s.department}</span>
                           </button>
                         ))}
                       </div>
@@ -1439,7 +1650,7 @@ export default function SectionDetail() {
                 <div className="flex items-center gap-2">
                   {timetableEditMode && (
                     <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md">
-                      Edit mode — click cells to add/edit
+                      Edit mode ΓÇö click cells to add/edit
                     </span>
                   )}
                   <Button
@@ -1475,7 +1686,7 @@ export default function SectionDetail() {
                           <tr key={periodNum} className="hover:bg-muted/20">
                             <td className="border px-3 py-2 bg-muted/30">
                               <div className="font-medium text-xs">P{periodNum}</div>
-                              <div className="text-xs text-muted-foreground">{rowStart}–{rowEnd}</div>
+                              <div className="text-xs text-muted-foreground">{rowStart}ΓÇô{rowEnd}</div>
                             </td>
                             {TIMETABLE_DAYS.map(day => {
                               const p = getPeriodForCell(day, periodNum);
@@ -1492,7 +1703,7 @@ export default function SectionDetail() {
                                   {p ? (
                                     <div className={`rounded px-1.5 py-1 text-left transition-colors ${timetableEditMode ? "bg-primary/15 hover:bg-primary/25" : "bg-primary/10"}`}>
                                       <div className="font-medium text-xs leading-tight">
-                                        {p.subjectName ?? <span className="text-muted-foreground">—</span>}
+                                        {p.subjectName ?? <span className="text-muted-foreground">ΓÇö</span>}
                                       </div>
                                       {p.teacherName && (
                                         <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
@@ -1516,7 +1727,7 @@ export default function SectionDetail() {
                                     </div>
                                   ) : (
                                     <div className={`text-muted-foreground/40 text-xs py-1 rounded transition-colors ${timetableEditMode ? "hover:bg-primary/10 hover:text-primary" : ""}`}>
-                                      {timetableEditMode ? <Plus className="h-3.5 w-3.5 mx-auto" /> : "—"}
+                                      {timetableEditMode ? <Plus className="h-3.5 w-3.5 mx-auto" /> : "ΓÇö"}
                                     </div>
                                   )}
                                 </td>
@@ -1538,7 +1749,7 @@ export default function SectionDetail() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Clock className="h-5 w-5" />
-                  {editingPeriodId ? "Edit Period" : `Add Period — ${periodForm.day}, P${periodForm.periodNumber}`}
+                  {editingPeriodId ? "Edit Period" : `Add Period ΓÇö ${periodForm.day}, P${periodForm.periodNumber}`}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-3 pt-2">
@@ -1608,17 +1819,17 @@ export default function SectionDetail() {
                   >
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Select subject..." /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">— No subject —</SelectItem>
+                      <SelectItem value="none">ΓÇö No subject ΓÇö</SelectItem>
                       {classSubjects.map(cs => (
                         <SelectItem key={cs.subjectId} value={cs.subjectId}>
-                          {cs.subjectName}{cs.teacherName ? ` · ${cs.teacherName}` : ""}
+                          {cs.subjectName}{cs.teacherName ? ` ┬╖ ${cs.teacherName}` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Teacher — card picker */}
+                {/* Teacher ΓÇö card picker */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label>Teacher</Label>
@@ -1778,8 +1989,8 @@ export default function SectionDetail() {
                     <div className="space-y-1">
                       <CardTitle className="text-lg">{selectedAssignment.title}</CardTitle>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" />{selectedAssignment.subjectName || "—"}</span>
-                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{selectedAssignment.assignedByName || "—"}</span>
+                        <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" />{selectedAssignment.subjectName || "ΓÇö"}</span>
+                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{selectedAssignment.assignedByName || "ΓÇö"}</span>
                         <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />Due: {new Date(selectedAssignment.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
                         <span className="flex items-center gap-1"><Award className="h-3.5 w-3.5" />Max: {selectedAssignment.maxMarks} marks</span>
                       </div>
@@ -1819,7 +2030,7 @@ export default function SectionDetail() {
                   {submissionsLoading ? (
                     <div className="flex items-center justify-center py-10">
                       <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                      <span className="text-muted-foreground">Loading submissions…</span>
+                      <span className="text-muted-foreground">Loading submissionsΓÇª</span>
                     </div>
                   ) : assignmentSubmissions.length === 0 ? (
                     <div className="text-center py-10 text-muted-foreground">
@@ -1844,15 +2055,15 @@ export default function SectionDetail() {
                         {assignmentSubmissions.map(sub => (
                           <TableRow key={sub.id}>
                             <TableCell className="font-medium">{sub.studentName || sub.studentId.slice(0, 8)}</TableCell>
-                            <TableCell className="text-muted-foreground">{sub.studentRollNo || "—"}</TableCell>
+                            <TableCell className="text-muted-foreground">{sub.studentRollNo || "ΓÇö"}</TableCell>
                             <TableCell className="text-sm">{new Date(sub.submissionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
                             <TableCell>
                               <Badge variant={sub.status === "graded" ? "default" : "secondary"} className="capitalize text-xs">{sub.status}</Badge>
                             </TableCell>
                             <TableCell className="text-right font-semibold">
-                              {sub.marksObtained != null ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}` : "—"}
+                              {sub.marksObtained != null ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}` : "ΓÇö"}
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">{sub.feedback || "—"}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">{sub.feedback || "ΓÇö"}</TableCell>
                             <TableCell className="text-right">
                               <Button
                                 size="sm"
@@ -1891,7 +2102,7 @@ export default function SectionDetail() {
                 {assignmentsLoading ? (
                   <div className="flex items-center justify-center py-10">
                     <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                    <span className="text-muted-foreground">Loading assignments…</span>
+                    <span className="text-muted-foreground">Loading assignmentsΓÇª</span>
                   </div>
                 ) : classAssignments.length === 0 ? (
                   <div className="text-center py-10 text-muted-foreground">
@@ -1923,8 +2134,8 @@ export default function SectionDetail() {
                         return (
                           <TableRow key={a.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadSubmissions(a)}>
                             <TableCell className="font-medium">{a.title}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.subjectName || "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.assignedByName || "—"}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.subjectName || "ΓÇö"}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.assignedByName || "ΓÇö"}</TableCell>
                             <TableCell>
                               <span className={isOverdue ? "text-red-500 font-medium" : ""}>
                                 {new Date(a.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
@@ -1944,7 +2155,7 @@ export default function SectionDetail() {
                               {a.gradedCount > 0 ? (
                                 <span className="text-green-600 font-medium">{a.gradedCount}</span>
                               ) : (
-                                <span className="text-muted-foreground">—</span>
+                                <span className="text-muted-foreground">ΓÇö</span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -1972,7 +2183,7 @@ export default function SectionDetail() {
                   Create Assignment
                 </DialogTitle>
                 <DialogDescription>
-                  Create a new assignment for {section?.className} – {section?.name}
+                  Create a new assignment for {section?.className} ΓÇô {section?.name}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-2">
@@ -1980,7 +2191,7 @@ export default function SectionDetail() {
                   <Label htmlFor="asgn-title">Title <span className="text-red-500">*</span></Label>
                   <Input
                     id="asgn-title"
-                    placeholder="e.g. Chapter 3 – Algebraic Expressions"
+                    placeholder="e.g. Chapter 3 ΓÇô Algebraic Expressions"
                     value={createAssignmentForm.title}
                     onChange={e => setCreateAssignmentForm(f => ({ ...f, title: e.target.value }))}
                     className="mt-1"
@@ -2008,7 +2219,7 @@ export default function SectionDetail() {
                     id="asgn-desc"
                     rows={3}
                     className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    placeholder="Instructions or details for students…"
+                    placeholder="Instructions or details for studentsΓÇª"
                     value={createAssignmentForm.description}
                     onChange={e => setCreateAssignmentForm(f => ({ ...f, description: e.target.value }))}
                   />
@@ -2051,7 +2262,7 @@ export default function SectionDetail() {
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="outline" onClick={() => setCreateAssignmentOpen(false)} disabled={createAssignmentSaving}>Cancel</Button>
                   <Button onClick={handleCreateAssignment} disabled={createAssignmentSaving}>
-                    {createAssignmentSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : "Create Assignment"}
+                    {createAssignmentSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />CreatingΓÇª</> : "Create Assignment"}
                   </Button>
                 </div>
               </div>
@@ -2067,7 +2278,7 @@ export default function SectionDetail() {
                   Grade Submission
                 </DialogTitle>
                 <DialogDescription>
-                  {gradingSubmission?.studentName} — {selectedAssignment?.title}
+                  {gradingSubmission?.studentName} ΓÇö {selectedAssignment?.title}
                 </DialogDescription>
               </DialogHeader>
               {gradingSubmission && (
@@ -2090,7 +2301,7 @@ export default function SectionDetail() {
                       className="mt-1"
                       value={gradeForm.marks}
                       onChange={e => setGradeForm(f => ({ ...f, marks: e.target.value }))}
-                      placeholder={`0 – ${selectedAssignment?.maxMarks}`}
+                      placeholder={`0 ΓÇô ${selectedAssignment?.maxMarks}`}
                     />
                   </div>
                   <div>
@@ -2099,7 +2310,7 @@ export default function SectionDetail() {
                       id="grade-feedback"
                       rows={3}
                       className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="Optional feedback for the student…"
+                      placeholder="Optional feedback for the studentΓÇª"
                       value={gradeForm.feedback}
                       onChange={e => setGradeForm(f => ({ ...f, feedback: e.target.value }))}
                     />
@@ -2107,7 +2318,7 @@ export default function SectionDetail() {
                   <div className="flex justify-end gap-2 pt-2">
                     <Button variant="outline" onClick={() => { setGradeDialogOpen(false); setGradingSubmission(null); }} disabled={gradeSaving}>Cancel</Button>
                     <Button onClick={handleGradeSubmit} disabled={gradeSaving}>
-                      {gradeSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Save Grade"}
+                      {gradeSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />SavingΓÇª</> : "Save Grade"}
                     </Button>
                   </div>
                 </div>
@@ -2117,13 +2328,13 @@ export default function SectionDetail() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Add Students Dialog ─────────────────────────────────────────────── */}
+      {/* ΓöÇΓöÇ Add Students Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
       <Dialog open={addStudentsOpen} onOpenChange={setAddStudentsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5" />
-              Add Students to {section?.className} – {section?.name}
+              Add Students to {section?.className} ΓÇô {section?.name}
             </DialogTitle>
             <DialogDescription>
               Students from {section?.className} not yet in this section. Select one or more and click "Add to Section".
@@ -2215,10 +2426,10 @@ export default function SectionDetail() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm">{student.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            Roll: {student.rollNo || "—"}
+                            Roll: {student.rollNo || "ΓÇö"}
                             {student.section ? (
                               <span className="ml-2 text-orange-600">
-                                (Currently in {section?.className} – {student.section})
+                                (Currently in {section?.className} ΓÇô {student.section})
                               </span>
                             ) : (
                               <span className="ml-2 text-green-600">(Unassigned)</span>
@@ -2252,7 +2463,7 @@ export default function SectionDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Single Transfer Dialog ──────────────────────────────────────────── */}
+      {/* ΓöÇΓöÇ Single Transfer Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
       <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -2262,7 +2473,7 @@ export default function SectionDetail() {
             </DialogTitle>
             <DialogDescription>
               Move <span className="font-semibold">{transferStudent?.name}</span> from{" "}
-              <span className="font-semibold">{section?.className} – {section?.name}</span> to another section.
+              <span className="font-semibold">{section?.className} ΓÇô {section?.name}</span> to another section.
             </DialogDescription>
           </DialogHeader>
 
@@ -2279,7 +2490,7 @@ export default function SectionDetail() {
                   ) : (
                     allSections.map(s => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.className} – {s.name}
+                        {s.className} ΓÇô {s.name}
                         {s.classTeacherName && (
                           <span className="text-muted-foreground ml-2">({s.classTeacherName})</span>
                         )}
@@ -2307,7 +2518,7 @@ export default function SectionDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Bulk Transfer Dialog ─────────────────────────────────────────────── */}
+      {/* ΓöÇΓöÇ Bulk Transfer Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
       <Dialog open={bulkTransferOpen} onOpenChange={setBulkTransferOpen}>
         <DialogContent>
           <DialogHeader>
@@ -2317,7 +2528,7 @@ export default function SectionDetail() {
             </DialogTitle>
             <DialogDescription>
               Transfer <span className="font-semibold">{selectedInSection.size} student(s)</span> from{" "}
-              <span className="font-semibold">{section?.className} – {section?.name}</span> to another section.
+              <span className="font-semibold">{section?.className} ΓÇô {section?.name}</span> to another section.
             </DialogDescription>
           </DialogHeader>
 
@@ -2334,7 +2545,7 @@ export default function SectionDetail() {
                   ) : (
                     allSections.map(s => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.className} – {s.name}
+                        {s.className} ΓÇô {s.name}
                         {s.classTeacherName && (
                           <span className="text-muted-foreground ml-2">({s.classTeacherName})</span>
                         )}

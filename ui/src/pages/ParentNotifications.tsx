@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notificationApi, type NotificationItem } from "@/services/api/notificationApi";
 import { toast } from "sonner";
 
-const TYPES = ["All", "Diary", "Fee", "Exam", "Attendance", "Announcement", "Message", "Payment"];
+const TYPES = ["All", "Diary", "Fee", "Exam", "Attendance", "Announcement", "Assignment", "Message", "Payment"];
 
 export default function ParentNotifications() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);

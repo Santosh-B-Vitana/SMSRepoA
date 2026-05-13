@@ -28,12 +28,12 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import {
   PenLine, CheckCircle2, Send, Loader2, BookOpen, Trophy,
-  TrendingUp, Users, Award,
+  TrendingUp, Users, Award, RotateCcw,
 } from 'lucide-react';
 import { MarksEntryGrid } from './MarksEntryGrid';
 import {
   getExamSetups, getExamSetupById, finalizeExamSetup,
-  publishExamSetupResults, getExamSetupResults,
+  publishExamSetupResults, getExamSetupResults, reopenExamForEditing,
   type ExamSetupBasicDto, type ExamSetupDetailDto,
   type StudentExamResultSummaryDto,
 } from '@/services/api/examSetupApi';
@@ -176,8 +176,10 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
   const [activeSubject, setActiveSubject] = useState<string>('');
   const [finalizing, setFinalizing] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
 
   const loadSetup = useCallback(async () => {
     setLoading(true);
@@ -229,6 +231,21 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
     }
   };
 
+  const handleReopen = async () => {
+    setReopening(true);
+    try {
+      await reopenExamForEditing(setup!.id);
+      toast({ title: 'Reopened for Editing', description: 'Marks can now be corrected. Re-calculate grades and re-publish when done.' });
+      await loadSetup();
+      onRefreshList();
+    } catch (e: unknown) {
+      toast({ title: 'Error', description: (e as Error).message ?? 'Failed to reopen.', variant: 'destructive' });
+    } finally {
+      setReopening(false);
+      setConfirmReopen(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-3 p-4">
@@ -242,8 +259,10 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
   if (!setup) return null;
 
   const subjects = setup.subjects ?? [];
-  const allLocked = subjects.length > 0 && subjects.every(s => s.status === 'locked');
-  const canFinalize = (setup.status === 'marks_entry' || setup.status === 'draft') && allLocked;
+  // Subjects with marks entered are in 'marks_entry' or already 'locked' (re-check after unlock).
+  // Subjects become 'locked' only after finalization — so require marks_entry, not locked.
+  const allHaveMarks = subjects.length > 0 && subjects.every(s => s.status === 'marks_entry' || s.status === 'locked');
+  const canFinalize = (setup.status === 'marks_entry' || setup.status === 'draft') && allHaveMarks;
   const canPublish = setup.status === 'finalized';
   const isPublished = setup.status === 'published';
 
@@ -264,6 +283,21 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
       </div>
 
       {/* Actions */}
+      {isPublished && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 text-amber-700 border-amber-300 hover:bg-amber-50"
+            onClick={() => setConfirmReopen(true)}
+            disabled={reopening}
+          >
+            {reopening ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+            Edit Results
+          </Button>
+          <span className="text-xs text-muted-foreground">Results are published. Click Edit to correct marks.</span>
+        </div>
+      )}
       {!isPublished && (
         <div className="flex gap-2 flex-wrap">
           {canFinalize && (
@@ -281,7 +315,7 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
           {!canFinalize && !canPublish && setup.status !== 'draft' && (
             <p className="text-xs text-muted-foreground self-center">
               {subjects.length === 0 ? 'No subjects configured.' :
-               `Enter marks for all subjects then calculate grades (${subjects.filter(s => s.status !== 'locked').length} subject${subjects.filter(s => s.status !== 'locked').length !== 1 ? 's' : ''} remaining).`}
+               `Enter marks for all subjects then calculate grades (${subjects.filter(s => s.status !== 'marks_entry' && s.status !== 'locked').length} subject${subjects.filter(s => s.status !== 'marks_entry' && s.status !== 'locked').length !== 1 ? 's' : ''} remaining).`}
             </p>
           )}
           {setup.status === 'draft' && !canFinalize && (
@@ -321,13 +355,34 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
                   examSetupId={setup.id}
                   examSetupSubjectId={s.id}
                   readOnly={s.status === 'locked'}
+                  isAdmin={true}
                   onSaved={loadSetup}
+                  onUnlocked={loadSetup}
                 />
               </TabsContent>
             ))}
           </Tabs>
         )
       )}
+
+      {/* Reopen confirm */}
+      <AlertDialog open={confirmReopen} onOpenChange={setConfirmReopen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit Published Results?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reopen the exam for editing. All subjects will be unlocked and marks can be corrected.
+              After editing, you must recalculate grades and re-publish to update the parent portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReopen} className="bg-amber-600 hover:bg-amber-700">
+              Yes, Reopen for Editing
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Confirm dialogs */}
       <AlertDialog open={confirmFinalize} onOpenChange={setConfirmFinalize}>

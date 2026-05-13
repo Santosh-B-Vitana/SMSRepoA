@@ -19,12 +19,15 @@ import {
 } from '@/components/ui/table';
 import {
   Trophy, ChevronDown, ChevronUp, Award, TrendingUp,
-  CheckCircle2, XCircle, BookOpen, BarChart3,
+  CheckCircle2, XCircle, BookOpen, BarChart3, Download, Loader2,
 } from 'lucide-react';
 import {
   getExamSetups, getStudentExamSetupResult,
   type ExamSetupBasicDto, type StudentExamResultSummaryDto,
 } from '@/services/api/examSetupApi';
+import { useSchool } from '@/contexts/SchoolContext';
+import { generateProfessionalReportCard } from '@/utils/professionalPdfGenerator';
+import { toast } from 'sonner';
 
 // ─── Grade colour map ─────────────────────────────────────────────────────────
 
@@ -54,18 +57,65 @@ function GradePill({ grade }: { grade?: string }) {
 interface ExamResultCardProps {
   setup: ExamSetupBasicDto;
   result: StudentExamResultSummaryDto;
+  studentId: string;
+  defaultExpanded?: boolean;
 }
 
-function ExamResultCard({ setup, result }: ExamResultCardProps) {
-  const [expanded, setExpanded] = useState(false);
+function ExamResultCard({ setup, result, studentId, defaultExpanded = false }: ExamResultCardProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [downloading, setDownloading] = useState(false);
+  const { schoolInfo } = useSchool();
 
   const scoreColor =
     result.percentage >= 75 ? 'text-green-600' :
     result.percentage >= 50 ? 'text-blue-600'  :
     result.percentage >= 33 ? 'text-amber-600' : 'text-red-600';
 
-  const coreSubjects = result.subjectResults.filter(s => !s.isElective);
-  const electiveSubjects = result.subjectResults.filter(s => s.isElective);
+  const coreSubjects = (result.subjects ?? []).filter(s => !s.isElective);
+  const electiveSubjects = (result.subjects ?? []).filter(s => s.isElective);
+
+  const handleDownload = () => {
+    if (!schoolInfo) { toast.error('School info not loaded yet'); return; }
+    setDownloading(true);
+    try {
+      const schoolData = {
+        name: schoolInfo.name,
+        address: schoolInfo.address ?? '',
+        phone: schoolInfo.phone ?? '',
+        email: schoolInfo.email ?? '',
+        principalName: schoolInfo.principalName,
+        websiteUrl: schoolInfo.websiteUrl,
+      };
+      const reportData = {
+        studentName: result.studentName,
+        studentId: studentId,
+        class: setup.className,
+        section: setup.sectionName ?? '',
+        academicYear: setup.academicYear,
+        examName: setup.name,
+        rollNo: result.rollNumber ?? '',
+        subjects: (result.subjects ?? []).map(s => ({
+          name: s.subjectName,
+          marks: Number(s.obtainedMarks),
+          maxMarks: Number(s.maxMarks),
+          grade: s.grade ?? ''
+        })),
+        totalMarks: Number(result.totalObtained),
+        totalMaxMarks: Number(result.totalMax),
+        percentage: Number(result.percentage),
+        overallGrade: result.overallGrade ?? '',
+        rank: result.rank,
+        remarks: result.isPass ? 'Pass' : 'Fail',
+      };
+      const doc = generateProfessionalReportCard(schoolData, reportData);
+      doc.save(`ReportCard_${result.studentName.replace(/\s+/g, '_')}_${setup.name.replace(/\s+/g, '_')}.pdf`);
+      toast.success('Report card downloaded');
+    } catch (e) {
+      toast.error('Failed to generate report card');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <Card className="overflow-hidden border hover:border-primary/30 transition-colors">
@@ -88,9 +138,19 @@ function ExamResultCard({ setup, result }: ExamResultCardProps) {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1 text-xs"
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+              Report Card
+            </Button>
             <div className="text-right">
               <p className={`text-xl font-bold ${scoreColor}`}>{result.percentage.toFixed(1)}%</p>
-              <p className="text-xs text-muted-foreground">{result.totalMarks}/{result.maxMarks}</p>
+              <p className="text-xs text-muted-foreground">{Number(result.totalObtained)}/{Number(result.totalMax)}</p>
             </div>
             <GradePill grade={result.overallGrade} />
             <span className={`text-xs font-medium px-2 py-1 rounded-full border ${
@@ -119,7 +179,7 @@ function ExamResultCard({ setup, result }: ExamResultCardProps) {
           {expanded ? (
             <><ChevronUp className="h-3 w-3 mr-1" />Hide subject details</>
           ) : (
-            <><ChevronDown className="h-3 w-3 mr-1" />Show subject details ({result.subjectResults.length})</>
+            <><ChevronDown className="h-3 w-3 mr-1" />Show subject details ({(result.subjects ?? []).length})</>
           )}
         </Button>
       </CardContent>
@@ -154,8 +214,8 @@ function ExamResultCard({ setup, result }: ExamResultCardProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {group.subjects.map(sub => (
-                      <TableRow key={sub.subjectId} className={sub.isAbsent ? 'opacity-60' : ''}>
+                    {group.subjects.map((sub, si) => (
+                      <TableRow key={`${sub.subjectName}-${si}`} className={sub.isAbsent ? 'opacity-60' : ''}>
                         <TableCell className="text-sm py-2 font-medium">
                           {sub.subjectName}
                           {sub.isAbsent && <span className="ml-1.5 text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1 rounded">Absent</span>}
@@ -170,7 +230,7 @@ function ExamResultCard({ setup, result }: ExamResultCardProps) {
                           <TableCell className="text-sm py-2 text-right">{sub.internalMarks ?? '—'}</TableCell>
                         )}
                         <TableCell className="text-sm py-2 text-right font-medium">
-                          {sub.obtainedMarks}/{sub.maxTotalMarks}
+                          {Number(sub.obtainedMarks)}/{Number(sub.maxMarks)}
                         </TableCell>
                         <TableCell className="text-sm py-2 text-right">{sub.percentage.toFixed(1)}%</TableCell>
                         <TableCell className="text-center py-2"><GradePill grade={sub.grade} /></TableCell>
@@ -268,11 +328,13 @@ export function ParentExamResultsTab({ studentId }: ParentExamResultsTabProps) {
   }
 
   // Summary strip
+  const latest = entries[0];
+  const previous = entries.slice(1);
   const passed = entries.filter(e => e.result.isPass).length;
   const avgPct = entries.reduce((s, e) => s + e.result.percentage, 0) / entries.length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Quick stats */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="bg-primary/5 border-primary/20">
@@ -298,12 +360,29 @@ export function ParentExamResultsTab({ studentId }: ParentExamResultsTabProps) {
         </Card>
       </div>
 
-      {/* Result cards */}
-      <div className="space-y-3">
-        {entries.map(e => (
-          <ExamResultCard key={e.setup.id} setup={e.setup} result={e.result} />
-        ))}
+      {/* Latest exam — shown prominently */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+          <Trophy className="h-3.5 w-3.5 text-amber-500" />
+          Latest Result
+        </p>
+        <ExamResultCard setup={latest.setup} result={latest.result} studentId={studentId} defaultExpanded />
       </div>
+
+      {/* Previous exams — compact list */}
+      {previous.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Previous Results
+          </p>
+          <div className="space-y-2">
+            {previous.map(e => (
+              <ExamResultCard key={e.setup.id} setup={e.setup} result={e.result} studentId={studentId} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

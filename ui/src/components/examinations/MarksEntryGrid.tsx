@@ -23,9 +23,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Loader2, Lock, AlertCircle, CheckCircle2, Download, Users } from 'lucide-react';
+import { Save, Loader2, Lock, AlertCircle, CheckCircle2, Download, Users, Pencil, UnlockKeyhole } from 'lucide-react';
 import {
-  getMarksEntrySheet, saveBulkMarks,
+  getMarksEntrySheet, saveBulkMarks, unlockSubjectForEdit,
   type MarksEntrySheetDto, type StudentMarksRowDto, type SingleStudentMarksDto,
 } from '@/services/api/examSetupApi';
 
@@ -43,7 +43,9 @@ interface MarksEntryGridProps {
   examSetupId: string;
   examSetupSubjectId: string;
   readOnly?: boolean;
+  isAdmin?: boolean;
   onSaved?: () => void;
+  onUnlocked?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -91,13 +93,16 @@ export function MarksEntryGrid({
   examSetupId,
   examSetupSubjectId,
   readOnly = false,
+  isAdmin = false,
   onSaved,
+  onUnlocked,
 }: MarksEntryGridProps) {
   const { toast } = useToast();
   const [sheet, setSheet] = useState<MarksEntrySheetDto | null>(null);
   const [rows, setRows] = useState<RowState[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [lastSaveResult, setLastSaveResult] = useState<{ success: number; failed: number } | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
 
@@ -251,6 +256,26 @@ export function MarksEntryGrid({
   const isLocked = readOnly || sheet?.status === 'locked';
   const hasErrors = rows.some(r => !!r.validationError);
   const hasTouched = rows.some(r => r.touched);
+  const existingCount = rows.filter(r => r.theoryMarks !== undefined || r.practicalMarks !== undefined || r.internalMarks !== undefined || r.isAbsent).length;
+  const isEditingExisting = !isLocked && existingCount > 0;
+
+  // ─── Unlock ──────────────────────────────────────────────────────────────────
+
+  const handleUnlock = async () => {
+    setUnlocking(true);
+    try {
+      await unlockSubjectForEdit(examSetupId, examSetupSubjectId);
+      toast({ title: 'Unlocked', description: 'Subject unlocked — marks can now be edited.' });
+      onUnlocked?.();
+      await loadSheet();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        ?? 'Failed to unlock subject.';
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -296,6 +321,12 @@ export function MarksEntryGrid({
               Locked — Grades Finalized
             </Badge>
           )}
+          {isEditingExisting && (
+            <Badge variant="secondary" className="flex items-center gap-1 text-blue-700 bg-blue-50 border-blue-200">
+              <Pencil className="h-3 w-3" />
+              Editing {existingCount} saved {existingCount === 1 ? 'entry' : 'entries'}
+            </Badge>
+          )}
           {lastSaveResult && !hasErrors && (
             <Badge variant="secondary" className="text-green-700 bg-green-50 border-green-200">
               <CheckCircle2 className="h-3 w-3 mr-1" />
@@ -306,6 +337,18 @@ export function MarksEntryGrid({
             <Download className="h-3.5 w-3.5 mr-1" />
             Export CSV
           </Button>
+          {isLocked && isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUnlock}
+              disabled={unlocking}
+              className="text-amber-700 border-amber-300 hover:bg-amber-50"
+            >
+              {unlocking ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <UnlockKeyhole className="h-3.5 w-3.5 mr-1" />}
+              Unlock to Edit
+            </Button>
+          )}
           {!isLocked && (
             <Button
               size="sm"
@@ -313,7 +356,7 @@ export function MarksEntryGrid({
               disabled={saving || !hasTouched}
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-              Save Marks
+              {isEditingExisting ? 'Update Marks' : 'Save Marks'}
             </Button>
           )}
         </div>

@@ -306,11 +306,10 @@ export function ChildProfileManager() {
       {currentChild && (
         <Tabs defaultValue="overview" className="space-y-4" onValueChange={(val) => {
           if (val === "attendance" && attendanceRecords.length === 0) loadAttendance();
-          if (val === "academics" && examResults.length === 0) loadAcademics();
-          if (val === "grades" && gradeRecords.length === 0) loadGrades();
+          if (val === "academics" && examResults.length === 0) { loadAcademics(); if (gradeRecords.length === 0) loadGrades(); }
           if (val === "assignments" && assignments.length === 0) loadAssignments();
         }}>
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="overview">
               <User className="h-4 w-4 mr-1.5" />
               Overview
@@ -326,10 +325,6 @@ export function ChildProfileManager() {
             <TabsTrigger value="academics">
               <Award className="h-4 w-4 mr-1.5" />
               Academic Performance
-            </TabsTrigger>
-            <TabsTrigger value="grades">
-              <BarChart2 className="h-4 w-4 mr-1.5" />
-              Grades
             </TabsTrigger>
             <TabsTrigger value="assignments">
               <BookOpen className="h-4 w-4 mr-1.5" />
@@ -470,53 +465,55 @@ export function ChildProfileManager() {
 
           {/* ── Academics Tab ── */}
           <TabsContent value="academics">
-            {academicLoading ? (
+            {(academicLoading || gradesLoading) ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-                  <p className="text-muted-foreground">Loading academic results...</p>
+                  <p className="text-muted-foreground">Loading academic performance...</p>
                 </CardContent>
               </Card>
-            ) : examGroups.length === 0 ? (
+            ) : examGroups.length === 0 && gradeRecords.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <Award className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">No exam results available yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">Results will appear here once exams are conducted and graded</p>
+                  <p className="text-muted-foreground">No academic data available yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Results and grades will appear here once exams are conducted and graded</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-4">
-                {/* Overall Summary */}
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-primary">{examGroups.length}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Exams</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-blue-600">{examResults.length}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Subjects Graded</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-green-600">
-                          {examResults.length > 0 ? (examResults.reduce((s, r) => s + (r.percentage ?? (r.marksObtained / r.maxMarks * 100)), 0) / examResults.length).toFixed(1) : 0}%
+                {/* Overall Summary — only when exam data exists */}
+                {examGroups.length > 0 && (
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{examGroups.length}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Exams</div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1">Average</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-purple-600">
-                          {examResults.length > 0 ? examResults.reduce((best, r) => {
-                            const p = r.percentage ?? (r.marksObtained / r.maxMarks * 100);
-                            return p > best ? p : best;
-                          }, 0).toFixed(0) : 0}%
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-blue-600">{examResults.length}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Subjects Graded</div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1">Best Score</div>
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-green-600">
+                            {examResults.length > 0 ? (examResults.reduce((s, r) => s + (r.percentage ?? (r.marksObtained / r.maxMarks * 100)), 0) / examResults.length).toFixed(1) : 0}%
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Average</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-purple-600">
+                            {examResults.length > 0 ? examResults.reduce((best, r) => {
+                              const p = r.percentage ?? (r.marksObtained / r.maxMarks * 100);
+                              return p > best ? p : best;
+                            }, 0).toFixed(0) : 0}%
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Best Score</div>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Exam-wise Results */}
                 {examGroups.map(group => (
@@ -588,9 +585,59 @@ export function ChildProfileManager() {
                     )}
                   </Card>
                 ))}
+
+                {/* Teacher-entered formative grades section */}
+                {gradeRecords.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <BarChart2 className="h-4 w-4 text-purple-500" />
+                        Teacher Grades &amp; Assessments ({gradeRecords.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Subject / Grade Item</TableHead>
+                            <TableHead className="text-center">Marks</TableHead>
+                            <TableHead className="text-center">Max</TableHead>
+                            <TableHead className="text-center">Grade</TableHead>
+                            <TableHead>Remarks</TableHead>
+                            <TableHead>Date</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {gradeRecords.map(g => {
+                            const pct = g.maxMarks && g.maxMarks > 0 ? Math.round((g.marksObtained / g.maxMarks) * 100) : null;
+                            return (
+                              <TableRow key={g.id}>
+                                <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
+                                <TableCell className="text-center font-bold">{g.marksObtained}</TableCell>
+                                <TableCell className="text-center text-muted-foreground">{g.maxMarks ?? "—"}</TableCell>
+                                <TableCell className="text-center">
+                                  {g.grade ? (
+                                    <Badge variant={g.grade >= "C" ? "default" : "destructive"}>{g.grade}</Badge>
+                                  ) : pct !== null ? (
+                                    <span className={pct >= 50 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>{pct}%</span>
+                                  ) : "—"}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-sm">{g.remarks ?? "—"}</TableCell>
+                                <TableCell className="text-muted-foreground text-sm">
+                                  {new Date(g.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
           </TabsContent>
+
 
           {/* ── Overview Tab ── */}
           <TabsContent value="overview">
@@ -681,74 +728,6 @@ export function ChildProfileManager() {
                 </Card>
               )}
             </div>
-          </TabsContent>
-
-          {/* ── Grades Tab ── */}
-          <TabsContent value="grades">
-            {gradesLoading ? (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-                  <p className="text-muted-foreground">Loading grades...</p>
-                </CardContent>
-              </Card>
-            ) : gradeRecords.length === 0 ? (
-              <Card>
-                <CardContent className="p-10 text-center">
-                  <BarChart2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="font-medium text-muted-foreground">No grades recorded yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Grades will appear here once teachers enter marks for your child.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart2 className="h-4 w-4" />
-                    Grades ({gradeRecords.length} entries)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Subject / Grade Item</TableHead>
-                        <TableHead className="text-center">Marks</TableHead>
-                        <TableHead className="text-center">Max</TableHead>
-                        <TableHead className="text-center">Grade</TableHead>
-                        <TableHead>Remarks</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {gradeRecords.map(g => {
-                        const pct = g.maxMarks && g.maxMarks > 0 ? Math.round((g.marksObtained / g.maxMarks) * 100) : null;
-                        return (
-                          <TableRow key={g.id}>
-                            <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
-                            <TableCell className="text-center font-bold">{g.marksObtained}</TableCell>
-                            <TableCell className="text-center text-muted-foreground">{g.maxMarks ?? "—"}</TableCell>
-                            <TableCell className="text-center">
-                              {g.grade ? (
-                                <Badge variant={g.grade >= "C" ? "default" : "destructive"}>{g.grade}</Badge>
-                              ) : pct !== null ? (
-                                <span className={pct >= 50 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>{pct}%</span>
-                              ) : "—"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">{g.remarks ?? "—"}</TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {new Date(g.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* ── Assignments Tab ── */}

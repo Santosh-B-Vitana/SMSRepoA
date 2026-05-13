@@ -842,10 +842,16 @@ namespace SmsApi.Services
             if (toDate.HasValue)
                 query = query.Where(a => a.Date.Date <= toDate.Value.Date);
 
-            // Deduplicate by (StaffId, Date) to get only the latest record for each staff-date combo
-            var attendances = await query
+            // Use a subquery pattern EF Core can translate: get the latest record per staff-date pair
+            var rawAttendances = await query
+                .OrderByDescending(a => a.Date)
+                .ThenByDescending(a => a.UpdatedAt)
+                .ToListAsync();
+
+            // Deduplicate client-side: keep the latest record per (StaffId, Date) combination
+            var attendances = rawAttendances
                 .GroupBy(a => new { a.StaffId, Date = a.Date.Date })
-                .Select(g => g.OrderByDescending(a => a.UpdatedAt).First())
+                .Select(g => g.First())
                 .OrderByDescending(a => a.Date)
                 .Select(a => new StaffAttendanceResponse
                 {
@@ -860,7 +866,7 @@ namespace SmsApi.Services
                     CreatedAt = a.CreatedAt,
                     UpdatedAt = a.UpdatedAt
                 })
-                .ToListAsync();
+                .ToList();
 
             return attendances;
         }

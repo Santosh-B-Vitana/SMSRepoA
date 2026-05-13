@@ -195,6 +195,9 @@ namespace SmsApi.Services
             // Auto-populate recipients
             await CreateRecipientsAsync(announcement);
 
+            // Push notification to parent portals
+            await NotifyParentsAsync(announcement);
+
             // Reload with navigation props
             var created = await _context.Announcements
                 .Include(a => a.CreatedByStaff)
@@ -550,6 +553,101 @@ namespace SmsApi.Services
                 _context.AnnouncementRecipients.AddRange(recipients);
                 await _context.SaveChangesAsync();
             }
+        }
+        private async Task NotifyParentsAsync(Announcement announcement)
+        {
+            IQueryable<Guid> parentLoginIds;
+
+            switch (announcement.TargetAudience)
+            {
+                case AnnouncementConstants.AudienceAll:
+                case AnnouncementConstants.AudienceParents:
+                case AnnouncementConstants.AudienceStudents:
+                {
+                    parentLoginIds = _context.Guardians
+                        .Where(g => g.SchoolId == announcement.SchoolId
+                                    && g.HasPortalAccess
+                                    && g.UserLoginId != null)
+                        .Select(g => g.UserLoginId!.Value)
+                        .Distinct();
+                    break;
+                }
+
+                case AnnouncementConstants.AudienceClass when announcement.TargetClassId.HasValue:
+                {
+                    var classId = announcement.TargetClassId.Value;
+                    var studentIds = await _context.StudentEnrollments
+                        .Where(e => e.SchoolId == announcement.SchoolId
+                                    && e.ClassId == classId
+                                    && e.Status == "active")
+                        .Select(e => e.StudentId)
+                        .Distinct()
+                        .ToListAsync();
+                    parentLoginIds = _context.GuardianStudents
+                        .Where(gs => studentIds.Contains(gs.StudentId))
+                        .Join(_context.Guardians,
+                            gs => gs.GuardianId,
+                            g  => g.Id,
+                            (gs, g) => g)
+                        .Where(g => g.HasPortalAccess && g.UserLoginId != null)
+                        .Select(g => g.UserLoginId!.Value)
+                        .Distinct();
+                    break;
+                }
+
+                case AnnouncementConstants.AudienceSection when announcement.TargetSectionId.HasValue:
+                {
+                    var sectionId = announcement.TargetSectionId.Value;
+                    var studentIds = await _context.StudentEnrollments
+                        .Where(e => e.SchoolId == announcement.SchoolId
+                                    && e.SectionId == sectionId
+                                    && e.Status == "active")
+                        .Select(e => e.StudentId)
+                        .Distinct()
+                        .ToListAsync();
+                    parentLoginIds = _context.GuardianStudents
+                        .Where(gs => studentIds.Contains(gs.StudentId))
+                        .Join(_context.Guardians,
+                            gs => gs.GuardianId,
+                            g  => g.Id,
+                            (gs, g) => g)
+                        .Where(g => g.HasPortalAccess && g.UserLoginId != null)
+                        .Select(g => g.UserLoginId!.Value)
+                        .Distinct();
+                    break;
+                }
+
+                default:
+                    return; // Staff-only or unknown audience
+            }
+
+            var loginIds = await parentLoginIds.ToListAsync();
+            if (loginIds.Count == 0) return;
+
+            var shortContent = announcement.Content.Length > 200
+                ? announcement.Content.Substring(0, 200) + "…"
+                : announcement.Content;
+            var priority = announcement.Priority is AnnouncementConstants.PriorityHigh
+                                                  or AnnouncementConstants.PriorityUrgent
+                ? "High" : "Normal";
+
+            var notifications = loginIds.Select(loginId => new Notification
+            {
+                Id            = Guid.NewGuid(),
+                SchoolId      = announcement.SchoolId,
+                RecipientId   = loginId,
+                RecipientType = "Parent",
+                Type          = "Announcement",
+                Title         = announcement.Title,
+                Content       = shortContent,
+                ReferenceId   = announcement.Id,
+                ReferenceType = "Announcement",
+                ActionUrl     = "/parent-announcements",
+                Priority      = priority,
+            }).ToList();
+
+            _context.Notifications.AddRange(notifications);
+            await _context.SaveChangesAsync();
         }
     }
 }

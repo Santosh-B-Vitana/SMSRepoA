@@ -45,6 +45,12 @@ namespace SmsApi.Services
 
         // Staff view: exam setups where staff is assigned to enter marks
         Task<List<ExamSetupBasicDto>> GetExamSetupsForStaffAsync(Guid schoolId, string userEmail, string? academicYear);
+
+        // Unlock a locked subject so marks can be re-edited (admin only)
+        Task UnlockSubjectForEditAsync(Guid schoolId, Guid examSetupId, Guid examSetupSubjectId);
+
+        // Reopen a published exam for re-editing (admin only)
+        Task<ExamSetupDetailDto> ReopenForEditingAsync(Guid schoolId, Guid examSetupId);
     }
 
     public class ExamSetupService : IExamSetupService
@@ -221,7 +227,7 @@ namespace SmsApi.Services
                     EndDate             = e.EndDate,
                     Status              = e.Status,
                     SubjectCount        = e.Subjects.Count(s => !s.IsDeleted),
-                    MarksEnteredCount   = e.Subjects.Count(s => !s.IsDeleted && s.Status == "locked"),
+                    MarksEnteredCount   = e.Subjects.Count(s => !s.IsDeleted && (s.Status == "marks_entry" || s.Status == "locked")),
                     CreatedAt           = e.CreatedAt,
                 }).ToList(),
                 TotalCount = total,
@@ -266,7 +272,7 @@ namespace SmsApi.Services
                 EndDate             = entity.EndDate,
                 Status              = entity.Status,
                 SubjectCount        = entity.Subjects.Count(s => !s.IsDeleted),
-                MarksEnteredCount   = entity.Subjects.Count(s => !s.IsDeleted && s.Status == "locked"),
+                MarksEnteredCount   = entity.Subjects.Count(s => !s.IsDeleted && (s.Status == "marks_entry" || s.Status == "locked")),
                 CreatedAt           = entity.CreatedAt,
                 PublishedAt         = entity.PublishedAt,
                 Subjects            = entity.Subjects
@@ -456,24 +462,32 @@ namespace SmsApi.Services
             var subject = examSetup.Subjects.FirstOrDefault(s => s.Id == examSetupSubjectId)
                 ?? throw new KeyNotFoundException("Subject not found in exam setup.");
 
-            // Verify staff has access if staffEmail provided (resolve email → StaffMember.Id)
-            if (!string.IsNullOrWhiteSpace(staffEmail) && subject.AssignedStaffId.HasValue)
+            // Verify staff access (Option D): class teacher → all subjects; subject-assigned → own subject only
+            if (!string.IsNullOrWhiteSpace(staffEmail))
             {
                 var staffMemberId = await _context.StaffMembers
                     .Where(s => s.Email == staffEmail && s.SchoolId == schoolId && !s.IsDeleted)
                     .Select(s => (Guid?)s.Id)
                     .FirstOrDefaultAsync();
 
-                // Staff may enter marks if they are explicitly assigned OR they teach this class
-                if (staffMemberId.HasValue && subject.AssignedStaffId != staffMemberId)
+                if (!staffMemberId.HasValue)
+                    throw new UnauthorizedAccessException("Staff member not found for this account.");
+
+                // Allow if explicitly assigned to this subject
+                bool isExplicitlyAssigned = subject.AssignedStaffId.HasValue
+                    && subject.AssignedStaffId == staffMemberId;
+
+                if (!isExplicitlyAssigned)
                 {
-                    var teachesClass = await _context.TeacherAssignments
+                    // Allow only if they are the class teacher for this exam's class
+                    var isClassTeacher = await _context.TeacherAssignments
                         .AnyAsync(ta => ta.StaffId == staffMemberId
                             && ta.ClassId == examSetup.ClassId
+                            && ta.IsClassTeacher
                             && ta.SchoolId == schoolId
                             && ta.Status == "active" && !ta.IsDeleted);
 
-                    if (!teachesClass)
+                    if (!isClassTeacher)
                         throw new UnauthorizedAccessException("You are not assigned to enter marks for this subject.");
                 }
             }
@@ -569,19 +583,26 @@ namespace SmsApi.Services
                     .FirstOrDefaultAsync();
             }
 
-            // Validate staff access: only when NOT admin and subject has a specific staff assigned
-            if (!isAdmin && subject.AssignedStaffId.HasValue && resolvedStaffId.HasValue
-                && subject.AssignedStaffId != resolvedStaffId)
+            // Validate staff access (Option D): class teacher → all subjects; subject-assigned → own subject only
+            if (!isAdmin && resolvedStaffId.HasValue)
             {
-                // Allow if staff teaches the class (class-level access)
-                var teachesClass = await _context.TeacherAssignments
-                    .AnyAsync(ta => ta.StaffId == resolvedStaffId
-                        && ta.ClassId == subject.ExamSetup!.ClassId
-                        && ta.SchoolId == schoolId
-                        && ta.Status == "active" && !ta.IsDeleted);
+                // Allow if explicitly assigned to this subject
+                bool isExplicitlyAssigned = subject.AssignedStaffId.HasValue
+                    && subject.AssignedStaffId == resolvedStaffId;
 
-                if (!teachesClass)
-                    throw new UnauthorizedAccessException("You are not assigned to enter marks for this subject.");
+                if (!isExplicitlyAssigned)
+                {
+                    // Allow only if they are the class teacher for this exam's class
+                    var isClassTeacher = await _context.TeacherAssignments
+                        .AnyAsync(ta => ta.StaffId == resolvedStaffId
+                            && ta.ClassId == subject.ExamSetup!.ClassId
+                            && ta.IsClassTeacher
+                            && ta.SchoolId == schoolId
+                            && ta.Status == "active" && !ta.IsDeleted);
+
+                    if (!isClassTeacher)
+                        throw new UnauthorizedAccessException("You are not assigned to enter marks for this subject.");
+                }
             }
 
             // EnteredByStaffId must reference StaffMembers FK — use resolved staff ID,
@@ -788,12 +809,10 @@ namespace SmsApi.Services
 
                 if (existingCard == null)
                 {
-                    // Use a sentinel Guid for ExamId (required field) linked to ExamSetup concept
                     _context.ReportCards.Add(new ReportCard
                     {
                         SchoolId = schoolId,
                         StudentId = studentId,
-                        ExamId = setup.Id,   // Use ExamSetupId as the reference (same Guid type)
                         ExamSetupId = setup.Id,
                         AcademicYear = setup.AcademicYear,
                         Term = setup.Term == 0 ? "Annual" : $"Term {setup.Term}",
@@ -833,7 +852,7 @@ namespace SmsApi.Services
                     _context.Notifications.Add(new Notification
                     {
                         SchoolId = schoolId,
-                        RecipientId = link.GuardianId,
+                        RecipientId = link.Guardian.UserLoginId.Value,
                         RecipientType = "Parent",
                         Title = "Exam Results Published",
                         Content = $"Results for {setup.Name} have been published. Login to view your child's report card.",
@@ -988,11 +1007,12 @@ namespace SmsApi.Services
                     .Distinct()
                     .ToListAsync();
 
-            // 2. All classes where this staff has an active teaching assignment
+            // 2. Classes where this staff is the class teacher (Option D: class teacher sees all exams for their class)
             var staffClassIds = resolvedStaffId == Guid.Empty
                 ? new List<Guid>()
                 : await _context.TeacherAssignments
                     .Where(ta => ta.StaffId == resolvedStaffId && ta.SchoolId == schoolId
+                        && ta.IsClassTeacher
                         && ta.Status == "active" && !ta.IsDeleted)
                     .Select(ta => ta.ClassId)
                     .Distinct()
@@ -1032,9 +1052,66 @@ namespace SmsApi.Services
                 EndDate              = e.EndDate,
                 Status               = e.Status,
                 SubjectCount         = e.Subjects.Count(s => !s.IsDeleted),
-                MarksEnteredCount    = e.Subjects.Count(s => !s.IsDeleted && s.Status == "locked"),
+                MarksEnteredCount    = e.Subjects.Count(s => !s.IsDeleted && (s.Status == "marks_entry" || s.Status == "locked")),
                 CreatedAt            = e.CreatedAt,
             }).ToList();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // UNLOCK SUBJECT FOR EDIT (admin only — reverses a lock)
+        // ─────────────────────────────────────────────────────────────────────
+
+        public async Task UnlockSubjectForEditAsync(Guid schoolId, Guid examSetupId, Guid examSetupSubjectId)
+        {
+            var subject = await _context.ExamSetupSubjects
+                .Include(s => s.ExamSetup)
+                .FirstOrDefaultAsync(s => s.Id == examSetupSubjectId
+                    && s.ExamSetupId == examSetupId
+                    && s.SchoolId == schoolId)
+                ?? throw new KeyNotFoundException("Subject not found in exam setup.");
+
+            if (subject.Status != "locked")
+                throw new InvalidOperationException("Subject is not locked — no unlock needed.");
+
+            subject.Status = "marks_entry";
+
+            // If the parent exam was finalized, revert it back to marks_entry too
+            if (subject.ExamSetup != null && subject.ExamSetup.Status == "finalized")
+                subject.ExamSetup.Status = "marks_entry";
+
+            await _context.SaveChangesAsync();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // REOPEN PUBLISHED EXAM FOR RE-EDITING (admin only)
+        // ─────────────────────────────────────────────────────────────────────
+
+        public async Task<ExamSetupDetailDto> ReopenForEditingAsync(Guid schoolId, Guid examSetupId)
+        {
+            var setup = await _context.ExamSetups
+                .Where(e => e.SchoolId == schoolId && e.Id == examSetupId)
+                .Include(e => e.Subjects)
+                    .ThenInclude(s => s.MarksEntries)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Exam setup not found.");
+
+            if (setup.Status != "published")
+                throw new InvalidOperationException("Only published exams can be reopened for editing.");
+
+            // Revert exam and all subject statuses
+            setup.Status = "marks_entry";
+            setup.PublishedAt = null;
+
+            foreach (var subject in setup.Subjects.Where(s => !s.IsDeleted))
+            {
+                subject.Status = "marks_entry";
+                foreach (var entry in subject.MarksEntries)
+                    entry.Status = "submitted";
+            }
+
+            await _context.SaveChangesAsync();
+
+            return (await GetExamSetupByIdAsync(schoolId, examSetupId))!;
         }
 
         // ─────────────────────────────────────────────────────────────────────

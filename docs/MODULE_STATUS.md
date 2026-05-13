@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 13, 2026 (Session 4) | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -31,11 +31,12 @@
 | **Leave Management** | ✅ Production Ready | 30/30 | Balance tracking, approvals, overlap detection |
 | **Communication** | ✅ Production Ready | 89/89 | Messages, announcements, templates |
 | **Payroll** | ✅ Production Ready | 30/30 | Salary slips, allowances, deductions |
-| **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading; Staff assignments page fully rewritten — class-grouped with per-class colour coding, section sub-tabs, clickable cards with submission/grading detail sheet |
-| **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation; **Hall Tickets** (bulk-generate with prefix, per-class filter, CSV export, print); **Co-Scholastic Grading** (A+→E grade per area per term, area CRUD); **Promote Exam Structure** — added May 2026; **Exam Marks Entry (admin + staff)** — end-to-end fixed May 13, 2026 |
+| **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading; Staff assignments page fully rewritten — class-grouped with per-class colour coding, section sub-tabs, clickable cards with submission/grading detail sheet; tiles refresh live after grading; **Parent notifications** on grade (and on new assignment) — end-to-end via `StudentGuardians → UserLogins` email join |
+| **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation; **Hall Tickets** (bulk-generate with prefix, per-class filter, CSV export, print); **Co-Scholastic Grading** (A+→E grade per area per term, area CRUD); **Promote Exam Structure** — added May 2026; **Exam Marks Entry (admin + staff)** — end-to-end fixed May 13, 2026; **Exams tab in My Classes** — shows all class exams (not just assigned) |
 | **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash |
 | **Reports** | ✅ Production Ready | ✅ | PDF/CSV export for all modules |
 | **Staff-Student Guardian Relationship** | ✅ Production Ready | ✅ | GuardianStaffId on Student entity; bidirectional link/unlink UI; fee concession eligible |
+| **Notifications** | ✅ Production Ready | ✅ | Real DB-backed; parent receives notifications for: Fee reminders, Exam, Announcements, Attendance, **Assignment Graded** (new May 13 2026), New Assignment. `GET /api/notifications/my` returns unread count + paginated list. Parent portal bell icon + Notifications page both real (no mock data). |
 
 ---
 
@@ -50,9 +51,9 @@ All staff-facing modules are production-ready and fully hardened.
 | Leave Management | 30/30 | Date range, overlap detection, balance enforcement |
 | Communication | 89/89 | Length validation, recipient type, multi-channel |
 | Payroll | 30/30 | Year/month validation, pagination, audit trail |
-| Assignments | 40/40 | Due date, max marks bounds, duplicate prevention; UI: class-grouped sections, clickable cards → detail sheet (submission stats, grading progress, description) |
-| Exam Marks Entry | ✅ | Admin (Examinations → Results tab) and Staff (Grades → Exam Marks tab); email-based staff ID resolution; class-level access; FK-safe audit trail |
-| My Classes | ✅ | Staff class assignment, student lists |
+| Assignments | 40/40 | Due date, max marks bounds, duplicate prevention; UI: class-grouped sections, clickable cards → detail sheet (submission stats, grading progress, description); tiles refresh after grading; parent notified on grade |
+| Exam Marks Entry | ✅ | Admin (Examinations → Results tab) and Staff (My Classes → Exams tab); shows all class exams; email-based staff ID resolution; class-level access; FK-safe audit trail |
+| My Classes | ✅ | Staff class assignment, student lists, assignments tab (fixed arg order), exam marks tab (all class exams) |
 
 ---
 

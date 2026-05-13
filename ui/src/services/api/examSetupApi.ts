@@ -173,17 +173,18 @@ export interface PublishResultsResponseDto {
 }
 
 export interface SubjectResultSummaryDto {
-  subjectId: string;
+  subjectId?: string;
   subjectName: string;
   isElective: boolean;
   theoryMarks?: number;
   practicalMarks?: number;
   internalMarks?: number;
   obtainedMarks: number;
-  maxTotalMarks: number;
+  /** Backend serializes as maxMarks (SubjectResultSummaryDto.MaxMarks) */
+  maxMarks: number;
   percentage: number;
-  grade: string;
-  gradePoint: number;
+  grade?: string;
+  gradePoint?: number;
   isPass: boolean;
   isAbsent: boolean;
 }
@@ -277,6 +278,15 @@ export const saveBulkMarks = (
   dto: BulkMarksEntryDto
 ): Promise<BulkOperationResult> =>
   apiPost(`/examinations/exam-setup/${examSetupId}/subjects/${examSetupSubjectId}/marks`, dto);
+
+export const unlockSubjectForEdit = (
+  examSetupId: string,
+  examSetupSubjectId: string
+): Promise<void> =>
+  apiPut(`/examinations/exam-setup/${examSetupId}/subjects/${examSetupSubjectId}/unlock`);
+
+export const reopenExamForEditing = (id: string): Promise<ExamSetupDetailDto> =>
+  apiPost(`/examinations/exam-setup/${id}/reopen`);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // FINALIZE & PUBLISH

@@ -32,7 +32,7 @@ interface ExamSession {
   class: string;
   subject: string;
   name: string;
-  status: 'scheduled' | 'ongoing' | 'completed';
+  status: 'scheduled' | 'ongoing' | 'completed' | 'results_published';
   date: string;
   totalMarks: number;
   passingMarks: number;
@@ -207,17 +207,10 @@ export default function ImprovedExamManagementPanel() {
         await handleSaveResults();
       }
       
-      // Then publish
-      await examinationApi.updateExam(selectedExam.id, { status: 'completed' });
+      // Finalize exam — calculates ranks and publishes results
+      await examinationApi.finalizeExamResults(selectedExam.id);
       toast.success("Results published — now visible to students and parents");
-      
-      // Refresh exam status
-      const classCode = selectedClass.replace("Class ", "");
-      const res = await examinationApi.getExams({ class: classCode }, 1, 50);
-      const updated = res.items?.find((e: any) => e.id === selectedExam.id);
-      if (updated) {
-        setSelectedExam({ ...selectedExam, status: 'completed' });
-      }
+      setSelectedExam({ ...selectedExam, status: 'results_published' });
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? "Failed to publish");
     } finally {
@@ -230,6 +223,7 @@ export default function ImprovedExamManagementPanel() {
       case 'scheduled': return 'bg-blue-100 text-blue-800';
       case 'ongoing': return 'bg-yellow-100 text-yellow-800';
       case 'completed': return 'bg-green-100 text-green-800';
+      case 'results_published': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -449,7 +443,7 @@ export default function ImprovedExamManagementPanel() {
                 <div className="flex gap-2">
                   <Button
                     onClick={handlePublish}
-                    disabled={loading || selectedExam.status === 'completed'}
+                    disabled={loading || selectedExam.status === 'results_published'}
                   >
                     <CheckCircle className="h-4 w-4 mr-2" />
                     Publish Results Now

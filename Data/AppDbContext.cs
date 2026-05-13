@@ -251,6 +251,8 @@ namespace SmsApi.Data
         public DbSet<OfflineDevice> OfflineDevices { get; set; }
         public DbSet<SyncConflict> SyncConflicts { get; set; }
 
+
+
         /// <summary>
         /// Automatically populates audit fields (CreatedAt, UpdatedAt, CreatedBy, UpdatedBy)
         /// on all BaseEntity-derived entities before persisting changes.
@@ -490,6 +492,12 @@ namespace SmsApi.Data
                 e.Property(x => x.ObtainedMarks).HasColumnType("decimal(8,2)");
                 e.Property(x => x.Percentage).HasColumnType("decimal(5,2)");
                 e.Property(x => x.CGPA).HasColumnType("decimal(4,2)");
+                // ExamId is optional — null for ExamSetup-based results
+                e.HasOne(r => r.Exam)
+                 .WithMany()
+                 .HasForeignKey(r => r.ExamId)
+                 .IsRequired(false)
+                 .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<AdmissionTest>(e =>
@@ -2922,6 +2930,7 @@ namespace SmsApi.Data
                 entity.HasIndex(e => new { e.SchoolId, e.Status });
             });
         }
+
     }
 }
 

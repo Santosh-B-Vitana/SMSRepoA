@@ -200,4 +200,48 @@ namespace SmsApi.Models.DTOs
         public int Page { get; set; }
         public int PageSize { get; set; }
     }
+
+    // ── Staff Grading Roster DTOs ─────────────────────────────────────────────
+
+    /// <summary>One student row in the grading roster for an assignment.</summary>
+    public class AssignmentRosterEntry
+    {
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? RollNumber { get; set; }
+
+        /// <summary>True when a submission row exists (status != "not_submitted").</summary>
+        public bool HasSubmitted { get; set; }
+
+        /// <summary>null | "submitted" | "graded" | "not_submitted"</summary>
+        public string? SubmissionStatus { get; set; }
+
+        public decimal? MarksObtained { get; set; }
+        public string? Feedback { get; set; }
+        public DateTime? SubmissionDate { get; set; }
+
+        /// <summary>Null when the student has no submission row.</summary>
+        public Guid? SubmissionId { get; set; }
+    }
+
+    public class AssignmentRosterResponse
+    {
+        public AssignmentResponse Assignment { get; set; } = new();
+        public List<AssignmentRosterEntry> Students { get; set; } = new();
+    }
+
+    /// <summary>Body for POST …/roster/mark — staff records or updates a student submission.</summary>
+    public class StaffMarkRequest
+    {
+        [Required]
+        public Guid StudentId { get; set; }
+
+        /// <summary>True = student submitted (create/update row); false = mark as not submitted.</summary>
+        public bool Submitted { get; set; }
+
+        public decimal? MarksObtained { get; set; }
+
+        [MaxLength(1000)]
+        public string? Feedback { get; set; }
+    }
 }

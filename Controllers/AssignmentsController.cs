@@ -463,5 +463,64 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
             }
         }
+
+        // ── Staff Grading Roster ──────────────────────────────────────────────
+
+        /// <summary>Returns all enrolled students for an assignment with their submission status.</summary>
+        [HttpGet("{assignmentId}/roster")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentRosterResponse>> GetAssignmentRoster(Guid assignmentId)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var roster = await _assignmentService.GetAssignmentRosterAsync(assignmentId, schoolId);
+                if (roster == null)
+                    return NotFound(new { error = "Assignment not found" });
+                return Ok(roster);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        /// <summary>Staff marks a student as submitted/not-submitted and optionally awards marks.</summary>
+        [HttpPost("{assignmentId}/roster/mark")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentRosterEntry>> StaffMarkSubmission(Guid assignmentId, [FromBody] StaffMarkRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Resolve StaffMember.Id from JWT email so it matches what's stored on submissions
+                var userEmail = _tenant.UserEmail;
+                var staffMember = await _context.StaffMembers
+                    .FirstOrDefaultAsync(s => s.SchoolId == schoolId
+                                           && s.Email != null
+                                           && s.Email.ToLower() == userEmail.ToLower());
+                var staffId = staffMember?.Id ?? _tenant.UserId;
+
+                var entry = await _assignmentService.StaffMarkSubmissionAsync(assignmentId, request, staffId);
+                return Ok(entry);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
     }
 }

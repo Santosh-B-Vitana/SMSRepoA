@@ -1,11 +1,12 @@
-﻿import { useState, useEffect, useMemo } from "react";
+﻿import { useState, useEffect, useMemo, useCallback } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Plus, Calendar, FileText, Users, BookOpen, Search,
   ChevronRight, CheckCircle2, AlertCircle, Timer, X, Pencil,
   GraduationCap, MoreHorizontal, TrendingUp, ClipboardCheck,
-  BarChart3, Clock, Tag,
+  BarChart3, Clock, Tag, ClipboardList, CheckCheck, XCircle,
+  Loader2, Save, ChevronDown, ChevronUp, Award,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,8 +18,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { assignmentApi, type AssignmentResponse } from "@/services/api/assignmentApi";
+import { assignmentApi, type AssignmentResponse, type AssignmentRosterEntry, type AssignmentRosterResponse } from "@/services/api/assignmentApi";
 import { academicApi, type MyClassAssignment } from "@/services/api/academicApi";
 import { z } from "zod";
 
@@ -113,11 +115,12 @@ function StatCard({ icon, value, label, sub, colorCls }: {
 
 // ─── AssignmentCard (clickable) ───────────────────────────────────────────────
 function AssignmentCard({
-  a, color, onClick, sectionLabel,
+  a, color, onClick, onGrade, sectionLabel,
 }: {
   a: AssignmentResponse;
   color: ReturnType<typeof pal>;
   onClick: () => void;
+  onGrade: (a: AssignmentResponse) => void;
   sectionLabel?: string;
 }) {
   const urgency = dueUrgency(a.dueDate);
@@ -185,10 +188,16 @@ function AssignmentCard({
       </div>
 
       {/* footer */}
-      <div className="flex justify-between items-center text-[11px] text-muted-foreground mt-auto pt-1 border-t border-current/10">
-        <span className="font-medium">Max: {a.maxMarks ?? "—"} marks</span>
-        <span className={`flex items-center gap-0.5 font-medium ${color.text}`}>
-          View details <ChevronRight className="h-3 w-3" />
+      <div className="flex items-center gap-2 mt-auto pt-1 border-t border-current/10">
+        <span className="text-[11px] text-muted-foreground font-medium flex-1">Max: {a.maxMarks ?? "—"} marks</span>
+        <button
+          onClick={e => { e.stopPropagation(); onGrade(a); }}
+          className={`flex items-center gap-0.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-current/20 ${color.text} hover:${color.bg} transition-colors`}
+        >
+          <Award className="h-3 w-3 mr-0.5" />Grade
+        </button>
+        <span className={`flex items-center gap-0.5 text-[11px] font-medium ${color.text}`}>
+          Details <ChevronRight className="h-3 w-3" />
         </span>
       </div>
     </button>
@@ -197,12 +206,13 @@ function AssignmentCard({
 
 // ─── Assignment Detail Sheet ──────────────────────────────────────────────────
 function AssignmentDetailSheet({
-  a, open, onClose, classLabel,
+  a, open, onClose, classLabel, onGrade,
 }: {
   a: AssignmentResponse | null;
   open: boolean;
   onClose: () => void;
   classLabel: string;
+  onGrade: (a: AssignmentResponse) => void;
 }) {
   if (!a) return null;
   const urgency = dueUrgency(a.dueDate);
@@ -328,7 +338,345 @@ function AssignmentDetailSheet({
             </>
           )}
 
+          <Separator />
+          {/* Grade students CTA */}
+          <Button
+            className="w-full"
+            onClick={() => { onClose(); onGrade(a); }}
+          >
+            <Award className="h-4 w-4 mr-2" />
+            Grade Students
+          </Button>
+
         </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ─── Submission status badge ──────────────────────────────────────────────────
+function SubmissionStatusBadge({ status }: { status?: string }) {
+  if (!status) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-500 border border-gray-200"><XCircle className="h-3 w-3" />Not submitted</span>;
+  const map: Record<string, string> = {
+    submitted:     "bg-blue-100 text-blue-700 border-blue-200",
+    graded:        "bg-emerald-100 text-emerald-700 border-emerald-200",
+    not_submitted: "bg-rose-100 text-rose-700 border-rose-200",
+  };
+  const icons: Record<string, React.ReactNode> = {
+    submitted:     <ClipboardCheck className="h-3 w-3" />,
+    graded:        <CheckCheck className="h-3 w-3" />,
+    not_submitted: <XCircle className="h-3 w-3" />,
+  };
+  const labels: Record<string, string> = {
+    submitted: "Submitted", graded: "Graded", not_submitted: "Not submitted",
+  };
+  const cls = map[status] ?? "bg-gray-100 text-gray-500 border-gray-200";
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${cls}`}>
+      {icons[status]} {labels[status] ?? status}
+    </span>
+  );
+}
+
+// ─── Single roster row ────────────────────────────────────────────────────────
+interface RosterRowState {
+  submitted: boolean;
+  marks: string;
+  feedback: string;
+  dirty: boolean;
+  saving: boolean;
+}
+
+function RosterRow({
+  entry,
+  maxMarks,
+  assignmentId,
+  onSaved,
+}: {
+  entry: AssignmentRosterEntry;
+  maxMarks: number;
+  assignmentId: string;
+  onSaved: (updated: AssignmentRosterEntry) => void;
+}) {
+  const [state, setState] = useState<RosterRowState>({
+    submitted: entry.hasSubmitted,
+    marks:     entry.marksObtained != null ? String(entry.marksObtained) : "",
+    feedback:  entry.feedback ?? "",
+    dirty:     false,
+    saving:    false,
+  });
+  const [expanded, setExpanded] = useState(false);
+
+  const update = (patch: Partial<RosterRowState>) =>
+    setState(prev => ({ ...prev, ...patch, dirty: true }));
+
+  const save = useCallback(async () => {
+    setState(prev => ({ ...prev, saving: true }));
+    try {
+      const marksNum = state.marks !== "" ? parseFloat(state.marks) : undefined;
+      if (marksNum !== undefined && (isNaN(marksNum) || marksNum < 0 || marksNum > maxMarks)) {
+        toast.error(`Marks must be between 0 and ${maxMarks}`);
+        setState(prev => ({ ...prev, saving: false }));
+        return;
+      }
+      const updated = await assignmentApi.staffMark(assignmentId, {
+        studentId:     entry.studentId,
+        submitted:     state.submitted,
+        marksObtained: marksNum,
+        feedback:      state.feedback || undefined,
+      });
+      setState(prev => ({ ...prev, dirty: false, saving: false }));
+      onSaved(updated);
+      toast.success(`Saved for ${entry.studentName}`);
+    } catch {
+      toast.error("Failed to save");
+      setState(prev => ({ ...prev, saving: false }));
+    }
+  }, [assignmentId, entry.studentId, entry.studentName, maxMarks, state.marks, state.feedback, state.submitted, onSaved]);
+
+  return (
+    <div className={`rounded-xl border transition-all ${state.dirty ? "border-amber-300 bg-amber-50/40" : "border-border bg-card"}`}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Roll + name */}
+        <div className="w-12 text-xs font-mono text-muted-foreground shrink-0">
+          {entry.rollNumber ?? "—"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{entry.studentName}</p>
+          <SubmissionStatusBadge status={entry.hasSubmitted ? (state.submitted ? entry.submissionStatus : "not_submitted") : (state.submitted ? "submitted" : undefined)} />
+        </div>
+
+        {/* Submitted toggle */}
+        <button
+          onClick={() => update({ submitted: !state.submitted })}
+          className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+            state.submitted
+              ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+              : "bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600"
+          }`}
+        >
+          {state.submitted ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {state.submitted ? "Submitted" : "Not submitted"}
+        </button>
+
+        {/* Quick marks input */}
+        {state.submitted && (
+          <div className="relative shrink-0 w-24">
+            <Input
+              type="number"
+              min={0}
+              max={maxMarks}
+              step="0.5"
+              placeholder="Marks"
+              value={state.marks}
+              onChange={e => update({ marks: e.target.value })}
+              className="h-8 text-xs pr-8 text-right"
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">
+              /{maxMarks}
+            </span>
+          </div>
+        )}
+
+        {/* Expand feedback */}
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground"
+        >
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+
+        {/* Save */}
+        {state.dirty && (
+          <Button size="sm" className="shrink-0 h-8 text-xs" onClick={save} disabled={state.saving}>
+            {state.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            <span className="ml-1">Save</span>
+          </Button>
+        )}
+      </div>
+
+      {/* Expanded feedback */}
+      {expanded && (
+        <div className="px-4 pb-3 pt-0 border-t border-border/50">
+          <label className="text-xs font-medium text-muted-foreground">Feedback / Remarks</label>
+          <Textarea
+            placeholder="Optional feedback for this student…"
+            value={state.feedback}
+            onChange={e => update({ feedback: e.target.value })}
+            className="mt-1.5 text-sm resize-none"
+            rows={2}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Grading Sheet ────────────────────────────────────────────────────────────
+function AssignmentGradingSheet({
+  assignment,
+  open,
+  onClose,
+}: {
+  assignment: AssignmentResponse | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [roster, setRoster] = useState<AssignmentRosterResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<"all" | "submitted" | "graded" | "not_submitted">("all");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (!open || !assignment) return;
+    let cancelled = false;
+    setLoading(true);
+    setRoster(null);
+    assignmentApi.getAssignmentRoster(assignment.id)
+      .then(r => { if (!cancelled) setRoster(r); })
+      .catch((err: any) => {
+        const msg = err?.response?.data?.error ?? err?.response?.data?.message ?? err?.message ?? "Failed to load roster";
+        toast.error(`Roster error: ${msg}`);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, assignment]);
+
+  const handleSaved = useCallback((updated: AssignmentRosterEntry) => {
+    setRoster(prev => {
+      if (!prev) return prev;
+      const students = prev.students.map(s => s.studentId === updated.studentId ? updated : s);
+      const submitted = students.filter(s => s.hasSubmitted).length;
+      const graded    = students.filter(s => s.submissionStatus === "graded").length;
+      return {
+        ...prev,
+        students,
+        assignment: { ...prev.assignment, submissionCount: submitted, gradedCount: graded },
+      };
+    });
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!roster) return [];
+    return roster.students.filter(s => {
+      if (filter === "submitted" && s.submissionStatus !== "submitted") return false;
+      if (filter === "graded"    && s.submissionStatus !== "graded")    return false;
+      if (filter === "not_submitted" && s.hasSubmitted) return false;
+      if (search && !s.studentName.toLowerCase().includes(search.toLowerCase()) &&
+          !(s.rollNumber ?? "").toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [roster, filter, search]);
+
+  if (!assignment) return null;
+
+  const stats = roster ? {
+    total:        roster.students.length,
+    submitted:    roster.students.filter(s => s.hasSubmitted).length,
+    graded:       roster.students.filter(s => s.submissionStatus === "graded").length,
+    notSubmitted: roster.students.filter(s => !s.hasSubmitted).length,
+  } : null;
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetHeader className="pb-4">
+          <div className="flex items-start justify-between gap-3 pr-8">
+            <div>
+              <SheetTitle className="text-lg leading-snug">{assignment.title}</SheetTitle>
+              <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                <GraduationCap className="h-3.5 w-3.5" /> {assignment.subjectName}
+                {assignment.sectionName && <> · {assignment.className} – {assignment.sectionName}</>}
+                {!assignment.sectionName && <> · {assignment.className}</>}
+                <span className="text-muted-foreground">· Max: {assignment.maxMarks} marks</span>
+              </p>
+            </div>
+            <Badge variant="outline" className="shrink-0">{assignment.status}</Badge>
+          </div>
+
+          {/* Stats row */}
+          {stats && (
+            <div className="grid grid-cols-3 gap-2 pt-2">
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">Submitted</p>
+                <p className="text-xl font-bold text-blue-700">{stats.submitted}<span className="text-xs font-normal text-blue-500">/{stats.total}</span></p>
+              </div>
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-wide text-emerald-600 font-semibold">Graded</p>
+                <p className="text-xl font-bold text-emerald-700">{stats.graded}<span className="text-xs font-normal text-emerald-500">/{stats.total}</span></p>
+              </div>
+              <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-wide text-rose-600 font-semibold">Not submitted</p>
+                <p className="text-xl font-bold text-rose-700">{stats.notSubmitted}<span className="text-xs font-normal text-rose-500">/{stats.total}</span></p>
+              </div>
+            </div>
+          )}
+        </SheetHeader>
+
+        {loading ? (
+          <div className="space-y-3 mt-2">
+            {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-14 rounded-xl" />)}
+          </div>
+        ) : !roster ? null : (
+          <div className="space-y-4 mt-2">
+            {/* Filter + search bar */}
+            <div className="flex flex-wrap items-center gap-2">
+              {(["all","submitted","graded","not_submitted"] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                    filter === f
+                      ? "bg-gray-900 text-white border-gray-900"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {f === "all" ? "All" : f === "not_submitted" ? "Not submitted" : f.charAt(0).toUpperCase() + f.slice(1)}
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${filter === f ? "bg-white/20" : "bg-gray-100"}`}>
+                    {f === "all" ? roster.students.length
+                      : f === "not_submitted" ? roster.students.filter(s => !s.hasSubmitted).length
+                      : roster.students.filter(s => s.submissionStatus === f).length}
+                  </span>
+                </button>
+              ))}
+              <div className="flex-1 min-w-0" />
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search student…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-8 h-8 text-xs w-44"
+                />
+                {search && (
+                  <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <X className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Roster list */}
+            {filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Users className="h-10 w-10 mb-3 opacity-20" />
+                <p className="text-sm font-medium">No students match</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filtered.map(entry => (
+                  <RosterRow
+                    key={entry.studentId}
+                    entry={entry}
+                    maxMarks={assignment.maxMarks}
+                    assignmentId={assignment.id}
+                    onSaved={handleSaved}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -345,6 +693,7 @@ export function AssignmentManager() {
   const [statusFilter,     setStatusFilter]     = useState<string>("all");
   const [showCreate,       setShowCreate]       = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentResponse | null>(null);
+  const [gradingAssignment,  setGradingAssignment]  = useState<AssignmentResponse | null>(null);
 
   // ── class/section metadata ─────────────────────────────────────────────────
   // uniqueSections: one entry per classId (= one class+section combo)
@@ -686,7 +1035,7 @@ export function AssignmentManager() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                               {list.slice(0, 8).map(a => (
-                                <AssignmentCard key={a.id} a={a} color={c} sectionLabel={sec.sectionName ? `${className} · ${sec.sectionName}` : className} onClick={() => setSelectedAssignment(a)} />
+                                <AssignmentCard key={a.id} a={a} color={c} sectionLabel={sec.sectionName ? `${className} · ${sec.sectionName}` : className} onClick={() => setSelectedAssignment(a)} onGrade={a => setGradingAssignment(a)} />
                               ))}
                               {list.length > 8 && (
                                 <button
@@ -717,7 +1066,7 @@ export function AssignmentManager() {
                 const sec2 = uniqueSections.find(s => s.classId === a.classId);
                 const secLabel = sec2 ? (sec2.sectionName ? `${sec2.className} · ${sec2.sectionName}` : sec2.className) : (a.className || undefined);
                 return (
-                  <AssignmentCard key={a.id} a={a} color={c} sectionLabel={secLabel} onClick={() => setSelectedAssignment(a)} />
+                  <AssignmentCard key={a.id} a={a} color={c} sectionLabel={secLabel} onClick={() => setSelectedAssignment(a)} onGrade={a => setGradingAssignment(a)} />
                 );
               })}
             </div>
@@ -731,6 +1080,14 @@ export function AssignmentManager() {
         open={selectedAssignment !== null}
         onClose={() => setSelectedAssignment(null)}
         classLabel={selectedAssignment ? labelForAssignment(selectedAssignment) : ""}
+        onGrade={a => setGradingAssignment(a)}
+      />
+
+      {/* ── Assignment Grading Sheet ── */}
+      <AssignmentGradingSheet
+        assignment={gradingAssignment}
+        open={gradingAssignment !== null}
+        onClose={() => { setGradingAssignment(null); loadAssignments(); }}
       />
 
       {/* ── Create Dialog ── */}

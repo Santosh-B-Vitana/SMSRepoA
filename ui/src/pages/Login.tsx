@@ -133,7 +133,7 @@ export default function Login() {
   const ap = PORTALS.find(p => p.id === loginType)!;
 
   const subtitles: Record<PortalId, string> = {
-    admin:  schoolInfo?.name ? `Administration · ${schoolInfo.name}` : 'School administration console',
+    admin:  'Administration Console',
     staff:  'For principals, teachers, wardens & support staff',
     parent: "Track your child's progress, attendance & fees",
   };
@@ -208,10 +208,9 @@ export default function Login() {
             <div className="relative h-11 w-11 rounded-[14px] flex items-center justify-center"
               style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)', boxShadow: '0 8px 28px rgba(59,130,246,0.45)' }}>
               <img src="/favicon.ico" alt="VEDA" className="h-6 w-6 filter brightness-0 invert" />
-              <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-400 border-[2.5px]"
-                style={{ borderColor: '#070E20' }} />
+
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-center gap-2">
               <span className="text-2xl font-black text-white tracking-tight">VEDA</span>
               <span className="text-[9px] font-extrabold uppercase tracking-[0.18em] px-2 py-0.5 rounded-full"
                 style={{ color: '#93C5FD', border: '1px solid rgba(59,130,246,0.35)', background: 'rgba(59,130,246,0.14)' }}>PRO</span>
@@ -358,7 +357,7 @@ export default function Login() {
                   <img src={schoolInfo.logoUrl} alt={schoolInfo.name} className="h-10 w-10 object-contain" />
                 </div>
               )}
-              <h2 className="text-[1.85rem] font-black text-foreground tracking-tight leading-none">{ap.full}</h2>
+              <h2 className="text-[1.85rem] font-black text-foreground tracking-tight leading-none">{schoolInfo?.name ?? ap.full}</h2>
               <p className="text-sm text-muted-foreground mt-1.5">{subtitles[loginType]}</p>
             </div>
 
@@ -429,7 +428,7 @@ export default function Login() {
                 style={{ background: `linear-gradient(135deg, ${ap.accent} 0%, ${ap.accentDark} 100%)`, boxShadow: `0 4px 24px ${ap.accent}40` }}>
                 {loading
                   ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</>
-                  : <>Sign in to {ap.full} <ArrowRight className="ml-1.5 h-4 w-4" /></>
+                  : <>Sign in to {schoolInfo?.name ?? ap.full} <ArrowRight className="ml-1.5 h-4 w-4" /></>
                 }
               </Button>
             </form>

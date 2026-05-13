@@ -91,13 +91,16 @@ namespace SmsApi.Models.Entities
         [Required]
         public Guid StudentId { get; set; }
         
-        [Required]
-        public Guid ExamId { get; set; }
-        
+        // Optional legacy link to old Exam table (null for ExamSetup-based results)
+        public Guid? ExamId { get; set; }
+
+        // Optional link to a structured ExamSetup (new system)
+        public Guid? ExamSetupId { get; set; }
+
         [Required]
         [MaxLength(50)]
         public string AcademicYear { get; set; } = string.Empty;
-        
+
         [Required]
         [MaxLength(50)]
         public string Term { get; set; } = string.Empty;
@@ -136,9 +139,6 @@ namespace SmsApi.Models.Entities
         
         [ForeignKey("ExamId")]
         public virtual Exam? Exam { get; set; }
-
-        // Optional link to a structured ExamSetup (new system)
-        public Guid? ExamSetupId { get; set; }
     }
 
     // ========== EXAM SETUP (structured multi-subject exam) ==========

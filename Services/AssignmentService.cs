@@ -21,6 +21,12 @@ namespace SmsApi.Services
         Task<SubmissionResponse?> GetSubmissionByIdAsync(Guid id);
         Task<SubmissionResponse> CreateSubmissionAsync(CreateSubmissionRequest request);
         Task<SubmissionResponse?> GradeSubmissionAsync(Guid id, GradeSubmissionRequest request);
+
+        /// <summary>Returns the assignment details plus every enrolled student with their submission status.</summary>
+        Task<AssignmentRosterResponse?> GetAssignmentRosterAsync(Guid assignmentId, Guid schoolId);
+
+        /// <summary>Staff records whether a student submitted/not-submitted and optionally awards marks.</summary>
+        Task<AssignmentRosterEntry> StaffMarkSubmissionAsync(Guid assignmentId, StaffMarkRequest request, Guid staffId);
     }
 
     public class AssignmentService : IAssignmentService
@@ -194,6 +200,9 @@ namespace SmsApi.Services
 
             _context.Assignments.Add(assignment);
             await _context.SaveChangesAsync();
+
+            // Notify parents of students in the target class/section
+            await NotifyParentsAsync(assignment);
 
             return MapToResponse(assignment);
         }
@@ -402,7 +411,251 @@ namespace SmsApi.Services
 
             await _context.SaveChangesAsync();
 
+            // Notify parents that the assignment has been graded
+            await NotifyParentOnGradeAsync(submission.StudentId, assignment.SchoolId, assignment, request.MarksObtained, request.Feedback);
+
             return MapToSubmissionResponse(submission);
+        }
+
+        public async Task<AssignmentRosterResponse?> GetAssignmentRosterAsync(Guid assignmentId, Guid schoolId)
+        {
+            var assignment = await _context.Assignments
+                .IgnoreQueryFilters()
+                .Include(a => a.Class)
+                .Include(a => a.Section)
+                .Include(a => a.Subject)
+                .Include(a => a.AssignedBy)
+                .FirstOrDefaultAsync(a => a.Id == assignmentId && a.SchoolId == schoolId && !a.IsDeleted);
+
+            if (assignment == null) return null;
+
+            // Get all active enrollments for the assignment's class (and section if set)
+            var enrollmentsQuery = _context.StudentEnrollments
+                .Include(e => e.Student)
+                .Where(e => e.SchoolId == schoolId
+                         && e.ClassId == assignment.ClassId
+                         && e.Status == "active");
+
+            if (assignment.SectionId.HasValue)
+                enrollmentsQuery = enrollmentsQuery.Where(e => e.SectionId == assignment.SectionId.Value);
+
+            var enrollments = await enrollmentsQuery
+                .OrderBy(e => e.RollNumber ?? e.Student!.Name)
+                .ToListAsync();
+
+            // Load all submissions for this assignment in one query
+            var submissions = await _context.AssignmentSubmissions
+                .Where(s => s.AssignmentId == assignmentId)
+                .ToListAsync();
+
+            var submissionMap = submissions.ToDictionary(s => s.StudentId);
+
+            List<AssignmentRosterEntry> rosterEntries;
+
+            if (enrollments.Count > 0)
+            {
+                // Use proper StudentEnrollment records
+                rosterEntries = enrollments.Select(e =>
+                {
+                    var student = e.Student;
+                    var name = student == null ? "Unknown" :
+                        (!string.IsNullOrWhiteSpace(student.FirstName)
+                            ? $"{student.FirstName} {student.LastName}".Trim()
+                            : student.Name);
+
+                    submissionMap.TryGetValue(e.StudentId, out var sub);
+                    var hasSubmitted = sub != null && sub.Status != "not_submitted";
+
+                    return new AssignmentRosterEntry
+                    {
+                        StudentId        = e.StudentId,
+                        StudentName      = name,
+                        RollNumber       = e.RollNumber ?? student?.RollNumber,
+                        HasSubmitted     = hasSubmitted,
+                        SubmissionStatus = sub?.Status,
+                        MarksObtained    = sub?.MarksObtained,
+                        Feedback         = sub?.Feedback,
+                        SubmissionDate   = sub?.SubmissionDate,
+                        SubmissionId     = sub?.Id,
+                    };
+                }).ToList();
+            }
+            else if (assignment.Class != null)
+            {
+                // Fallback: look up students via legacy Class/Section string fields.
+                // Use IgnoreQueryFilters so the global SchoolId/IsDeleted filter
+                // doesn't conflict, and explicitly filter ourselves.
+                var studentsQuery = _context.Students
+                    .IgnoreQueryFilters()
+                    .Where(s => s.SchoolId == schoolId
+                             && !s.IsDeleted
+                             && s.Class == assignment.Class.Name);
+
+                if (assignment.Section != null)
+                    studentsQuery = studentsQuery.Where(s => s.Section == assignment.Section.Name);
+
+                var legacyStudents = await studentsQuery
+                    .OrderBy(s => s.RollNumber ?? s.Name)
+                    .ToListAsync();
+
+                rosterEntries = legacyStudents.Select(student =>
+                {
+                    var name = !string.IsNullOrWhiteSpace(student.FirstName)
+                        ? $"{student.FirstName} {student.LastName}".Trim()
+                        : student.Name;
+
+                    submissionMap.TryGetValue(student.Id, out var sub);
+                    var hasSubmitted = sub != null && sub.Status != "not_submitted";
+
+                    return new AssignmentRosterEntry
+                    {
+                        StudentId        = student.Id,
+                        StudentName      = name,
+                        RollNumber       = student.RollNumber,
+                        HasSubmitted     = hasSubmitted,
+                        SubmissionStatus = sub?.Status,
+                        MarksObtained    = sub?.MarksObtained,
+                        Feedback         = sub?.Feedback,
+                        SubmissionDate   = sub?.SubmissionDate,
+                        SubmissionId     = sub?.Id,
+                    };
+                }).ToList();
+            }
+            else
+            {
+                rosterEntries = new List<AssignmentRosterEntry>();
+            }
+
+            // Build submission count stats
+            var assignmentResponse = MapToResponse(assignment);
+            assignmentResponse.SubmissionCount = rosterEntries.Count(r => r.HasSubmitted);
+            assignmentResponse.GradedCount     = rosterEntries.Count(r => r.SubmissionStatus == "graded");
+
+            return new AssignmentRosterResponse
+            {
+                Assignment = assignmentResponse,
+                Students   = rosterEntries,
+            };
+        }
+
+        public async Task<AssignmentRosterEntry> StaffMarkSubmissionAsync(Guid assignmentId, StaffMarkRequest request, Guid staffId)
+        {
+            var assignment = await _context.Assignments
+                .FirstOrDefaultAsync(a => a.Id == assignmentId);
+            if (assignment == null)
+                throw new KeyNotFoundException($"Assignment {assignmentId} not found");
+
+            var student = await _context.Students
+                .FirstOrDefaultAsync(s => s.Id == request.StudentId);
+            if (student == null)
+                throw new KeyNotFoundException($"Student {request.StudentId} not found");
+
+            if (request.MarksObtained.HasValue)
+            {
+                if (request.MarksObtained.Value < 0)
+                    throw new ArgumentException("Marks obtained cannot be negative");
+                if (request.MarksObtained.Value > assignment.MaxMarks)
+                    throw new InvalidOperationException($"Marks obtained ({request.MarksObtained}) cannot exceed maximum marks ({assignment.MaxMarks})");
+            }
+
+            var existing = await _context.AssignmentSubmissions
+                .FirstOrDefaultAsync(s => s.AssignmentId == assignmentId && s.StudentId == request.StudentId);
+
+            if (!request.Submitted)
+            {
+                // Mark as not_submitted
+                if (existing == null)
+                {
+                    existing = new AssignmentSubmission
+                    {
+                        Id           = Guid.NewGuid(),
+                        AssignmentId = assignmentId,
+                        StudentId    = request.StudentId,
+                        SubmissionDate = DateTime.UtcNow,
+                        Content      = string.Empty,
+                        Status       = "not_submitted",
+                        CreatedAt    = DateTime.UtcNow,
+                        UpdatedAt    = DateTime.UtcNow,
+                    };
+                    _context.AssignmentSubmissions.Add(existing);
+                }
+                else
+                {
+                    existing.Status    = "not_submitted";
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Mark as submitted / graded
+                if (existing == null)
+                {
+                    existing = new AssignmentSubmission
+                    {
+                        Id             = Guid.NewGuid(),
+                        AssignmentId   = assignmentId,
+                        StudentId      = request.StudentId,
+                        SubmissionDate = DateTime.UtcNow,
+                        Content        = string.Empty,  // staff-recorded offline submission
+                        Status         = request.MarksObtained.HasValue ? "graded" : "submitted",
+                        MarksObtained  = request.MarksObtained,
+                        Feedback       = request.Feedback,
+                        GradedById     = request.MarksObtained.HasValue ? staffId : null,
+                        GradedDate     = request.MarksObtained.HasValue ? DateTime.UtcNow : null,
+                        CreatedAt      = DateTime.UtcNow,
+                        UpdatedAt      = DateTime.UtcNow,
+                    };
+                    _context.AssignmentSubmissions.Add(existing);
+                }
+                else
+                {
+                    if (existing.Status == "not_submitted")
+                        existing.Status = "submitted";
+
+                    if (request.MarksObtained.HasValue)
+                    {
+                        existing.MarksObtained = request.MarksObtained.Value;
+                        existing.Feedback      = request.Feedback ?? existing.Feedback;
+                        existing.GradedById    = staffId;
+                        existing.GradedDate    = DateTime.UtcNow;
+                        existing.Status        = "graded";
+                    }
+                    else if (!string.IsNullOrWhiteSpace(request.Feedback))
+                    {
+                        existing.Feedback = request.Feedback;
+                    }
+
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                await _context.SaveChangesAsync();
+
+                // Notify parents when marks are awarded
+                if (request.MarksObtained.HasValue)
+                    await NotifyParentOnGradeAsync(request.StudentId, assignment.SchoolId, assignment, request.MarksObtained.Value, request.Feedback);
+            }
+
+            var studentName = !string.IsNullOrWhiteSpace(student.FirstName)
+                ? $"{student.FirstName} {student.LastName}".Trim()
+                : student.Name;
+
+            // Get roll number from enrollment
+            var enrollment = await _context.StudentEnrollments
+                .Where(e => e.StudentId == request.StudentId && e.ClassId == assignment.ClassId && e.Status == "active")
+                .FirstOrDefaultAsync();
+
+            return new AssignmentRosterEntry
+            {
+                StudentId        = request.StudentId,
+                StudentName      = studentName,
+                RollNumber       = enrollment?.RollNumber ?? student.RollNumber,
+                HasSubmitted     = existing.Status != "not_submitted",
+                SubmissionStatus = existing.Status,
+                MarksObtained    = existing.MarksObtained,
+                Feedback         = existing.Feedback,
+                SubmissionDate   = existing.SubmissionDate,
+                SubmissionId     = existing.Id,
+            };
         }
 
         private static AssignmentResponse MapToResponse(Assignment assignment)
@@ -460,6 +713,93 @@ namespace SmsApi.Services
                 CreatedAt = submission.CreatedAt,
                 UpdatedAt = submission.UpdatedAt
             };
+        }
+        private async Task NotifyParentOnGradeAsync(Guid studentId, Guid schoolId, Assignment assignment, decimal marksObtained, string? feedback)
+        {
+            // Look up parent login IDs by joining StudentGuardians → UserLogins on email
+            var parentLoginIds = await (
+                from sg in _context.StudentGuardians
+                join ul in _context.UserLogins on sg.Email equals ul.Email
+                where sg.StudentId == studentId && !sg.IsDeleted
+                      && ul.Role == "parent" && ul.Status == "active" && !ul.IsDeleted
+                select ul.Id
+            ).Distinct().ToListAsync();
+
+            if (parentLoginIds.Count == 0) return;
+
+            var percentage = assignment.MaxMarks > 0
+                ? Math.Round((marksObtained / assignment.MaxMarks) * 100, 1)
+                : 0m;
+
+            var content = $"Assignment \"{assignment.Title}\" has been graded. Marks: {marksObtained}/{assignment.MaxMarks} ({percentage}%)";
+            if (!string.IsNullOrWhiteSpace(feedback))
+                content += $". Feedback: {feedback}";
+
+            var notifications = parentLoginIds.Select(loginId => new Notification
+            {
+                Id            = Guid.NewGuid(),
+                SchoolId      = schoolId,
+                RecipientId   = loginId,
+                RecipientType = "Parent",
+                Type          = "Assignment",
+                Title         = $"Assignment Graded: {assignment.Title}",
+                Content       = content,
+                ReferenceId   = assignment.Id,
+                ReferenceType = "Assignment",
+                ActionUrl     = "/parent-assignments",
+                Priority      = "Normal",
+            }).ToList();
+
+            _context.Notifications.AddRange(notifications);
+            await _context.SaveChangesAsync();
+        }
+
+        private async Task NotifyParentsAsync(Assignment assignment)
+        {
+            var studentIds = await _context.StudentEnrollments
+                .Where(e => e.SchoolId == assignment.SchoolId
+                            && e.ClassId == assignment.ClassId
+                            && (assignment.SectionId == null || e.SectionId == assignment.SectionId)
+                            && e.Status == "active")
+                .Select(e => e.StudentId)
+                .Distinct()
+                .ToListAsync();
+
+            if (studentIds.Count == 0) return;
+
+            // Look up parent login IDs by joining StudentGuardians → UserLogins on email
+            var parentLoginIds = await (
+                from sg in _context.StudentGuardians
+                join ul in _context.UserLogins on sg.Email equals ul.Email
+                where studentIds.Contains(sg.StudentId) && !sg.IsDeleted
+                      && ul.Role == "parent" && ul.Status == "active" && !ul.IsDeleted
+                select ul.Id
+            ).Distinct().ToListAsync();
+
+            if (parentLoginIds.Count == 0) return;
+
+            var subject = await _context.Subjects
+                .Where(s => s.Id == assignment.SubjectId)
+                .Select(s => s.Name)
+                .FirstOrDefaultAsync() ?? "a subject";
+
+            var notifications = parentLoginIds.Select(loginId => new Notification
+            {
+                Id            = Guid.NewGuid(),
+                SchoolId      = assignment.SchoolId,
+                RecipientId   = loginId,
+                RecipientType = "Parent",
+                Type          = "Assignment",
+                Title         = $"New Assignment: {assignment.Title}",
+                Content       = $"A new assignment has been posted for {subject}. Due: {assignment.DueDate:dd MMM yyyy}.",
+                ReferenceId   = assignment.Id,
+                ReferenceType = "Assignment",
+                ActionUrl     = "/parent-assignments",
+                Priority      = "Normal",
+            }).ToList();
+
+            _context.Notifications.AddRange(notifications);
+            await _context.SaveChangesAsync();
         }
     }
 }

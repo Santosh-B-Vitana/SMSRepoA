@@ -111,7 +111,7 @@ export function StaffManager() {
       total: staff.length,
       active: staff.filter(s => s.status === 'active').length,
       departments: getDepartments().length,
-      teachers: staff.filter(s => s.designation.toLowerCase().includes('teacher')).length
+      teachers: staff.filter(s => (s.designation ?? '').toLowerCase().includes('teacher')).length
     };
   };
 

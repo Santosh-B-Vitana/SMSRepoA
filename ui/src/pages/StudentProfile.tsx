@@ -24,8 +24,18 @@ import {
   RotateCcw,
   Award,
   ArrowUp,
-  MoreVertical
+  MoreVertical,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  BarChart3,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
 import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto, StudentExitResponse } from "@/services/api/studentApi";
@@ -57,6 +67,7 @@ import { PdfPreviewModal } from "@/components/common/PdfPreviewModal";
 import { generateProfessionalReportCard, SchoolInfo } from "@/utils/professionalPdfGenerator";
 import { useSchool } from "@/contexts/SchoolContext";
 import { StudentDocumentUpload } from "@/components/students/StudentDocumentUpload";
+import { getExamSetups, getStudentExamSetupResult, type ExamSetupBasicDto, type StudentExamResultSummaryDto } from "@/services/api/examSetupApi";
 
 export default function StudentProfile() {
   const { user } = useAuth();
@@ -153,6 +164,81 @@ export default function StudentProfile() {
   const { toast } = useToast();
   const { t } = useLanguage();
 
+  // Published exam setup results (new exam workflow)
+  const [publishedExamResults, setPublishedExamResults] = useState<Array<{ setup: ExamSetupBasicDto; result: StudentExamResultSummaryDto }>>([]);
+  const [examResultsLoading, setExamResultsLoading] = useState(false);
+  const [expandedExamId, setExpandedExamId] = useState<string | null>(null);
+  const [downloadingExamId, setDownloadingExamId] = useState<string | null>(null);
+
+  const loadPublishedExamResults = async (studentId: string) => {
+    setExamResultsLoading(true);
+    try {
+      // Admin view: fetch ALL exam setups regardless of status, then try to get results for each
+      const page = await getExamSetups({ pageSize: 100, page: 1 });
+      const setups: ExamSetupBasicDto[] = page.items ?? [];
+
+      const entries: Array<{ setup: ExamSetupBasicDto; result: StudentExamResultSummaryDto }> = [];
+      await Promise.allSettled(setups.map(async (setup) => {
+        try {
+          const result = await getStudentExamSetupResult(setup.id, studentId);
+          if (result) entries.push({ setup, result });
+        } catch { /* student might not be in every exam */ }
+      }));
+      entries.sort((a, b) => new Date(b.setup.createdAt ?? 0).getTime() - new Date(a.setup.createdAt ?? 0).getTime());
+      setPublishedExamResults(entries);
+    } catch (e) {
+      console.error('Failed to load exam results', e);
+    } finally {
+      setExamResultsLoading(false);
+    }
+  };
+
+  const handleDownloadExamReportCard = async (setup: ExamSetupBasicDto, result: StudentExamResultSummaryDto) => {
+    if (!schoolInfo) { toast({ title: "Error", description: "School info not loaded", variant: "destructive" }); return; }
+    setDownloadingExamId(setup.id);
+    try {
+      const schoolData: SchoolInfo = {
+        name: schoolInfo.name,
+        address: schoolInfo.address ?? '',
+        phone: schoolInfo.phone ?? '',
+        email: schoolInfo.email ?? '',
+        principalName: schoolInfo.principalName ?? undefined,
+      };
+      const reportCardData = {
+        studentName: result.studentName,
+        studentId: result.studentId,
+        class: setup.className,
+        section: setup.sectionName ?? '',
+        academicYear: setup.academicYear,
+        examName: setup.name,
+        rollNo: result.rollNumber ?? '',
+        subjects: (result.subjects ?? []).map(s => ({
+          name: s.subjectName,
+          marks: Number(s.obtainedMarks),
+          maxMarks: Number(s.maxMarks),
+          grade: s.grade ?? '',
+        })),
+        totalMarks: Number(result.totalObtained),
+        totalMaxMarks: Number(result.totalMax),
+        percentage: Number(result.percentage),
+        overallGrade: result.overallGrade ?? '',
+        rank: result.rank,
+        remarks: result.isPass ? 'Pass' : 'Fail',
+      };
+      const doc = generateProfessionalReportCard(schoolData, reportCardData);
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const fileName = `ReportCard_${result.studentName.replace(/\s+/g, '_')}_${setup.name.replace(/\s+/g, '_')}.pdf`;
+      setPdfUrl(blobUrl);
+      setPdfFileName(fileName);
+      setPdfPreviewOpen(true);
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to generate report card", variant: "destructive" });
+    } finally {
+      setDownloadingExamId(null);
+    }
+  };
+
   useEffect(() => {
     if (id) {
       setStudent(null);
@@ -196,6 +282,8 @@ export default function StudentProfile() {
       } catch {
         // Grades are supplementary
       }
+      // Load published exam setup results
+      loadPublishedExamResults(id);
     } catch (error) {
       console.error("Failed to fetch student:", error);
       toast({
@@ -1192,195 +1280,240 @@ export default function StudentProfile() {
         </TabsContent>
 
   <TabsContent value="academic">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5" />
-                Academic Performance
+          <div className="space-y-6">
+          {/* ── Summary Stats ── */}
+          {!examResultsLoading && publishedExamResults.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-primary">{publishedExamResults.length}</p>
+                <p className="text-xs text-muted-foreground mt-1">Exams Taken</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-blue-600">
+                  {(publishedExamResults.reduce((s, e) => s + e.result.percentage, 0) / publishedExamResults.length).toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Average Score</p>
+              </div>
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-green-600">
+                  {publishedExamResults.filter(e => e.result.isPass).length}/{publishedExamResults.length}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Passed</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-amber-600">
+                  {publishedExamResults.reduce((best, e) => e.result.percentage > best ? e.result.percentage : best, 0).toFixed(0)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Best Score</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Unified Academic Card ── */}
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b bg-muted/20 py-4">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <GraduationCap className="h-5 w-5 text-primary" />
+                Academic Profile
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-4 mb-4 justify-between items-center">
-                <div className="flex gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Academic Year</label>
-                    <select className="border rounded px-2 py-1" value={selectedYear} onChange={e => setSelectedYear(e.target.value)}>
-                      <option value="">All years</option>
-                      {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examDate?.substring(0, 4)).filter(Boolean))).sort().reverse().map(year => (
-                        <option key={year} value={year as string}>{year}</option>
-                      ))}
-                    </select>
+            <CardContent className="p-0 divide-y">
+
+              {/* ── Section 1: Exam Results (new workflow) ── */}
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold flex items-center gap-2 text-sm">
+                    <Trophy className="h-4 w-4 text-amber-500" />
+                    Exam Results &amp; Report Cards
+                  </h3>
+                </div>
+                {examResultsLoading ? (
+                  <div className="space-y-2">{[1,2].map(i => <div key={i} className="h-12 rounded bg-muted animate-pulse" />)}</div>
+                ) : publishedExamResults.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8 text-sm">No exam results found for this student.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {publishedExamResults.map(({ setup, result }) => (
+                      <div key={setup.id} className="border rounded-lg overflow-hidden">
+                        <div
+                          className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors bg-muted/20"
+                          onClick={() => setExpandedExamId(expandedExamId === setup.id ? null : setup.id)}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                              result.percentage >= 75 ? 'bg-green-100 text-green-700' :
+                              result.percentage >= 50 ? 'bg-blue-100 text-blue-700' :
+                              result.percentage >= 33 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {result.overallGrade ?? (result.isPass ? '✓' : '✗')}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm truncate">{setup.name}</p>
+                              <p className="text-xs text-muted-foreground">{setup.academicYear} · {setup.className}{setup.sectionName ? ` ${setup.sectionName}` : ''}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              <p className={`font-bold text-sm ${result.isPass ? 'text-green-600' : 'text-red-600'}`}>{Number(result.percentage).toFixed(1)}%</p>
+                              <p className="text-xs text-muted-foreground">{Number(result.totalObtained)}/{Number(result.totalMax)}</p>
+                            </div>
+                            <Badge variant={result.isPass ? "default" : "destructive"} className="text-xs hidden sm:flex">{result.isPass ? 'Pass' : 'Fail'}</Badge>
+                            <Button
+                              size="sm" variant="outline" className="gap-1 text-xs h-7 shrink-0"
+                              onClick={(e) => { e.stopPropagation(); handleDownloadExamReportCard(setup, result); }}
+                              disabled={downloadingExamId === setup.id}
+                            >
+                              {downloadingExamId === setup.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                              <span className="hidden sm:inline">Report Card</span>
+                            </Button>
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expandedExamId === setup.id ? 'rotate-180' : ''}`} />
+                          </div>
+                        </div>
+                        {expandedExamId === setup.id && (
+                          <div className="px-4 py-3 border-t bg-muted/10 overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-xs">Subject</TableHead>
+                                  <TableHead className="text-xs text-right">Marks</TableHead>
+                                  <TableHead className="text-xs text-right">%</TableHead>
+                                  <TableHead className="text-xs text-center">Grade</TableHead>
+                                  <TableHead className="text-xs text-center">Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {(result.subjects ?? []).map((s, i) => (
+                                  <TableRow key={i}>
+                                    <TableCell className="text-sm py-1.5 font-medium">
+                                      {s.subjectName}
+                                      {s.isElective && <Badge variant="outline" className="ml-2 text-xs">Elective</Badge>}
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm py-1.5">
+                                      {s.isAbsent ? <span className="text-red-500">Absent</span> : `${Number(s.obtainedMarks)}/${Number(s.maxMarks)}`}
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm py-1.5">{s.isAbsent ? '—' : `${Number(s.percentage).toFixed(1)}%`}</TableCell>
+                                    <TableCell className="text-center py-1.5">{s.grade ? <Badge variant="outline" className="text-xs">{s.grade}</Badge> : '—'}</TableCell>
+                                    <TableCell className="text-center py-1.5">
+                                      <Badge variant={s.isPass ? "default" : "destructive"} className="text-xs">{s.isAbsent ? 'Absent' : s.isPass ? 'Pass' : 'Fail'}</Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Exam</label>
-                    <select className="border rounded px-2 py-1" value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
-                      <option value="">All exams</option>
-                      {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examName))).map(exam => (
-                        <option key={exam} value={exam}>{exam}</option>
-                      ))}
-                    </select>
+                )}
+              </div>
+
+              {/* ── Section 2: Assessment History (legacy) — only shown when data exists ── */}
+              {(profileSummary?.exams?.results ?? []).length > 0 && (
+                <div className="p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h3 className="font-semibold flex items-center gap-2 text-sm">
+                      <Award className="h-4 w-4 text-blue-500" />
+                      Assessment History
+                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select className="border rounded px-2 py-1 text-sm" value={selectedYear} onChange={e => setSelectedYear(e.target.value)}>
+                        <option value="">All years</option>
+                        {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examDate?.substring(0, 4)).filter(Boolean))).sort().reverse().map(year => (
+                          <option key={year} value={year as string}>{year}</option>
+                        ))}
+                      </select>
+                      <select className="border rounded px-2 py-1 text-sm" value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
+                        <option value="">All exams</option>
+                        {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examName))).map(exam => (
+                          <option key={exam} value={exam}>{exam}</option>
+                        ))}
+                      </select>
+                      <Button variant="outline" size="sm" className="gap-1.5 h-8"
+                        onClick={() => {
+                          if (!student) return;
+                          const results = profileSummary?.exams?.results ?? [];
+                          const marksData = selectedExam ? results.filter(r => r.examName === selectedExam) : results;
+                          if (marksData.length === 0) { toast({ title: "No Data", description: "No marks available.", variant: "destructive" }); return; }
+                          const schoolData: SchoolInfo = { name: schoolInfo?.name ?? "School", address: schoolInfo?.address ?? "", phone: schoolInfo?.phone ?? "", email: schoolInfo?.email ?? "", principalName: schoolInfo?.principalName ?? undefined };
+                          const pdfDoc = generateProfessionalReportCard(schoolData, { reportCardNumber: `RC${Date.now().toString().slice(-6)}`, studentId: student.id, studentName: student.name, class: student.class, section: student.section, rollNo: student.rollNumber, admissionNo: student.admissionNumber, examName: selectedExam || "All Exams", term: selectedExam || "All", academicYear: selectedYear || new Date().getFullYear().toString(), subjects: marksData.map(r => ({ name: r.subject, marks: r.marksObtained, maxMarks: r.totalMarks, grade: r.grade ?? '' })), totalMaxMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0), totalMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0), marksObtained: marksData.reduce((sum, r) => sum + r.marksObtained, 0), percentage: marksData.length > 0 ? Math.round(marksData.reduce((sum, r) => sum + r.percentage, 0) / marksData.length * 10) / 10 : 0, overallGrade: "A", grade: "A", attendance: profileSummary?.attendance ? `${profileSummary.attendance.attendancePercent}%` : "—", remarks: "Generated from live exam data.", issueDate: new Date().toLocaleDateString() });
+                          const blobUrl = URL.createObjectURL(pdfDoc.output('blob'));
+                          setPdfUrl(blobUrl); setPdfFileName(`ReportCard_${student.name.replace(/\s+/g, '_')}_${selectedExam || 'All'}.pdf`); setPdfPreviewOpen(true);
+                          toast({ title: "Report Card Generated" });
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" />Report Card
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead>Marks</TableHead>
+                          <TableHead>Total</TableHead><TableHead>%</TableHead><TableHead>Grade</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(() => {
+                          const results = profileSummary?.exams?.results ?? [];
+                          const filtered = selectedExam ? results.filter(r => r.examName === selectedExam) : selectedYear ? results.filter(r => r.examDate?.startsWith(selectedYear)) : results;
+                          if (filtered.length === 0) return <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No exam results found</TableCell></TableRow>;
+                          return filtered.map((result, index) => (
+                            <TableRow key={index}>
+                              <TableCell className="font-medium">{result.examName}</TableCell>
+                              <TableCell>{result.subject}</TableCell>
+                              <TableCell>{result.isAbsent ? <span className="text-red-500">Absent</span> : result.marksObtained}</TableCell>
+                              <TableCell>{result.totalMarks}</TableCell>
+                              <TableCell>{result.isAbsent ? '—' : `${result.percentage.toFixed(1)}%`}</TableCell>
+                              <TableCell>{result.grade ? <Badge variant="outline">{result.grade}</Badge> : '—'}</TableCell>
+                            </TableRow>
+                          ));
+                        })()}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
-                  className="h-10 flex items-center gap-2"
-                  onClick={() => {
-                    if (!student) return;
-                    const results = profileSummary?.exams?.results ?? [];
-                    const marksData = selectedExam
-                      ? results.filter(r => r.examName === selectedExam)
-                      : results;
-                    if (marksData.length === 0) {
-                      toast({ title: "No Data", description: "No marks available for this selection.", variant: "destructive" });
-                      return;
-                    }
-                    
-                    const schoolInfo: SchoolInfo = {
-                      name: "Vitana Schools",
-                      address: "123 Education Street, Delhi 110001",
-                      phone: "+91-11-12345678",
-                      email: "info@vitanaSchools.edu",
-                      affiliationNo: "DL001234",
-                      schoolCode: "VIT001",
-                      principalName: "Dr. John Smith"
-                    };
-                    
-                    const reportCardData = {
-                      reportCardNumber: `RC${Date.now().toString().slice(-6)}`,
-                      studentId: student.id,
-                      studentName: student.name,
-                      class: student.class,
-                      section: student.section,
-                      rollNo: student.rollNumber,
-                      admissionNo: student.admissionNumber,
-                      examName: selectedExam || "All Exams",
-                      term: selectedExam || "All",
-                      academicYear: selectedYear || new Date().getFullYear().toString(),
-                      subjects: marksData.map(r => ({
-                        name: r.subject,
-                        marks: r.marksObtained,
-                        maxMarks: r.totalMarks,
-                        grade: r.grade ?? ''
-                      })),
-                      totalMaxMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0),
-                      totalMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0),
-                      marksObtained: marksData.reduce((sum, r) => sum + r.marksObtained, 0),
-                      percentage: marksData.length > 0
-                        ? Math.round(marksData.reduce((sum, r) => sum + r.percentage, 0) / marksData.length * 10) / 10
-                        : 0,
-                      overallGrade: "A",
-                      grade: "A",
-                      attendance: profileSummary?.attendance
-                        ? `${profileSummary.attendance.attendancePercent}%`
-                        : "—",
-                      remarks: "Generated from live exam data.",
-                      issueDate: new Date().toLocaleDateString()
-                    };
-                    
-                    const pdfDoc = generateProfessionalReportCard(schoolInfo, reportCardData);
-                    const blob = pdfDoc.output('blob');
-                    const blobUrl = URL.createObjectURL(blob);
-                    const fileName = `ReportCard_${student.name.replace(/\s+/g, '_')}_${selectedExam || 'All'}_${selectedYear || 'All'}.pdf`;
-                    
-                    setPdfUrl(blobUrl);
-                    setPdfFileName(fileName);
-                    setPdfPreviewOpen(true);
-                    
-                    toast({ title: "Report Card Generated", description: `Report card for ${student.name} is ready` });
-                  }}
-                >
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Generate Report Card</span>
-                  <span className="sm:hidden">Report Card</span>
-                </Button>
-              </div>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Exam</TableHead>
-                      <TableHead>Subject</TableHead>
-                      <TableHead>Marks</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>%</TableHead>
-                      <TableHead>Grade</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(() => {
-                      const results = profileSummary?.exams?.results ?? [];
-                      const filtered = selectedExam
-                        ? results.filter(r => r.examName === selectedExam)
-                        : selectedYear
-                        ? results.filter(r => r.examDate?.startsWith(selectedYear))
-                        : results;
-                      if (filtered.length === 0) {
-                        return (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                              No exam results found
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }
-                      return filtered.map((result, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{result.examName}</TableCell>
-                          <TableCell>{result.subject}</TableCell>
-                          <TableCell>{result.isAbsent ? <span className="text-red-500">Absent</span> : result.marksObtained}</TableCell>
-                          <TableCell>{result.totalMarks}</TableCell>
-                          <TableCell>{result.isAbsent ? '—' : `${result.percentage.toFixed(1)}%`}</TableCell>
-                          <TableCell>
-                            {result.grade ? <Badge variant="outline">{result.grade}</Badge> : '—'}
-                          </TableCell>
+              )}
+
+              {/* ── Section 4: Formative Grades — only shown when data exists ── */}
+              {studentGrades.length > 0 && (
+                <div className="p-5">
+                  <h3 className="font-semibold flex items-center gap-2 text-sm mb-4">
+                    <BarChart3 className="h-4 w-4 text-purple-500" />
+                    Formative Grades
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Assessment</TableHead><TableHead>Marks</TableHead><TableHead>Grade</TableHead>
+                          <TableHead>Status</TableHead><TableHead>Remarks</TableHead><TableHead>Date</TableHead>
                         </TableRow>
-                      ));
-                    })()}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {studentGrades.map(g => (
+                          <TableRow key={g.id}>
+                            <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
+                            <TableCell>{g.marksObtained}{g.maxMarks ? <span className="text-muted-foreground text-xs"> / {g.maxMarks}</span> : ""}</TableCell>
+                            <TableCell>{g.grade ? <Badge variant="outline">{g.grade}</Badge> : "—"}</TableCell>
+                            <TableCell><Badge variant={g.status === "pass" ? "default" : g.status === "fail" ? "destructive" : "secondary"}>{g.status}</Badge></TableCell>
+                            <TableCell className="max-w-xs truncate">{g.remarks ?? "—"}</TableCell>
+                            <TableCell>{new Date(g.createdAt).toLocaleDateString()}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
+          </div>
+        </TabsContent>
 
-          {/* Teacher-Entered Formative Grades */}
-          {studentGrades.length > 0 && (
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Award className="h-5 w-5" />
-                  Formative Grades (Teacher-Entered)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Assessment</TableHead>
-                        <TableHead>Marks</TableHead>
-                        <TableHead>Grade</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Remarks</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {studentGrades.map(g => (
-                        <TableRow key={g.id}>
-                          <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
-                          <TableCell>{g.marksObtained}{g.maxMarks ? <span className="text-muted-foreground text-xs"> / {g.maxMarks}</span> : ""}</TableCell>
-                          <TableCell>{g.grade ? <Badge variant="outline">{g.grade}</Badge> : "—"}</TableCell>
-                          <TableCell><Badge variant={g.status === "pass" ? "default" : g.status === "fail" ? "destructive" : "secondary"}>{g.status}</Badge></TableCell>
-                          <TableCell className="max-w-xs truncate">{g.remarks ?? "—"}</TableCell>
-                          <TableCell>{new Date(g.createdAt).toLocaleDateString()}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+        {/* ── Communication Tab ── */}
+        <TabsContent value="communication">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1390,59 +1523,19 @@ export default function StudentProfile() {
             </CardHeader>
             <CardContent>
               <div className="flex gap-2 justify-end mb-4">
-                <Button variant="default" onClick={() => setShowCommDialog(true)}>
-                  Reach Parent
-                </Button>
+                <Button variant="default" onClick={() => setShowCommDialog(true)}>Reach Parent</Button>
               </div>
-              {/* Manual Add Dialog */}
-              {typeof showManualDialog !== 'undefined' && showManualDialog && (
+              {showManualDialog && (
                 <Dialog open={showManualDialog} onOpenChange={setShowManualDialog}>
                   <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Manual Add Communication</DialogTitle>
-                    </DialogHeader>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Date</label>
-                      <input type="date" className="border rounded px-2 py-1 w-full" value={manualDate} onChange={e => setManualDate(e.target.value)} />
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Type</label>
-                      <select className="border rounded px-2 py-1 w-full" value={manualType} onChange={e => setManualType(e.target.value)}>
-                        <option value="SMS">SMS</option>
-                        <option value="Email">Email</option>
-                        <option value="Phone">Phone</option>
-                      </select>
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Message</label>
-                      <textarea className="border rounded px-2 py-1 w-full" rows={3} value={manualMessage} onChange={e => setManualMessage(e.target.value)} placeholder="Enter your message..." />
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Status</label>
-                      <select className="border rounded px-2 py-1 w-full" value={manualStatus} onChange={e => setManualStatus(e.target.value)}>
-                        <option value="Sent">Sent</option>
-                        <option value="Delivered">Delivered</option>
-                        <option value="Completed">Completed</option>
-                      </select>
-                    </div>
+                    <DialogHeader><DialogTitle>Manual Add Communication</DialogTitle></DialogHeader>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Date</label><input type="date" className="border rounded px-2 py-1 w-full" value={manualDate} onChange={e => setManualDate(e.target.value)} /></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Type</label><select className="border rounded px-2 py-1 w-full" value={manualType} onChange={e => setManualType(e.target.value)}><option>SMS</option><option>Email</option><option>Phone</option></select></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Message</label><textarea className="border rounded px-2 py-1 w-full" rows={3} value={manualMessage} onChange={e => setManualMessage(e.target.value)} placeholder="Enter your message..." /></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Status</label><select className="border rounded px-2 py-1 w-full" value={manualStatus} onChange={e => setManualStatus(e.target.value)}><option>Sent</option><option>Delivered</option><option>Completed</option></select></div>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowManualDialog(false)}>Cancel</Button>
-                      <Button onClick={() => {
-                        setCommunications(prev => [
-                          ...prev,
-                          {
-                            date: manualDate || new Date().toISOString().split('T')[0],
-                            type: manualType,
-                            message: manualMessage,
-                            status: manualStatus
-                          }
-                        ]);
-                        setManualDate("");
-                        setManualType("SMS");
-                        setManualMessage("");
-                        setManualStatus("Sent");
-                        setShowManualDialog(false);
-                      }}>Add</Button>
+                      <Button onClick={() => { setCommunications(prev => [...prev, { date: manualDate || new Date().toISOString().split('T')[0], type: manualType, message: manualMessage, status: manualStatus }]); setManualDate(""); setManualType("SMS"); setManualMessage(""); setManualStatus("Sent"); setShowManualDialog(false); }}>Add</Button>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -1451,64 +1544,30 @@ export default function StudentProfile() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Message</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Message</TableHead><TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {communications.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-6">No communications logged yet.</TableCell>
-                      </TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">No communications logged yet.</TableCell></TableRow>
                     ) : communications.map((comm, index) => (
                       <TableRow key={index}>
-                        <TableCell>{comm.date}</TableCell>
-                        <TableCell>{comm.type}</TableCell>
-                        <TableCell>{comm.message}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{comm.status}</Badge>
-                        </TableCell>
+                        <TableCell>{comm.date}</TableCell><TableCell>{comm.type}</TableCell>
+                        <TableCell>{comm.message}</TableCell><TableCell><Badge variant="outline">{comm.status}</Badge></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-              {/* Communication Dialog */}
               {showCommDialog && (
                 <Dialog open={showCommDialog} onOpenChange={setShowCommDialog}>
                   <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Reach Parent</DialogTitle>
-                    </DialogHeader>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Type</label>
-                      <select className="border rounded px-2 py-1 w-full" value={commType} onChange={e => setCommType(e.target.value)}>
-                        <option value="SMS">SMS</option>
-                        <option value="Email">Email</option>
-                      </select>
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Message</label>
-                      <textarea className="border rounded px-2 py-1 w-full" rows={3} value={commMessage} onChange={e => setCommMessage(e.target.value)} placeholder="Enter your message..." />
-                    </div>
+                    <DialogHeader><DialogTitle>Reach Parent</DialogTitle></DialogHeader>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Type</label><select className="border rounded px-2 py-1 w-full" value={commType} onChange={e => setCommType(e.target.value)}><option>SMS</option><option>Email</option></select></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Message</label><textarea className="border rounded px-2 py-1 w-full" rows={3} value={commMessage} onChange={e => setCommMessage(e.target.value)} placeholder="Enter your message..." /></div>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowCommDialog(false)}>Cancel</Button>
-                      <Button onClick={() => {
-                        setCommunications(prev => [
-                          ...prev,
-                          {
-                            date: new Date().toISOString().split('T')[0],
-                            type: commType,
-                            message: commMessage,
-                            status: 'Sent'
-                          }
-                        ]);
-                        setCommMessage("");
-                        setCommType("SMS");
-                        setShowCommDialog(false);
-                      }}>Send</Button>
+                      <Button onClick={() => { setCommunications(prev => [...prev, { date: new Date().toISOString().split('T')[0], type: commType, message: commMessage, status: 'Sent' }]); setCommMessage(""); setCommType("SMS"); setShowCommDialog(false); }}>Send</Button>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -1516,6 +1575,7 @@ export default function StudentProfile() {
             </CardContent>
           </Card>
         </TabsContent>
+
 
         <TabsContent value="documents">
           {/* Document Generation Dialogs */}

@@ -336,6 +336,70 @@ namespace SmsApi.Controllers
         // ─────────────────────────────────────────────────────────────────────
 
         /// <summary>
+        /// Unlock a locked subject so marks can be corrected (admin only).
+        /// Resets subject status from 'locked' back to 'marks_entry'.
+        /// </summary>
+        [HttpPut("{examSetupId:guid}/subjects/{examSetupSubjectId:guid}/unlock")]
+        [Authorize(Roles = "Admin,Principal,SuperAdmin")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> UnlockSubjectForEdit(Guid examSetupId, Guid examSetupSubjectId)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                await _service.UnlockSubjectForEditAsync(schoolId, examSetupId, examSetupSubjectId);
+                return NoContent();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unlocking subject {SubjectId}", examSetupSubjectId);
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Reopen a published exam for re-editing (admin only).
+        /// Reverts status to marks_entry, unlocks all subjects and marks entries.
+        /// </summary>
+        [HttpPost("{id:guid}/reopen")]
+        [Authorize(Roles = "Admin,Principal,SuperAdmin")]
+        [ProducesResponseType(typeof(ExamSetupDetailDto), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(404)]
+        public async Task<ActionResult<ExamSetupDetailDto>> ReopenForEditing(Guid id)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var result = await _service.ReopenForEditingAsync(schoolId, id);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reopening exam setup {Id}", id);
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Calculate grades for all students across all subjects in the exam setup.
         /// Uses class-level GradeTiers → board grading scale → school default grading.
         /// Must be called before publishing.

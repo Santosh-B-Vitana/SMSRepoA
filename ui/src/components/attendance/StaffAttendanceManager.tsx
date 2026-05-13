@@ -56,18 +56,27 @@ export function StaffAttendanceManager() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [staffRes, attendanceRes] = await Promise.all([
+      // Use allSettled so a failed attendance fetch doesn't prevent staff from loading
+      const [staffResult, attendanceResult] = await Promise.allSettled([
         staffApi.list({ page: 1, pageSize: 500, status: "active" }),
         attendanceApi.getStaffAttendances({ date }),
       ]);
 
-      const staffList = staffRes.staff ?? [];
+      if (staffResult.status === "rejected") {
+        toast.error("Failed to load staff list");
+        return;
+      }
+
+      const staffList = staffResult.value.staff ?? [];
       setStaff(staffList);
+
+      const attendanceRecords: StaffAttendanceResponse[] =
+        attendanceResult.status === "fulfilled" ? (attendanceResult.value ?? []) : [];
 
       const existingMap: Record<string, StaffAttendanceResponse> = {};
       const entryMap: Record<string, StaffAttendanceEntryUI> = {};
 
-      for (const rec of attendanceRes ?? []) {
+      for (const rec of attendanceRecords) {
         existingMap[rec.staffId] = rec;
         entryMap[rec.staffId] = {
           staffId: rec.staffId,

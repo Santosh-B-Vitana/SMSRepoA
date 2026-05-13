@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { MarksEntryGrid } from './MarksEntryGrid';
 import {
-  getMyExamAssignments, getExamSetupById,
+  getExamSetups, getExamSetupById,
   type ExamSetupBasicDto, type ExamSetupDetailDto, type ExamSetupSubjectDto,
 } from '@/services/api/examSetupApi';
 
@@ -89,10 +89,10 @@ function ExamMarksPanel({
 
   if (!setup) return null;
 
-  // Only show subjects assigned to this staff member (or unassigned subjects
-  // which admins typically assign to all staff for entry)
+  // For published exams show all subjects (read-only results view);
+  // for active exams only show subjects assigned to this staff.
   const mySubjects: ExamSetupSubjectDto[] = (setup.subjects ?? []).filter(
-    (s) => !s.assignedStaffId || s.assignedStaffId === staffId
+    (s) => setup.status === 'published' || !s.assignedStaffId || s.assignedStaffId === staffId
   );
 
   if (mySubjects.length === 0) {
@@ -207,15 +207,14 @@ export function StaffExamMarksTab({
   const loadExams = useCallback(async () => {
     setLoading(true);
     try {
-      const all = await getMyExamAssignments(academicYear);
-      // Filter to this class only
-      const filtered = all.filter(e => e.classId === classId);
+      const res = await getExamSetups({ classId, academicYear, pageSize: 100 });
+      const filtered = res.items ?? [];
       setExams(filtered);
       if (!selectedId && filtered.length > 0) {
         // Prefer active marks-entry exam
         const priority =
           filtered.find(e => e.status === 'marks_entry') ??
-          filtered.find(e => e.status === 'draft') ??
+          filtered.find(e => e.status === 'published') ??
           filtered[0];
         setSelectedId(priority.id);
       }
@@ -243,10 +242,10 @@ export function StaffExamMarksTab({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
         <BookOpen className="h-10 w-10 opacity-30" />
-        <p className="text-sm font-medium">No Exam Assignments</p>
+        <p className="text-sm font-medium">No Exams Found</p>
         <p className="text-xs text-center max-w-xs">
-          You haven't been assigned to enter marks for any exam in this class yet.
-          Contact your administrator.
+          No exams have been set up for this class yet.
+          Contact your administrator to create an exam.
         </p>
         <Button variant="outline" size="sm" onClick={loadExams}>
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
@@ -262,7 +261,7 @@ export function StaffExamMarksTab({
       <div className="w-60 shrink-0">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            My Exams ({exams.length})
+            Exams ({exams.length})
           </p>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={loadExams}>
             <RefreshCw className="h-3 w-3" />

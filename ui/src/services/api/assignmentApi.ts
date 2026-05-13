@@ -93,6 +93,33 @@ export interface GradeSubmissionPayload {
   status?: string;
 }
 
+// =========== Staff Grading Roster Types ===========
+
+export interface AssignmentRosterEntry {
+  studentId: string;
+  studentName: string;
+  rollNumber?: string;
+  hasSubmitted: boolean;
+  /** null | "submitted" | "graded" | "not_submitted" */
+  submissionStatus?: string;
+  marksObtained?: number;
+  feedback?: string;
+  submissionDate?: string;
+  submissionId?: string;
+}
+
+export interface AssignmentRosterResponse {
+  assignment: AssignmentResponse;
+  students: AssignmentRosterEntry[];
+}
+
+export interface StaffMarkPayload {
+  studentId: string;
+  submitted: boolean;
+  marksObtained?: number;
+  feedback?: string;
+}
+
 // =========== Parent Portal — Child Assignment Types ===========
 
 export interface ChildSubmissionSnapshot {
@@ -256,6 +283,14 @@ export const assignmentApi = {
   /** Parent portal: all assignments for a child's class with per-student submission status. */
   getAssignmentsForChild: (studentId: string, page = 1, pageSize = 50) =>
     apiGet<ChildAssignmentListResponse>('/assignments/for-child', { studentId, page, pageSize }),
+
+  /** Staff: get full class roster with submission status for an assignment. */
+  getAssignmentRoster: (assignmentId: string) =>
+    apiGet<AssignmentRosterResponse>(`/assignments/${assignmentId}/roster`),
+
+  /** Staff: record or update a student's submission / marks. */
+  staffMark: (assignmentId: string, data: StaffMarkPayload) =>
+    apiPost<AssignmentRosterEntry>(`/assignments/${assignmentId}/roster/mark`, data),
 
   // --- Grade Categories ---
   getGradeCategories: (page = 1, pageSize = 50) =>
