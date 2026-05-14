@@ -23,7 +23,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("rooms")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomListResponse>> GetRooms(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -39,7 +39,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("rooms/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomResponse>> GetRoomById(Guid id)
         {
             try
@@ -54,7 +54,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("rooms")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomResponse>> CreateRoom([FromBody] CreateHostelRoomRequest request)
         {
             try
@@ -71,7 +71,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("rooms/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomResponse>> UpdateRoom(Guid id, [FromBody] CreateHostelRoomRequest request)
         {
             try
@@ -88,7 +88,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("rooms/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> DeleteRoom(Guid id)
         {
             try
@@ -103,7 +103,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("rooms/{roomId}/students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> GetStudentsByRoom(Guid roomId)
         {
             try
@@ -117,7 +117,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> GetAllHostelStudents()
         {
             try
@@ -131,7 +131,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelStudentResponse>> AssignStudentToRoom([FromBody] CreateHostelStudentRequest request)
         {
             try
@@ -149,7 +149,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("students/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelStudentResponse>> UpdateHostelStudent(Guid id, [FromBody] UpdateHostelStudentRequest request)
         {
             try
@@ -166,7 +166,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("students/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> RemoveStudentFromRoom(Guid id)
         {
             try

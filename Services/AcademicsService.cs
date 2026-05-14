@@ -98,6 +98,7 @@ namespace SmsApi.Services
     public class AcademicsService : IAcademicsService
     {
         private readonly AppDbContext _context;
+        private readonly IPermissionsService _permissionsService;
         private static readonly HashSet<string> AllowedClassStatuses = new(StringComparer.OrdinalIgnoreCase)
         {
             "active", "inactive", "archived"
@@ -111,9 +112,10 @@ namespace SmsApi.Services
             "active", "inactive"
         };
 
-        public AcademicsService(AppDbContext context)
+        public AcademicsService(AppDbContext context, IPermissionsService permissionsService)
         {
             _context = context;
+            _permissionsService = permissionsService;
         }
 
         // Classes Implementation
@@ -947,6 +949,20 @@ namespace SmsApi.Services
             _context.TeacherAssignments.Add(assignment);
             await _context.SaveChangesAsync();
 
+            // Auto-assign system role in Role Management based on assignment type
+            try
+            {
+                await _permissionsService.AutoAssignAcademicRoleAsync(
+                    request.StaffId,
+                    request.IsClassTeacher,
+                    request.SubjectId.HasValue && request.SubjectId != Guid.Empty,
+                    request.SchoolId);
+            }
+            catch
+            {
+                // Role assignment is best-effort — do not fail the teacher assignment
+            }
+
             // Reload with navigation properties so the response includes names.
             // Use IgnoreQueryFilters on the entry load so that the school/IsDeleted
             // global query filter on Class/Section/Subject does not null out the nav-props.
@@ -968,8 +984,14 @@ namespace SmsApi.Services
 
             if (assignment == null) return false;
 
+            var staffId = assignment.StaffId;
+
             _context.TeacherAssignments.Remove(assignment);
             await _context.SaveChangesAsync();
+
+            // Revoke academic role if no remaining assignments
+            try { await _permissionsService.RevokeAcademicRoleIfUnassignedAsync(staffId, schoolId); }
+            catch { /* best-effort */ }
 
             return true;
         }
@@ -1121,6 +1143,10 @@ namespace SmsApi.Services
             };
             _context.TeacherAssignments.Add(assignment);
             await _context.SaveChangesAsync();
+
+            // Auto-elevate to Class Teacher role in Role Management
+            try { await _permissionsService.AutoAssignAcademicRoleAsync(staffId, isClassTeacher: true, hasSubject: false, schoolId); }
+            catch { /* best-effort */ }
         }
 
         private async Task RemoveClassTeacherAssignmentAsync(Guid schoolId, Guid sectionId)

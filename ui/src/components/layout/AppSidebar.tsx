@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/sidebar"
 import { useAuth } from "@/contexts/AuthContext"
 import { useLanguage } from "@/contexts/LanguageContext"
+import { usePermissions } from "@/contexts/PermissionsContext"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { hasUserPermission } = usePermissions()
 
   const getNavigationItems = () => {
     if (!user) return []
@@ -68,143 +70,174 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     if (user.role === 'staff') {
       const designation = (user.designation ?? 'Teacher').toLowerCase();
 
+      const isTeacher = designation === 'teacher' || designation === 'class teacher';
+
       // ── Shared items for every staff member ──────────────────────────────
       const shared = [
         { title: "OVERVIEW", isLabel: true },
         { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
-        { title: "LEAVE & ANNOUNCEMENTS", isLabel: true },
+        { title: "COMMUNICATIONS", isLabel: true },
+        { title: "Announcements", url: "/announcements", icon: Bell },
+        { title: "Communication", url: "/communication", icon: MessageSquare },
+        { title: "LEAVE", isLabel: true },
         { title: "My Leave", url: "/leave-management", icon: Calendar },
         { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
         { title: "School Connect", url: "/school-connect", icon: School },
       ]
 
-      // ── Leadership: Principal / Vice Principal ────────────────────────────
+      // ── Build designation-based nav items ─────────────────────────────────
+      let staffItems: { title: string; url?: string; icon?: React.ElementType; isLabel?: boolean }[];
+
       if (designation === 'principal' || designation === 'vice principal') {
-        return [
+        staffItems = [
           { title: "OVERVIEW", isLabel: true },
           { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
           { title: "TEACHING", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-          { title: "Attendance", url: "/attendance", icon: UserCheck },
+          ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
+            ? [{ title: "Attendance", url: "/attendance", icon: UserCheck } as const] : []),
           { title: t('nav.timetable'), url: "/timetable", icon: Clock },
-          { title: "Assignments", url: "/assignments", icon: ClipboardList },
+          ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
+          { title: "COMMUNICATIONS", isLabel: true },
+          { title: "Announcements", url: "/announcements", icon: Bell },
+          { title: "Communication", url: "/communication", icon: MessageSquare },
           { title: "ADMINISTRATION", isLabel: true },
           { title: "Leave Management", url: "/leave-management", icon: Calendar },
           { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
-          { title: "Diary", url: "/staff-diary", icon: BookOpen },
-          { title: "Announcements", url: "/announcements", icon: Bell },
           { title: "School Connect", url: "/school-connect", icon: School },
-        ]
-      }
-
-      // ── Head of Department ────────────────────────────────────────────────
-      if (designation === 'head of department') {
-        return [
+        ];
+      } else if (designation === 'head of department') {
+        staffItems = [
           ...shared,
           { title: "DEPARTMENT", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
           { title: "Timetable", url: "/timetable", icon: Clock },
           { title: t('nav.examinations'), url: "/examinations", icon: Award },
-          { title: "Assignments", url: "/assignments", icon: ClipboardList },
+          ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
           { title: "Staff", url: "/staff", icon: UserCheck },
-          { title: "Diary", url: "/staff-diary", icon: BookOpen },
-        ]
-      }
-
-      // ── Class Teacher / Teacher ───────────────────────────────────────────
-      if (designation === 'class teacher' || designation === 'teacher') {
-        return [
+        ];
+      } else if (isTeacher) {
+        staffItems = [
           ...shared,
           { title: "ACADEMIC", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-          { title: "Attendance", url: "/attendance", icon: UserCheck },
-          { title: "Assignments", url: "/assignments", icon: ClipboardList },
+          ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
+            ? [{ title: "Attendance", url: "/attendance", icon: UserCheck } as const] : []),
+          ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
           { title: "Timetable", url: "/timetable", icon: Clock },
           { title: "DIARY", isLabel: true },
           { title: "Diary", url: "/staff-diary", icon: BookOpen },
-        ]
-      }
-
-      // ── Accountant / Finance ──────────────────────────────────────────────
-      if (designation === 'accountant') {
-        return [
+        ];
+      } else if (designation === 'accountant') {
+        staffItems = [
           ...shared,
           { title: "FINANCE", isLabel: true },
           { title: "Fees", url: "/fees", icon: DollarSign },
           { title: "Wallet / Finance", url: "/wallet", icon: Wallet },
           { title: "Store", url: "/store", icon: ShoppingBag },
-        ]
-      }
-
-      // ── HR Manager ───────────────────────────────────────────────────────
-      if (designation === 'hr manager') {
-        return [
+        ];
+      } else if (designation === 'receptionist' || designation === 'front desk officer') {
+        staffItems = [
+          ...shared,
+          { title: "FRONT DESK", isLabel: true },
+          { title: "Visitor Management", url: "/visitor-management", icon: UserCog },
+          { title: "Communication", url: "/communication", icon: MessageSquare },
+        ];
+      } else if (designation === 'hr manager') {
+        staffItems = [
           ...shared,
           { title: "HR MANAGEMENT", isLabel: true },
           { title: "Staff", url: "/staff", icon: UserCheck },
-        ]
-      }
-
-      // ── Librarian ────────────────────────────────────────────────────────
-      if (designation === 'librarian') {
-        return [
+        ];
+      } else if (designation === 'librarian') {
+        staffItems = [
           ...shared,
           { title: "LIBRARY", isLabel: true },
           { title: "Library", url: "/library", icon: Library },
-          { title: "Students", url: "/students", icon: Users },
-        ]
-      }
-
-      // ── Transport Manager ────────────────────────────────────────────────
-      if (designation === 'transport manager') {
-        return [
+        ];
+      } else if (designation === 'transport manager') {
+        staffItems = [
           ...shared,
           { title: "TRANSPORT", isLabel: true },
           { title: "Transport", url: "/transport", icon: Truck },
-          { title: "Students", url: "/students", icon: Users },
-        ]
-      }
-
-      // ── Hostel Warden ────────────────────────────────────────────────────
-      if (designation === 'hostel warden') {
-        return [
+        ];
+      } else if (designation === 'hostel warden') {
+        staffItems = [
           ...shared,
           { title: "HOSTEL", isLabel: true },
           { title: "Hostel", url: "/hostel", icon: Home },
           { title: "Health", url: "/health", icon: HeartPulse },
-          { title: "Students", url: "/students", icon: Users },
-        ]
-      }
-
-      // ── Admissions Officer ────────────────────────────────────────────────
-      if (designation === 'admissions officer') {
-        return [
+        ];
+      } else if (designation === 'admissions officer') {
+        staffItems = [
           ...shared,
           { title: "ADMISSIONS", isLabel: true },
           { title: "Students", url: "/students", icon: Users },
           { title: "Communication", url: "/communication", icon: MessageSquare },
-        ]
-      }
-
-      // ── Counselor ────────────────────────────────────────────────────────
-      if (designation === 'counselor') {
-        return [
+        ];
+      } else if (designation === 'counselor') {
+        staffItems = [
           ...shared,
           { title: "SERVICES", isLabel: true },
           { title: "Health", url: "/health", icon: HeartPulse },
           { title: "Communication", url: "/communication", icon: MessageSquare },
           { title: "Students", url: "/students", icon: Users },
-        ]
+        ];
+      } else {
+        staffItems = [
+          ...shared,
+          { title: "ACADEMIC", isLabel: true },
+          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
+          ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
+            ? [{ title: "Attendance", url: "/attendance", icon: UserCheck } as const] : []),
+        ];
       }
 
-      // ── Default Staff fallback ────────────────────────────────────────────
-      return [
-        ...shared,
-        { title: "ACADEMIC", isLabel: true },
-        { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-        { title: "Attendance", url: "/attendance", icon: UserCheck },
-          { title: "Diary", url: "/staff-diary", icon: BookOpen },
-      ]
+      // ── Augment with permission-based items (role management overrides) ───
+      // Library: show for anyone with Library.View permission
+      if (hasUserPermission('Library', 'View') && !staffItems.some(i => i.url === '/library')) {
+        staffItems.push(
+          { title: "LIBRARY", isLabel: true },
+          { title: "Library", url: "/library", icon: Library },
+        );
+      }
+
+      // Transport: show for anyone with Transport.View permission
+      if (hasUserPermission('Transport', 'View') && !staffItems.some(i => i.url === '/transport')) {
+        staffItems.push(
+          { title: "TRANSPORT", isLabel: true },
+          { title: "Transport", url: "/transport", icon: Truck },
+        );
+      }
+
+      // Hostel: show for anyone with Hostel.View permission
+      if (hasUserPermission('Hostel', 'View') && !staffItems.some(i => i.url === '/hostel')) {
+        staffItems.push(
+          { title: "HOSTEL", isLabel: true },
+          { title: "Hostel", url: "/hostel", icon: Home },
+        );
+      }
+
+      // Fees: show for anyone with Fees.View permission
+      if (hasUserPermission('Fees', 'View') && !staffItems.some(i => i.url === '/fees')) {
+        staffItems.push(
+          { title: "FINANCE", isLabel: true },
+          { title: "Fees", url: "/fees", icon: DollarSign },
+        );
+      }
+
+      // Visitor Management: show for anyone with Visitor.View permission
+      if (hasUserPermission('Visitor', 'View') && !staffItems.some(i => i.url === '/visitor-management')) {
+        staffItems.push(
+          { title: "OPERATIONS", isLabel: true },
+          { title: "Visitor Management", url: "/visitor-management", icon: UserCog },
+        );
+      }
+
+      return staffItems;
     }
 
     if (user.role === 'parent') {

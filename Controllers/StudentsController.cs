@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmsApi.Models.DTOs;
+using SmsApi.Models.Constants;
 using SmsApi.Services;
 using SmsApi.Services.Migration;
 using System;
@@ -30,7 +31,7 @@ namespace SmsApi.Controllers
         /// Get all students for the authenticated user's school. Respects X-Academic-Year header for year-scoped filtering.
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<StudentListResponse>> GetStudents(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -66,7 +67,7 @@ namespace SmsApi.Controllers
         /// Get a specific student by ID
         /// </summary>
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,Parent,Student")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<StudentResponse>> GetStudent(Guid id)
         {
             try
@@ -279,7 +280,7 @@ namespace SmsApi.Controllers
         /// Get student documents (Staff and above)
         /// </summary>
         [HttpGet("{id}/documents")]
-        [Authorize(Roles = "Admin,Principal,Staff,Student,Parent")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<List<StudentDocumentDto>>> GetDocuments(Guid id)
         {
             try
@@ -398,7 +399,7 @@ namespace SmsApi.Controllers
         /// Get all guardians for a student
         /// </summary>
         [HttpGet("{id}/guardians")]
-        [Authorize(Roles = "Admin,Principal,Staff")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<List<GuardianDto>>> GetGuardians(Guid id)
         {
             try
@@ -539,7 +540,7 @@ namespace SmsApi.Controllers
         /// Get siblings of a student (legacy JSON-based lookup)
         /// </summary>
         [HttpGet("{id}/siblings-legacy")]
-        [Authorize(Roles = "Admin,Principal,Staff,Teacher")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<List<StudentBasicResponse>>> GetSiblingsLegacy(Guid id)
         {
             try
@@ -579,7 +580,7 @@ namespace SmsApi.Controllers
         /// (fees, attendance, exams, transport, hostel, health, visitor history)
         /// </summary>
         [HttpGet("{id}/profile-summary")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,Parent,Student")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<StudentProfileSummary>> GetProfileSummary(Guid id)
         {
             try

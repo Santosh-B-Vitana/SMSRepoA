@@ -43,6 +43,13 @@ namespace SmsApi.Services
 
         // Seed
         Task EnsureSystemRolesAsync(Guid schoolId);
+
+        // Effective permissions for current user
+        Task<List<string>> GetUserEffectivePermissionsAsync(Guid userId, Guid schoolId);
+
+        // Auto-assign system role from academic assignment
+        Task AutoAssignAcademicRoleAsync(Guid staffId, bool isClassTeacher, bool hasSubject, Guid schoolId);
+        Task RevokeAcademicRoleIfUnassignedAsync(Guid staffId, Guid schoolId);
     }
 
     public class PermissionsService : IPermissionsService
@@ -62,6 +69,7 @@ namespace SmsApi.Services
             ["Staff"]           = new[] { "View", "Create", "Edit", "Delete", "Export" },
             ["Admissions"]      = new[] { "View", "Create", "Edit", "Delete", "Approve" },
             ["Attendance"]      = new[] { "View", "Create", "Edit", "Delete", "Export" },
+            ["Assignments"]     = new[] { "View", "Create", "Edit", "Delete" },
             ["Fees"]            = new[] { "View", "Create", "Edit", "Delete", "Approve", "Export" },
             ["Timetable"]       = new[] { "View", "Create", "Edit", "Delete" },
             ["Examinations"]    = new[] { "View", "Create", "Edit", "Delete", "Approve", "Export" },
@@ -78,6 +86,7 @@ namespace SmsApi.Services
             ["Certificates"]    = new[] { "View", "Create", "Export" },
             ["Settings"]        = new[] { "View", "Edit" },
             ["UserManagement"]  = new[] { "View", "Create", "Edit", "Delete" },
+            ["Visitor"]         = new[] { "View", "Create", "Edit", "Delete" },
         };
 
         // System role name ? display name, description, permission set
@@ -96,6 +105,7 @@ namespace SmsApi.Services
             ["Hostel Warden"]       = "Hostel Warden",
             ["Admissions Officer"]  = "Admissions Officer",
             ["Counselor"]           = "Counselor / Student Welfare",
+            ["Receptionist"]        = "Receptionist / Front Desk Officer",
         };
 
         private static readonly Dictionary<string, string> SystemRoleDescriptions = new(StringComparer.OrdinalIgnoreCase)
@@ -113,6 +123,7 @@ namespace SmsApi.Services
             ["Hostel Warden"]       = "Hostel in-charge. Room allocation, student health records, and facilities management.",
             ["Admissions Officer"]  = "Handles new admissions, enrolment, fee initiation, and parent communication.",
             ["Counselor"]           = "Student welfare. Manages health records, counseling notes, and wellbeing communication.",
+            ["Receptionist"]        = "Front desk officer. Manages visitor check-in/out and pre-registrations. View-only access to students and admissions.",
         };
 
         // System role name ? set of "Module.Action" strings it gets
@@ -143,6 +154,7 @@ namespace SmsApi.Services
                 "Certificates.View","Certificates.Create","Certificates.Export",
                 "Settings.View",
                 "UserManagement.View","UserManagement.Create","UserManagement.Edit",
+                "Visitor.View","Visitor.Create","Visitor.Edit","Visitor.Delete",
             },
 
             ["Vice Principal"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -187,6 +199,7 @@ namespace SmsApi.Services
             {
                 "Students.View","Students.Edit",
                 "Attendance.View","Attendance.Create","Attendance.Edit",
+                "Assignments.View","Assignments.Create","Assignments.Edit","Assignments.Delete",
                 "Timetable.View",
                 "Examinations.View","Examinations.Create","Examinations.Edit",
                 "Grades.View","Grades.Create","Grades.Edit",
@@ -201,7 +214,8 @@ namespace SmsApi.Services
             ["Teacher"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "Students.View",
-                "Attendance.View","Attendance.Create","Attendance.Edit",
+                "Attendance.View",
+                "Assignments.View","Assignments.Create","Assignments.Edit",
                 "Timetable.View",
                 "Examinations.View","Examinations.Create","Examinations.Edit",
                 "Grades.View","Grades.Create","Grades.Edit",
@@ -270,6 +284,7 @@ namespace SmsApi.Services
                 "Students.View","Students.Create","Students.Edit",
                 "Admissions.View","Admissions.Create","Admissions.Edit","Admissions.Approve",
                 "Fees.View",
+                "Visitor.View","Visitor.Create",
                 "Communication.View","Communication.Create","Communication.Edit",
                 "Announcements.View",
                 "Certificates.View",
@@ -283,6 +298,17 @@ namespace SmsApi.Services
                 "Health.View","Health.Create","Health.Edit",
                 "Communication.View","Communication.Create","Communication.Edit",
                 "Announcements.View","Announcements.Create",
+                "Reports.View",
+            },
+
+            // -- Tier 5: Front Desk ---------------------------------------------
+            ["Receptionist"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Students.View",
+                "Admissions.View",
+                "Visitor.View","Visitor.Create","Visitor.Edit","Visitor.Delete",
+                "Communication.View",
+                "Announcements.View",
                 "Reports.View",
             },
         };
@@ -368,13 +394,13 @@ namespace SmsApi.Services
                 }
 
                 // Add any missing permissions for this system role
-                var existingRolePermIds = await _context.RolePermissions
+                var existingRolePerms = await _context.RolePermissions
                     .Where(rp => rp.RoleId == roleId && !rp.IsDeleted)
-                    .Select(rp => rp.PermissionId)
                     .ToListAsync();
 
-                var existingRolePermSet = new HashSet<Guid>(existingRolePermIds);
+                var existingRolePermSet = new HashSet<Guid>(existingRolePerms.Select(rp => rp.PermissionId));
 
+                // Add missing permissions
                 foreach (var permName in permNames)
                 {
                     if (!allPermissions.TryGetValue(permName, out var perm)) continue;
@@ -389,6 +415,20 @@ namespace SmsApi.Services
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow,
                     });
+                }
+
+                // Remove permissions no longer in the definition (bidirectional sync)
+                var expectedPermIds = new HashSet<Guid>(
+                    permNames
+                        .Where(n => allPermissions.ContainsKey(n))
+                        .Select(n => allPermissions[n].Id));
+                foreach (var rp in existingRolePerms)
+                {
+                    if (!expectedPermIds.Contains(rp.PermissionId))
+                    {
+                        rp.IsDeleted = true;
+                        rp.UpdatedAt = DateTime.UtcNow;
+                    }
                 }
 
                 await _context.SaveChangesAsync();
@@ -1195,6 +1235,137 @@ namespace SmsApi.Services
                 TotalUsersWithRoles = usersWithRoles,
                 TotalPermissions = totalPermissions,
             };
+        }
+
+        // --- Effective Permissions -----------------------------------------------
+
+        public async Task<List<string>> GetUserEffectivePermissionsAsync(Guid userId, Guid schoolId)
+        {
+            var roleIds = await _context.UserRoles
+                .Where(ur => ur.UserId == userId && ur.SchoolId == schoolId && !ur.IsDeleted
+                             && (ur.ValidTo == null || ur.ValidTo > DateTime.UtcNow))
+                .Select(ur => ur.RoleId)
+                .ToListAsync();
+
+            if (!roleIds.Any()) return new List<string>();
+
+            var permissions = await _context.RolePermissions
+                .Include(rp => rp.Permission)
+                .Where(rp => roleIds.Contains(rp.RoleId) && rp.IsGranted && !rp.IsDeleted && rp.Permission != null)
+                .Select(rp => rp.Permission!.Name)
+                .Distinct()
+                .ToListAsync();
+
+            return permissions;
+        }
+
+        // --- Auto-assign academic roles ------------------------------------------
+
+        /// <summary>
+        /// Called after AssignTeacherAsync succeeds. Ensures the staff member's login
+        /// gets the correct system role (Class Teacher or Subject Teacher) assigned.
+        /// </summary>
+        public async Task AutoAssignAcademicRoleAsync(Guid staffId, bool isClassTeacher, bool hasSubject, Guid schoolId)
+        {
+            // Find the UserLogin for this staff member (match by email)
+            var staffEmail = await _context.StaffMembers
+                .Where(s => s.Id == staffId && s.SchoolId == schoolId && !s.IsDeleted)
+                .Select(s => s.Email)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(staffEmail)) return;
+
+            var userLogin = await _context.UserLogins
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == staffEmail.ToLower()
+                                          && u.SchoolId == schoolId && !u.IsDeleted);
+
+            if (userLogin == null) return;
+
+            // Ensure system roles are seeded
+            await EnsureSystemRolesAsync(schoolId);
+
+            var roleName = isClassTeacher ? "Class Teacher" : "Teacher";
+            var role = await _context.Roles
+                .FirstOrDefaultAsync(r => r.SchoolId == schoolId && r.Name == roleName && r.IsSystemRole && !r.IsDeleted);
+
+            if (role == null) return;
+
+            // Assign only if not already assigned
+            var alreadyAssigned = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == userLogin.Id && ur.RoleId == role.Id
+                                && ur.SchoolId == schoolId && !ur.IsDeleted);
+
+            if (!alreadyAssigned)
+            {
+                _context.UserRoles.Add(new UserRole
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    UserId = userLogin.Id,
+                    RoleId = role.Id,
+                    ValidFrom = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        /// <summary>
+        /// Called after RemoveTeacherAssignmentAsync. If the staff has no remaining
+        /// class teacher assignments, revokes the Class Teacher role. If no remaining
+        /// subject assignments either, revokes the Teacher role.
+        /// </summary>
+        public async Task RevokeAcademicRoleIfUnassignedAsync(Guid staffId, Guid schoolId)
+        {
+            var staffEmail = await _context.StaffMembers
+                .Where(s => s.Id == staffId && s.SchoolId == schoolId && !s.IsDeleted)
+                .Select(s => s.Email)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(staffEmail)) return;
+
+            var userLogin = await _context.UserLogins
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == staffEmail.ToLower()
+                                          && u.SchoolId == schoolId && !u.IsDeleted);
+
+            if (userLogin == null) return;
+
+            var hasClassTeacher = await _context.TeacherAssignments
+                .AnyAsync(ta => ta.StaffId == staffId && ta.SchoolId == schoolId
+                                && ta.IsClassTeacher && ta.Status == "active");
+
+            var hasSubjectTeacher = await _context.TeacherAssignments
+                .AnyAsync(ta => ta.StaffId == staffId && ta.SchoolId == schoolId
+                                && !ta.IsClassTeacher && ta.SubjectId != null && ta.Status == "active");
+
+            if (!hasClassTeacher)
+            {
+                var ctRole = await _context.Roles
+                    .FirstOrDefaultAsync(r => r.SchoolId == schoolId && r.Name == "Class Teacher" && !r.IsDeleted);
+                if (ctRole != null)
+                {
+                    var ur = await _context.UserRoles
+                        .FirstOrDefaultAsync(x => x.UserId == userLogin.Id && x.RoleId == ctRole.Id
+                                                   && x.SchoolId == schoolId && !x.IsDeleted);
+                    if (ur != null) { ur.IsDeleted = true; ur.DeletedAt = DateTime.UtcNow; ur.UpdatedAt = DateTime.UtcNow; }
+                }
+            }
+
+            if (!hasSubjectTeacher && !hasClassTeacher)
+            {
+                var tRole = await _context.Roles
+                    .FirstOrDefaultAsync(r => r.SchoolId == schoolId && r.Name == "Teacher" && !r.IsDeleted);
+                if (tRole != null)
+                {
+                    var ur = await _context.UserRoles
+                        .FirstOrDefaultAsync(x => x.UserId == userLogin.Id && x.RoleId == tRole.Id
+                                                   && x.SchoolId == schoolId && !x.IsDeleted);
+                    if (ur != null) { ur.IsDeleted = true; ur.DeletedAt = DateTime.UtcNow; ur.UpdatedAt = DateTime.UtcNow; }
+                }
+            }
+
+            await _context.SaveChangesAsync();
         }
 
         // --- Mappers --------------------------------------------------------------

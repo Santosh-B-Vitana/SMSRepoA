@@ -64,7 +64,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("types/{id}")]
-        [Authorize(Roles = "Admin,Principal,Bursar")]
+        [Authorize(Roles = "Admin,Principal,Bursar,Accountant,Teacher,Staff")]
         public async Task<ActionResult<ConcessionTypeResponse>> UpdateConcessionType(Guid id, [FromBody] UpdateConcessionTypeRequest request)
         {
             try
@@ -82,7 +82,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("types/{id}")]
-        [Authorize(Roles = "Admin,Principal,Bursar")]
+        [Authorize(Roles = "Admin,Principal,Bursar,Accountant,Teacher,Staff")]
         public async Task<ActionResult> DeleteConcessionType(Guid id)
         {
             try
@@ -156,7 +156,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("{id}/approve")]
-        [Authorize(Roles = "Admin,Principal,Bursar")]
+        [Authorize(Roles = "Admin,Principal,Bursar,Accountant,Teacher,Staff")]
         public async Task<ActionResult<FeeConcessionResponse>> ApproveConcession(Guid id, [FromBody] ApproveFeeConcessionRequest request)
         {
             try
@@ -179,7 +179,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("{id}/reject")]
-        [Authorize(Roles = "Admin,Principal,Bursar")]
+        [Authorize(Roles = "Admin,Principal,Bursar,Accountant,Teacher,Staff")]
         public async Task<ActionResult<FeeConcessionResponse>> RejectConcession(Guid id, [FromBody] RejectFeeConcessionRequest request)
         {
             try
@@ -202,3 +202,4 @@ namespace SmsApi.Controllers
         }
     }
 }
+

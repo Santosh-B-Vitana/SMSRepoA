@@ -73,10 +73,15 @@ public class TokenService : ITokenService
         var des = (designation ?? "").Trim().ToLowerInvariant();
         return des switch
         {
-            "principal" or "vice principal"         => "Principal",
-            "hr manager" or "hrmanager"             => "HRManager",
-            "administrator" or "school administrator" => "Admin",
-            _                                       => NormalizeRole(rawRole)
+            "principal" or "vice principal"                => "Principal",
+            "hr manager" or "hrmanager"                    => "HRManager",
+            "administrator" or "school administrator"      => "Admin",
+            "librarian"                                    => "Librarian",
+            "transport manager" or "transportmanager"      => "TransportManager",
+            "hostel warden" or "hostelwarden"              => "HostelWarden",
+            "accountant" or "finance officer"              => "Accountant",
+            "receptionist" or "front desk" or "front desk officer" => "Receptionist",
+            _                                              => NormalizeRole(rawRole)
         };
     }
 

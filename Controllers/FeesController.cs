@@ -56,7 +56,7 @@ namespace SmsApi.Controllers
         /// Get fee structures for the authenticated user's school. Respects X-Academic-Year header for year-scoped filtering.
         /// </summary>
         [HttpGet("structures")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> GetFeeStructures(
             [FromQuery] string? classFilter = null,
             [FromQuery] string? academicYear = null)
@@ -81,7 +81,7 @@ namespace SmsApi.Controllers
         /// Get a specific fee structure
         /// </summary>
         [HttpGet("structures/{id}")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Teacher,Parent")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent")]
         public async Task<ActionResult<FeeStructureResponse>> GetFeeStructure(Guid id)
         {
             try
@@ -119,7 +119,7 @@ namespace SmsApi.Controllers
         /// Bulk-assign a fee structure to all active students in the structure's class who don't yet have a fee record for this year.
         /// </summary>
         [HttpPost("structures/{id}/assign")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> BulkAssignStructure(Guid id)
         {
             try
@@ -149,7 +149,7 @@ namespace SmsApi.Controllers
         /// Increases the outstanding balance so the admin can collect the full amount.
         /// </summary>
         [HttpPost("records/{id}/add-charges")]
-        [Authorize(Roles = "Admin,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<AddExtraChargesResponse>> AddExtraCharges(
             Guid id, [FromBody] AddExtraChargesRequest request)
         {
@@ -170,7 +170,7 @@ namespace SmsApi.Controllers
         /// Adjusts the fee-record balance and writes an audit log entry.
         /// </summary>
         [HttpPatch("payments/{id}")]
-        [Authorize(Roles = "Admin,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<PaymentResponse>> EditPayment(
             Guid id, [FromBody] EditPaymentRequest request)
         {
@@ -191,7 +191,7 @@ namespace SmsApi.Controllers
         /// that currently shows "No structure linked".
         /// </summary>
         [HttpPost("records/{id}/link-structure")]
-        [Authorize(Roles = "Admin,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<LinkStructureResponse>> LinkStructure(Guid id)
         {
             try
@@ -208,7 +208,7 @@ namespace SmsApi.Controllers
 
 
         [HttpGet("records")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult<FeeListResponse>> GetFeeRecords(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -246,7 +246,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("late-fee-config")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<LateFeeConfigDto>> GetLateFeeConfig()
         {
             try
@@ -270,7 +270,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("late-fee-config")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<LateFeeConfigDto>> CreateOrUpdateLateFeeConfig([FromBody] CreateLateFeeConfigDto dto)
         {
             try
@@ -286,7 +286,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("records/{id}/calculate-late-fee")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> CalculateLateFee(Guid id)
         {
             try
@@ -304,7 +304,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("stats")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<FeeStatsResponse>> GetFeeStats(
             [FromQuery] string? academicYear = null)
         {
@@ -323,7 +323,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("records/{id}")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Teacher,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult<FeeRecordResponse>> GetFeeRecord(Guid id)
         {
             try
@@ -358,7 +358,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPatch("records/{id}/module-fees")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<FeeRecordResponse>> UpdateModuleFees(Guid id, [FromBody] UpdateModuleFeesRequest request)
         {
             try
@@ -390,7 +390,7 @@ namespace SmsApi.Controllers
         /// Create a new payment (Finance staff only)
         /// </summary>
         [HttpPost("payments")]
-        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant")]
+        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<PaymentResponse>> CreatePayment(
             [FromBody] CreatePaymentRequest request)
         {
@@ -470,7 +470,7 @@ namespace SmsApi.Controllers
         /// Get payment gateway transactions
         /// </summary>
         [HttpGet("payments/gateway/transactions")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         /// <summary>
         /// Get payment gateway transactions. Respects X-Academic-Year header for year-scoped filtering.
         /// </summary>
@@ -500,7 +500,7 @@ namespace SmsApi.Controllers
         /// Get specific payment gateway transaction
         /// </summary>
         [HttpGet("payments/gateway/transactions/{id}")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<PaymentTransactionResponse>> GetGatewayTransaction(Guid id)
         {
             try
@@ -577,7 +577,7 @@ namespace SmsApi.Controllers
         /// Download payment receipt as PDF
         /// </summary>
         [HttpGet("payments/{paymentId}/receipt")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<IActionResult> DownloadReceipt(Guid paymentId)
         {
             try
@@ -602,7 +602,7 @@ namespace SmsApi.Controllers
         /// Email payment receipt to specified address
         /// </summary>
         [HttpPost("payments/{paymentId}/email-receipt")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<IActionResult> EmailReceipt(
             Guid paymentId, 
             [FromBody] EmailReceiptRequest request)
@@ -633,7 +633,7 @@ namespace SmsApi.Controllers
         /// Initiate payment via gateway (Razorpay/PayU)
         /// </summary>
         [HttpPost("{feeRecordId}/initiate-payment")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult<PaymentGatewayResponseDto>> InitiatePayment(
             Guid feeRecordId,
             [FromBody] InitiatePaymentDto dto)
@@ -721,7 +721,7 @@ namespace SmsApi.Controllers
         /// Verify payment after gateway redirect
         /// </summary>
         [HttpPost("transactions/{transactionId}/verify")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult> VerifyPayment(
             Guid transactionId,
             [FromBody] VerifyPaymentDto dto)
@@ -757,7 +757,7 @@ namespace SmsApi.Controllers
         /// Generate PDF receipt for a transaction
         /// </summary>
         [HttpGet("receipts/{transactionId}/pdf")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult> GenerateReceiptPDF(Guid transactionId)
         {
             try
@@ -778,7 +778,7 @@ namespace SmsApi.Controllers
         /// Send receipt via email (new endpoint)
         /// </summary>
         [HttpPost("receipts/{transactionId}/send-email")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult> SendReceiptEmailNew(
             Guid transactionId,
             [FromBody] SendReceiptEmailDto dto)
@@ -808,7 +808,7 @@ namespace SmsApi.Controllers
         /// Process refund for a transaction
         /// </summary>
         [HttpPost("transactions/{transactionId}/refund")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<RefundResponseDto>> ProcessRefund(
             Guid transactionId,
             [FromBody] CreateRefundDto dto)
@@ -831,7 +831,7 @@ namespace SmsApi.Controllers
         /// Get refund status
         /// </summary>
         [HttpGet("refunds/{refundId}/status")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult<RefundStatusDto>> GetRefundStatus(Guid refundId)
         {
             try
@@ -860,7 +860,7 @@ namespace SmsApi.Controllers
         /// Send fee reminders to parents
         /// </summary>
         [HttpPost("send-reminders")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<ReminderResultDto>> SendReminders(
             [FromBody] SendRemindersDto dto)
         {
@@ -885,7 +885,7 @@ namespace SmsApi.Controllers
         /// Get list of overdue fees
         /// </summary>
         [HttpGet("overdue")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<List<OverdueFeeDto>>> GetOverdueFees()
         {
             try
@@ -908,7 +908,7 @@ namespace SmsApi.Controllers
         /// Compute a full invoice breakdown for a student: line items, overlapping concessions, late fees, installments, aging.
         /// </summary>
         [HttpGet("invoice/{studentId}/{feeStructureId}")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<InvoiceBreakdown>> GetInvoice(Guid studentId, Guid feeStructureId)
         {
             try
@@ -925,7 +925,7 @@ namespace SmsApi.Controllers
         /// Preview what the fee would look like with a set of concession types applied (before approval).
         /// </summary>
         [HttpPost("invoice/preview")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<InvoiceBreakdown>> PreviewConcessions([FromBody] PreviewConcessionsRequest request)
         {
             try
@@ -944,7 +944,7 @@ namespace SmsApi.Controllers
         /// Get school-wide aging buckets (Current, 0-30, 31-60, 61-90, 90+ days).
         /// </summary>
         [HttpGet("aging")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<AgingBucket>> GetAging()
         {
             try
@@ -963,7 +963,7 @@ namespace SmsApi.Controllers
         /// A CA can trace every financial mutation.
         /// </summary>
         [HttpGet("audit-trail")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> GetAuditTrail(
             [FromQuery] Guid? studentId = null,
             [FromQuery] Guid? feeRecordId = null,
@@ -1021,7 +1021,7 @@ namespace SmsApi.Controllers
         /// Handles the common Tier-2/3 city use case where the same parent pays for multiple children.
         /// </summary>
         [HttpPost("sibling-discount")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> ApplySiblingDiscount([FromBody] SiblingDiscountRequest request)
         {
             try
@@ -1150,7 +1150,7 @@ namespace SmsApi.Controllers
         /// Respects the 75% total concession stacking cap.
         /// </summary>
         [HttpPost("staff-discount")]
-        [Authorize(Roles = "Admin,Principal,Staff")]
+        [Authorize(Roles = "Admin,Principal,Accountant,Teacher,Staff")]
         public async Task<IActionResult> ApplyStaffDiscount([FromBody] StaffDiscountRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -1242,7 +1242,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Get all active fee heads for the school</summary>
         [HttpGet("heads")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<List<FeeHeadResponse>>> GetFeeHeads()
         {
             try
@@ -1264,7 +1264,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Create a fee head</summary>
         [HttpPost("heads")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<FeeHeadResponse>> CreateFeeHead([FromBody] CreateFeeHeadRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -1294,7 +1294,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Update a fee head</summary>
         [HttpPut("heads/{id}")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> UpdateFeeHead(Guid id, [FromBody] CreateFeeHeadRequest request)
         {
             try
@@ -1313,7 +1313,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Delete a fee head (soft delete)</summary>
         [HttpDelete("heads/{id}")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> DeleteFeeHead(Guid id)
         {
             try
@@ -1334,7 +1334,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Get components for a fee structure</summary>
         [HttpGet("structures/{structureId}/components")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<List<FeeStructureComponentResponse>>> GetStructureComponents(Guid structureId)
         {
             try
@@ -1357,7 +1357,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Set (replace) all components for a fee structure</summary>
         [HttpPost("structures/{structureId}/components")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> SetStructureComponents(Guid structureId, [FromBody] List<CreateFeeStructureComponentRequest> request)
         {
             try
@@ -1394,7 +1394,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Get fee terms for a fee structure</summary>
         [HttpGet("structures/{structureId}/terms")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Parent,Student")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
         public async Task<ActionResult<List<FeeTermResponse>>> GetFeeTerms(Guid structureId)
         {
             try
@@ -1415,7 +1415,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Set (replace) all terms for a fee structure</summary>
         [HttpPost("structures/{structureId}/terms")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> SetFeeTerms(Guid structureId, [FromBody] List<CreateFeeTermRequest> request)
         {
             try
@@ -1458,7 +1458,7 @@ namespace SmsApi.Controllers
         /// Copies FeeTerms and FeeStructureComponents to the new year.
         /// </summary>
         [HttpPost("structures/{id}/promote")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> PromoteFeeStructure(Guid id, [FromBody] PromoteFeeStructureRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -1548,7 +1548,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Get all receipt templates for the school</summary>
         [HttpGet("receipt-templates")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<List<ReceiptTemplateResponse>>> GetReceiptTemplates()
         {
             try
@@ -1569,7 +1569,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Create a receipt template</summary>
         [HttpPost("receipt-templates")]
-        [Authorize(Roles = "Admin,Principal")]
+        [Authorize(Roles = "Admin,Principal,Accountant,Teacher,Staff")]
         public async Task<ActionResult<ReceiptTemplateResponse>> CreateReceiptTemplate([FromBody] CreateReceiptTemplateRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -1603,7 +1603,7 @@ namespace SmsApi.Controllers
 
         /// <summary>Update receipt template</summary>
         [HttpPut("receipt-templates/{id}")]
-        [Authorize(Roles = "Admin,Principal")]
+        [Authorize(Roles = "Admin,Principal,Accountant,Teacher,Staff")]
         public async Task<ActionResult> UpdateReceiptTemplate(Guid id, [FromBody] CreateReceiptTemplateRequest request)
         {
             try
@@ -1635,7 +1635,7 @@ namespace SmsApi.Controllers
         /// Each row matches a student by admission number and records a payment.
         /// </summary>
         [HttpPost("payments/bulk-upload")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<BulkFeePaymentResult>> BulkUploadPayments([FromBody] List<BulkFeePaymentRow> rows)
         {
             if (rows == null || rows.Count == 0) return BadRequest(new { message = "No rows provided." });
@@ -1697,7 +1697,7 @@ namespace SmsApi.Controllers
 
         /// <summary>View soft-deleted payment records for audit compliance (CA / Finance)</summary>
         [HttpGet("deleted-transactions")]
-        [Authorize(Roles = "Admin,Principal,Finance")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> GetDeletedTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
         {
             try
@@ -1874,3 +1874,6 @@ public class BulkFeePaymentResult
     public int Failed { get; set; }
     public List<string> Errors { get; set; } = new();
 }
+
+
+

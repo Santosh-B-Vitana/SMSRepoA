@@ -198,6 +198,9 @@ namespace SmsApi.Services
             // Push notification to parent portals
             await NotifyParentsAsync(announcement);
 
+            // Push notification to staff
+            await NotifyStaffAsync(announcement);
+
             // Reload with navigation props
             var created = await _context.Announcements
                 .Include(a => a.CreatedByStaff)
@@ -408,23 +411,63 @@ namespace SmsApi.Services
 
         // ─────────────────────────────────────────────────────────────
         // MY ANNOUNCEMENTS
+        // Returns all announcements relevant to the staff member:
+        //   1) Audience = "all"    → everyone sees it (no recipient record needed)
+        //   2) Audience = "staff"  → ALL authenticated staff see it (no recipient record needed)
+        //   3) Audience = "class"  → this staff teaches that class (TeacherAssignment)
+        // Recipient records are for read/unread tracking only — NOT for access control.
         // ─────────────────────────────────────────────────────────────
         public async Task<List<AnnouncementResponse>> GetMyAnnouncementsAsync(
             Guid recipientId, string recipientType, Guid schoolId)
         {
             var now = DateTime.UtcNow;
+
+            // recipientId is the Staff.Id (Guid.Empty when caller could not resolve it).
+            // We still need it for class/section teacher-assignment checks.
+            var staffEntityId = recipientId;
+
+            // Fetch the class IDs this staff member teaches (subject teacher or class teacher)
+            var taughtClassIds = await _context.TeacherAssignments
+                .Where(ta => ta.SchoolId == schoolId &&
+                             ta.StaffId == staffEntityId &&
+                             ta.Status == "active")
+                .Select(ta => ta.ClassId)
+                .Distinct()
+                .ToListAsync();
+
             var announcements = await _context.Announcements
                 .Include(a => a.CreatedByStaff)
                 .Include(a => a.Recipients)
+                .Include(a => a.TargetClass)
                 .Where(a => a.SchoolId == schoolId &&
                             a.IsActive &&
                             (a.ExpiryDate == null || a.ExpiryDate > now) &&
-                            (a.TargetAudience == AnnouncementConstants.AudienceAll ||
-                             a.Recipients.Any(r => r.RecipientId == recipientId &&
-                                                   r.RecipientType == recipientType)))
+                            (
+                                // 1) Targeted at everyone
+                                a.TargetAudience == AnnouncementConstants.AudienceAll
+                                ||
+                                // 2) Targeted at staff and this person is a listed recipient
+                                // 2) Targeted at staff — visible to ALL authenticated staff;
+                            //    no per-user recipient record is required for display.
+                            a.TargetAudience == AnnouncementConstants.AudienceStaff
+                                ||
+                                // 3) Targeted at a class this staff member teaches
+                                (a.TargetAudience == AnnouncementConstants.AudienceClass &&
+                                 a.TargetClassId.HasValue &&
+                                 taughtClassIds.Contains(a.TargetClassId.Value))
+                                ||
+                                // 4) Targeted at a section — check if any section belongs to a taught class
+                                (a.TargetAudience == AnnouncementConstants.AudienceSection &&
+                                 a.TargetSectionId.HasValue &&
+                                 _context.TeacherAssignments.Any(ta =>
+                                     ta.SchoolId == schoolId &&
+                                     ta.StaffId == staffEntityId &&
+                                     ta.Status == "active" &&
+                                     ta.SectionId == a.TargetSectionId))
+                            ))
                 .OrderByDescending(a => a.IsPinned)
                 .ThenByDescending(a => a.PublishedDate)
-                .Take(50)
+                .Take(100)
                 .ToListAsync();
 
             return announcements.Select(MapToResponse).ToList();
@@ -534,7 +577,7 @@ namespace SmsApi.Services
 
                 case AnnouncementConstants.AudienceStaff:
                     var staff = await _context.StaffMembers
-                        .Where(s => s.SchoolId == announcement.SchoolId)
+                        .Where(s => s.SchoolId == announcement.SchoolId && s.Status.ToLower() == "active")
                         .Select(s => s.Id)
                         .ToListAsync();
                     recipients.AddRange(staff.Select(id => new AnnouncementRecipient
@@ -544,7 +587,58 @@ namespace SmsApi.Services
                     }));
                     break;
 
-                // "Class" and "Section" target: scope by ClassId / SectionId when student entity supports it
+                case AnnouncementConstants.AudienceClass when announcement.TargetClassId.HasValue:
+                {
+                    // Students in this class
+                    var classStudents = await _context.Students
+                        .Where(s => s.SchoolId == announcement.SchoolId)
+                        .Join(_context.StudentEnrollments,
+                            s => s.Id, e => e.StudentId,
+                            (s, e) => new { s.Id, e.ClassId, e.Status })
+                        .Where(x => x.ClassId == announcement.TargetClassId.Value && x.Status == "active")
+                        .Select(x => x.Id)
+                        .Distinct()
+                        .ToListAsync();
+                    recipients.AddRange(classStudents.Select(id => new AnnouncementRecipient
+                    {
+                        Id = Guid.NewGuid(), AnnouncementId = announcement.Id,
+                        RecipientType = "Student", RecipientId = id, CreatedAt = DateTime.UtcNow
+                    }));
+
+                    // Staff who teach this class (subject teachers + class teacher)
+                    var classStaff = await _context.TeacherAssignments
+                        .Where(ta => ta.SchoolId == announcement.SchoolId &&
+                                     ta.ClassId == announcement.TargetClassId.Value &&
+                                     ta.Status == "active")
+                        .Select(ta => ta.StaffId)
+                        .Distinct()
+                        .ToListAsync();
+                    recipients.AddRange(classStaff.Select(id => new AnnouncementRecipient
+                    {
+                        Id = Guid.NewGuid(), AnnouncementId = announcement.Id,
+                        RecipientType = "Staff", RecipientId = id, CreatedAt = DateTime.UtcNow
+                    }));
+                    break;
+                }
+
+                case AnnouncementConstants.AudienceSection when announcement.TargetSectionId.HasValue:
+                {
+                    // Staff who teach this section
+                    var sectionStaff = await _context.TeacherAssignments
+                        .Where(ta => ta.SchoolId == announcement.SchoolId &&
+                                     ta.SectionId == announcement.TargetSectionId.Value &&
+                                     ta.Status == "active")
+                        .Select(ta => ta.StaffId)
+                        .Distinct()
+                        .ToListAsync();
+                    recipients.AddRange(sectionStaff.Select(id => new AnnouncementRecipient
+                    {
+                        Id = Guid.NewGuid(), AnnouncementId = announcement.Id,
+                        RecipientType = "Staff", RecipientId = id, CreatedAt = DateTime.UtcNow
+                    }));
+                    break;
+                }
+
                 // "Parents" and "All": recipients created on-demand when MarkAsRead is called
             }
 
@@ -643,6 +737,98 @@ namespace SmsApi.Services
                 ReferenceId   = announcement.Id,
                 ReferenceType = "Announcement",
                 ActionUrl     = "/parent-announcements",
+                Priority      = priority,
+            }).ToList();
+
+            _context.Notifications.AddRange(notifications);
+            await _context.SaveChangesAsync();
+        }
+
+        private async Task NotifyStaffAsync(Announcement announcement)
+        {
+            IQueryable<Guid> staffLoginIds;
+
+            switch (announcement.TargetAudience)
+            {
+                case AnnouncementConstants.AudienceAll:
+                case AnnouncementConstants.AudienceStaff:
+                {
+                    staffLoginIds = _context.StaffMembers
+                        .Where(s => s.SchoolId == announcement.SchoolId && s.Status.ToLower() == "active")
+                        .Join(_context.UserLogins,
+                            s => s.Email,
+                            u => u.Email,
+                            (s, u) => u.Id)
+                        .Distinct();
+                    break;
+                }
+
+                case AnnouncementConstants.AudienceClass when announcement.TargetClassId.HasValue:
+                {
+                    var classId = announcement.TargetClassId.Value;
+                    staffLoginIds = _context.TeacherAssignments
+                        .Where(ta => ta.SchoolId == announcement.SchoolId
+                                    && ta.ClassId == classId
+                                    && ta.Status == "active")
+                        .Select(ta => ta.StaffId)
+                        .Join(_context.StaffMembers,
+                            staffId => staffId,
+                            s => s.Id,
+                            (staffId, s) => s)
+                        .Join(_context.UserLogins,
+                            s => s.Email,
+                            u => u.Email,
+                            (s, u) => u.Id)
+                        .Distinct();
+                    break;
+                }
+
+                case AnnouncementConstants.AudienceSection when announcement.TargetSectionId.HasValue:
+                {
+                    var sectionId = announcement.TargetSectionId.Value;
+                    staffLoginIds = _context.TeacherAssignments
+                        .Where(ta => ta.SchoolId == announcement.SchoolId
+                                    && ta.SectionId == sectionId
+                                    && ta.Status == "active")
+                        .Select(ta => ta.StaffId)
+                        .Join(_context.StaffMembers,
+                            staffId => staffId,
+                            s => s.Id,
+                            (staffId, s) => s)
+                        .Join(_context.UserLogins,
+                            s => s.Email,
+                            u => u.Email,
+                            (s, u) => u.Id)
+                        .Distinct();
+                    break;
+                }
+
+                default:
+                    return; // Student-only or unknown audience
+            }
+
+            var loginIds = await staffLoginIds.ToListAsync();
+            if (loginIds.Count == 0) return;
+
+            var shortContent = announcement.Content.Length > 200
+                ? announcement.Content.Substring(0, 200) + "…"
+                : announcement.Content;
+            var priority = announcement.Priority is AnnouncementConstants.PriorityHigh
+                                                  or AnnouncementConstants.PriorityUrgent
+                ? "High" : "Normal";
+
+            var notifications = loginIds.Select(loginId => new Notification
+            {
+                Id            = Guid.NewGuid(),
+                SchoolId      = announcement.SchoolId,
+                RecipientId   = loginId,
+                RecipientType = "Staff",
+                Type          = "Announcement",
+                Title         = announcement.Title,
+                Content       = shortContent,
+                ReferenceId   = announcement.Id,
+                ReferenceType = "Announcement",
+                ActionUrl     = "/announcements",
                 Priority      = priority,
             }).ToList();
 

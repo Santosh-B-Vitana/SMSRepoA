@@ -42,7 +42,7 @@ namespace SmsApi.Controllers
 
         // Leave Types
         [HttpGet("types")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager,Parent")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff + ",Parent")]
         public async Task<ActionResult<LeaveTypeListResponse>> GetLeaveTypes([FromQuery] string? applicableTo = null)
         {
             var schoolId = GetSchoolId();

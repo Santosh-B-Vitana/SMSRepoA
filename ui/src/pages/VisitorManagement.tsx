@@ -14,13 +14,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, Clock, CheckCircle, XCircle, Eye, Search, Phone, Building2,
   CalendarClock, LogOut, UserCheck, AlertCircle, RefreshCw, ClipboardList, Loader2,
-  Car, IdCard, ChevronLeft, ChevronRight, BadgeCheck, Link2
+  Car, IdCard, ChevronLeft, ChevronRight, BadgeCheck, Link2, ShieldOff
 } from "lucide-react";
 import {
   visitorApi, VisitorBasic, VisitorFull, VisitorPreRegistration, VisitorStats,
   VisitorFilters, CheckInDto, PreRegisterDto
 } from "@/services/api/visitorApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -350,6 +351,8 @@ function PreRegisterDialog({ onClose, onSuccess }: { onClose: () => void; onSucc
 function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
   visitId: string; onClose: () => void; onCheckOut: (id: string) => void;
 }) {
+  const { hasUserPermission } = usePermissions();
+  const canManageVisitors = hasUserPermission('Visitor', 'Create');
   const [visit, setVisit] = useState<VisitorFull | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -414,7 +417,7 @@ function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>Close</Button>
-          {visit.status === "checked_in" && (
+          {visit.status === "checked_in" && canManageVisitors && (
             <Button className="gap-1 bg-amber-600 hover:bg-amber-700" onClick={() => { onCheckOut(visit.id); onClose(); }}>
               <LogOut className="h-4 w-4" />Check Out
             </Button>
@@ -428,6 +431,11 @@ function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function VisitorManagement() {
+  const { hasUserPermission } = usePermissions();
+  const canViewVisitors    = hasUserPermission('Visitor', 'View');
+  const canManageVisitors  = hasUserPermission('Visitor', 'Create');
+  const canDeleteVisitors  = hasUserPermission('Visitor', 'Delete');
+
   const [tab, setTab] = useState("live");
   const [stats, setStats] = useState<VisitorStats | null>(null);
   const [liveVisitors, setLiveVisitors] = useState<VisitorBasic[]>([]);
@@ -542,6 +550,19 @@ export default function VisitorManagement() {
   function onCheckInSuccess() { loadLiveAndStats(); loadToday(); }
   function onPreRegSuccess() { loadPreRegs(); }
 
+  if (!canViewVisitors) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-4 text-muted-foreground">
+        <ShieldOff className="h-16 w-16 opacity-30" />
+        <div className="text-center">
+          <p className="text-lg font-semibold">Access Restricted</p>
+          <p className="text-sm mt-1">You don't have permission to view Visitor Management.</p>
+          <p className="text-sm">Contact your administrator to request access.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -553,12 +574,16 @@ export default function VisitorManagement() {
           <p className="text-muted-foreground">Track and manage school visitors in real time</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowPreReg(true)} className="gap-1">
-            <CalendarClock className="h-4 w-4" />Pre-Register
-          </Button>
-          <Button onClick={() => setShowCheckIn(true)} className="gap-1 bg-green-600 hover:bg-green-700">
-            <UserPlus className="h-4 w-4" />Check In Visitor
-          </Button>
+          {canManageVisitors && (
+            <Button variant="outline" onClick={() => setShowPreReg(true)} className="gap-1">
+              <CalendarClock className="h-4 w-4" />Pre-Register
+            </Button>
+          )}
+          {canManageVisitors && (
+            <Button onClick={() => setShowCheckIn(true)} className="gap-1 bg-green-600 hover:bg-green-700">
+              <UserPlus className="h-4 w-4" />Check In Visitor
+            </Button>
+          )}
         </div>
       </div>
 
@@ -671,9 +696,11 @@ export default function VisitorManagement() {
                 <UserCheck className="h-14 w-14 mx-auto mb-3 opacity-20" />
                 <p className="font-medium text-lg">No visitors currently inside</p>
                 <p className="text-sm">All clear! Campus is visitor-free right now.</p>
-                <Button className="mt-4 gap-1 bg-green-600 hover:bg-green-700" onClick={() => setShowCheckIn(true)}>
-                  <UserPlus className="h-4 w-4" />Check In Visitor
-                </Button>
+                {canManageVisitors && (
+                  <Button className="mt-4 gap-1 bg-green-600 hover:bg-green-700" onClick={() => setShowCheckIn(true)}>
+                    <UserPlus className="h-4 w-4" />Check In Visitor
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -723,12 +750,16 @@ export default function VisitorManagement() {
                           <Button variant="ghost" size="icon" onClick={() => setViewVisitId(v.id)} title="View details">
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="text-amber-600 hover:bg-amber-50" onClick={() => handleCheckOut(v.id)} title="Check out">
-                            <LogOut className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50" onClick={() => handleCancel(v.id)} title="Cancel">
-                            <XCircle className="h-4 w-4" />
-                          </Button>
+                          {canManageVisitors && (
+                            <Button variant="ghost" size="icon" className="text-amber-600 hover:bg-amber-50" onClick={() => handleCheckOut(v.id)} title="Check out">
+                              <LogOut className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canDeleteVisitors && (
+                            <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50" onClick={() => handleCancel(v.id)} title="Cancel">
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -866,7 +897,7 @@ export default function VisitorManagement() {
                         </TableCell>
                         <TableCell><Badge className={statusInfo.className}>{statusInfo.label}</Badge></TableCell>
                         <TableCell className="text-right">
-                          {pr.status === "pending" && (
+                          {pr.status === "pending" && canManageVisitors && (
                             <div className="flex justify-end gap-1">
                               <Button size="sm" className="gap-1 h-7 text-xs" onClick={() => handleApprovePreReg(pr.id)}>
                                 <BadgeCheck className="h-3 w-3" />Approve
@@ -876,7 +907,7 @@ export default function VisitorManagement() {
                               </Button>
                             </div>
                           )}
-                          {pr.status === "approved" && (
+                          {pr.status === "approved" && canManageVisitors && (
                             <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => setShowCheckIn(true)}>
                               Check In Now
                             </Button>

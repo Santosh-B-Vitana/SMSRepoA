@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import leaveManagementApi, { LeaveRequest, LeaveType } from "../../services/api/leaveManagementApi";
+import { studentApi } from "../../services/api/studentApi";
 
 interface StudentLeaveBalance {
   studentId: string;
@@ -86,46 +87,26 @@ export function ParentStudentLeaveRequest() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Fetch leave types for students
+        // Fetch leave types applicable to students (parent-accessible endpoint)
         const types = await leaveManagementApi.getLeaveTypes("Student");
         setLeaveTypes(types);
 
-        // Fetch my leave requests
-        const response = await leaveManagementApi.getMyLeaveRequests(1, 100);
-        setLeaveRequests(response.items);
-
-        // Mock student data - in production, get from API
-        setStudents([
-          {
-            studentId: "STU001",
-            studentName: "Arjun Sharma",
-            leaveType: "Regular",
-            availableDays: 10,
-            usedDays: 2,
-            remainingDays: 8
-          },
-          {
-            studentId: "STU002",
-            studentName: "Priya Sharma",
-            leaveType: "Regular",
-            availableDays: 10,
-            usedDays: 0,
-            remainingDays: 10
-          },
+        // Fetch this parent's children and their leave history in parallel
+        const [children, leaveResponse] = await Promise.all([
+          studentApi.getMyChildren(),
+          leaveManagementApi.getMyChildrenLeaves(1, 100),
         ]);
 
-        // Fetch notifications
-        const mockNotifications: StudentLeaveNotification[] = [
-          {
-            id: "1",
-            studentId: "STU001",
-            message: "Your leave request for Jan 15-17 has been approved",
-            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-            read: false,
-            type: "approved"
-          },
-        ];
-        setNotifications(mockNotifications);
+        setStudents(children.map(child => ({
+          studentId: child.id,
+          studentName: child.name,
+          leaveType: "Leave",
+          availableDays: 365,
+          usedDays: 0,
+          remainingDays: 365,
+        })));
+
+        setLeaveRequests(leaveResponse.items);
       } catch (error: any) {
         console.error("Failed to fetch:", error);
         toast({
@@ -176,14 +157,12 @@ export function ParentStudentLeaveRequest() {
     try {
       setSubmitting(true);
 
-      // Create leave request
-      const newRequest = await leaveManagementApi.createLeaveRequest({
+      // Submit student leave request via parent-authorised endpoint
+      const newRequest = await leaveManagementApi.createStudentLeave(selectedStudent, {
         leaveTypeId: form.leaveTypeId,
         startDate: form.startDate,
         endDate: form.endDate,
         reason: form.reason,
-        documentUrl: fileInput ? "uploaded" : undefined,
-        emergencyContact: form.emergencyContact
       });
 
       // Add notification

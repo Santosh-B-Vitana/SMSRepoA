@@ -296,7 +296,7 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6 py-4">
+        <div className="overflow-y-auto flex-1 min-h-0 px-6 py-4">
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
@@ -361,7 +361,7 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
               </table>
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="px-6 py-4 border-t gap-2">
           <Button variant="outline" onClick={onClose}>Close</Button>
@@ -441,7 +441,10 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
 }) {
   const [roleId, setRoleId] = useState("");
   const [saving, setSaving] = useState(false);
-  const assignedIds = new Set(user.assignedRoles.map(r => r.id));
+  // Keep local copy of assigned roles so optimistic removal updates the list immediately
+  const [localRoles, setLocalRoles] = useState(user.assignedRoles);
+
+  const assignedIds = new Set(localRoles.map(r => r.id));
   const available = roles.filter(r => r.isActive && !assignedIds.has(r.id));
   const selectedRole = roles.find(r => r.id === roleId);
   const selectedCfg = selectedRole ? getRoleConfig(selectedRole.name) : null;
@@ -451,6 +454,9 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
     setSaving(true);
     try {
       await roleApi.assignRoleToUser(user.id, roleId);
+      const newRole = roles.find(r => r.id === roleId);
+      if (newRole) setLocalRoles(prev => [...prev, { id: newRole.id, name: newRole.name, displayName: newRole.displayName, isActive: true }]);
+      setRoleId("");
       toast.success(`Role assigned to ${user.firstName} ${user.lastName}`);
       onSaved(); onClose();
     } catch { toast.error("Failed to assign role"); }
@@ -461,6 +467,7 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
     setSaving(true);
     try {
       await roleApi.removeRoleFromUser(user.id, rid);
+      setLocalRoles(prev => prev.filter(r => r.id !== rid)); // optimistic update
       toast.success("Role removed");
       onSaved();
     } catch { toast.error("Failed to remove role"); }
@@ -480,11 +487,11 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
         <div className="space-y-5">
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Currently assigned</p>
-            {user.assignedRoles.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No roles assigned yet</p>
+            {localRoles.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No roles assigned — this user will use designation-based defaults until a role is assigned and then removed.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {user.assignedRoles.map(r => {
+                {localRoles.map(r => {
                   const c = getRoleConfig(r.name ?? "");
                   return (
                     <Badge key={r.id} variant="outline" className={`gap-1.5 pr-1 ${c.badge}`}>

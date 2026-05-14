@@ -213,26 +213,10 @@ export function StaffManager() {
                         { key: 'status', label: 'Status' },
                       ]}
                     />
-                    <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="gap-1.5">
-                          <Plus className="h-4 w-4" />
-                          {t('staffMgmt.addStaff')}
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle>
-                            {selectedStaff ? t('staffMgmt.editStaff') : t('staffMgmt.addStaff')}
-                          </DialogTitle>
-                        </DialogHeader>
-                        <StaffForm
-                          staff={selectedStaff}
-                          onSuccess={handleStaffSuccess}
-                          onCancel={() => { setIsAddDialogOpen(false); setSelectedStaff(null); }}
-                        />
-                      </DialogContent>
-                    </Dialog>
+                    <Button className="gap-1.5" onClick={() => setIsAddDialogOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      {t('staffMgmt.addStaff')}
+                    </Button>
                   </>
                 ) : (
                   <Button variant="outline" onClick={() => setView("directory")} className="gap-1.5">
@@ -592,6 +576,15 @@ export function StaffManager() {
           )}
         </div>
       </div>
+
+      {/* StaffForm renders its own full-screen overlay — mount outside the page layout */}
+      {isAddDialogOpen && (
+        <StaffForm
+          staff={selectedStaff}
+          onSuccess={handleStaffSuccess}
+          onClose={() => { setIsAddDialogOpen(false); setSelectedStaff(null); }}
+        />
+      )}
     </ErrorBoundary>
   );
 }

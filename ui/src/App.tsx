@@ -176,8 +176,8 @@ function App() {
                   <Route path="/students" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><Students /></Layout></ProtectedRoute>} />
                   <Route path="/students/:id" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><StudentProfile /></Layout></ProtectedRoute>} />
                   <Route path="/students/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StudentEdit /></Layout></ProtectedRoute>} />
-                  <Route path="/staff" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Staff /></Layout></ProtectedRoute>} />
-                  <Route path="/staff/:id" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffProfile /></Layout></ProtectedRoute>} />
+                   <Route path="/staff" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Staff /></Layout></ProtectedRoute>} />
+                   <Route path="/staff/:id" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><StaffProfile /></Layout></ProtectedRoute>} />
                   <Route path="/staff/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffEdit /></Layout></ProtectedRoute>} />
                   <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffAttendance /></Layout></ProtectedRoute>} />
                   <Route path="/student-attendance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><StudentAttendance /></Layout></ProtectedRoute>} />
@@ -199,7 +199,7 @@ function App() {
 
                   {/* ── Protected: admin-only finance ────────────────────── */}
                   <Route path="/finance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Finance /></Layout></ProtectedRoute>} />
-                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Fees /></Layout></ProtectedRoute>} />
+                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Fees /></Layout></ProtectedRoute>} />
                   <Route path="/student-fee-details/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><StudentFeeDetails /></ProtectedRoute>} />
                   <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><FeeConcession /></Layout></ProtectedRoute>} />
                   <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PaymentGateway /></Layout></ProtectedRoute>} />
@@ -216,9 +216,9 @@ function App() {
                   <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Analytics /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: optional modules ───────────────────────── */}
-                  <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
+                   <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/library" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
+                   <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/health" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/wallet" element={<ProtectedRoute><Layout><ModuleGuard module="wallet"><Wallet /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/store" element={<ProtectedRoute><Layout><ModuleGuard module="store"><Store /></ModuleGuard></Layout></ProtectedRoute>} />
@@ -229,7 +229,7 @@ function App() {
                   <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
                   <Route path="/configuration-settings" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ConfigurationSettings /></Layout></ProtectedRoute>} />
                   <Route path="/role-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><RoleManagement /></Layout></ProtectedRoute>} />
-                  <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
                   <Route path="/id-cards" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><IdCards /></Layout></ProtectedRoute>} />
                   <Route path="/security" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><SecurityDashboardPage /></Layout></ProtectedRoute>} />
                   <Route path="/advanced-analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdvancedAnalytics /></Layout></ProtectedRoute>} />

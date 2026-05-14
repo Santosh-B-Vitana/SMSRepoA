@@ -53,6 +53,9 @@ namespace SmsApi.Services
         // Leave Balance
         Task<LeaveBalanceDto> GetStaffLeaveBalanceAsync(Guid staffId, Guid schoolId);
         Task<LeaveBalanceDto> UpdateLeaveBalanceAsync(Guid schoolId, Guid staffId, UpdateLeaveBalanceDto dto);
+
+        /// <summary>Assign system roles to all active staff logins that are currently unroled.</summary>
+        Task<int> BulkAutoAssignRolesAsync(Guid schoolId);
     }
 
     public class StaffService : IStaffService
@@ -311,6 +314,8 @@ namespace SmsApi.Services
                 ["Warden"]              = "hostel warden",
                 ["Admissions Officer"]  = "admissions officer",
                 ["Counselor"]           = "counselor",
+                ["Receptionist"]        = "receptionist",
+                ["Front Desk Officer"]  = "receptionist",
             };
             var loginRole = roleMap.TryGetValue(staff.Designation ?? "", out var r) ? r : "staff";
 
@@ -355,6 +360,8 @@ namespace SmsApi.Services
                 ["Warden"]              = "Hostel Warden",
                 ["Admissions Officer"]  = "Admissions Officer",
                 ["Counselor"]           = "Counselor",
+                ["Receptionist"]        = "Receptionist",
+                ["Front Desk Officer"]  = "Receptionist",
             };
 
             if (systemRoleNameMap.TryGetValue(staff.Designation ?? "", out var roleName))
@@ -376,6 +383,74 @@ namespace SmsApi.Services
                     _logger.LogInformation("Auto-assigned role '{Role}' to new staff {EmployeeId}", roleName, staff.EmployeeId);
                 }
             }
+        }
+
+        /// <summary>
+        /// Assigns system roles to existing active staff whose login has no UserRole yet.
+        /// Safe to run on every startup — skips logins that already have a role assigned.
+        /// </summary>
+        public async Task<int> BulkAutoAssignRolesAsync(Guid schoolId)
+        {
+            var systemRoleNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["principal"]          = "Principal",
+                ["vice principal"]     = "Vice Principal",
+                ["head of department"] = "Head of Department",
+                ["class teacher"]      = "Class Teacher",
+                ["teacher"]            = "Teacher",
+                ["subject teacher"]    = "Teacher",
+                ["accountant"]         = "Accountant",
+                ["hr manager"]         = "HR Manager",
+                ["librarian"]          = "Librarian",
+                ["transport manager"]  = "Transport Manager",
+                ["hostel warden"]      = "Hostel Warden",
+                ["admissions officer"] = "Admissions Officer",
+                ["counselor"]          = "Counselor",
+                ["receptionist"]       = "Receptionist",
+                ["front desk officer"] = "Receptionist",
+                ["support staff"]      = "Support Staff",
+            };
+
+            // Get all system roles for this school once
+            var systemRoles = await _context.Roles
+                .Where(r => r.SchoolId == schoolId && r.IsSystemRole && !r.IsDeleted)
+                .ToListAsync();
+
+            // Get all logins that have no UserRole
+            var loginsWithoutRole = await _context.UserLogins
+                .Where(u => u.SchoolId == schoolId && !u.IsDeleted &&
+                            !_context.UserRoles.Any(ur => ur.UserId == u.Id && ur.SchoolId == schoolId))
+                .ToListAsync();
+
+            int assigned = 0;
+            var newRoles = new List<UserRole>();
+
+            foreach (var login in loginsWithoutRole)
+            {
+                if (!systemRoleNameMap.TryGetValue(login.Role ?? "", out var roleName)) continue;
+                var sysRole = systemRoles.FirstOrDefault(r => r.Name == roleName);
+                if (sysRole == null) continue;
+
+                newRoles.Add(new UserRole
+                {
+                    Id        = Guid.NewGuid(),
+                    UserId    = login.Id,
+                    RoleId    = sysRole.Id,
+                    SchoolId  = schoolId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
+                assigned++;
+            }
+
+            if (newRoles.Count > 0)
+            {
+                _context.UserRoles.AddRange(newRoles);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("BulkAutoAssignRoles: assigned {Count} missing roles for school {SchoolId}", assigned, schoolId);
+            }
+
+            return assigned;
         }
 
         private async Task CreateSalaryBreakdownAsync(Staff staff, decimal totalSalary)

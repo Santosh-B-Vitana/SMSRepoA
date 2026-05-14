@@ -363,4 +363,14 @@ namespace SmsApi.Models.DTOs
         public DateTime? ToDate { get; set; }
         public Guid? TargetClassId { get; set; }
     }
+
+    // ==================== MEDIA UPLOAD DTO ====================
+
+    public class UploadMediaResponse
+    {
+        public string Url { get; set; } = string.Empty;
+        public string MediaType { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public long FileSizeBytes { get; set; }
+    }
 }

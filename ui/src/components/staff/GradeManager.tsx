@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Award, BarChart3, BookOpen, ClipboardList, Plus,
-  Trash2, Filter, RefreshCw, CheckCircle2, AlertCircle, ChevronDown
+  Trash2, Filter, RefreshCw, CheckCircle2, AlertCircle, ChevronDown, ShieldOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StaffExamMarksTab } from "./StaffExamMarksTab";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import {
   gradesApi,
   type GradeItemResponse,
@@ -115,6 +116,10 @@ function StatsBar() {
 
 function GradeItemsTab() {
   const { user } = useAuth();
+  const { hasUserPermission } = usePermissions();
+  const canCreateGrade = hasUserPermission('Grades', 'Create');
+  const canEditGrade = hasUserPermission('Grades', 'Edit');
+  const canDeleteGrade = hasUserPermission('Grades', 'Delete');
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const qc = useQueryClient();
   const [filterClassId, setFilterClassId] = useState<string>("");
@@ -216,7 +221,7 @@ function GradeItemsTab() {
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-          <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }}><Plus className="h-4 w-4 mr-1" /> New Item</Button>
+            <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }} disabled={!canCreateGrade} title={!canCreateGrade ? 'No permission to create grade items' : undefined}><Plus className="h-4 w-4 mr-1" /> New Item</Button>
         </div>
       </div>
       <Card>
@@ -302,6 +307,9 @@ function GradeItemsTab() {
 // --- STUDENT GRADES TAB ---
 
 function StudentGradesTab() {
+  const { hasUserPermission } = usePermissions();
+  const canCreateGrade = hasUserPermission('Grades', 'Create');
+  const canEditGrade = hasUserPermission('Grades', 'Edit');
   const qc = useQueryClient();
   const [filterItemId, setFilterItemId] = useState("");
   const [showBulk, setShowBulk] = useState(false);
@@ -384,7 +392,7 @@ function StudentGradesTab() {
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-          <Button size="sm" onClick={() => { setBulkError(null); setBulkResult(null); setBulkItemId(""); setStudentMarks({}); setShowBulk(true); }}><Plus className="h-4 w-4 mr-1" /> Enter Grades</Button>
+            <Button size="sm" onClick={() => { setBulkError(null); setBulkResult(null); setBulkItemId(""); setStudentMarks({}); setShowBulk(true); }} disabled={!canCreateGrade} title={!canCreateGrade ? 'No permission to enter grades' : undefined}><Plus className="h-4 w-4 mr-1" /> Enter Grades</Button>
         </div>
       </div>
       <Card>
@@ -491,7 +499,7 @@ function StudentGradesTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBulk(false)}>Close</Button>
-            <Button onClick={handleBulkSubmit} disabled={bulkMut.isPending || !selectedGradeItem}>{bulkMut.isPending ? "Saving..." : "Save Grades"}</Button>
+              <Button onClick={handleBulkSubmit} disabled={bulkMut.isPending || !selectedGradeItem || !canEditGrade} title={!canEditGrade ? 'No permission to save grades' : undefined}>{bulkMut.isPending ? "Saving..." : "Save Grades"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -907,6 +915,30 @@ function StudentGradesHistoryTab() {
 // --- MAIN COMPONENT ---
 
 export function GradeManager() {
+  const { hasUserPermission, permissionsLoaded } = usePermissions();
+  const canViewGrades = hasUserPermission('Grades', 'View');
+  const canEditGrades = hasUserPermission('Grades', 'Edit') || hasUserPermission('Grades', 'Create');
+  const accessDenied = permissionsLoaded && !canViewGrades && !canEditGrades;
+
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-4">
+        <div className="rounded-full bg-destructive/10 p-5">
+          <ShieldOff className="h-10 w-10 text-destructive" />
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold">Access Restricted</h2>
+          <p className="text-muted-foreground max-w-sm">
+            You don't have permission to view or edit grades. Contact your administrator to get the Subject Teacher role.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => toast.info("Ask your admin to assign you a Subject Teacher or Class Teacher role.")}>
+          How to get access?
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>

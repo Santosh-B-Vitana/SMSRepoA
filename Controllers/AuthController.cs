@@ -119,6 +119,39 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid username or password" });
         }
 
+        // ── Parent portal guard: block login if ALL linked students are inactive ──
+        if (string.Equals(userLogin.Role, "Parent", StringComparison.OrdinalIgnoreCase))
+        {
+            // Primary path: normalized Guardian → GuardianStudent → Student
+            var linkedStatuses = await _context.Guardians
+                .Where(g => g.UserLoginId == userLogin.Id)
+                .SelectMany(g => g.StudentLinks!)
+                .Join(_context.Students.IgnoreQueryFilters(),
+                      gs => gs.StudentId,
+                      s => s.Id,
+                      (gs, s) => s.Status)
+                .ToListAsync();
+
+            // Fallback: legacy StudentGuardians (email-matched)
+            if (linkedStatuses.Count == 0)
+            {
+                var parentEmail = userLogin.Email.ToLower();
+                linkedStatuses = await _context.StudentGuardians
+                    .Where(sg => sg.Email != null && sg.Email.ToLower() == parentEmail)
+                    .Join(_context.Students.IgnoreQueryFilters(),
+                          sg => sg.StudentId,
+                          s => s.Id,
+                          (sg, s) => s.Status)
+                    .ToListAsync();
+            }
+
+            if (linkedStatuses.Count > 0 && linkedStatuses.All(s => s != "active"))
+            {
+                _logger.LogWarning("Parent login blocked — all linked students inactive for {Email}", userLogin.Email);
+                return Unauthorized(new { message = "Access denied. Your child's account has been deactivated. Please contact the school administration." });
+            }
+        }
+
         // Successful login - check 2FA first
         if (userLogin.TwoFactorEnabled && !string.IsNullOrEmpty(userLogin.TwoFactorSecret))
         {

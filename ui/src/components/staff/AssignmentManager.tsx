@@ -6,7 +6,7 @@ import {
   ChevronRight, CheckCircle2, AlertCircle, Timer, X, Pencil,
   GraduationCap, MoreHorizontal, TrendingUp, ClipboardCheck,
   BarChart3, Clock, Tag, ClipboardList, CheckCheck, XCircle,
-  Loader2, Save, ChevronDown, ChevronUp, Award,
+  Loader2, Save, ChevronDown, ChevronUp, Award, ShieldOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { assignmentApi, type AssignmentResponse, type AssignmentRosterEntry, type AssignmentRosterResponse } from "@/services/api/assignmentApi";
 import { academicApi, type MyClassAssignment } from "@/services/api/academicApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { z } from "zod";
 
 // ─── form schema ─────────────────────────────────────────────────────────────
@@ -684,6 +685,10 @@ function AssignmentGradingSheet({
 
 // ─── main component ───────────────────────────────────────────────────────────
 export function AssignmentManager() {
+  const { hasUserPermission, permissionsLoaded } = usePermissions();
+  const canCreateAssignment = hasUserPermission('Assignments', 'Create');
+  const canViewAssignments = hasUserPermission('Assignments', 'View');
+  const accessDenied = permissionsLoaded && !canViewAssignments && !canCreateAssignment;
   const [assignments,      setAssignments]      = useState<AssignmentResponse[]>([]);
   const [classAssignments, setClassAssignments] = useState<MyClassAssignment[]>([]);
   const [loading,          setLoading]          = useState(true);
@@ -839,6 +844,25 @@ export function AssignmentManager() {
   };
 
   // ── render ─────────────────────────────────────────────────────────────────
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-4">
+        <div className="rounded-full bg-destructive/10 p-5">
+          <ShieldOff className="h-10 w-10 text-destructive" />
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold">Access Restricted</h2>
+          <p className="text-muted-foreground max-w-sm">
+            You don't have permission to view or create assignments. Contact your administrator to get the Subject Teacher role.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => toast.info("Ask your admin to assign you a Subject Teacher or Class Teacher role.")}>
+          How to get access?
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
 
@@ -848,7 +872,7 @@ export function AssignmentManager() {
           <h1 className="text-2xl font-bold tracking-tight">My Assignments</h1>
           <p className="text-sm text-muted-foreground mt-0.5">All assignments across your classes at a glance</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="shrink-0">
+        <Button onClick={() => setShowCreate(true)} className="shrink-0" disabled={!canCreateAssignment} title={!canCreateAssignment ? 'No permission to create assignments' : undefined}>
           <Plus className="h-4 w-4 mr-1.5" />New Assignment
         </Button>
       </div>
@@ -978,7 +1002,7 @@ export function AssignmentManager() {
             {assignments.length === 0 ? "Create your first assignment to get started." : "Try adjusting your filters or search."}
           </p>
           {assignments.length === 0 && (
-            <Button size="sm" className="mt-4" onClick={() => setShowCreate(true)}>
+            <Button size="sm" className="mt-4" onClick={() => setShowCreate(true)} disabled={!canCreateAssignment} title={!canCreateAssignment ? 'No permission to create assignments' : undefined}>
               <Plus className="h-3.5 w-3.5 mr-1.5" />Create First Assignment
             </Button>
           )}

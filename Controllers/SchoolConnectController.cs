@@ -13,11 +13,19 @@ namespace SmsApi.Controllers
     public class SchoolConnectController : ControllerBase
     {
         private readonly ISchoolConnectService _schoolConnectService;
+        private readonly IFileStorageService _fileStorage;
+        private readonly IFileValidationService _fileValidation;
         private readonly ILogger<SchoolConnectController> _logger;
 
-        public SchoolConnectController(ISchoolConnectService schoolConnectService, ILogger<SchoolConnectController> logger)
+        public SchoolConnectController(
+            ISchoolConnectService schoolConnectService,
+            IFileStorageService fileStorage,
+            IFileValidationService fileValidation,
+            ILogger<SchoolConnectController> logger)
         {
             _schoolConnectService = schoolConnectService;
+            _fileStorage = fileStorage;
+            _fileValidation = fileValidation;
             _logger = logger;
         }
 
@@ -551,6 +559,61 @@ namespace SmsApi.Controllers
             {
                 _logger.LogError(ex, "Error getting analytics");
                 return StatusCode(500, new { message = "An error occurred while fetching analytics" });
+            }
+        }
+
+        #endregion
+
+        #region Media Upload
+
+        /// <summary>
+        /// Upload a media file (image or document) for use in a School Connect post.
+        /// Returns the public URL to embed in the post.
+        /// </summary>
+        [HttpPost("upload")]
+        [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB
+        public async Task<ActionResult<UploadMediaResponse>> UploadMedia(IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                    return BadRequest(new { message = "No file provided." });
+
+                var (isValid, errorMessage) = await _fileValidation.ValidateAsync(file);
+                if (!isValid)
+                    return BadRequest(new { message = errorMessage });
+
+                var schoolId = GetSchoolId();
+                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+                var key = $"{schoolId}/school-connect/{Guid.NewGuid()}{ext}";
+
+                using var stream = file.OpenReadStream();
+                var saved = await _fileStorage.SaveFileAsync(key, stream);
+                if (!saved)
+                    return StatusCode(500, new { message = "Failed to save the file." });
+
+                var url = _fileStorage.GetPublicUrl(key);
+
+                // Determine media type from extension
+                var imageExts = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+                var mediaType = imageExts.Contains(ext) ? "image" : "document";
+
+                return Ok(new UploadMediaResponse
+                {
+                    Url = url,
+                    MediaType = mediaType,
+                    FileName = file.FileName,
+                    FileSizeBytes = file.Length
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return BadRequest(new { message = "Invalid file path." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading media");
+                return StatusCode(500, new { message = "An error occurred while uploading the file." });
             }
         }
 

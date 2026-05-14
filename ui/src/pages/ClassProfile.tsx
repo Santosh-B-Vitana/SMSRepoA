@@ -441,7 +441,7 @@ export default function ClassProfile() {
 
                     <div className="flex justify-between items-center pt-4">
                       <p className="text-sm text-muted-foreground">
-                        Showing {visibleRecords} of {attendanceHistory.length} records
+                        Showing {Math.min(visibleRecords, attendanceHistory.length)} of {attendanceHistory.length} records
                       </p>
                       {visibleRecords < attendanceHistory.length ? (
                         <Button variant="outline" onClick={handleLoadMore}>

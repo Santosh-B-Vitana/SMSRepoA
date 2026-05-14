@@ -131,6 +131,14 @@ await SeedEssentialDataAsync(app);
 // ── Test data seeding: students, staff, parents, fees, transport, exams ────
 await SeedTestDataAsync(app);
 
+// ── Backfill: assign system roles to existing staff logins that have none ──
+{
+    using var scope = app.Services.CreateScope();
+    var staffSvc = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IStaffService>();
+    var demoSchoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+    await staffSvc.BulkAutoAssignRolesAsync(demoSchoolId);
+}
+
 // Performance monitoring (logs slow requests > 500ms, SLA breach > 2000ms)
 app.UsePerformanceMonitoring();
 
@@ -169,6 +177,18 @@ if (app.Environment.IsDevelopment())
 
 // Use CORS - must be early in pipeline
 app.UseCors(app.Environment.IsDevelopment() ? "AllowAll" : "AllowSpecificOrigins");
+
+// Serve uploaded files at /files/* (path-traversal-safe: served only from configured uploads dir)
+var uploadsPath = Path.GetFullPath(
+    app.Configuration["FileStorage:BasePath"]
+    ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads"));
+if (!Directory.Exists(uploadsPath))
+    Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
+    RequestPath = "/files"
+});
 
 // HSTS: tell browsers to always use HTTPS (production only — skip in dev/test)
 if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
@@ -588,6 +608,13 @@ static async Task SeedEssentialDataAsync(WebApplication app)
             await db.SaveChangesAsync();
             logger.LogInformation("Backfilled {Count} health records for existing students", healthRecords.Count);
         }
+
+        // 10. Sync system role permissions to match current code definition on every startup.
+        //     This adds missing permissions (e.g. Assignments added to Teacher role) and
+        //     removes revoked ones (e.g. Attendance.Create/Edit removed from Teacher role).
+        var permService = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IPermissionsService>();
+        await permService.EnsureSystemRolesAsync(schoolId);
+        logger.LogInformation("Synced system role permissions for school {SchoolId}", schoolId);
     }
     catch (Exception ex)
     {

@@ -209,11 +209,12 @@ namespace SmsApi.Services
                 throw new ArgumentException("Announcement cannot be scheduled more than 1 year in advance");
 
             // VALIDATION 7: Duplicate announcement prevention (same title+content within 24h)
+            var cutoff = DateTime.UtcNow.AddHours(-24);
             var existingAnnouncement = await _context.Announcements
                 .AnyAsync(a => a.SchoolId == schoolId &&
                               a.Title == dto.Title.Trim() &&
                               a.Content == dto.Content.Trim() &&
-                              (DateTime.UtcNow - a.CreatedAt).TotalHours < 24);
+                              a.CreatedAt >= cutoff);
             if (existingAnnouncement)
                 throw new InvalidOperationException("A similar announcement was already created recently. Please wait before creating another.");
 
@@ -248,7 +249,7 @@ namespace SmsApi.Services
                 Title = dto.Title,
                 Content = dto.Content,
                 Priority = dto.Priority,
-                TargetAudience = dto.TargetAudience,
+                TargetAudience = dto.TargetAudience.ToLower(),
                 CreatedByStaffId = staffId,
                 PublishedDate = dto.PublishImmediately ? DateTime.UtcNow : (dto.ScheduleDate ?? DateTime.UtcNow),
                 ExpiryDate = dto.ExpiryDate,
@@ -1006,7 +1007,7 @@ namespace SmsApi.Services
         private async Task<List<AnnouncementRecipient>> GetStaffAsRecipients(Announcement announcement)
         {
             var staff = await _context.StaffMembers
-                .Where(s => s.SchoolId == announcement.SchoolId && s.Status == "Active")
+                .Where(s => s.SchoolId == announcement.SchoolId && s.Status.ToLower() == "active")
                 .Select(s => s.Id)
                 .ToListAsync();
 
@@ -1102,7 +1103,7 @@ namespace SmsApi.Services
 
                 case "staff":
                     var staff = await _context.StaffMembers
-                        .Where(s => s.SchoolId == schoolId && s.Status == "Active")
+                        .Where(s => s.SchoolId == schoolId && s.Status.ToLower() == "active")
                         .Select(s => s.Id)
                         .ToListAsync();
                     recipients.AddRange(staff);

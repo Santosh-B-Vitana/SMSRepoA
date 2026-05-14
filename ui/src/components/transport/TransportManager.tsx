@@ -10,9 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X } from "lucide-react";
+import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X, ShieldOff } from "lucide-react";
 import { transportApi, TransportRoute, TransportStudent, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
 
 // ─── Route Form Dialog ────────────────────────────────────────────────────────
 
@@ -357,6 +358,13 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TransportManager() {
+  const { hasUserPermission } = usePermissions();
+  const canViewTransport   = hasUserPermission('Transport', 'View');
+  const canManageRoutes    = hasUserPermission('Transport', 'Create');
+  const canEditRoutes      = hasUserPermission('Transport', 'Edit');
+  const canDeleteRoutes    = hasUserPermission('Transport', 'Delete');
+  const accessDenied       = !canViewTransport;
+
   const [routes, setRoutes] = useState<TransportRoute[]>([]);
   const [students, setStudents] = useState<TransportStudent[]>([]);
   const [routesLoading, setRoutesLoading] = useState(true);
@@ -434,12 +442,24 @@ export function TransportManager() {
     (s.pickupPoint ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-6">
+        <ShieldOff className="h-16 w-16 text-muted-foreground opacity-40" />
+        <h2 className="text-xl font-semibold">Access Restricted</h2>
+        <p className="text-muted-foreground max-w-sm">
+          You don't have permission to view Transport Management. Contact your administrator to request access.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Bus className="h-6 w-6 text-amber-600" />Transport Management</h1>
-          <p className="text-muted-foreground">Manage bus routes and student transport assignments</p>
+          <p className="text-muted-foreground">{canManageRoutes ? "Manage bus routes and student transport assignments" : "View bus routes and transport assignments"}</p>
         </div>
       </div>
 
@@ -476,8 +496,8 @@ export function TransportManager() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input className="pl-9 w-64" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            {tab === "routes" && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />Add Route</Button>}
-            {tab === "students" && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
+            {tab === "routes" && canManageRoutes && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />Add Route</Button>}
+            {tab === "students" && canManageRoutes && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
           </div>
         </div>
 
@@ -490,7 +510,7 @@ export function TransportManager() {
               <Bus className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No routes found</p>
               <p className="text-sm">Create your first bus route to get started</p>
-              <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />Add Route</Button>
+              {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />Add Route</Button>}
             </CardContent></Card>
           ) : (
             <div className="border rounded-lg">
@@ -530,8 +550,8 @@ export function TransportManager() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => setEditRoute(r)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRoute(r.id)}><Trash2 className="h-4 w-4" /></Button>
+                          {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditRoute(r)}><Pencil className="h-4 w-4" /></Button>}
+                          {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRoute(r.id)}><Trash2 className="h-4 w-4" /></Button>}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -553,13 +573,13 @@ export function TransportManager() {
                 <>
                   <p className="font-medium">No assigned student matches "{search}"</p>
                   <p className="text-sm mt-1">This student may not be assigned to a transport route yet.</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Route</Button>
+                  {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Route</Button>}
                 </>
               ) : (
                 <>
                   <p className="font-medium">No students assigned yet</p>
                   <p className="text-sm">Assign students to bus routes</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>
+                  {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>}
                 </>
               )}
             </CardContent></Card>
@@ -593,8 +613,8 @@ export function TransportManager() {
                       <TableCell><Badge variant={s.status === "active" ? "default" : "outline"}>{s.status}</Badge></TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveStudent(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                          {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>}
+                          {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveStudent(s.id)}><Trash2 className="h-4 w-4" /></Button>}
                         </div>
                       </TableCell>
                     </TableRow>

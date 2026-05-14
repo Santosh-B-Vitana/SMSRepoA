@@ -37,7 +37,9 @@ namespace SmsApi.Services
         Task EnsureParentNotificationsAsync();
         Task SeedAssignmentsAsync();
         Task SeedExamTypesAsync();
+        Task SeedExaminationsAsync();
         Task EnsureStudentEnrollmentsAsync();
+        Task SeedRbacTestStaffAsync();
     }
 
     public class DbSeeder : IDbSeeder
@@ -79,12 +81,14 @@ namespace SmsApi.Services
                     await SeedTimetablePeriodsAsync();
                     await SeedAssignmentsAsync();
                     await SeedExamTypesAsync();
+                    await SeedExaminationsAsync();
                     await EnsureStudentEnrollmentsAsync();
                     await SeedTransportAsync();
                     await SeedHostelAsync();
                     await SeedHealthAsync();
                     await EnsureParentChildrenTransportHostelAsync();
                     await EnsureParentNotificationsAsync();
+                    await SeedRbacTestStaffAsync();
                     return;
                 }
 
@@ -108,12 +112,14 @@ namespace SmsApi.Services
                 await SeedAssignmentsAsync();
                 await SeedLeaveTypesAsync();
                 await SeedExamTypesAsync();
+                await SeedExaminationsAsync();
                 await EnsureStudentEnrollmentsAsync();
                 await SeedTransportAsync();
                 await SeedHostelAsync();
                 await SeedHealthAsync();
                 await EnsureParentChildrenTransportHostelAsync();
                 await EnsureParentNotificationsAsync();
+                await SeedRbacTestStaffAsync();
 
                 _logger.LogInformation("✅ Database seeding completed successfully!");
             }
@@ -348,6 +354,11 @@ namespace SmsApi.Services
 
             foreach (var (username, email, firstName, lastName) in teacherData)
             {
+                // Look up the matching StaffMember so we can link via LinkedEntityId
+                var staffMember = await _context.StaffMembers.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == _schoolId);
+                var linkedEntityId = staffMember?.Id;
+
                 var existing = await _context.UserLogins.IgnoreQueryFilters()
                     .FirstOrDefaultAsync(u => u.Email == email);
 
@@ -361,6 +372,9 @@ namespace SmsApi.Services
                     existing.LastName = lastName;
                     existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(teacherPassword, workFactor: 12);
                     existing.UpdatedAt = DateTime.UtcNow;
+                    // Link UserLogin → StaffMember so ResolveStaffIdAsync works without email fallback
+                    if (linkedEntityId.HasValue)
+                        existing.LinkedEntityId = linkedEntityId.Value;
                 }
                 else
                 {
@@ -375,6 +389,7 @@ namespace SmsApi.Services
                         PasswordHash = BCrypt.Net.BCrypt.HashPassword(teacherPassword, workFactor: 12),
                         Role = "Teacher",
                         Status = "active",
+                        LinkedEntityId = linkedEntityId,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     });
@@ -1866,6 +1881,213 @@ namespace SmsApi.Services
             _context.ExamTypes.AddRange(examTypes);
             await _context.SaveChangesAsync();
             _logger.LogInformation("✅ {Count} exam types seeded", examTypes.Count);
+        }
+
+        // ─── RBAC Test Staff ─────────────────────────────────────────────────────
+        // Seeds one staff member + UserLogin per role group that needs RBAC testing:
+        //   Transport Manager, Accountant (fees/finance), Hostel Warden, Receptionist (admin/office)
+        public async Task SeedExaminationsAsync()
+        {
+            _logger.LogInformation("📝 Seeding examinations...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // Resolve the current/active academic year so seeded exams appear in the dropdown
+            var academicYear = await _context.AcademicYears
+                .Where(y => y.SchoolId == _schoolId && !y.IsDeleted)
+                .OrderByDescending(y => y.EndDate)
+                .Select(y => y.Name)
+                .FirstOrDefaultAsync() ?? "2026-27";
+
+            var examIds = new[]
+            {
+                Guid.Parse("eeeee001-0000-4000-8000-000000000001"),
+                Guid.Parse("eeeee001-0000-4000-8000-000000000002"),
+                Guid.Parse("eeeee001-0000-4000-8000-000000000003"),
+            };
+
+            // Idempotent: only add exams whose deterministic IDs are missing
+            var existingIds = await _context.Examinations
+                .Where(e => examIds.Contains(e.Id))
+                .Select(e => e.Id)
+                .ToListAsync();
+
+            var examsToAdd = new List<Exam>();
+            if (!existingIds.Contains(examIds[0]))
+                examsToAdd.Add(new() { Id = examIds[0], SchoolId = _schoolId, Name = "Mid-Term Mathematics",            Class = "Class 1", Subject = "Mathematics", ExamDate = DateTime.UtcNow.AddMonths(-3), TotalMarks = 100, PassingMarks = 35, AcademicYear = academicYear, Status = "completed", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            if (!existingIds.Contains(examIds[1]))
+                examsToAdd.Add(new() { Id = examIds[1], SchoolId = _schoolId, Name = "Unit Test 1 – English",           Class = "Class 2", Subject = "English",      ExamDate = DateTime.UtcNow.AddMonths(-2), TotalMarks =  50, PassingMarks = 18, AcademicYear = academicYear, Status = "completed", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            if (!existingIds.Contains(examIds[2]))
+                examsToAdd.Add(new() { Id = examIds[2], SchoolId = _schoolId, Name = "Quarterly Examination – Science", Class = "Class 3", Subject = "Science",      ExamDate = DateTime.UtcNow.AddMonths(-1), TotalMarks =  80, PassingMarks = 28, AcademicYear = academicYear, Status = "completed", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+
+            if (examsToAdd.Count > 0)
+            {
+                _context.Examinations.AddRange(examsToAdd);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ Added {Count} seed exams (academic year: {Year})", examsToAdd.Count, academicYear);
+            }
+            else
+            {
+                _logger.LogInformation("✅ Seed exams already present");
+            }
+
+            // Seed ExamResults — only for seed exams that have no results yet
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId)
+                .Take(10)
+                .ToListAsync();
+
+            if (students.Count == 0)
+            {
+                _logger.LogWarning("⚠️ No students found, skipping exam results seeding");
+                return;
+            }
+
+            var rng = new Random(42);
+            string[] subjects    = { "Mathematics", "English", "Science" };
+            int[]    maxMarkArr  = { 100, 50, 80 };
+            int[]    passMarkArr = { 35, 18, 28 };
+
+#pragma warning disable CS0618 // ExamResult kept for backward compat — ExaminationReportService reads _context.ExamResults
+            var results = new List<ExamResult>();
+            for (int i = 0; i < examIds.Length; i++)
+            {
+                // Skip if results already exist for this exam
+                var hasResults = await _context.ExamResults.AnyAsync(r => r.ExamId == examIds[i] && r.SchoolId == _schoolId);
+                if (hasResults) continue;
+
+                foreach (var student in students)
+                {
+                    int obtained = rng.Next(passMarkArr[i] - 5, maxMarkArr[i] + 1);
+                    if (obtained < 0) obtained = 0;
+                    decimal pct = Math.Round((decimal)obtained / maxMarkArr[i] * 100, 2);
+                    string grade = pct >= 90m ? "A+" : pct >= 80m ? "A" : pct >= 70m ? "B+" :
+                                   pct >= 60m ? "B"  : pct >= 50m ? "C" : pct >= 33m ? "D" : "F";
+                    results.Add(new ExamResult
+                    {
+                        Id            = Guid.NewGuid(),
+                        SchoolId      = _schoolId,
+                        ExamId        = examIds[i],
+                        StudentId     = student.Id,
+                        Subject       = subjects[i],
+                        MarksObtained = obtained,
+                        TotalMarks    = maxMarkArr[i],
+                        Percentage    = pct,
+                        Grade         = grade,
+                        IsPass        = obtained >= passMarkArr[i],
+                        CreatedAt     = DateTime.UtcNow,
+                        UpdatedAt     = DateTime.UtcNow
+                    });
+                }
+            }
+#pragma warning restore CS0618
+
+            if (results.Count > 0)
+            {
+                _context.ExamResults.AddRange(results);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ {Count} exam results seeded", results.Count);
+            }
+            else
+            {
+                _logger.LogInformation("✅ Exam results already present");
+            }
+        }
+
+        public async Task SeedRbacTestStaffAsync()        {
+            _logger.LogInformation("🔐 Seeding RBAC test staff accounts...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // (email, username, firstName, lastName, designation, department, role, employeeId)
+            var rbacStaff = new[]
+            {
+                ("transport.mgr@demo.edu",  "transport.mgr",  "Vikram",   "Nair",    "Transport Manager", "Transport",       "Staff", "TRP001"),
+                ("accountant@demo.edu",     "accountant",     "Meena",    "Sharma",  "Accountant",        "Finance",         "Staff", "FIN001"),
+                ("hostel.warden@demo.edu",  "hostel.warden",  "Suresh",   "Pillai",  "Hostel Warden",     "Hostel",          "Staff", "HST001"),
+                ("receptionist@demo.edu",   "receptionist",   "Ananya",   "Verma",   "Receptionist",      "Administration",  "Staff", "ADM001"),
+            };
+
+            const string password = "Staff@123";
+
+            foreach (var (email, username, first, last, designation, dept, role, empId) in rbacStaff)
+            {
+                // Upsert StaffMember first (so we have its Id for LinkedEntityId)
+                var existingStaff = await _context.StaffMembers.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == _schoolId);
+
+                Guid staffEntityId;
+                if (existingStaff == null)
+                {
+                    staffEntityId = Guid.NewGuid();
+                    _context.StaffMembers.Add(new Staff
+                    {
+                        Id = staffEntityId,
+                        SchoolId = _schoolId,
+                        EmployeeId = empId,
+                        FirstName = first,
+                        LastName = last,
+                        Name = $"{first} {last}",
+                        Email = email,
+                        Phone = "+91-9876500001",
+                        DateOfBirth = new DateTime(1985, 1, 15),
+                        Gender = (first == "Meena" || first == "Ananya") ? "Female" : "Male",
+                        Address = "School Campus, Mumbai, Maharashtra 400001",
+                        Department = dept,
+                        Designation = designation,
+                        Qualification = "Graduate",
+                        Experience = 5,
+                        JoiningDate = new DateTime(2022, 6, 1),
+                        EmploymentType = "permanent",
+                        Salary = 35000m,
+                        Status = "active",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync(); // flush so we have the Id
+                }
+                else
+                {
+                    staffEntityId = existingStaff.Id;
+                }
+
+                // Upsert UserLogin — link via LinkedEntityId = Staff.Id
+                var existingLogin = await _context.UserLogins.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Email == email && u.SchoolId == _schoolId);
+
+                if (existingLogin != null)
+                {
+                    existingLogin.Role = role;
+                    existingLogin.Status = "active";
+                    existingLogin.LinkedEntityId = staffEntityId;
+                    existingLogin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
+                    existingLogin.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _context.UserLogins.Add(new UserLogin
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = _schoolId,
+                        Username = username,
+                        Email = email,
+                        FirstName = first,
+                        LastName = last,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12),
+                        Role = role,
+                        Status = "active",
+                        LinkedEntityId = staffEntityId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ RBAC test staff seeded: transport.mgr, accountant, hostel.warden, receptionist @demo.edu (password: Staff@123)");
         }
     }
 }

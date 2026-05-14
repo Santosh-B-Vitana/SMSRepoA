@@ -1,6 +1,6 @@
 ﻿
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +27,13 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   ChevronLeft,
   ChevronRight,
@@ -61,6 +68,48 @@ const DEPARTMENTS = [
   "Geography", "Physical Education", "Arts", "Music", "Commerce",
   "Accounts", "Administration", "Support Staff", "Library",
 ] as const;
+
+// Designations that directly map to system roles (must match backend roleMap keys exactly)
+const DESIGNATIONS = [
+  "Teacher",
+  "Class Teacher",
+  "Head of Department",
+  "Principal",
+  "Vice Principal",
+  "Librarian",
+  "Accountant",
+  "HR Manager",
+  "Transport Manager",
+  "Hostel Warden",
+  "Admissions Officer",
+  "Counselor",
+  "Receptionist",
+  "Front Desk Officer",
+  "Support Staff",
+] as const;
+
+// When a department is selected, suggest a default designation
+const DEPT_TO_DESIGNATION: Record<string, string> = {
+  "Mathematics":        "Teacher",
+  "Science":            "Teacher",
+  "English":            "Teacher",
+  "Hindi":              "Teacher",
+  "Social Studies":     "Teacher",
+  "Physics":            "Teacher",
+  "Chemistry":          "Teacher",
+  "Biology":            "Teacher",
+  "Computer Science":   "Teacher",
+  "History":            "Teacher",
+  "Geography":          "Teacher",
+  "Physical Education": "Teacher",
+  "Arts":               "Teacher",
+  "Music":              "Teacher",
+  "Commerce":           "Teacher",
+  "Accounts":           "Accountant",
+  "Library":            "Librarian",
+  "Support Staff":      "Support Staff",
+  "Administration":     "",   // user picks themselves
+};
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"] as const;
 
@@ -136,6 +185,8 @@ function StepIndicator({
 export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [submitting, setSubmitting]   = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const isEditMode = !!staff;
 
   // Children management (edit mode only)
@@ -206,6 +257,14 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   });
 
   const { formState: { errors } } = form;
+
+  // Auto-suggest designation when department changes (add mode only)
+  const watchedDepartment = useWatch({ control: form.control, name: "department" });
+  useEffect(() => {
+    if (isEditMode) return;
+    const suggested = DEPT_TO_DESIGNATION[watchedDepartment ?? ""];
+    if (suggested) form.setValue("designation", suggested, { shouldValidate: false });
+  }, [watchedDepartment, isEditMode]);
 
   // Load children when in edit mode
   useEffect(() => {
@@ -311,12 +370,13 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
 
       if (isEditMode) {
         await staffApi.update(staff!.id, payload as any);
-        toast.success("Staff member updated successfully");
+        setSuccessMessage(`${data.firstName} ${data.lastName} has been updated successfully`);
+        setShowSuccessDialog(true);
       } else {
         await staffApi.create(payload as any);
-        toast.success("Staff member added successfully");
+        setSuccessMessage(`${data.firstName} ${data.lastName} has been added successfully as ${data.designation}`);
+        setShowSuccessDialog(true);
       }
-      onSuccess();
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message ?? "Failed to save staff member";
       toast.error(msg);
@@ -328,7 +388,8 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   const progress = ((currentStep + 1) / STAFF_STEPS_COUNT) * 100;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto py-4 px-2">
+    <>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto py-4 px-2">
       <div className="w-full max-w-3xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
         <div className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground px-6 py-5 shrink-0">
           <div className="flex items-center justify-between mb-3">
@@ -390,8 +451,18 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="designation" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Designation <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input placeholder="Senior Teacher" {...field} /></FormControl>
+                        <FormLabel>Designation / Role <span className="text-destructive">*</span></FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {DESIGNATIONS.map((d) => (
+                              <SelectItem key={d} value={d}>{d}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>Determines the system role assigned on account creation</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -542,11 +613,10 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                             <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="full_time">Full-Time Permanent</SelectItem>
-                            <SelectItem value="part_time">Part-Time</SelectItem>
+                            <SelectItem value="permanent">Permanent</SelectItem>
                             <SelectItem value="contract">Contract</SelectItem>
-                            <SelectItem value="guest">Guest Faculty</SelectItem>
-                            <SelectItem value="intern">Intern</SelectItem>
+                            <SelectItem value="temporary">Temporary</SelectItem>
+                            <SelectItem value="probation">Probation</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -1007,6 +1077,37 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
         </Form>
       </div>
     </div>
+
+    {/* Success Dialog */}
+    <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              </div>
+              Success!
+            </DialogTitle>
+            <DialogDescription className="text-base pt-2 text-foreground">
+              {successMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 pt-4">
+            <Button
+              className="flex-1"
+              onClick={() => {
+                setShowSuccessDialog(false);
+                onSuccess();
+              }}
+            >
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

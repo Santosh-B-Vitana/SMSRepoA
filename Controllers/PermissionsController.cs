@@ -1,9 +1,11 @@
 using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 
 namespace SmsApi.Controllers
 {
@@ -14,10 +16,12 @@ namespace SmsApi.Controllers
     {
         private readonly IPermissionsService _permissionsService;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
 
-        public PermissionsController(IPermissionsService permissionsService, ITenantContext tenant)
+        public PermissionsController(IPermissionsService permissionsService, ITenantContext tenant, AppDbContext db)
         {
             _permissionsService = permissionsService;
+            _db = db;
             _tenant = tenant;
         }
 
@@ -25,6 +29,46 @@ namespace SmsApi.Controllers
         {
             var claim = User.FindFirst("UserId") ?? User.FindFirst(ClaimTypes.NameIdentifier);
             return claim != null ? Guid.Parse(claim.Value) : Guid.Empty;
+        }
+
+        // --- Current user permissions --------------------------------------------
+
+        /// <summary>
+        /// Returns the effective permission strings ("Module.Action") for the current user,
+        /// plus an <c>isRoleManaged</c> flag that tells the UI whether this user has ever had
+        /// explicit Role Management assignments (active OR previously removed).
+        /// When <c>isRoleManaged = false</c> the UI falls back to designation-based defaults.
+        /// </summary>
+        [HttpGet("me")]
+        public async Task<ActionResult<object>> GetMyPermissions()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                if (userId == Guid.Empty)
+                    return Unauthorized(new { message = "Unable to identify user" });
+
+                // Admin / super-admin have full access — return wildcard, always managed
+                var jwtRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+                if (jwtRole.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+                    || jwtRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
+                    return Ok(new { permissions = new List<string> { "*" }, isRoleManaged = true });
+
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Has the user EVER had any role assignments (including removed ones)?
+                // If yes → role management is in effect for this user → fail-closed.
+                // If no → this user has never been configured → use designation-based fallback.
+                var isRoleManaged = await _db.UserRoles
+                    .AnyAsync(ur => ur.UserId == userId && ur.SchoolId == schoolId);
+
+                var permissions = await _permissionsService.GetUserEffectivePermissionsAsync(userId, schoolId);
+                return Ok(new { permissions, isRoleManaged });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
         }
 
         // --- Roles ---------------------------------------------------------------

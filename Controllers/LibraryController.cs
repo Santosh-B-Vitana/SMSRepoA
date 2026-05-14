@@ -130,7 +130,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("issues")]
-        [Authorize(Roles = "Admin,Principal,Librarian,Staff")]
+        [Authorize(Roles = "Admin,Principal,Librarian,Staff,Teacher")]
         public async Task<ActionResult<BookIssueResponse>> IssueBook([FromBody] CreateBookIssueRequest request)
         {
             request.SchoolId = _tenant.GetEffectiveSchoolId();
@@ -150,7 +150,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("issues/{id}/return")]
-        [Authorize(Roles = "Admin,Principal,Librarian,Staff")]
+        [Authorize(Roles = "Admin,Principal,Librarian,Staff,Teacher")]
         public async Task<ActionResult<BookIssueResponse>> ReturnBook(Guid id)
         {
             var schoolId = _tenant.GetEffectiveSchoolId();

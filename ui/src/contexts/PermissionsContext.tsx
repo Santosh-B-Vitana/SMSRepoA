@@ -54,8 +54,15 @@ interface ApiSchoolPermissionsResponse {
 interface PermissionsContextType {
   modulePermissions: Partial<Record<ModuleName, ModulePermissions>>;
   loading: boolean;
+  /** True once the /permissions/me call has resolved (success or failure). Use this to avoid
+   *  showing "Access Denied" during the loading phase. */
+  permissionsLoaded: boolean;
   isModuleEnabled: (module: ModuleName) => boolean;
   hasPermission: (module: ModuleName, permission: PermissionLevel) => boolean;
+  /** Check a fine-grained role-management permission, e.g. hasUserPermission('Attendance','Create') */
+  hasUserPermission: (module: string, action: string) => boolean;
+  /** All effective permission strings granted to this user via Role Management */
+  userPermissions: Set<string>;
   refreshPermissions: () => Promise<void>;
   // Legacy fields kept for backward compatibility
   schoolPermissions: SchoolPermissions[];
@@ -76,13 +83,29 @@ interface Props { children: React.ReactNode; }
 export const PermissionsProvider: React.FC<Props> = ({ children }) => {
   const { user, loading: authLoading } = useAuth() ?? {};
   const [modulePermissions, setModulePermissions] = useState<Partial<Record<ModuleName, ModulePermissions>>>({});
+  const [userPermissions, setUserPermissions] = useState<Set<string>>(new Set());
+  // isRoleManaged: true = admin has configured roles for this user (fail-closed for missing perms)
+  // isRoleManaged: false = never configured → fall back to designation defaults
+  const [isRoleManaged, setIsRoleManaged] = useState(false);
+  // Track whether the /permissions/me fetch has completed (success or failure)
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [permissionsFetchFailed, setPermissionsFetchFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchPermissions = useCallback(async () => {
     // Super admin manages schools but has no school of their own — all modules enabled
     if (!user || user.role === 'super_admin') {
+      setUserPermissions(new Set(['*']));
+      setIsRoleManaged(true);
+      setPermissionsLoaded(true);
       setLoading(false);
       return;
+    }
+
+    if (user.role === 'admin') {
+      setUserPermissions(new Set(['*']));
+      setIsRoleManaged(true);
+      setPermissionsLoaded(true);
     }
 
     const schoolId = user.schoolId;
@@ -92,6 +115,7 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     }
 
     try {
+      // Fetch school-level module toggles
       const data = await apiGet<ApiSchoolPermissionsResponse>(
         `/school-feature-permissions/schools/${schoolId}`
       );
@@ -105,12 +129,26 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
       }
       setModulePermissions(parsed);
     } catch (err) {
-      // On error default to all-enabled so users are not locked out
-      console.warn('[PermissionsProvider] Could not load permissions, defaulting to all-enabled:', err);
+      console.warn('[PermissionsProvider] Could not load module permissions, defaulting to all-enabled:', err);
       setModulePermissions({});
-    } finally {
-      setLoading(false);
     }
+
+    // Fetch user's role-based effective permissions (staff only)
+    if (user.role === 'staff') {
+      try {
+        const resp = await apiGet<{ permissions: string[]; isRoleManaged: boolean }>('/permissions/me');
+        setUserPermissions(new Set(resp.permissions));
+        setIsRoleManaged(resp.isRoleManaged);
+        setPermissionsLoaded(true);
+        setPermissionsFetchFailed(false);
+      } catch {
+        // API error — fail-open: don't lock the user out due to a network issue
+        setPermissionsFetchFailed(true);
+        setPermissionsLoaded(false);
+      }
+    }
+
+    setLoading(false);
   }, [user?.schoolId, user?.role]);
 
   useEffect(() => {
@@ -142,6 +180,64 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     return perm.enabled && perm.permissions.includes(permission);
   }, [user?.role, modulePermissions]);
 
+  /** Fine-grained role-management permission check.
+   *
+   * Decision tree:
+   * 1. Admin / super-admin → always true
+   * 2. Wildcard in set → always true
+   * 3. Still loading (first paint) → true (prevent flash of disabled state)
+   * 4. API call failed (network down) → true (fail-open, don't lock out due to outage)
+   * 5. isRoleManaged = true (user has/had explicit role assignments) → strict check
+   * 6. isRoleManaged = false, permissions non-empty → those permissions apply (auto-assign result)
+   * 7. isRoleManaged = false, permissions empty → designation-based fallback
+   *    (only for users that were NEVER touched by Role Management)
+   */
+  const hasUserPermission = useCallback((module: string, action: string): boolean => {
+    if (!user || user.role === 'admin' || user.role === 'super_admin') return true;
+    if (userPermissions.has('*')) return true;
+
+    // While the permissions call is in-flight, don't flash a disabled state
+    if (!permissionsLoaded && !permissionsFetchFailed) return true;
+
+    // If the API was unreachable, fail-open to avoid locking staff out during downtime
+    if (permissionsFetchFailed) return true;
+
+    // Explicit role assignments exist (or did exist) → strict enforcement — no fallback
+    if (isRoleManaged) {
+      return userPermissions.has(`${module}.${action}`);
+    }
+
+    // User has some permissions loaded but isRoleManaged = false
+    // (edge case: permissions seeded without formal UserRole record)
+    if (userPermissions.size > 0) {
+      return userPermissions.has(`${module}.${action}`);
+    }
+
+    // User has NEVER been touched by Role Management AND has no permissions
+    // → use designation-based defaults (fresh/unconfigured users)
+    return checkDesignationPermission(user?.designation, module, action);
+  }, [user?.role, user?.designation, userPermissions, isRoleManaged, permissionsLoaded, permissionsFetchFailed]);
+
+  /** Designation-based permission defaults (used only when Role Management has never been
+   *  configured for the user — i.e. isRoleManaged = false AND permissions are empty).
+   *
+   *  Write-level actions (Create / Edit / Delete) always require an explicit role assignment.
+   *  Designation only grants View-level access as a safety net for fresh/unconfigured systems.
+   */
+  function checkDesignationPermission(designation: string | undefined, module: string, action: string): boolean {
+    // Block all write operations — these MUST come from an explicit role
+    if (['Create', 'Edit', 'Delete'].includes(action)) return false;
+
+    const d = (designation ?? '').toLowerCase().trim();
+    // Principals / VP / HOD can view everything
+    if (['principal', 'vice principal', 'head of department'].includes(d)) return true;
+    // Class teachers / subject teachers can view their teaching modules
+    if (d === 'class teacher' || d === 'teacher' || d === 'subject teacher') {
+      return ['Attendance', 'Grades', 'Assignments'].includes(module);
+    }
+    return false;
+  }
+
   // Legacy: build SchoolPermissions array from flat modulePermissions for backward compat
   const legacySchoolPermissions: SchoolPermissions[] = user?.schoolId
     ? [{
@@ -158,8 +254,11 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
   const value: PermissionsContextType = {
     modulePermissions,
     loading: !!authLoading || loading,
+    permissionsLoaded,
     isModuleEnabled,
     hasPermission,
+    hasUserPermission,
+    userPermissions,
     refreshPermissions: fetchPermissions,
     schoolPermissions: legacySchoolPermissions,
     currentSchoolPermissions: null,

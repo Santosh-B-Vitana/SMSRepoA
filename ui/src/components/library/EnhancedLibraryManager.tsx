@@ -12,11 +12,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Book, BookOpen, AlertCircle, Plus, Search, RefreshCw, X,
   BookMarked, Loader2, CheckCircle2, Clock, Pencil, Trash2,
-  ChevronLeft, ChevronRight, RotateCcw, Info, IndianRupee, BookCheck, DollarSign,
+  ChevronLeft, ChevronRight, RotateCcw, Info, IndianRupee, BookCheck, DollarSign, ShieldOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import libraryApi, { Book as LibBook, BookIssue, LibraryStats, CreateBookDto, CreateIssueDto } from "@/services/api/libraryApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
 
 const CATEGORIES = ["Fiction","Non-Fiction","Science","Mathematics","History","Computer Science","Literature","Reference","Geography","Language","Arts & Crafts","Textbook","General"];
 const DUE_DAYS_DEFAULT = 14;
@@ -108,9 +109,13 @@ function IssueBookDialog({ open, onClose, books, students, onIssue, saving }: { 
   const [form, setForm] = useState({ bookId: "", studentId: "", issueDate: new Date().toISOString().split("T")[0], dueDate: defaultDue() });
   const [bookSearch, setBookSearch] = useState("");
   const [stuSearch, setStuSearch] = useState("");
-  useEffect(() => { if (!open) { setForm({ bookId: "", studentId: "", issueDate: new Date().toISOString().split("T")[0], dueDate: defaultDue() }); setBookSearch(""); setStuSearch(""); } }, [open]);
+  const [filterClass, setFilterClass] = useState("*");
+  const [filterSection, setFilterSection] = useState("*");
+  useEffect(() => { if (!open) { setForm({ bookId: "", studentId: "", issueDate: new Date().toISOString().split("T")[0], dueDate: defaultDue() }); setBookSearch(""); setStuSearch(""); setFilterClass("*"); setFilterSection("*"); } }, [open]);
   const filteredBooks = useMemo(() => books.filter(b => b.availableCopies > 0 && (!bookSearch || b.title.toLowerCase().includes(bookSearch.toLowerCase()) || (b.author ?? "").toLowerCase().includes(bookSearch.toLowerCase()) || (b.isbn ?? "").includes(bookSearch))), [books, bookSearch]);
-  const filteredStudents = useMemo(() => students.filter(s => !stuSearch || s.name.toLowerCase().includes(stuSearch.toLowerCase()) || s.admissionNumber.includes(stuSearch) || s.class.includes(stuSearch)), [students, stuSearch]);
+  const filteredStudents = useMemo(() => students.filter(s => (!stuSearch || s.name.toLowerCase().includes(stuSearch.toLowerCase()) || s.admissionNumber.includes(stuSearch)) && (filterClass === "*" || !filterClass || s.class === filterClass) && (filterSection === "*" || !filterSection || s.section === filterSection)), [students, stuSearch, filterClass, filterSection]);
+  const uniqueClasses = useMemo(() => Array.from(new Set(students.map(s => s.class).filter(Boolean))).sort(), [students]);
+  const uniqueSections = useMemo(() => (filterClass ? Array.from(new Set(students.filter(s => s.class === filterClass).map(s => s.section).filter(Boolean))).sort() : []), [students, filterClass]);
   const valid = !!form.bookId && !!form.studentId && !!form.dueDate;
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -131,6 +136,22 @@ function IssueBookDialog({ open, onClose, books, students, onIssue, saving }: { 
           </div>
           <div className="space-y-1.5">
             <Label>Select Student <span className="text-destructive">*</span></Label>
+            <div className="flex gap-2 mb-2">
+              <Select value={filterClass} onValueChange={setFilterClass}>
+                <SelectTrigger className="h-8 text-sm flex-1"><SelectValue placeholder="Filter by class…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">All Classes</SelectItem>
+                  {uniqueClasses.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filterSection} onValueChange={setFilterSection} disabled={!filterClass || filterClass === "*"}>
+                <SelectTrigger className="h-8 text-sm flex-1"><SelectValue placeholder="Filter by section…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">All Sections</SelectItem>
+                  {uniqueSections.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input className="pl-9 h-8 text-sm" placeholder="Search name, admission no…" value={stuSearch} onChange={e => setStuSearch(e.target.value)} /></div>
             <div className="border rounded-lg max-h-36 overflow-y-auto">
               {filteredStudents.length === 0 ? <p className="text-sm text-muted-foreground text-center py-4">No students match</p> : filteredStudents.slice(0,50).map(s => (
@@ -252,6 +273,13 @@ function OverduePanel({ onReturnClick, onFinePaid }: { onReturnClick: (i: BookIs
 }
 
 export function EnhancedLibraryManager() {
+  const { hasUserPermission, permissionsLoaded } = usePermissions();
+  const canViewLibrary  = hasUserPermission('Library', 'View');
+  const canManageBooks  = hasUserPermission('Library', 'Create'); // add / issue books
+  const canEditBooks    = hasUserPermission('Library', 'Edit');   // edit books / return / fine paid
+  const canDeleteBooks  = hasUserPermission('Library', 'Delete');
+  const accessDenied    = permissionsLoaded && !canViewLibrary;
+
   const [stats, setStats] = useState<LibraryStats | null>(null);
   const [books, setBooks] = useState<LibBook[]>([]);
   const [bookTotal, setBookTotal] = useState(0);
@@ -346,17 +374,34 @@ export function EnhancedLibraryManager() {
     catch { toast.error("Failed to update fine"); }
   };
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-4">
+        <div className="rounded-full bg-destructive/10 p-5">
+          <ShieldOff className="h-10 w-10 text-destructive" />
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold">Access Restricted</h2>
+          <p className="text-muted-foreground max-w-sm">
+            You don&apos;t have permission to access the library. Contact your administrator to get the Librarian role.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => toast.info("Ask your admin to assign you the Librarian role.")}>How to get access?</Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Library</h2>
-          <p className="text-sm text-muted-foreground">Manage books, issues, returns and fines</p>
+          <p className="text-sm text-muted-foreground">{canManageBooks ? "Manage books, issues, returns and fines" : "Browse the book catalog"}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => { loadStats(); loadBooks(); loadIssues(); }}><RefreshCw className="h-4 w-4 mr-1.5" />Refresh</Button>
-          <Button size="sm" onClick={() => setAddBookOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Add Book</Button>
+          {canManageBooks && <Button size="sm" onClick={() => setAddBookOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Add Book</Button>}
         </div>
       </div>
 
@@ -388,7 +433,7 @@ export function EnhancedLibraryManager() {
           </div>
           <Card><CardContent className="p-0">
             {booksLoading ? (<div className="p-6 space-y-3">{Array.from({length:5}).map((_,i)=><Skeleton key={i} className="h-10" />)}</div>) :
-             books.length === 0 ? (<EmptyState icon={<Book className="h-10 w-10 text-muted-foreground/30" />} title="No books found" description="Add your first book to start building the catalog" action={<Button size="sm" onClick={() => setAddBookOpen(true)}><Plus className="h-4 w-4 mr-1" />Add Book</Button>} />) :
+             books.length === 0 ? (<EmptyState icon={<Book className="h-10 w-10 text-muted-foreground/30" />} title="No books found" description="Add your first book to start building the catalog" action={canManageBooks ? <Button size="sm" onClick={() => setAddBookOpen(true)}><Plus className="h-4 w-4 mr-1" />Add Book</Button> : undefined} />) :
             (<div className="overflow-x-auto">
               <Table>
                 <TableHeader><TableRow className="hover:bg-transparent"><TableHead>Title / Author</TableHead><TableHead>ISBN</TableHead><TableHead>Category</TableHead><TableHead>Location</TableHead><TableHead className="text-center">Avail / Total</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
@@ -407,9 +452,9 @@ export function EnhancedLibraryManager() {
                         </TableCell>
                         <TableCell><span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${sc.color}`}>{sc.label}</span></TableCell>
                         <TableCell className="text-right"><div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditBook(book)}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Remove" onClick={() => setDeleteConfirm(book)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                          {book.availableCopies > 0 && <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => setIssueOpen(true)}>Issue</Button>}
+                          {canEditBooks && <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setEditBook(book)}><Pencil className="h-3.5 w-3.5" /></Button>}
+                          {canDeleteBooks && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Remove" onClick={() => setDeleteConfirm(book)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                          {canManageBooks && book.availableCopies > 0 && <Button variant="outline" size="sm" className="h-7 text-xs ml-1" onClick={() => setIssueOpen(true)}>Issue</Button>}
                         </div></TableCell>
                       </TableRow>
                     );
@@ -428,7 +473,7 @@ export function EnhancedLibraryManager() {
               <div className="relative flex-1 max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input className="pl-9 h-9" placeholder="Search book or student…" value={issueSearch} onChange={e => setIssueSearch(e.target.value)} /></div>
               <Select value={issueStatus} onValueChange={v => { setIssueStatus(v); setIssuePage(1); }}><SelectTrigger className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="issued">Issued</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="returned">Returned</SelectItem></SelectContent></Select>
             </div>
-            <Button size="sm" className="h-9" onClick={() => setIssueOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Issue Book</Button>
+            {canManageBooks && <Button size="sm" className="h-9" onClick={() => setIssueOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Issue Book</Button>}
           </div>
           <Card><CardContent className="p-0">
             {issuesLoading ? (<div className="p-6 space-y-3">{Array.from({length:5}).map((_,i)=><Skeleton key={i} className="h-10" />)}</div>) :
@@ -450,8 +495,8 @@ export function EnhancedLibraryManager() {
                         <TableCell><span className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border w-fit ${sc.color}`}>{sc.icon}{sc.label}</span></TableCell>
                         <TableCell>{issue.fine > 0 ? <div><span className={`font-semibold text-sm ${issue.finePaid ? "text-muted-foreground line-through" : "text-amber-600"}`}>₹{issue.fine.toFixed(0)}</span>{issue.finePaid && <span className="ml-1 text-[10px] text-green-600">Paid</span>}</div> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
                         <TableCell className="text-right"><div className="flex items-center justify-end gap-1">
-                          {issue.status !== "returned" && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setReturnIssue(issue)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>}
-                          {issue.fine > 0 && !issue.finePaid && issue.status === "returned" && <Button variant="outline" size="sm" className="h-7 text-xs text-amber-600 border-amber-200" onClick={() => handleMarkFinePaid(issue)}><CheckCircle2 className="h-3 w-3 mr-1" />Fine Paid</Button>}
+                          {canEditBooks && issue.status !== "returned" && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setReturnIssue(issue)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>}
+                          {canEditBooks && issue.fine > 0 && !issue.finePaid && issue.status === "returned" && <Button variant="outline" size="sm" className="h-7 text-xs text-amber-600 border-amber-200" onClick={() => handleMarkFinePaid(issue)}><CheckCircle2 className="h-3 w-3 mr-1" />Fine Paid</Button>}
                         </div></TableCell>
                       </TableRow>
                     );

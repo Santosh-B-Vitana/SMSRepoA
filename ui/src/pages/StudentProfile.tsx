@@ -33,6 +33,7 @@ import {
   CheckCircle2,
   XCircle,
   BarChart3,
+  AlertTriangle,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -551,6 +552,26 @@ export default function StudentProfile() {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Inactive student banner */}
+      {student.status !== 'active' && (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-orange-800">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            <span className="font-medium">This student is currently <span className="font-bold capitalize">{student.status}</span>. They are hidden from all class lists and their parent portal access is revoked.</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-orange-400 text-orange-700 hover:bg-orange-100"
+            disabled={actionLoading}
+            onClick={() => handleStatusChange('active')}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reactivate Student
+          </Button>
+        </div>
+      )}
 
       {/* Student Basic Info Card */}
       <Card className="mb-6">

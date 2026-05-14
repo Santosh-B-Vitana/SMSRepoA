@@ -19,7 +19,7 @@ export const STAFF_DESIGNATIONS = [
   'Principal', 'Vice Principal', 'Head of Department',
   'Class Teacher', 'Teacher', 'Accountant', 'HR Manager',
   'Librarian', 'Transport Manager', 'Hostel Warden',
-  'Admissions Officer', 'Counselor', 'Staff',
+  'Admissions Officer', 'Counselor', 'Receptionist', 'Front Desk Officer', 'Staff',
 ] as const;
 
 export type StaffDesignation = typeof STAFF_DESIGNATIONS[number];
@@ -46,6 +46,9 @@ export function normalizeDesignation(rawRole: string): string {
     warden:              'Hostel Warden',
     'admissions officer':'Admissions Officer',
     counselor:           'Counselor',
+    receptionist:        'Receptionist',
+    'front desk officer':'Front Desk Officer',
+    'front desk':        'Front Desk Officer',
     parent:              'Parent',
     student:             'Student',
     staff:               'Staff',

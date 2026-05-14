@@ -24,12 +24,24 @@ namespace SmsApi.Models.Constants
             public const string AdminOnly            = "Admin";
             public const string AdminPrincipal       = "Admin,Principal";
             public const string AdminPrincipalStaff  = "Admin,Principal,Staff";
-            public const string AllStaff             = "Admin,Principal,Teacher,Staff";
-            public const string AllInternal          = "SuperAdmin,Admin,Principal,Teacher,Staff";
-            public const string AllRoles             = "SuperAdmin,Admin,Principal,Teacher,Staff,Parent,Student";
-            public const string StudentView          = "Admin,Principal,Teacher,Staff,Parent,Student";
-            public const string FeeManagement        = "Admin,Principal,Staff";
-            public const string ReportsView          = "Admin,Principal,Teacher,Staff";
+            // NOTE: Role strings here MUST match the JWT role claim values produced by
+            // TokenService.ResolveEffectiveRole. Designations with spaces are collapsed:
+            //   "Transport Manager" designation → JWT role "TransportManager"
+            //   "Hostel Warden" designation     → JWT role "HostelWarden"
+            //   "Vice Principal" designation    → JWT role "Principal"
+            //   "Front Desk Officer" designation→ JWT role "Receptionist"
+            //   "Class Teacher" designation     → JWT role "Teacher"
+            public const string AllStaff             = "Admin,Principal,Teacher,Staff,HRManager,Librarian,Accountant,TransportManager,HostelWarden,Receptionist";
+            public const string AllInternal          = "SuperAdmin,Admin,Principal,Teacher,Staff,HRManager,Librarian,Accountant,TransportManager,HostelWarden,Receptionist";
+            public const string AllRoles             = "SuperAdmin,Admin,Principal,Teacher,Staff,HRManager,Librarian,Accountant,TransportManager,HostelWarden,Receptionist,Parent,Student";
+            public const string StudentView          = "Admin,Principal,Teacher,Staff,HRManager,Librarian,Accountant,TransportManager,HostelWarden,Receptionist,Parent,Student";
+            public const string FeeManagement        = "Admin,Principal,Staff,Accountant";
+            public const string ReportsView          = "Admin,Principal,Teacher,Staff,HRManager,Librarian,Accountant,TransportManager,HostelWarden,Receptionist";
+            // Domain-specific role groups — use the exact JWT role values.
+            public const string TransportManagement  = "Admin,Principal,TransportManager,Teacher,Staff";
+            public const string HostelManagement     = "Admin,Principal,HostelWarden,Teacher,Staff";
+            public const string AccountingAccess     = "Admin,Principal,Accountant,Teacher,Staff";
+            public const string FrontDeskAccess      = "Admin,Principal,Receptionist,Teacher,Staff";
         }
 
         // ===== USER STATUS =====

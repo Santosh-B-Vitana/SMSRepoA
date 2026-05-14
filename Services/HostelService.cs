@@ -190,6 +190,8 @@ namespace SmsApi.Services
         public async Task<List<HostelStudentResponse>> GetStudentsByRoomAsync(Guid roomId, Guid schoolId)
         {
             var students = await _context.HostelStudents
+                .Include(hs => hs.Student)
+                .Include(hs => hs.Room)
                 .Where(hs => hs.RoomId == roomId && hs.SchoolId == schoolId)
                 .ToListAsync();
 
@@ -367,6 +369,10 @@ namespace SmsApi.Services
 
             // ===== VALIDATION 8: Auto-Fee Deduction =====
             await AddFeesToStudentRecordAsync(request.SchoolId, request.StudentId, request.MonthlyFee);
+
+            // Load navigation properties for full response
+            await _context.Entry(hostelStudent).Reference(hs => hs.Student).LoadAsync();
+            await _context.Entry(hostelStudent).Reference(hs => hs.Room).LoadAsync();
 
             return MapToStudentResponse(hostelStudent);
         }
@@ -630,6 +636,10 @@ namespace SmsApi.Services
             // Adjust student's fee record if monthly fee changed
             await AdjustStudentFeeRecordAsync(schoolId, hostelStudent.StudentId, oldFee, request.MonthlyFee);
 
+            // Load navigation properties for full response
+            await _context.Entry(hostelStudent).Reference(hs => hs.Student).LoadAsync();
+            await _context.Entry(hostelStudent).Reference(hs => hs.Room).LoadAsync();
+
             return MapToStudentResponse(hostelStudent);
         }
 
@@ -681,20 +691,31 @@ namespace SmsApi.Services
             };
         }
 
-        private static HostelStudentResponse MapToStudentResponse(HostelStudent student)
+        private static HostelStudentResponse MapToStudentResponse(HostelStudent hs)
         {
             return new HostelStudentResponse
             {
-                Id = student.Id,
-                SchoolId = student.SchoolId,
-                StudentId = student.StudentId,
-                RoomId = student.RoomId,
-                CheckInDate = student.CheckInDate,
-                CheckOutDate = student.CheckOutDate,
-                MonthlyFee = student.MonthlyFee,
-                Status = student.Status,
-                CreatedAt = student.CreatedAt,
-                UpdatedAt = student.UpdatedAt
+                Id = hs.Id,
+                SchoolId = hs.SchoolId,
+                StudentId = hs.StudentId,
+                StudentName = hs.Student != null
+                    ? (!string.IsNullOrWhiteSpace(hs.Student.FirstName)
+                        ? $"{hs.Student.FirstName} {hs.Student.LastName}".Trim()
+                        : hs.Student.Name)
+                    : string.Empty,
+                StudentClass = hs.Student?.Class ?? string.Empty,
+                StudentSection = hs.Student?.Section ?? string.Empty,
+                Gender = hs.Student?.Gender ?? string.Empty,
+                RoomId = hs.RoomId,
+                RoomNumber = hs.Room?.RoomNumber ?? string.Empty,
+                RoomType = hs.Room?.RoomType ?? string.Empty,
+                Floor = hs.Room?.Floor,
+                CheckInDate = hs.CheckInDate,
+                CheckOutDate = hs.CheckOutDate,
+                MonthlyFee = hs.MonthlyFee,
+                Status = hs.Status,
+                CreatedAt = hs.CreatedAt,
+                UpdatedAt = hs.UpdatedAt
             };
         }
     }

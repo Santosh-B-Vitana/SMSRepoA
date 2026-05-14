@@ -10,9 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Users, Plus, Pencil, Trash2, BedDouble, Loader2, Search, DoorOpen, X } from "lucide-react";
+import { Building2, Users, Plus, Pencil, Trash2, BedDouble, Loader2, Search, DoorOpen, X, ShieldOff } from "lucide-react";
 import { hostelApiClient, HostelRoom, HostelStudent, CreateRoomDto, AssignStudentDto, UpdateHostelStudentDto } from "@/services/api/hostelApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
 
 // ─── Room Form Dialog ─────────────────────────────────────────────────────────
 
@@ -408,6 +409,13 @@ function RoomStudentsDialog({ room, onClose }: { room: HostelRoom; onClose: () =
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function HostelManager() {
+  const { hasUserPermission } = usePermissions();
+  const canViewHostel    = hasUserPermission('Hostel', 'View');
+  const canManageRooms   = hasUserPermission('Hostel', 'Create');
+  const canEditRooms     = hasUserPermission('Hostel', 'Edit');
+  const canDeleteRooms   = hasUserPermission('Hostel', 'Delete');
+  const accessDenied     = !canViewHostel;
+
   const [rooms, setRooms] = useState<HostelRoom[]>([]);
   const [students, setStudents] = useState<HostelStudent[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
@@ -485,12 +493,24 @@ export function HostelManager() {
     s.studentClass.toLowerCase().includes(search.toLowerCase())
   );
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-6">
+        <ShieldOff className="h-16 w-16 text-muted-foreground opacity-40" />
+        <h2 className="text-xl font-semibold">Access Restricted</h2>
+        <p className="text-muted-foreground max-w-sm">
+          You don't have permission to view Hostel Management. Contact your administrator to request access.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Building2 className="h-6 w-6 text-purple-600" />Hostel Management</h1>
-          <p className="text-muted-foreground">Manage hostel rooms and student accommodation</p>
+          <p className="text-muted-foreground">{canManageRooms ? "Manage hostel rooms and student accommodation" : "View hostel rooms and student accommodation"}</p>
         </div>
       </div>
 
@@ -527,8 +547,8 @@ export function HostelManager() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input className="pl-9 w-64" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            {tab === "rooms" && <Button onClick={() => setShowAddRoom(true)} className="gap-1"><Plus className="h-4 w-4" />Add Room</Button>}
-            {tab === "students" && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
+            {tab === "rooms" && canManageRooms && <Button onClick={() => setShowAddRoom(true)} className="gap-1"><Plus className="h-4 w-4" />Add Room</Button>}
+            {tab === "students" && canManageRooms && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
           </div>
         </div>
 
@@ -541,7 +561,7 @@ export function HostelManager() {
               <BedDouble className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No rooms found</p>
               <p className="text-sm">Add your first hostel room</p>
-              <Button className="mt-4 gap-1" onClick={() => setShowAddRoom(true)}><Plus className="h-4 w-4" />Add Room</Button>
+              {canManageRooms && <Button className="mt-4 gap-1" onClick={() => setShowAddRoom(true)}><Plus className="h-4 w-4" />Add Room</Button>}
             </CardContent></Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -575,8 +595,8 @@ export function HostelManager() {
                       </div>
                       <div className="flex gap-1 pt-1">
                         <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => setViewRoom(r)}><Users className="h-3 w-3" />Students</Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setEditRoom(r)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRoom(r.id)}><Trash2 className="h-3 w-3" /></Button>
+                        {canEditRooms && <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setEditRoom(r)}><Pencil className="h-3 w-3" /></Button>}
+                        {canDeleteRooms && <Button variant="outline" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRoom(r.id)}><Trash2 className="h-3 w-3" /></Button>}
                       </div>
                     </CardContent>
                   </Card>
@@ -597,13 +617,13 @@ export function HostelManager() {
                 <>
                   <p className="font-medium">No assigned student matches "{search}"</p>
                   <p className="text-sm mt-1">This student may not be assigned to a hostel room yet.</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Hostel</Button>
+                  {canManageRooms && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Hostel</Button>}
                 </>
               ) : (
                 <>
                   <p className="font-medium">No hostel students</p>
                   <p className="text-sm">Assign students to hostel rooms</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>
+                  {canManageRooms && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>}
                 </>
               )}
             </CardContent></Card>
@@ -639,8 +659,8 @@ export function HostelManager() {
                       <TableCell><Badge variant={s.status === "active" ? "default" : "outline"}>{s.status}</Badge></TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="outline" size="sm" className="text-amber-600 border-amber-300 hover:bg-amber-50 gap-1" onClick={() => handleRemoveStudent(s.id)}><DoorOpen className="h-4 w-4" />Checkout</Button>
+                          {canEditRooms && <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>}
+                          {canDeleteRooms && <Button variant="outline" size="sm" className="text-amber-600 border-amber-300 hover:bg-amber-50 gap-1" onClick={() => handleRemoveStudent(s.id)}><DoorOpen className="h-4 w-4" />Checkout</Button>}
                         </div>
                       </TableCell>
                     </TableRow>

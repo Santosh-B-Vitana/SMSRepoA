@@ -135,6 +135,7 @@ export default function SectionDetail() {
   const [visibleRecords, setVisibleRecords] = useState(5);
   const [attendanceDetailsOpen, setAttendanceDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
+  const [rawAttendanceItems, setRawAttendanceItems] = useState<{ studentId: string; date: string; status: string }[]>([]);
 
   // ΓöÇΓöÇ Add Students Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const [addStudentsOpen, setAddStudentsOpen] = useState(false);
@@ -312,11 +313,24 @@ export default function SectionDetail() {
           pageSize: 1000
         });
 
+        // Filter records to only this section's students
+        const sectionStudentIds = new Set(classStudents.map((s: any) => s.id));
+        const sectionItems = (attendanceData.items ?? []).filter(
+          (record: any) => sectionStudentIds.has(record.studentId)
+        );
+
+        // Store raw items for use in the details modal
+        setRawAttendanceItems(sectionItems.map((r: any) => ({
+          studentId: r.studentId,
+          date: r.date,
+          status: r.status,
+        })));
+
         // Group attendance by date and calculate statistics
         const groupedByDate: Record<string, any> = {};
         const totalStudentsCount = classStudents.length;
 
-        attendanceData.items?.forEach((record: any) => {
+        sectionItems.forEach((record: any) => {
           const date = new Date(record.date).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
@@ -417,6 +431,12 @@ export default function SectionDetail() {
       });
 
       toast.success(`${assignForm.staffName} assigned successfully`);
+      // Auto-role assignment is handled server-side — surface it to the admin
+      if (assignForm.isClassTeacher) {
+        toast.info(`Role "Class Teacher" has been automatically assigned to ${assignForm.staffName} in Role Management.`);
+      } else if (assignForm.subjectId) {
+        toast.info(`Role "Teacher" (Subject) has been automatically assigned to ${assignForm.staffName} in Role Management.`);
+      }
       setAssignStaffOpen(false);
       setAssignForm({ staffId: "", staffName: "", subjectId: "", isClassTeacher: false });
       setStaffSearchQuery("");
@@ -866,7 +886,7 @@ export default function SectionDetail() {
               {section.className} - {section.name}
             </h1>
             <p className="text-muted-foreground">
-              {section.className} &mdash; Section {section.name} &bull; {section.totalStudents} Students
+              {section.className} &mdash; Section {section.name} &bull; {students.length} Active Students
             </p>
           </div>
         </div>
@@ -928,8 +948,8 @@ export default function SectionDetail() {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <div className="text-sm text-muted-foreground">Total Students</div>
-                <div className="text-xl font-semibold">{section.totalStudents}</div>
+                <div className="text-sm text-muted-foreground">Active Students</div>
+                <div className="text-xl font-semibold">{students.length}</div>
               </div>
             </div>
 
@@ -1056,7 +1076,7 @@ export default function SectionDetail() {
                             aria-label={`Select ${student.name}`}
                           />
                         </TableCell>
-                        <TableCell className="font-medium">{student.rollNo || "ΓÇö"}</TableCell>
+                        <TableCell className="font-medium">{student.rollNo || "—"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -1070,7 +1090,7 @@ export default function SectionDetail() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{section.className} ΓÇô {section.name}</Badge>
+                          <Badge variant="outline">{section.className} - {section.name}</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge className="bg-green-500/10 text-green-700 border-green-200" variant="outline">Active</Badge>
@@ -1523,16 +1543,6 @@ export default function SectionDetail() {
                           {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </p>
                       </div>
-                      <div className="flex gap-2">
-                        <Badge variant="outline" className="bg-green-500/10 text-green-700 border-green-200">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          {Math.floor(section.totalStudents * 0.85)} Present
-                        </Badge>
-                        <Badge variant="outline" className="bg-red-500/10 text-red-700 border-red-200">
-                          <XCircle className="h-3 w-3 mr-1" />
-                          {Math.floor(section.totalStudents * 0.15)} Absent
-                        </Badge>
-                      </div>
                     </div>
                     <AttendanceRoster classId={classId!} students={students} />
                   </div>
@@ -1598,7 +1608,7 @@ export default function SectionDetail() {
 
                     <div className="flex justify-between items-center pt-4">
                       <p className="text-sm text-muted-foreground">
-                        Showing {visibleRecords} of {attendanceHistory.length} records
+                        Showing {Math.min(visibleRecords, attendanceHistory.length)} of {attendanceHistory.length} records
                       </p>
                       {visibleRecords < attendanceHistory.length ? (
                         <Button variant="outline" onClick={handleLoadMore}>
@@ -2586,24 +2596,40 @@ export default function SectionDetail() {
                   <TableHead>Roll No</TableHead>
                   <TableHead>Student Name</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Time</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {students.slice(0, 10).map((student, index) => (
-                  <TableRow key={student.id}>
-                    <TableCell>{student.rollNo}</TableCell>
-                    <TableCell className="font-medium">{student.name}</TableCell>
-                    <TableCell>
-                      {index % 2 === 0 ? (
-                        <Badge className="bg-green-500">Present</Badge>
-                      ) : (
-                        <Badge variant="destructive">Absent</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{index % 2 === 0 ? "9:15 AM" : "-"}</TableCell>
-                  </TableRow>
-                ))}
+                {students.map((student) => {
+                  const record = rawAttendanceItems.find(
+                    (r) =>
+                      r.studentId === student.id &&
+                      new Date(r.date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      }) === selectedDate
+                  );
+                  const status = record?.status ?? 'not-marked';
+                  return (
+                    <TableRow key={student.id}>
+                      <TableCell>{student.rollNo}</TableCell>
+                      <TableCell className="font-medium">{student.name}</TableCell>
+                      <TableCell>
+                        {status === 'present' ? (
+                          <Badge className="bg-green-500">Present</Badge>
+                        ) : status === 'absent' ? (
+                          <Badge variant="destructive">Absent</Badge>
+                        ) : status === 'late' ? (
+                          <Badge className="bg-amber-500">Late</Badge>
+                        ) : status === 'excused' ? (
+                          <Badge variant="secondary">Excused</Badge>
+                        ) : (
+                          <Badge variant="outline">Not Marked</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
 

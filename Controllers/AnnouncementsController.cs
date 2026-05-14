@@ -1,6 +1,9 @@
 using SmsApi.Models.Constants;
+using SmsApi.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
@@ -15,16 +18,35 @@ namespace SmsApi.Controllers
     {
         private readonly IAnnouncementService _svc;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
         private readonly ILogger<AnnouncementsController> _logger;
 
         public AnnouncementsController(
             IAnnouncementService svc,
             ITenantContext tenant,
+            AppDbContext db,
             ILogger<AnnouncementsController> logger)
         {
             _svc    = svc;
             _tenant = tenant;
+            _db     = db;
             _logger = logger;
+        }
+
+        /// <summary>Resolves Staff.Id from the current JWT (UserLogin.LinkedEntityId or email fallback).</summary>
+        private async Task<Guid?> ResolveStaffIdAsync()
+        {
+            var userLogin = await _db.Set<UserLogin>().FirstOrDefaultAsync(u => u.Id == _tenant.UserId);
+            if (userLogin?.LinkedEntityId != null) return userLogin.LinkedEntityId;
+            var email = _tenant.UserEmail;
+            if (!string.IsNullOrEmpty(email))
+            {
+                var schoolId = _tenant.SchoolId;
+                var staff = await _db.StaffMembers
+                    .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == email);
+                return staff?.Id;
+            }
+            return null;
         }
 
         // ──────────────────────────────────────────────────
@@ -70,16 +92,21 @@ namespace SmsApi.Controllers
 
         // ──────────────────────────────────────────────────
         // GET /api/announcements/my
+        // Returns announcements relevant to the authenticated staff member:
+        // targeted at "all", targeted at "staff" (recipient record exists),
+        // or class/section-targeted for classes the staff member teaches.
         // ──────────────────────────────────────────────────
         [HttpGet("my")]
         [Authorize]
         [ProducesResponseType(200)]
-        public async Task<ActionResult> GetMyAnnouncements(
-            [FromQuery] Guid   recipientId,
-            [FromQuery] string recipientType = "Staff")
+        public async Task<ActionResult> GetMyAnnouncements()
         {
             var schoolId = _tenant.GetEffectiveSchoolId();
-            var list = await _svc.GetMyAnnouncementsAsync(recipientId, recipientType, schoolId);
+            // Guid.Empty fallback: school-wide announcements ("all" / "staff" audience)
+            // still display even when we cannot resolve the Staff.Id.
+            var staffId  = await ResolveStaffIdAsync() ?? Guid.Empty;
+
+            var list = await _svc.GetMyAnnouncementsAsync(staffId, "Staff", schoolId);
             return Ok(list);
         }
 

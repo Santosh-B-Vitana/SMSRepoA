@@ -1121,6 +1121,32 @@ namespace SmsApi.Services
                         "Cascaded inactive status for student {StudentId}: {TransportCount} transport, {HostelCount} hostel assignments deactivated.",
                         id, activeTransportAssignments.Count, activeHostelAssignments.Count);
                 }
+
+                // Revoke parent UserLogin access when student is deactivated
+                var guardianEmails = await _context.StudentGuardians
+                    .Where(g => g.StudentId == id && !string.IsNullOrEmpty(g.Email))
+                    .Select(g => g.Email!.ToLower())
+                    .ToListAsync();
+
+                if (guardianEmails.Count > 0)
+                {
+                    var parentLogins = await _context.UserLogins
+                        .Where(ul => guardianEmails.Contains(ul.Email.ToLower())
+                                     && ul.Role == "Parent"
+                                     && ul.Status == "active")
+                        .ToListAsync();
+
+                    foreach (var login in parentLogins)
+                        login.Status = "inactive";
+
+                    if (parentLogins.Count > 0)
+                    {
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation(
+                            "Revoked parent login access for student {StudentId}: {Count} parent login(s) deactivated.",
+                            id, parentLogins.Count);
+                    }
+                }
             }
 
             return await GetStudentByIdAsync(id, schoolId);

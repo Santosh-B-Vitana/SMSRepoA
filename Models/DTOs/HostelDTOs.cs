@@ -102,7 +102,14 @@ namespace SmsApi.Models.DTOs
         public Guid Id { get; set; }
         public Guid SchoolId { get; set; }
         public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string StudentClass { get; set; } = string.Empty;
+        public string StudentSection { get; set; } = string.Empty;
+        public string Gender { get; set; } = string.Empty;
         public Guid RoomId { get; set; }
+        public string RoomNumber { get; set; } = string.Empty;
+        public string RoomType { get; set; } = string.Empty;
+        public string? Floor { get; set; }
         public DateTime CheckInDate { get; set; }
         public DateTime? CheckOutDate { get; set; }
         public decimal MonthlyFee { get; set; }

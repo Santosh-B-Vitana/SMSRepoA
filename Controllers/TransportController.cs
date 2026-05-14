@@ -23,7 +23,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("routes")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult<TransportRouteListResponse>> GetRoutes(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -42,7 +42,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("routes/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult<TransportRouteResponse>> GetRouteById(Guid id)
         {
             try
@@ -63,7 +63,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("routes")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult<TransportRouteResponse>> CreateRoute([FromBody] CreateTransportRouteRequest request)
         {
             try
@@ -83,7 +83,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("routes/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult<TransportRouteResponse>> UpdateRoute(Guid id, [FromBody] CreateTransportRouteRequest request)
         {
             try
@@ -106,7 +106,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("routes/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult> DeleteRoute(Guid id)
         {
             try
@@ -127,7 +127,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("routes/{routeId}/students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult> GetStudentsByRoute(Guid routeId)
         {
             try
@@ -144,7 +144,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult> GetAllTransportStudents()
         {
             try
@@ -161,7 +161,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult<TransportStudentResponse>> AssignStudentToRoute([FromBody] CreateTransportStudentRequest request)
         {
             try
@@ -182,7 +182,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("students/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult<TransportStudentResponse>> UpdateTransportStudent(Guid id, [FromBody] UpdateTransportStudentRequest request)
         {
             try
@@ -199,7 +199,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("students/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
         public async Task<ActionResult> RemoveStudentFromRoute(Guid id)
         {
             try

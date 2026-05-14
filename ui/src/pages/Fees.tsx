@@ -16,12 +16,13 @@ import {
   Printer, Tag, BarChart3, Loader2, Calendar, Building2,
   QrCode, ChevronDown, ChevronUp, Send, Pencil, Trash2,
   FileText, CalendarDays, CreditCard, Banknote, Filter, Link2, PackagePlus,
-  Tags, Upload
+  Tags, Upload, ShieldOff
 } from "lucide-react";
 import { toast } from "sonner";
 import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById } from "@/services/api/feeApi";
 import { academicApi, ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import apiClient from "@/services/api/apiClient";
 import { FeeHeadsManager } from "@/components/fees/FeeHeadsManager";
 import { FeeTermsPanel } from "@/components/fees/FeeTermsPanel";
@@ -102,6 +103,10 @@ function CollectPaymentDialog({
   structures: FeeStructure[];
 }) {
   const today = new Date().toISOString().split("T")[0];
+  const { hasUserPermission } = usePermissions();
+  const canManageFees = hasUserPermission('Fees', 'Create');
+  const canEditFees   = hasUserPermission('Fees', 'Edit');
+  const canDeleteFees = hasUserPermission('Fees', 'Delete');
 
   // ── Payment form fields ──
   const [amount, setAmount] = useState("");
@@ -937,27 +942,31 @@ function CollectPaymentDialog({
                             </span>
                             {p.status !== "voided" && p.status !== "refunded" && (
                               <>
-                                <button
-                                  onClick={() => {
-                                    setEditTarget(editTarget?.id === p.id ? null : p);
-                                    setVoidTarget(null);
-                                    if (editTarget?.id !== p.id) {
-                                      setEditFields({
-                                        amount: String(p.amount), method: p.method ?? "",
-                                        date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
-                                        chequeNumber: p.chequeNumber ?? "", bankName: p.bankName ?? "",
-                                        gatewayRef: p.gatewayRef ?? "", remarks: p.remarks ?? "", editReason: "",
-                                      });
-                                    }
-                                  }}
-                                  className="text-[11px] font-semibold text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400 rounded px-1.5 py-0.5 transition-colors">
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => setVoidTarget(voidTarget?.id === p.id ? null : { id: p.id, amount: p.amount, receiptNumber: p.receiptNumber })}
-                                  className="text-[11px] font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 transition-colors">
-                                  Reverse
-                                </button>
+                                {canEditFees && (
+                                  <button
+                                    onClick={() => {
+                                      setEditTarget(editTarget?.id === p.id ? null : p);
+                                      setVoidTarget(null);
+                                      if (editTarget?.id !== p.id) {
+                                        setEditFields({
+                                          amount: String(p.amount), method: p.method ?? "",
+                                          date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
+                                          chequeNumber: p.chequeNumber ?? "", bankName: p.bankName ?? "",
+                                          gatewayRef: p.gatewayRef ?? "", remarks: p.remarks ?? "", editReason: "",
+                                        });
+                                      }
+                                    }}
+                                    className="text-[11px] font-semibold text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400 rounded px-1.5 py-0.5 transition-colors">
+                                    Edit
+                                  </button>
+                                )}
+                                {canDeleteFees && (
+                                  <button
+                                    onClick={() => setVoidTarget(voidTarget?.id === p.id ? null : { id: p.id, amount: p.amount, receiptNumber: p.receiptNumber })}
+                                    className="text-[11px] font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 transition-colors">
+                                    Reverse
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
@@ -1132,27 +1141,31 @@ function CollectPaymentDialog({
                           {/* Edit/Reverse buttons for non-voided transactions */}
                           {p.status !== "voided" && p.status !== "refunded" && (
                             <div className="flex gap-1.5 ml-4 mb-1.5">
-                              <button
-                                onClick={() => {
-                                  setEditTarget(editTarget?.id === p.id ? null : p);
-                                  setVoidTarget(null);
-                                  if (editTarget?.id !== p.id) {
-                                    setEditFields({
-                                      amount: String(p.amount), method: p.method ?? "",
-                                      date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
-                                      chequeNumber: p.chequeNumber ?? "", bankName: p.bankName ?? "",
-                                      gatewayRef: p.gatewayRef ?? "", remarks: p.remarks ?? "", editReason: "",
-                                    });
-                                  }
-                                }}
-                                className="text-[11px] font-semibold text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400 rounded px-2 py-1 transition-colors">
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => setVoidTarget(voidTarget?.id === p.id ? null : { id: p.id, amount: p.amount, receiptNumber: p.receiptNumber })}
-                                className="text-[11px] font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-2 py-1 transition-colors">
-                                Reverse
-                              </button>
+                              {canEditFees && (
+                                <button
+                                  onClick={() => {
+                                    setEditTarget(editTarget?.id === p.id ? null : p);
+                                    setVoidTarget(null);
+                                    if (editTarget?.id !== p.id) {
+                                      setEditFields({
+                                        amount: String(p.amount), method: p.method ?? "",
+                                        date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
+                                        chequeNumber: p.chequeNumber ?? "", bankName: p.bankName ?? "",
+                                        gatewayRef: p.gatewayRef ?? "", remarks: p.remarks ?? "", editReason: "",
+                                      });
+                                    }
+                                  }}
+                                  className="text-[11px] font-semibold text-blue-500 hover:text-blue-700 border border-blue-200 hover:border-blue-400 rounded px-2 py-1 transition-colors">
+                                  Edit
+                                </button>
+                              )}
+                              {canDeleteFees && (
+                                <button
+                                  onClick={() => setVoidTarget(voidTarget?.id === p.id ? null : { id: p.id, amount: p.amount, receiptNumber: p.receiptNumber })}
+                                  className="text-[11px] font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-2 py-1 transition-colors">
+                                  Reverse
+                                </button>
+                              )}
                               <button
                                 onClick={() => printReceipt(p.id)}
                                 className="text-[11px] font-semibold text-green-500 hover:text-green-700 border border-green-200 hover:border-green-400 rounded px-2 py-1 transition-colors">
@@ -1331,7 +1344,7 @@ function CollectPaymentDialog({
                             </div>
                           )}
                           <Button size="sm" className="h-8 shrink-0" onClick={handleApplyConcession}
-                            disabled={applyingConcession || concessionCalcAmt <= 0}>
+                            disabled={applyingConcession || concessionCalcAmt <= 0 || !canEditFees}>
                             {applyingConcession ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                             Apply
                           </Button>
@@ -1418,7 +1431,7 @@ function CollectPaymentDialog({
                           )}
                         </div>
                         <Button size="sm" className="h-8 w-full gap-1.5 bg-orange-600 hover:bg-orange-700 text-white"
-                          disabled={!newExtraAmt || parseFloat(newExtraAmt) <= 0 || !newExtraLabel}
+                          disabled={!newExtraAmt || parseFloat(newExtraAmt) <= 0 || !newExtraLabel || !canEditFees}
                           onClick={() => {
                             const newChargeAmt = parseFloat(newExtraAmt);
                             const labelText = newExtraPreset === "custom"
@@ -1545,27 +1558,29 @@ function CollectPaymentDialog({
                     {/* Sticky footer */}
                     <div className="shrink-0 px-5 py-4 border-t bg-muted/20 flex gap-3">
                   <Button variant="outline" onClick={onClose} className="w-28">Cancel</Button>
-                  {isDigital ? (
-                    <Button
-                      className="flex-1 h-11 font-bold gap-2 text-base bg-indigo-600 hover:bg-indigo-700 text-white"
-                      disabled={saving || !amt || amt <= 0 || amt > adjustedOutstanding + 0.01}
-                      onClick={handleInitiateCashfree}
-                    >
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Pay {amt > 0 ? inr(amt) : ""} via Cashfree →
-                    </Button>
-                  ) : (
-                    <Button
-                      className="flex-1 h-11 font-bold gap-2 text-base"
-                      disabled={saving || !amt || amt <= 0 || amt > adjustedOutstanding + 0.01}
-                      onClick={handleCollect}
-                    >
-                      {saving
-                        ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</>
-                        : <><Receipt className="h-4 w-4" />Collect {amt > 0 ? inr(amt) : ""} &amp; Print Receipt</>
-                      }
-                    </Button>
-                  )}
+                  {canManageFees ? (
+                    isDigital ? (
+                      <Button
+                        className="flex-1 h-11 font-bold gap-2 text-base bg-indigo-600 hover:bg-indigo-700 text-white"
+                        disabled={saving || !amt || amt <= 0 || amt > adjustedOutstanding + 0.01}
+                        onClick={handleInitiateCashfree}
+                      >
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        Pay {amt > 0 ? inr(amt) : ""} via Cashfree →
+                      </Button>
+                    ) : (
+                      <Button
+                        className="flex-1 h-11 font-bold gap-2 text-base"
+                        disabled={saving || !amt || amt <= 0 || amt > adjustedOutstanding + 0.01}
+                        onClick={handleCollect}
+                      >
+                        {saving
+                          ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</>
+                          : <><Receipt className="h-4 w-4" />Collect {amt > 0 ? inr(amt) : ""} &amp; Print Receipt</>
+                        }
+                      </Button>
+                    )
+                  ) : null}
                     </div>
                   </>
                 )}
@@ -1595,6 +1610,11 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   );
 
   const totalFee = useMemo(() => FEE_HEADS.reduce((s, h) => s + (parseFloat(String((form as any)[h.key])) || 0), 0), [form]);
+
+  const { hasUserPermission: hasFeePermission } = usePermissions();
+  const fsCanManage = hasFeePermission('Fees', 'Create');
+  const fsCanEdit   = hasFeePermission('Fees', 'Edit');
+  const fsCanDelete = hasFeePermission('Fees', 'Delete');
 
   useEffect(() => {
     academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(() => {});
@@ -1661,7 +1681,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
           <h3 className="font-semibold">Fee Structures</h3>
           <p className="text-sm text-muted-foreground">Define fee heads and installment plans per class</p>
         </div>
-        <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" />New Structure</Button>
+        <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />New Structure</Button>
       </div>
 
       {/* Auto-link info */}
@@ -1683,7 +1703,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
           <IndianRupee className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
           <h3 className="font-semibold text-muted-foreground mb-2">No fee structures yet</h3>
           <p className="text-sm text-muted-foreground mb-4">Set up fee heads for each class to start collecting fees</p>
-          <Button onClick={openCreate} className="gap-2"><Plus className="h-4 w-4" />Create First Structure</Button>
+          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />Create First Structure</Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1709,17 +1729,18 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => openEdit(s)}>
+                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => openEdit(s)} disabled={!fsCanEdit}>
                     <Pencil className="h-3 w-3 mr-1" />Edit
                   </Button>
                   <Button size="sm" className="h-7 text-xs flex-1 gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
-                    disabled={assigning === s.id}
+                    disabled={assigning === s.id || !fsCanManage}
                     onClick={() => handleAssign(s)}
                     title={`Auto-create fee records for all Class ${s.class} students`}>
                     {assigning === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Users className="h-3 w-3" />}
                     Assign to Class
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600"
+                    disabled={!fsCanDelete}
                     onClick={async () => { try { await feeApi.deleteFeeStructure(s.id); setStructures(prev => prev.filter(x => x.id !== s.id)); toast.success("Deleted"); } catch { toast.error("Failed"); } }}>
                     <Trash2 className="h-3 w-3" />
                   </Button>
@@ -1821,6 +1842,8 @@ function ConcessionsTab({ academicYear }: { academicYear: string }) {
   const [showDialog, setShowDialog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const { hasUserPermission: hasConcessionPerm } = usePermissions();
+  const ccCanManage = hasConcessionPerm('Fees', 'Create');
   const [form, setForm] = useState({
     studentName: "", studentId: "", class: "", concessionType: "merit",
     discountType: "percentage", discountValue: "", academicYear,
@@ -1868,7 +1891,7 @@ function ConcessionsTab({ academicYear }: { academicYear: string }) {
           <h3 className="font-semibold">Fee Concessions & Waivers</h3>
           <p className="text-sm text-muted-foreground">Merit, RTE, EWS/BPL, SC/ST, Sibling, Staff Ward and more</p>
         </div>
-        <Button onClick={() => setShowDialog(true)} className="gap-2 shrink-0"><Plus className="h-4 w-4" />Add Concession</Button>
+        <Button onClick={() => setShowDialog(true)} className="gap-2 shrink-0" disabled={!ccCanManage}><Plus className="h-4 w-4" />Add Concession</Button>
       </div>
 
       {/* Concession type reference */}
@@ -2468,6 +2491,13 @@ function AuditTrailTab() {
 
 // ─── Main Fee Module Page ─────────────────────────────────
 export default function Fees() {
+  const { hasUserPermission } = usePermissions();
+  const canViewFees    = hasUserPermission('Fees', 'View');
+  const canManageFees  = hasUserPermission('Fees', 'Create');
+  const canEditFees    = hasUserPermission('Fees', 'Edit');
+  const canDeleteFees  = hasUserPermission('Fees', 'Delete');
+  const accessDenied   = !canViewFees;
+
   const { academicYear, availableYears } = useAcademicYear();
   const [activeTab, setActiveTab] = useState("collect");
   const [records, setRecords] = useState<FeeRecord[]>([]);
@@ -2585,6 +2615,18 @@ export default function Fees() {
     { label: "Collection Rate", value: `${isNaN(stats.collectionRate) || !isFinite(stats.collectionRate) ? 0 : Math.round(stats.collectionRate)}%`, sub: "Of total fees", color: "text-purple-600", bg: "bg-purple-50", icon: <BarChart3 className="h-5 w-5 text-purple-600" /> },
   ];
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4 text-muted-foreground">
+        <ShieldOff className="h-12 w-12" />
+        <div className="text-center">
+          <p className="text-lg font-semibold">Access Denied</p>
+          <p className="text-sm">You don't have permission to view fee management.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* ── Header ─────────────────────────────────────────── */}
@@ -2595,16 +2637,18 @@ export default function Fees() {
             Fee Management
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Collect fees, manage installments, concessions, and reports — all in one place
+            {canManageFees ? "Collect fees, manage installments, concessions, and reports — all in one place" : "View fee records, installments, and reports"}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => loadData()}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />Refresh
           </Button>
-          <Button size="sm" className="gap-1.5" onClick={() => { setQuickSearch(""); setQuickRecord(null); setQuickOpen(true); }}>
-            <Plus className="h-3.5 w-3.5" />Quick Collect
-          </Button>
+          {canManageFees && (
+            <Button size="sm" className="gap-1.5" onClick={() => { setQuickSearch(""); setQuickRecord(null); setQuickOpen(true); }}>
+              <Plus className="h-3.5 w-3.5" />Quick Collect
+            </Button>
+          )}
         </div>
       </div>
 
@@ -2743,7 +2787,7 @@ export default function Fees() {
                               <div className="flex items-center justify-end gap-1">
                                 <Button size="sm" className={`h-7 text-xs gap-1 ${r.status === "paid" ? "variant-outline" : ""}`} onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}>
                                   <IndianRupee className="h-3 w-3" />
-                                  {r.status === "paid" ? "View Summary" : "Collect"}
+                                  {r.status === "paid" ? "View Summary" : (canManageFees ? "Collect" : "View")}
                                 </Button>
                                 {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                               </div>
@@ -2782,7 +2826,7 @@ export default function Fees() {
                                       </div>
                                     </div>
                                   )}
-                                  {r.pendingAmount > 0 && (
+                                  {r.pendingAmount > 0 && canEditFees && (
                                     <div className="col-span-2 md:col-span-4 pt-2">
                                       <Button
                                         size="sm"
@@ -2915,9 +2959,11 @@ export default function Fees() {
         {/* ── Fee Terms / Installments Tab ──────────────────── */}
         <TabsContent value="feeterms" className="mt-4">
           <div className="space-y-4">
-            <div className="flex justify-end">
-              <PromoteFeesDialog structures={structures} onPromoted={() => loadData(true)} />
-            </div>
+            {canManageFees && (
+              <div className="flex justify-end">
+                <PromoteFeesDialog structures={structures} onPromoted={() => loadData(true)} />
+              </div>
+            )}
             <FeeTermsPanel structures={structures} />
           </div>
         </TabsContent>

@@ -3,16 +3,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Users, UserCheck, UserX, Clock, Edit, Save, AlertCircle, Loader2, CheckCircle } from "lucide-react";
+import { Calendar, Users, UserCheck, UserX, Clock, Edit, Save, AlertCircle, Loader2, CheckCircle, Lock, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 import { academicApi, type MyClassAssignment } from "@/services/api/academicApi";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
 import { attendanceApi } from "@/services/api/attendanceApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
 
 interface AttendanceEntry {
   studentId: string;
@@ -21,6 +22,11 @@ interface AttendanceEntry {
 }
 
 export default function StaffAttendanceTeacher() {
+  const { hasUserPermission, permissionsLoaded } = usePermissions();
+  const canMarkAttendance = hasUserPermission('Attendance', 'Create');
+  const canEditAttendance = hasUserPermission('Attendance', 'Edit');
+  // Only block when we're certain permissions are loaded — avoids flashing "denied" during init
+  const accessDenied = permissionsLoaded && !canMarkAttendance && !canEditAttendance;
   const [assignments, setAssignments] = useState<MyClassAssignment[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<MyClassAssignment | null>(null);
   const [students, setStudents] = useState<StudentBasic[]>([]);
@@ -139,6 +145,10 @@ export default function StaffAttendanceTeacher() {
 
   const saveAttendance = async () => {
     if (!selectedAssignment) return;
+    if (!canMarkAttendance) {
+      toast.error("Permission denied. Contact your administrator to get the required role.");
+      return;
+    }
     setSaving(true);
     try {
       await attendanceApi.markBulkAttendance({
@@ -180,6 +190,33 @@ export default function StaffAttendanceTeacher() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Show access denied BEFORE the "no assignments" check so a non-class-teacher
+  // staff member who was granted attendance sees the right message
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-4">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="rounded-full bg-destructive/10 p-5">
+            <ShieldOff className="h-10 w-10 text-destructive" />
+          </div>
+          <h2 className="text-xl font-semibold">Access Restricted</h2>
+          <p className="text-muted-foreground max-w-sm">
+            You don't have permission to mark or edit attendance.
+            Please contact your administrator to request access.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            toast.info("Contact your school administrator to have the 'Class Teacher' or 'Teacher' role assigned to your account.");
+          }}
+        >
+          How to get access?
+        </Button>
       </div>
     );
   }
@@ -237,15 +274,29 @@ export default function StaffAttendanceTeacher() {
           )}
           {isEditing ? (
             <div className="flex gap-2">
-              <Button onClick={saveAttendance} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+              <Button
+                onClick={saveAttendance}
+                disabled={saving}
+                title={!canMarkAttendance ? 'Permission denied — contact your admin' : undefined}
+              >
+                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : !canMarkAttendance ? <Lock className="h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                 Save Attendance
               </Button>
               <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
             </div>
           ) : (
-            <Button onClick={() => setIsEditing(true)} disabled={attendanceLoading}>
-              <Edit className="h-4 w-4 mr-2" />
+            <Button
+              onClick={() => {
+                if (!canEditAttendance) {
+                  toast.error("Permission denied. Contact your administrator to get the required role.");
+                  return;
+                }
+                setIsEditing(true);
+              }}
+              disabled={attendanceLoading}
+              title={!canEditAttendance ? 'Permission denied — contact your admin' : undefined}
+            >
+              {!canEditAttendance ? <Lock className="h-4 w-4 mr-2" /> : <Edit className="h-4 w-4 mr-2" />}
               {alreadyTaken ? 'Edit Attendance' : 'Take Attendance'}
             </Button>
           )}
