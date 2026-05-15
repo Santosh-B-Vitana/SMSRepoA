@@ -2,7 +2,10 @@ using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
+using SmsApi.Models.Entities;
 using SmsApi.Services;
 using System;
 using System.Collections.Generic;
@@ -21,11 +24,15 @@ namespace SmsApi.Controllers
     {
         private readonly IFinanceService _service;
         private readonly ILogger<FinanceController> _logger;
+        private readonly AppDbContext _db;
+        private readonly ITenantContext _tenant;
 
-        public FinanceController(IFinanceService service, ILogger<FinanceController> logger)
+        public FinanceController(IFinanceService service, ILogger<FinanceController> logger, AppDbContext db, ITenantContext tenant)
         {
             _service = service;
             _logger = logger;
+            _db = db;
+            _tenant = tenant;
         }
 
         private Guid GetSchoolId()
@@ -38,6 +45,26 @@ namespace SmsApi.Controllers
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return Guid.Parse(userIdClaim ?? throw new UnauthorizedAccessException());
+        }
+
+        /// <summary>
+        /// Resolves the current user's StaffMember.Id from their UserLogin.
+        /// UserLogin.Id != StaffMember.Id — must use LinkedEntityId or email fallback.
+        /// </summary>
+        private async Task<Guid?> ResolveStaffIdAsync()
+        {
+            var userId = GetUserId();
+            var userLogin = await _db.Set<UserLogin>().FirstOrDefaultAsync(u => u.Id == userId);
+            if (userLogin?.LinkedEntityId != null) return userLogin.LinkedEntityId;
+            var email = userLogin?.Email ?? User.FindFirst(ClaimTypes.Email)?.Value;
+            if (!string.IsNullOrEmpty(email))
+            {
+                var schoolId = GetSchoolId();
+                var staff = await _db.StaffMembers
+                    .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == email);
+                return staff?.Id;
+            }
+            return null;
         }
 
         // ========== ACCOUNTS ==========
@@ -350,7 +377,9 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                var staffId = GetUserId();
+                // Fall back to the current user's ID when no staff profile is linked —
+                // PettyCashEntry.RequestedByStaffId has no FK constraint so any Guid is valid.
+                var staffId = await ResolveStaffIdAsync() ?? GetUserId();
                 var result = await _service.CreatePettyCashEntryAsync(schoolId, dto, staffId);
                 return CreatedAtAction(nameof(GetPettyCashEntries), new { id = result.Id }, result);
             }
@@ -564,6 +593,77 @@ namespace SmsApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating category {CategoryId}", categoryId);
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        // ========== DELETE CATEGORY ==========
+
+        /// <summary>
+        /// Soft-delete a finance category (only if it has no transactions)
+        /// </summary>
+        [HttpDelete("categories/{categoryId}")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(typeof(object), 400)]
+        public async Task<ActionResult> DeleteCategory(Guid categoryId)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var result = await _service.DeleteCategoryAsync(schoolId, categoryId);
+                if (!result)
+                    return NotFound(new { message = "Category not found" });
+                return NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting category {CategoryId}", categoryId);
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        // ========== PAYROLL SYNC ==========
+
+        /// <summary>
+        /// Import paid/approved payroll records as wallet expenses (idempotent — skips already-synced entries)
+        /// </summary>
+        [HttpPost("sync-payroll")]
+        [ProducesResponseType(typeof(PayrollSyncResultDto), 200)]
+        public async Task<ActionResult<PayrollSyncResultDto>> SyncPayroll(
+            [FromQuery] int? month,
+            [FromQuery] int? year)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var result = await _service.SyncPayrollExpensesAsync(schoolId, month, year);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing payroll expenses");
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        [HttpPost("sync-store")]
+        [ProducesResponseType(typeof(PayrollSyncResultDto), 200)]
+        public async Task<ActionResult<PayrollSyncResultDto>> SyncStoreOrders()
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var result = await _service.SyncStoreOrdersAsync(schoolId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing store orders");
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
         }

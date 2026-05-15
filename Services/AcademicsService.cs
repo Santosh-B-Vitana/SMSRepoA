@@ -138,13 +138,13 @@ namespace SmsApi.Services
                 .ToListAsync();
 
             var classStudentCounts = await _context.Students
-                .Where(s => s.SchoolId == schoolId)
+                .Where(s => s.SchoolId == schoolId && s.Status == "active")
                 .GroupBy(s => s.Class)
                 .Select(g => new { ClassName = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.ClassName, x => x.Count);
 
             var sectionStudentCounts = await _context.Students
-                .Where(s => s.SchoolId == schoolId)
+                .Where(s => s.SchoolId == schoolId && s.Status == "active")
                 .GroupBy(s => new { s.Class, s.Section })
                 .Select(g => new { g.Key.Class, g.Key.Section, Count = g.Count() })
                 .ToListAsync();
@@ -212,7 +212,28 @@ namespace SmsApi.Services
             var totalStudents = await _context.Students
                 .CountAsync(s => s.SchoolId == schoolId && s.Class == classEntity.Name);
 
-            return MapToClassResponse(classEntity, classEntity.Name, string.Empty, activeAcademicYear, totalStudents);
+            // Look up the class teacher from TeacherAssignments (load staff separately to avoid join issues)
+            var ctStaffId = await _context.TeacherAssignments
+                .IgnoreQueryFilters()
+                .Where(ta => ta.SchoolId == schoolId && ta.ClassId == id
+                    && ta.IsClassTeacher && ta.Status == "active" && !ta.IsDeleted)
+                .Select(ta => (Guid?)ta.StaffId)
+                .FirstOrDefaultAsync();
+
+            string? ctName = null;
+            if (ctStaffId.HasValue)
+            {
+                var ctStaff = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Id == ctStaffId.Value)
+                    .Select(s => new { s.FirstName, s.LastName })
+                    .FirstOrDefaultAsync();
+                if (ctStaff != null)
+                    ctName = $"{ctStaff.FirstName} {ctStaff.LastName}".Trim();
+            }
+
+            return MapToClassResponse(classEntity, classEntity.Name, string.Empty, activeAcademicYear, totalStudents,
+                ctName, ctStaffId);
         }
 
         public async Task<ClassResponse> CreateClassAsync(CreateClassRequest request)
@@ -328,6 +349,48 @@ namespace SmsApi.Services
 
             await _context.SaveChangesAsync();
 
+            // Persist class teacher assignment to TeacherAssignments table
+            if (request.ClassTeacherId.HasValue)
+            {
+                var sections = await _context.Sections
+                    .Where(s => s.SchoolId == schoolId && s.ClassId == classEntity.Id && !s.IsDeleted)
+                    .ToListAsync();
+
+                if (sections.Any())
+                {
+                    foreach (var section in sections)
+                        await UpsertClassTeacherAssignmentAsync(schoolId, classEntity.Id, section.Id, request.ClassTeacherId.Value);
+                }
+                else
+                {
+                    // No sections yet — create a class-level assignment (SectionId = null)
+                    var oldClassLevel = await _context.TeacherAssignments
+                        .Where(ta => ta.SchoolId == schoolId && ta.ClassId == classEntity.Id
+                            && ta.IsClassTeacher && ta.SectionId == null)
+                        .ToListAsync();
+                    _context.TeacherAssignments.RemoveRange(oldClassLevel);
+
+                    var classLevelAcademicYear = await GetCurrentAcademicYearNameAsync(schoolId);
+                    _context.TeacherAssignments.Add(new TeacherAssignment
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        StaffId = request.ClassTeacherId.Value,
+                        ClassId = classEntity.Id,
+                        SectionId = null,
+                        IsClassTeacher = true,
+                        AcademicYear = classLevelAcademicYear,
+                        Status = "active",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync();
+
+                    try { await _permissionsService.AutoAssignAcademicRoleAsync(request.ClassTeacherId.Value, isClassTeacher: true, hasSubject: false, schoolId); }
+                    catch { /* best-effort */ }
+                }
+            }
+
             // Reload with navigation properties
             await _context.Entry(classEntity).Reference(c => c.BoardConfig).LoadAsync();
 
@@ -361,14 +424,35 @@ namespace SmsApi.Services
                 .CountAsync(s => s.SchoolId == schoolId && s.Class == classEntity.Name
                     && (string.IsNullOrWhiteSpace(normalizedSection) || s.Section == normalizedSection));
 
+            // Return the CT info from DB (not just from request) so the response is always accurate
+            var savedCtStaffId = await _context.TeacherAssignments
+                .IgnoreQueryFilters()
+                .Where(ta => ta.SchoolId == schoolId && ta.ClassId == classEntity.Id
+                    && ta.IsClassTeacher && ta.Status == "active" && !ta.IsDeleted)
+                .Select(ta => (Guid?)ta.StaffId)
+                .FirstOrDefaultAsync();
+
+            string? ctName = request.ClassTeacher;
+            Guid? ctId = savedCtStaffId ?? request.ClassTeacherId;
+            if (savedCtStaffId.HasValue)
+            {
+                var savedCtStaff = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Id == savedCtStaffId.Value)
+                    .Select(s => new { s.FirstName, s.LastName })
+                    .FirstOrDefaultAsync();
+                if (savedCtStaff != null)
+                    ctName = $"{savedCtStaff.FirstName} {savedCtStaff.LastName}".Trim();
+            }
+
             return MapToClassResponse(
                 classEntity,
                 classEntity.Name,
                 normalizedSection ?? string.Empty,
                 academicYear,
                 totalStudents,
-                request.ClassTeacher,
-                request.ClassTeacherId);
+                ctName,
+                ctId);
         }
 
         public async Task<bool> DeleteClassAsync(Guid id, Guid schoolId)
@@ -409,7 +493,7 @@ namespace SmsApi.Services
                 .ToDictionaryAsync(c => c.Id, c => c.Name);
 
             var sectionCounts = await _context.Students
-                .Where(s => s.SchoolId == schoolId)
+                .Where(s => s.SchoolId == schoolId && s.Status == "active")
                 .GroupBy(s => new { s.Class, s.Section })
                 .Select(g => new { g.Key.Class, g.Key.Section, Count = g.Count() })
                 .ToListAsync();
@@ -467,7 +551,7 @@ namespace SmsApi.Services
                 .FirstOrDefaultAsync() ?? string.Empty;
 
             var studentsCount = await _context.Students
-                .CountAsync(s => s.SchoolId == schoolId && s.Class == className && s.Section == section.Name);
+                .CountAsync(s => s.SchoolId == schoolId && s.Class == className && s.Section == section.Name && s.Status == "active");
 
             var ct = await _context.TeacherAssignments
                 .Include(ta => ta.Staff)
@@ -861,7 +945,8 @@ namespace SmsApi.Services
                 .Include(ta => ta.Class)
                 .Include(ta => ta.Section)
                 .Include(ta => ta.Subject)
-                .Where(ta => ta.SchoolId == schoolId && !ta.IsDeleted);
+                .Where(ta => ta.SchoolId == schoolId && !ta.IsDeleted
+                    && (ta.Staff == null || ta.Staff.Status != "inactive"));
 
             if (classId.HasValue)
                 query = query.Where(ta => ta.ClassId == classId.Value);
@@ -896,11 +981,13 @@ namespace SmsApi.Services
             if (string.IsNullOrWhiteSpace(request.AcademicYear))
                 throw new ArgumentException("Academic year is required");
 
-            // VALIDATION 2: Staff exists in school
-            var staffExists = await _context.StaffMembers
-                .AnyAsync(s => s.Id == request.StaffId && s.SchoolId == request.SchoolId && !s.IsDeleted);
-            if (!staffExists)
+            // VALIDATION 2: Staff exists in school and is active
+            var staffMember = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.Id == request.StaffId && s.SchoolId == request.SchoolId && !s.IsDeleted);
+            if (staffMember == null)
                 throw new KeyNotFoundException("Staff member does not exist in this school");
+            if (staffMember.Status?.ToLower() == "inactive" || staffMember.Status?.ToLower() == "terminated")
+                throw new InvalidOperationException($"Cannot assign {staffMember.FirstName} {staffMember.LastName} to a class — their account is {staffMember.Status}. Reactivate the staff member first.");
 
             // VALIDATION 3: Class exists in school
             var classExists = await _context.Classes
@@ -1361,13 +1448,15 @@ namespace SmsApi.Services
                 SchoolId = classSubject.SchoolId,
                 ClassId = classSubject.ClassId,
                 SubjectId = classSubject.SubjectId,
-                TeacherId = classSubject.TeacherId,
+                TeacherId = classSubject.Teacher?.Status?.ToLower() != "inactive" ? classSubject.TeacherId : null,
                 SubjectName = classSubject.Subject?.Name,
                 SubjectCode = classSubject.Subject?.Code,
                 SubjectType = classSubject.Subject?.Type,
                 SubjectTypeId = classSubject.SubjectTypeId,
                 SubjectTypeName = classSubject.SubjectType?.Name,
-                TeacherName = classSubject.Teacher != null ? $"{classSubject.Teacher.FirstName} {classSubject.Teacher.LastName}".Trim() : null,
+                TeacherName = classSubject.Teacher?.Status?.ToLower() != "inactive"
+                    ? (classSubject.Teacher != null ? $"{classSubject.Teacher.FirstName} {classSubject.Teacher.LastName}".Trim() : null)
+                    : null,
                 AcademicYear = classSubject.AcademicYear,
                 MaxMarks = classSubject.MaxMarks,
                 TheoryMaxMarks = classSubject.TheoryMaxMarks,

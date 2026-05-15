@@ -1,7 +1,48 @@
 # sms-api — Technical Document
 
 > **Version 2.5** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
-> **Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA
+> **Last Updated:** May 15, 2026 (Session 6) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 15, 2026 (Session 6)
+
+| Area | Change |
+|------|--------|
+| **`Controllers/StaffController.cs` — `ParseStaffCsv`** | Replaced positional column access (`cols[0]`…`cols[30]`) with header-name lookup using `CanonCol()` (strips spaces/underscores/hyphens, lowercases) plus a `StaffColAliases` dictionary. `ParseFlexDate` handles 15 date formats. `NormalizeGender`, `NormalizeEmpType`, and `NormalizeStatus` local functions auto-correct common aliases. `Experience` and `Salary` parse silently (non-numeric → warning + default, not skip). Added `CanonCol` private static helper to `StaffController`. |
+| **`Controllers/StudentsController.cs` — `ParseStudentCsv`** | Existing generous parser confirmed working. Column aliases cover 17 field groups. `CleanAadhar` strips non-digits for 12-digit normalisation; `CleanPan` uppercases. |
+| **`Services/StudentService.cs` — `BulkImportStudentsAsync`** | `AdmissionDate` future cap raised from +1 day to **+30 days** (advance registrations). Blank `AdmissionDate` auto-defaults to `DateTime.UtcNow`. `Category` auto-corrects `gen`→`General`, `obc-a`/`obc-b`→`OBC`, `sc/st`→`SC`. PAN validated to exactly 10 characters. Aadhar validated to exactly 12 digits and stored normalised. All errors include the offending value and a correction hint. Duplicate errors now include the admission number. |
+| **`Services/StaffService.cs` — `ValidateCreateRequest`** | Gender/status/employmentType normalised (switch expression) before `ValidXxx.Contains()` check. Alias map: `M`→`male`, `Working`→`active`, `Full Time`→`permanent`, `Disabled`→`inactive`, `Fired`→`terminated`, etc. PAN length validated. `DateOfBirth == default` now produces a clear error instead of the previous `>= DateTime.UtcNow.Date` which silently passed `default(DateTime)`. |
+| **`ui/src/components/common/ImportButton.tsx`** | Added `parseImportError(msg)` helper that extracts `rowRef` and `detail` from backend strings (`[ADM-001] ...`, `Row 3: ...`, or plain text → `File error`). Error list now renders a monospace `Badge` per error with `rowRef`. Partial-success amber `Alert` shown when `successCount > 0 && failureCount > 0`. `catch` block surfaces `respData.detail` (inner exception). **Fixed**: duplicate `ImportButton` declaration removed — the old component body was accidentally left after the rewrite, causing `SyntaxError: Identifier 'ImportButton' has already been declared` on all pages using import. |
+| **`ui/src/components/superadmin/DataImportManager.tsx`** | Added `parseImportError` helper (duplicate of ImportButton's — both self-contained). Error list replaced with row-badge layout. Stats replaced with a 2-column imported/skipped grid. Partial-success amber `Alert` added. `Badge` and `Info` imported from shadcn/lucide. |
+
+### CSV import architecture (both student and staff)
+
+```
+Browser  →  multipart/form-data POST  →  Controller (ParseXxxCsv)
+                                            ↓ header-name lookup (CanonCol + aliases)
+                                            ↓ ParseFlexDate (15 formats)
+                                            ↓ NormalizeGender / NormalizeStatus / etc.
+                                            ↓ (List<CreateXxxRequest>, List<string> errors)
+                                         Service (BulkImportXxxAsync)
+                                            ↓ per-row required-field + enum validation
+                                            ↓ duplicate-number check (DB + batch)
+                                            ↓ SaveChangesAsync (EF Core)
+                                         BulkOperationResult { successCount, failureCount, errors }
+                                            ↓
+Browser  ←  parseImportError()  ←  ImportButton / DataImportManager
+                                    row badge per error  |  partial-success banner
+```
+
+### Error string format (backend → frontend)
+
+Backend emits errors in one of two forms:
+
+| Format | Example | Frontend display |
+|--------|---------|-----------------|
+| `[{identifier}] {message}` | `[ADM-001] Gender 'M' is not recognised…` | Badge: `ADM-001` |
+| `[Row {n}] {message}` | `[Row 3] DateOfBirth '99/99/9999' is not…` | Badge: `Row 3` |
+| Plain text | `The CSV file is empty.` | Badge: `File error` |
 
 ---
 

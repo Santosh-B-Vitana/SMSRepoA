@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useSchool } from "../../contexts/SchoolContext";
 import { BoardConfigurationManager } from "@/components/board/BoardConfigurationManager";
 import settingsApi, {
   SchoolSettingResponse,
@@ -261,6 +262,7 @@ function ProfileTab({ userId }: { userId: string }) {
 
 function SchoolTab({ schoolId, role }: { schoolId: string; role: string }) {
   const isSuperAdmin = role === "super_admin";
+  const { refreshSchoolInfo } = useSchool();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -307,27 +309,28 @@ function SchoolTab({ schoolId, role }: { schoolId: string; role: string }) {
     e.preventDefault();
     setSaving(true);
     try {
-      // Update School entity contact fields (phone, email, address) + website/tagline KV
+      // Update School entity fields (phone, email, address; name + logo for super admin)
       await settingsApi.updateSchoolContact(schoolId, {
         phone,
         email,
         address,
         website,
         tagline: isSuperAdmin ? tagline : undefined,
+        name:    isSuperAdmin ? name    : undefined,
+        logo:    isSuperAdmin ? logoUrl : undefined,
       });
 
-      // Super admin also updates identity KV fields
+      // Super admin also persists extra KV fields not on the entity
       if (isSuperAdmin) {
         await settingsApi.bulkUpdate({
           schoolSettings: [
-            buildSchoolSetting("school_name", name, "school_profile"),
-            buildSchoolSetting("school_logo_url", logoUrl, "school_profile"),
             buildSchoolSetting("school_established_year", establishedYear, "school_profile"),
             buildSchoolSetting("school_type", schoolType, "school_profile"),
           ],
         });
       }
 
+      await refreshSchoolInfo();
       toast.success("School settings saved");
     } catch {
       toast.error("Failed to save school settings");

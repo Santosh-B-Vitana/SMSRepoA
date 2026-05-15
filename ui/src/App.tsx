@@ -172,7 +172,7 @@ function App() {
                   <Route path="/parent-diary" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDiaryView /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: admin + staff shared ──────────────────── */}
-                  <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Admissions /></Layout></ProtectedRoute>} />
+                  <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="admissions"><Admissions /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/students" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><Students /></Layout></ProtectedRoute>} />
                   <Route path="/students/:id" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><StudentProfile /></Layout></ProtectedRoute>} />
                   <Route path="/students/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StudentEdit /></Layout></ProtectedRoute>} />
@@ -188,32 +188,32 @@ function App() {
                   <Route path="/class/:classId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassProfile /></Layout></ProtectedRoute>} />
                   <Route path="/grades" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Grades /></Layout></ProtectedRoute>} />
                   <Route path="/assignments" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Assignments /></Layout></ProtectedRoute>} />
-                  <Route path="/examinations" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Examinations /></Layout></ProtectedRoute>} />
-                  <Route path="/cce-management" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><CCEManagement /></Layout></ProtectedRoute>} />
-                  <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Timetable /></Layout></ProtectedRoute>} />
+                  <Route path="/examinations" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="examinations"><Examinations /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/cce-management" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="examinations"><CCEManagement /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="timetable"><Timetable /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/alumni" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Alumni /></Layout></ProtectedRoute>} />
-                  <Route path="/announcements" element={<ProtectedRoute><Layout><Announcements /></Layout></ProtectedRoute>} />
+                  <Route path="/announcements" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/communication" element={<ProtectedRoute><Layout><ModuleGuard module="communication"><Communication /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/documents" element={<ProtectedRoute><Layout><Documents /></Layout></ProtectedRoute>} />
-                  <Route path="/notifications" element={<ProtectedRoute><Layout><Announcements /></Layout></ProtectedRoute>} />
+                  <Route path="/documents" element={<ProtectedRoute><Layout><ModuleGuard module="documents"><Documents /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/notifications" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: admin-only finance ────────────────────── */}
                   <Route path="/finance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Finance /></Layout></ProtectedRoute>} />
-                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Fees /></Layout></ProtectedRoute>} />
+                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="fees"><Fees /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/student-fee-details/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><StudentFeeDetails /></ProtectedRoute>} />
-                  <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><FeeConcession /></Layout></ProtectedRoute>} />
-                  <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PaymentGateway /></Layout></ProtectedRoute>} />
+                  <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><FeeConcession /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><PaymentGateway /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/pf-esi" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PFESIManagement /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: reports ────────────────────────────────── */}
-                  <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Reports /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/exam-summary" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ExamSummary /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/exam-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ExamPerformance /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/student-marks" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><StudentMarks /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassAnalysis /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><GradeDistribution /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><SubjectPerformance /></Layout></ProtectedRoute>} />
-                  <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Analytics /></Layout></ProtectedRoute>} />
+                  <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="reports"><Reports /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/exam-summary" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ExamSummary /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/exam-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ExamPerformance /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/student-marks" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><StudentMarks /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ClassAnalysis /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><GradeDistribution /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><SubjectPerformance /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="analytics"><Analytics /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: optional modules ───────────────────────── */}
                    <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />

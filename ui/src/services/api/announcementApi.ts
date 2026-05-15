@@ -90,7 +90,6 @@ export interface AnnouncementFilters {
 export interface CreateAnnouncementDto {
   title: string;
   content: string;
-  createdByStaffId: string;
   priority: AnnouncementPriority;
   targetAudience: AnnouncementAudience;
   targetClassId?: string;

@@ -24,14 +24,14 @@ import {
   TrendingUp, TrendingDown, Wallet, DollarSign, Plus, Download,
   RefreshCw, CheckCircle, XCircle, Clock, BarChart3, ArrowUpRight,
   ArrowDownRight, ShoppingBag, CreditCard, Search, SlidersHorizontal,
-  Banknote, PiggyBank, Receipt, Heart,
+  Banknote, PiggyBank, Receipt, Heart, Pencil, Trash2, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   financeApi,
   FinanceStatsDto, FinanceTransactionDto, FinanceCategoryDto,
   FinanceAccountDto, PettyCashEntryDto, StoreSaleDto, FinanceReportDto,
-  TransactionFiltersDto, AggregatedIncomeDto,
+  TransactionFiltersDto, AggregatedIncomeDto, PayrollSyncResultDto,
 } from "@/services/api/financeApi";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -161,8 +161,19 @@ export function WalletManager() {
   const [addSaleOpen, setAddSaleOpen] = useState(false);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
+  const [editCategoryTarget, setEditCategoryTarget] = useState<FinanceCategoryDto | null>(null);
   const [approvePcId, setApprovePcId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Payroll sync state
+  const [syncPayrollMonth, setSyncPayrollMonth] = useState<string>("0");
+  const [syncPayrollYear, setSyncPayrollYear] = useState<string>(String(new Date().getFullYear()));
+  const [syncingPayroll, setSyncingPayroll] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<PayrollSyncResultDto | null>(null);
+
+  // Store orders sync state
+  const [syncingStore, setSyncingStore] = useState(false);
+  const [lastStoreSyncResult, setLastStoreSyncResult] = useState<PayrollSyncResultDto | null>(null);
 
   const incCats = categories.filter(c => c.type === "INCOME");
   const expCats = categories.filter(c => c.type === "EXPENSE");
@@ -437,6 +448,77 @@ export function WalletManager() {
       toast.error(msg || "Failed to create category");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateCategory = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editCategoryTarget) return;
+    const f = e.currentTarget;
+    const get = (n: string) => (f.elements.namedItem(n) as HTMLInputElement).value;
+    setSubmitting(true);
+    try {
+      const budgetVal = get("editBudget");
+      await financeApi.updateCategory(editCategoryTarget.id, {
+        name: get("editName") || undefined,
+        budget: budgetVal ? parseFloat(budgetVal) : undefined,
+      });
+      toast.success("Category updated");
+      setEditCategoryTarget(null);
+      loadMeta();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || "Failed to update category");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteCategory = async (cat: FinanceCategoryDto) => {
+    if (!window.confirm(`Delete category "${cat.name}"? This cannot be undone.`)) return;
+    try {
+      await financeApi.deleteCategory(cat.id);
+      toast.success(`Category "${cat.name}" deleted`);
+      loadMeta();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || "Failed to delete category");
+    }
+  };
+
+  const handleSyncStoreOrders = async () => {
+    setSyncingStore(true);
+    setLastStoreSyncResult(null);
+    try {
+      const result = await financeApi.syncStoreOrders();
+      setLastStoreSyncResult(result);
+      toast.success(result.message);
+      loadStats();
+      loadStoreSales();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || "Store sync failed");
+    } finally {
+      setSyncingStore(false);
+    }
+  };
+
+  const handleSyncPayroll = async () => {
+    setSyncingPayroll(true);
+    setLastSyncResult(null);
+    try {
+      const month = syncPayrollMonth && syncPayrollMonth !== "0" ? parseInt(syncPayrollMonth) : undefined;
+      const year = syncPayrollYear ? parseInt(syncPayrollYear) : undefined;
+      const result = await financeApi.syncPayroll(month, year);
+      setLastSyncResult(result);
+      toast.success(result.message);
+      loadStats();
+      loadMeta();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || "Payroll sync failed");
+    } finally {
+      setSyncingPayroll(false);
     }
   };
 
@@ -991,6 +1073,7 @@ export function WalletManager() {
                           <TableHead className="text-right">Actual</TableHead>
                           <TableHead className="text-right">Variance</TableHead>
                           <TableHead>Progress</TableHead>
+                          <TableHead className="w-20">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1014,6 +1097,16 @@ export function WalletManager() {
                                     <span className="text-xs text-muted-foreground w-10">{pct.toFixed(0)}%</span>
                                   </div>
                                 ) : <span className="text-muted-foreground text-sm">No budget</span>}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditCategoryTarget(cat)}>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteCategory(cat)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
@@ -1060,6 +1153,7 @@ export function WalletManager() {
                       <TableHead className="text-right">Actual</TableHead>
                       <TableHead className="text-right">Remaining</TableHead>
                       <TableHead>Utilisation</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1085,11 +1179,84 @@ export function WalletManager() {
                               </div>
                             ) : <span className="text-muted-foreground text-sm">No budget</span>}
                           </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditCategoryTarget(cat)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteCategory(cat)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ─── Staff Salary Import ─── */}
+          <Card className="border-blue-200 dark:border-blue-800">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-600" />
+                Import Staff Salaries from Payroll
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Sync approved/paid payroll records as expense transactions in the wallet. Already-synced records are skipped automatically.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Month (optional)</Label>
+                  <Select value={syncPayrollMonth} onValueChange={setSyncPayrollMonth}>
+                    <SelectTrigger className="w-36">
+                      <SelectValue placeholder="All months" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">All months</SelectItem>
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>
+                          {new Date(2000, i, 1).toLocaleString("en-IN", { month: "long" })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Year</Label>
+                  <Input
+                    type="number"
+                    className="w-28"
+                    value={syncPayrollYear}
+                    onChange={e => setSyncPayrollYear(e.target.value)}
+                    min={2020}
+                    max={new Date().getFullYear()}
+                  />
+                </div>
+                <Button
+                  onClick={handleSyncPayroll}
+                  disabled={syncingPayroll}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <RefreshCw className={cn("h-4 w-4 mr-2", syncingPayroll && "animate-spin")} />
+                  {syncingPayroll ? "Syncing…" : "Import Salaries"}
+                </Button>
+              </div>
+              {lastSyncResult && (
+                <div className={cn(
+                  "rounded-lg border p-3 text-sm flex items-center gap-2",
+                  lastSyncResult.synced > 0
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-200"
+                    : "bg-muted border-border text-muted-foreground"
+                )}>
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                  {lastSyncResult.message}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1219,6 +1386,42 @@ export function WalletManager() {
             )}
           </Card>
           <Pagination page={ssPage} total={ssTotal} pageSize={20} onChange={loadStoreSales} />
+
+          {/* Sync existing paid orders */}
+          <Card className="border-violet-200 dark:border-violet-800">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4 text-violet-600" />
+                Sync Store Orders from Order Management
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Sync all paid store orders as income transactions. Orders already synced are skipped automatically.
+              </p>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleSyncStoreOrders}
+                  disabled={syncingStore}
+                  className="bg-violet-600 hover:bg-violet-700"
+                >
+                  <RefreshCw className={cn("h-4 w-4 mr-2", syncingStore && "animate-spin")} />
+                  {syncingStore ? "Syncing…" : "Sync Orders"}
+                </Button>
+              </div>
+              {lastStoreSyncResult && (
+                <div className={cn(
+                  "rounded-lg border p-3 text-sm flex items-center gap-2",
+                  lastStoreSyncResult.synced > 0
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-200"
+                    : "bg-muted border-border text-muted-foreground"
+                )}>
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                  {lastStoreSyncResult.message}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ═══════════ REPORTS ═══════════ */}
@@ -1492,6 +1695,42 @@ export function WalletManager() {
 
       {/* Approve / Reject */}
       <ApproveDialog />
+
+      {/* Edit Category */}
+      <Dialog open={!!editCategoryTarget} onOpenChange={open => { if (!open) setEditCategoryTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5" />Edit Category
+            </DialogTitle>
+          </DialogHeader>
+          {editCategoryTarget && (
+            <form onSubmit={handleUpdateCategory} className="space-y-4 py-2">
+              <div>
+                <Label>Category Name</Label>
+                <Input name="editName" defaultValue={editCategoryTarget.name} placeholder="Category name" />
+              </div>
+              <div>
+                <Label>Monthly Budget (₹)</Label>
+                <Input
+                  name="editBudget"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  defaultValue={editCategoryTarget.budget ?? ""}
+                  placeholder="Optional budget cap"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Type: <strong>{editCategoryTarget.type}</strong> · Leave fields blank to keep current values.
+              </p>
+              <Button type="submit" disabled={submitting} className="w-full">
+                {submitting ? "Saving…" : "Save Changes"}
+              </Button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

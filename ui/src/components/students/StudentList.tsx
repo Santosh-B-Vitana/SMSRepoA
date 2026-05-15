@@ -196,7 +196,7 @@ export function StudentList({ students, onRefresh }: StudentListProps) {
                       className={`border-border hover:bg-muted/50 transition-colors ${view === "inactive" ? "opacity-80" : ""}`}
                     >
                       <TableCell className="font-medium text-sm">
-                        {student.rollNumber || "â€”"}
+                        {student.rollNumber || "-"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">

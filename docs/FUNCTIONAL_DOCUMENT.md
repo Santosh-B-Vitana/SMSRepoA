@@ -2,11 +2,21 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.4 | **Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA
+**Version:** 2.4 | **Last Updated:** May 15, 2026 (Session 6) | **Project:** SMSRepoA
 
 ---
 
-## Changelog — May 13, 2026 (Session 5)
+## Changelog — May 15, 2026 (Session 6)
+
+| Area | Change |
+|------|--------|
+| **Student CSV Import — Generous Parser** | `ParseStudentCsv` completely rewritten. Accepts column aliases (`fname`, `dob`, `mobile`, `aadhar`, etc.), 15 date formats (DD/MM/YYYY, YYYY-MM-DD, d MMM yy, …), gender shortcuts (`M`→`male`, `F`→`female`, `boy`, `girl`), status aliases (`enrolled`→`active`, `passed`→`graduated`), and boolean variants (`yes`/`y`/`1`→true). Blank rows silently skipped. Aadhar normalised to 12 plain digits; PAN auto-uppercased. |
+| **Staff CSV Import — Rewritten** | `ParseStaffCsv` replaced from brittle positional column access (col[0]…col[30]) to header-name lookup. Supports column aliases (`empid`, `fulltime`, `joining_date`, etc.). Uses same flexible date/gender/status normalisation as student parser. `Experience` and `Salary` parse silently with a warning if non-numeric; never block the row. |
+| **Student Service — Better Validation Errors** | `BulkImportStudentsAsync` now: allows `AdmissionDate` up to 30 days in the future (advance registrations); auto-defaults blank `AdmissionDate` to today; auto-corrects common `Category` typos (`gen`→`General`, `obc-a`→`OBC`); validates PAN length (exactly 10 chars) and Aadhar digit count (exactly 12); all error messages include the actual bad value and a plain-English correction hint. |
+| **Staff Service — Normalisation Before Validation** | `ValidateCreateRequest` now normalises gender (`M`→`male`, `Working`→`active`, `Full Time`→`permanent`, etc.) before the HashSet check, so common input variations don't fail validation. PAN length check added. Error messages include the bad value and accepted alternatives. |
+| **Import UI — Row-Badge Errors (`ImportButton.tsx`)** | Each error now shows a monospace badge with the row identifier extracted from the backend string (`[ADM-001]`, `Row 3`, or `File error`). Partial-success amber banner shown when some rows imported and some skipped. `catch` block now surfaces `detail` (inner exception text) for SQL truncation errors. Fixed duplicate `ImportButton` declaration that caused `SyntaxError: Identifier already declared` crash on the Students page. |
+| **Import UI — Row-Badge Errors (`DataImportManager.tsx`)** | Settings → Data Import page applies the same `parseImportError` helper. Stats replaced with a 2-column imported/skipped grid. Row badges on every error line. Partial-success amber alert instead of silent amber border. |
+
 
 | Area | Change |
 |------|--------|

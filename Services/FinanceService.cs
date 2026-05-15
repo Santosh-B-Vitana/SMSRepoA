@@ -44,6 +44,21 @@ namespace SmsApi.Services
         
         // Aggregated Income Sources
         Task<AggregatedIncomeDto> GetAggregatedIncomeSourcesAsync(Guid schoolId);
+
+        // Category Management
+        Task<bool> DeleteCategoryAsync(Guid schoolId, Guid categoryId);
+
+        // Auto-sync from Store Orders
+        Task<FinanceTransactionDto> AddStoreOrderIncomeAsync(Guid schoolId, decimal amount, string description, string paymentMethod, int itemsCount, Guid? staffId, Guid? orderId = null);
+
+        // Auto-sync from Fee Payments
+        Task<FinanceTransactionDto> AddFeeIncomeAsync(Guid schoolId, decimal amount, string description, string paymentMethod, string receiptNumber, Guid studentId);
+
+        // Payroll sync
+        Task<PayrollSyncResultDto> SyncPayrollExpensesAsync(Guid schoolId, int? month, int? year);
+
+        // Manual store orders sync (for orders paid before IServiceScopeFactory fix)
+        Task<PayrollSyncResultDto> SyncStoreOrdersAsync(Guid schoolId);
     }
 
     public class FinanceService : IFinanceService
@@ -230,96 +245,103 @@ namespace SmsApi.Services
         public async Task<FinanceTransactionDto> CreateTransactionAsync(
             Guid schoolId, CreateFinanceTransactionDto dto, Guid userId)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            // SqlServerRetryingExecutionStrategy requires all user-initiated transactions
+            // to be wrapped in CreateExecutionStrategy().ExecuteAsync() to remain retriable.
+            var strategy = _context.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
             {
-                // VALIDATION 1: Account must exist and be active
-                var account = await _context.FinanceAccounts
-                    .FirstOrDefaultAsync(a => a.Id == dto.AccountId && a.SchoolId == schoolId);
-                if (account == null || !account.IsActive)
-                    throw new InvalidOperationException("Account not found or inactive");
-
-                // VALIDATION 2: Category must exist and be active
-                var category = await _context.FinanceCategories
-                    .FirstOrDefaultAsync(c => c.Id == dto.CategoryId && c.SchoolId == schoolId);
-                if (category == null || !category.IsActive)
-                    throw new InvalidOperationException("Category not found or inactive");
-
-                // VALIDATION 3: Amount must be positive
-                if (dto.Amount <= 0)
-                    throw new InvalidOperationException("Amount must be greater than zero");
-
-                // VALIDATION 4: Transaction type and account type compatibility
-                var validCombination = ValidateAccountTransaction(account.Type, dto.Type, category.Type);
-                if (!validCombination)
-                    throw new InvalidOperationException($"Invalid transaction: Cannot {dto.Type} an {account.Type} account for {category.Type}");
-
-                // VALIDATION 5: Category budget check for expenses
-                if (category.Type == "EXPENSE" && category.Budget.HasValue && dto.Type == "DEBIT")
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    var totalSpent = await _context.FinanceTransactions
-                        .Where(t => t.SchoolId == schoolId && t.CategoryId == dto.CategoryId && t.Type == "DEBIT")
-                        .SumAsync(t => t.Amount);
-                    
-                    if (totalSpent + dto.Amount > category.Budget.Value)
+                    // VALIDATION 1: Account must exist and be active
+                    var account = await _context.FinanceAccounts
+                        .FirstOrDefaultAsync(a => a.Id == dto.AccountId && a.SchoolId == schoolId);
+                    if (account == null || !account.IsActive)
+                        throw new InvalidOperationException("Account not found or inactive");
+
+                    // VALIDATION 2: Category must exist and be active
+                    var category = await _context.FinanceCategories
+                        .FirstOrDefaultAsync(c => c.Id == dto.CategoryId && c.SchoolId == schoolId);
+                    if (category == null || !category.IsActive)
+                        throw new InvalidOperationException("Category not found or inactive");
+
+                    // VALIDATION 3: Amount must be positive
+                    if (dto.Amount <= 0)
+                        throw new InvalidOperationException("Amount must be greater than zero");
+
+                    // VALIDATION 4: Transaction type and account type compatibility
+                    var validCombination = ValidateAccountTransaction(account.Type, dto.Type, category.Type);
+                    if (!validCombination)
+                        throw new InvalidOperationException($"Invalid transaction: Cannot {dto.Type} an {account.Type} account for {category.Type}");
+
+                    // VALIDATION 5: Category budget check for expenses
+                    if (category.Type == "EXPENSE" && category.Budget.HasValue && dto.Type == "DEBIT")
                     {
-                        _logger.LogWarning("Budget exceeded for category {CategoryId}. Budget: {Budget}, Spent: {Spent}, New: {New}",
-                            dto.CategoryId, category.Budget.Value, totalSpent, dto.Amount);
-                        // Don't throw, just log warning
+                        var totalSpent = await _context.FinanceTransactions
+                            .Where(t => t.SchoolId == schoolId && t.CategoryId == dto.CategoryId && t.Type == "DEBIT")
+                            .SumAsync(t => t.Amount);
+
+                        if (totalSpent + dto.Amount > category.Budget.Value)
+                        {
+                            _logger.LogWarning("Budget exceeded for category {CategoryId}. Budget: {Budget}, Spent: {Spent}, New: {New}",
+                                dto.CategoryId, category.Budget.Value, totalSpent, dto.Amount);
+                            // Don't throw, just log warning
+                        }
                     }
+
+                    var financeTransaction = new FinanceTransaction
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        AccountId = dto.AccountId,
+                        Amount = dto.Amount,
+                        Type = dto.Type.ToUpper(),
+                        CategoryId = dto.CategoryId,
+                        Date = dto.Date,
+                        Description = dto.Description,
+                        Source = dto.Source.ToUpper(),
+                        ReceiptUrl = dto.ReceiptUrl,
+                        ReferenceNumber = dto.ReferenceNumber,
+                        ProcessedByStaffId = userId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    // Update account balance
+                    if (dto.Type.ToUpper() == "CREDIT")
+                        account.Balance += dto.Amount;
+                    else if (dto.Type.ToUpper() == "DEBIT")
+                        account.Balance -= dto.Amount;
+
+                    account.UpdatedAt = DateTime.UtcNow;
+
+                    _context.FinanceTransactions.Add(financeTransaction);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return new FinanceTransactionDto
+                    {
+                        Id = financeTransaction.Id,
+                        AccountId = financeTransaction.AccountId,
+                        AccountName = account.Name,
+                        Amount = financeTransaction.Amount,
+                        Type = financeTransaction.Type,
+                        CategoryId = financeTransaction.CategoryId,
+                        CategoryName = category.Name,
+                        Date = financeTransaction.Date,
+                        Description = financeTransaction.Description,
+                        Source = financeTransaction.Source,
+                        ReceiptUrl = financeTransaction.ReceiptUrl,
+                        CreatedAt = financeTransaction.CreatedAt
+                    };
                 }
-
-                var financeTransaction = new FinanceTransaction
+                catch (Exception ex)
                 {
-                    Id = Guid.NewGuid(),
-                    SchoolId = schoolId,
-                    AccountId = dto.AccountId,
-                    Amount = dto.Amount,
-                    Type = dto.Type.ToUpper(),
-                    CategoryId = dto.CategoryId,
-                    Date = dto.Date,
-                    Description = dto.Description,
-                    Source = dto.Source.ToUpper(),
-                    ReceiptUrl = dto.ReceiptUrl,
-                    ProcessedByStaffId = userId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                // Update account balance
-                if (dto.Type.ToUpper() == "CREDIT")
-                    account.Balance += dto.Amount;
-                else if (dto.Type.ToUpper() == "DEBIT")
-                    account.Balance -= dto.Amount;
-
-                account.UpdatedAt = DateTime.UtcNow;
-
-                _context.FinanceTransactions.Add(financeTransaction);
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return new FinanceTransactionDto
-                {
-                    Id = financeTransaction.Id,
-                    AccountId = financeTransaction.AccountId,
-                    AccountName = account.Name,
-                    Amount = financeTransaction.Amount,
-                    Type = financeTransaction.Type,
-                    CategoryId = financeTransaction.CategoryId,
-                    CategoryName = category.Name,
-                    Date = financeTransaction.Date,
-                    Description = financeTransaction.Description,
-                    Source = financeTransaction.Source,
-                    ReceiptUrl = financeTransaction.ReceiptUrl,
-                    CreatedAt = financeTransaction.CreatedAt
-                };
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "Error creating transaction for school {SchoolId}", schoolId);
-                throw;
-            }
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Error creating transaction for school {SchoolId}", schoolId);
+                    throw;
+                }
+            });
         }
 
         public async Task<FinanceTransactionDto> AddIncomeAsync(Guid schoolId, AddIncomeDto dto, Guid userId)
@@ -528,11 +550,10 @@ namespace SmsApi.Services
                 if (dto.Amount <= 0 || dto.Amount > 50000)
                     throw new InvalidOperationException("Petty cash amount must be between 0.01 and 50000");
 
-                // VALIDATION 2: Staff member must exist
+                // VALIDATION 2: Staff member lookup (optional — admin users may not have a staff profile)
                 var staff = await _context.StaffMembers
                     .FirstOrDefaultAsync(s => s.Id == staffId && s.SchoolId == schoolId);
-                if (staff == null)
-                    throw new InvalidOperationException("Staff member not found");
+                var requesterName = staff != null ? $"{staff.FirstName} {staff.LastName}" : "Admin";
 
                 var entry = new PettyCashEntry
                 {
@@ -557,7 +578,7 @@ namespace SmsApi.Services
                     Date = entry.Date,
                     Amount = entry.Amount,
                     Purpose = entry.Purpose,
-                    RequestedByName = $"{staff.FirstName} {staff.LastName}",
+                    RequestedByName = requesterName,
                     ApprovedByName = null,
                     Status = entry.Status,
                     ReceiptUrl = entry.ReceiptUrl,
@@ -755,11 +776,13 @@ namespace SmsApi.Services
 
                 var transactions = await query.ToListAsync();
 
-                var financeIncome = transactions.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
+                // Exclude FEE-source transactions from financeIncome — fees are counted
+                // authoritatively from PaymentTransactions below to avoid double-counting
+                var financeIncome = transactions.Where(t => t.Type == "CREDIT" && t.Source != "FEE").Sum(t => t.Amount);
                 var totalExpenses = transactions.Where(t => t.Type == "DEBIT").Sum(t => t.Amount);
 
                 var today = DateTime.UtcNow.Date;
-                var finTodayIncome = transactions.Where(t => t.Type == "CREDIT" && t.Date.Date == today).Sum(t => t.Amount);
+                var finTodayIncome = transactions.Where(t => t.Type == "CREDIT" && t.Source != "FEE" && t.Date.Date == today).Sum(t => t.Amount);
                 var todayExpenses = transactions.Where(t => t.Type == "DEBIT" && t.Date.Date == today).Sum(t => t.Amount);
 
                 // ── Cross-module: bridge fee payments from PaymentTransactions ──────────
@@ -871,9 +894,17 @@ namespace SmsApi.Services
                     .Where(t => t.SchoolId == schoolId && t.Date >= dateFrom && t.Date <= dateTo)
                     .ToListAsync();
 
-                var financeIncome = transactions.Where(t => t.Type == "CREDIT").Sum(t => t.Amount);
+                // Exclude FEE-source and STORE-source CREDIT transactions — fees are counted via
+                // PaymentTransactions and store sales via StoreSales table (authoritative sources).
+                var financeIncome = transactions.Where(t => t.Type == "CREDIT" && t.Source != "FEE" && t.Source != "STORE").Sum(t => t.Amount);
                 var totalExpenses = transactions.Where(t => t.Type == "DEBIT").Sum(t => t.Amount);
-                var storeSalesTotal = transactions.Where(t => t.Source == "STORE").Sum(t => t.Amount);
+                // Use StoreOrders as the authoritative store revenue source — avoids inflated
+                // totals caused by duplicate/test StoreSales entries from multiple sync runs.
+                var storeOrdersList = await _context.StoreOrders
+                    .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid"
+                        && o.OrderDate >= dateFrom && o.OrderDate <= dateTo)
+                    .ToListAsync();
+                var storeSalesTotal = storeOrdersList.Sum(o => o.FinalAmount);
                 var pettyCashTotal = await _context.PettyCashEntries
                     .Where(pc => pc.SchoolId == schoolId && pc.Status == "APPROVED"
                         && pc.Date >= dateFrom && pc.Date <= dateTo)
@@ -886,7 +917,7 @@ namespace SmsApi.Services
                     .ToListAsync();
 
                 var feeCollections = feePayments.Sum(pt => pt.Amount);
-                var totalIncome = financeIncome + feeCollections;
+                var totalIncome = financeIncome + storeSalesTotal + feeCollections;
 
                 // Monthly trend: merge Finance transactions + fee payments by month
                 var financeMonths = transactions
@@ -894,9 +925,14 @@ namespace SmsApi.Services
                     .Select(g => new
                     {
                         g.Key.Year, g.Key.Month,
-                        Inc = g.Where(t => t.Type == "CREDIT").Sum(t => t.Amount),
+                        // Exclude FEE and STORE — they're accounted for via their own authoritative tables
+                        Inc = g.Where(t => t.Type == "CREDIT" && t.Source != "FEE" && t.Source != "STORE").Sum(t => t.Amount),
                         Exp = g.Where(t => t.Type == "DEBIT").Sum(t => t.Amount)
                     });
+
+                var storeMonths = storeOrdersList
+                    .GroupBy(o => new { o.OrderDate.Year, o.OrderDate.Month })
+                    .Select(g => new { g.Key.Year, g.Key.Month, StoreInc = g.Sum(o => o.FinalAmount) });
 
                 var feeMonths = feePayments
                     .GroupBy(pt => new { pt.Date.Year, pt.Date.Month })
@@ -904,6 +940,7 @@ namespace SmsApi.Services
 
                 var allMonths = financeMonths
                     .Select(f => new { f.Year, f.Month, f.Inc, f.Exp })
+                    .Concat(storeMonths.Select(s => new { s.Year, s.Month, Inc = s.StoreInc, Exp = 0m }))
                     .Concat(feeMonths.Select(f => new { f.Year, f.Month, Inc = f.FeeInc, Exp = 0m }))
                     .GroupBy(x => new { x.Year, x.Month })
                     .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
@@ -1069,21 +1106,21 @@ namespace SmsApi.Services
                 try
                 {
                     var libraryThisMonth = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
+                        @"SELECT COALESCE(SUM(ft.Amount), 0) AS Value FROM FinanceTransactions ft 
                           WHERE ft.SchoolId = {0} AND ft.Source = 'LIBRARY' AND ft.Type = 'CREDIT' 
                           AND ft.Date >= {1} AND ft.Date < {2}",
                         schoolId, thisMonthStart, thisMonthStart.AddMonths(1)
                     ).FirstOrDefaultAsync();
 
                     var libraryLastMonth = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
+                        @"SELECT COALESCE(SUM(ft.Amount), 0) AS Value FROM FinanceTransactions ft 
                           WHERE ft.SchoolId = {0} AND ft.Source = 'LIBRARY' AND ft.Type = 'CREDIT' 
                           AND ft.Date >= {1} AND ft.Date < {2}",
                         schoolId, lastMonthStart, lastMonthEnd.AddDays(1)
                     ).FirstOrDefaultAsync();
 
                     var libraryYTD = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
+                        @"SELECT COALESCE(SUM(ft.Amount), 0) AS Value FROM FinanceTransactions ft 
                           WHERE ft.SchoolId = {0} AND ft.Source = 'LIBRARY' AND ft.Type = 'CREDIT' 
                           AND ft.Date >= {1}",
                         schoolId, yearStart
@@ -1119,26 +1156,29 @@ namespace SmsApi.Services
                 // 3. STORE SALES
                 try
                 {
-                    var storeThisMonth = await _context.StoreSales
-                        .Where(s => s.SchoolId == schoolId && s.Date >= thisMonthStart && s.Date < thisMonthStart.AddMonths(1))
-                        .SumAsync(s => s.Amount);
+                    var storeThisMonth = await _context.StoreOrders
+                        .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid"
+                            && o.OrderDate >= thisMonthStart && o.OrderDate < thisMonthStart.AddMonths(1))
+                        .SumAsync(o => o.FinalAmount);
 
-                    var storeLastMonth = await _context.StoreSales
-                        .Where(s => s.SchoolId == schoolId && s.Date >= lastMonthStart && s.Date < lastMonthEnd.AddDays(1))
-                        .SumAsync(s => s.Amount);
+                    var storeLastMonth = await _context.StoreOrders
+                        .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid"
+                            && o.OrderDate >= lastMonthStart && o.OrderDate < lastMonthEnd.AddDays(1))
+                        .SumAsync(o => o.FinalAmount);
 
-                    var storeYTD = await _context.StoreSales
-                        .Where(s => s.SchoolId == schoolId && s.Date >= yearStart)
-                        .SumAsync(s => s.Amount);
+                    var storeYTD = await _context.StoreOrders
+                        .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid"
+                            && o.OrderDate >= yearStart)
+                        .SumAsync(o => o.FinalAmount);
 
-                    var storeCount = await _context.StoreSales
-                        .Where(s => s.SchoolId == schoolId)
+                    var storeCount = await _context.StoreOrders
+                        .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid")
                         .CountAsync();
 
-                    var lastStoreDate = await _context.StoreSales
-                        .Where(s => s.SchoolId == schoolId)
-                        .OrderByDescending(s => s.Date)
-                        .Select(s => s.Date)
+                    var lastStoreDate = await _context.StoreOrders
+                        .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid")
+                        .OrderByDescending(o => o.OrderDate)
+                        .Select(o => o.OrderDate)
                         .FirstOrDefaultAsync();
 
                     sources.Add(new IncomeSourceDto
@@ -1162,21 +1202,21 @@ namespace SmsApi.Services
                 try
                 {
                     var donationThisMonth = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
+                        @"SELECT COALESCE(SUM(ft.Amount), 0) AS Value FROM FinanceTransactions ft 
                           WHERE ft.SchoolId = {0} AND ft.Source = 'DONATION' AND ft.Type = 'CREDIT' 
                           AND ft.Date >= {1} AND ft.Date < {2}",
                         schoolId, thisMonthStart, thisMonthStart.AddMonths(1)
                     ).FirstOrDefaultAsync();
 
                     var donationLastMonth = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
+                        @"SELECT COALESCE(SUM(ft.Amount), 0) AS Value FROM FinanceTransactions ft 
                           WHERE ft.SchoolId = {0} AND ft.Source = 'DONATION' AND ft.Type = 'CREDIT' 
                           AND ft.Date >= {1} AND ft.Date < {2}",
                         schoolId, lastMonthStart, lastMonthEnd.AddDays(1)
                     ).FirstOrDefaultAsync();
 
                     var donationYTD = await _context.Database.SqlQueryRaw<decimal>(
-                        @"SELECT COALESCE(SUM(ft.Amount), 0) FROM FinanceTransactions ft 
+                        @"SELECT COALESCE(SUM(ft.Amount), 0) AS Value FROM FinanceTransactions ft 
                           WHERE ft.SchoolId = {0} AND ft.Source = 'DONATION' AND ft.Type = 'CREDIT' 
                           AND ft.Date >= {1}",
                         schoolId, yearStart
@@ -1278,27 +1318,375 @@ namespace SmsApi.Services
             }
         }
 
+        // ========== DELETE CATEGORY ==========
+
+        public async Task<bool> DeleteCategoryAsync(Guid schoolId, Guid categoryId)
+        {
+            try
+            {
+                var category = await _context.FinanceCategories
+                    .FirstOrDefaultAsync(c => c.Id == categoryId && c.SchoolId == schoolId && c.IsActive);
+                if (category == null)
+                    return false;
+
+                // Soft-delete only if no transactions reference this category
+                var hasTransactions = await _context.FinanceTransactions
+                    .AnyAsync(t => t.CategoryId == categoryId && t.SchoolId == schoolId);
+                if (hasTransactions)
+                    throw new InvalidOperationException("Cannot delete a category that has transactions. Remove all linked transactions first.");
+
+                category.IsActive = false;
+                category.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting category {CategoryId}", categoryId);
+                throw;
+            }
+        }
+
+        // ========== AUTO STORE ORDER INCOME ==========
+
+        public async Task<FinanceTransactionDto> AddFeeIncomeAsync(
+            Guid schoolId, decimal amount, string description, string paymentMethod, string receiptNumber, Guid studentId)
+        {
+            try
+            {
+                // Idempotency: skip if this receipt has already been synced
+                var refNumber = $"FEE-{receiptNumber}";
+                var alreadySynced = await _context.FinanceTransactions
+                    .AnyAsync(t => t.SchoolId == schoolId && t.ReferenceNumber == refNumber);
+                if (alreadySynced)
+                {
+                    _logger.LogDebug("Fee payment {Receipt} already synced to wallet, skipping", receiptNumber);
+                    // Return a minimal placeholder — caller ignores the return value
+                    return new FinanceTransactionDto();
+                }
+
+                var account = await GetOrCreateDefaultAccountAsync(schoolId, "Fee Collection Account", "INCOME");
+                var category = await GetOrCreateCategoryAsync(schoolId, "Fee Collections", "INCOME");
+
+                var transactionDto = new CreateFinanceTransactionDto
+                {
+                    AccountId = account.Id,
+                    Amount = amount,
+                    Type = "CREDIT",
+                    CategoryId = category.Id,
+                    Date = DateTime.UtcNow,
+                    Description = description,
+                    Source = "FEE",
+                    ReferenceNumber = refNumber
+                };
+
+                return await CreateTransactionAsync(schoolId, transactionDto, studentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding fee income for school {SchoolId}", schoolId);
+                throw;
+            }
+        }
+
+        public async Task<FinanceTransactionDto> AddStoreOrderIncomeAsync(
+            Guid schoolId, decimal amount, string description, string paymentMethod, int itemsCount, Guid? staffId, Guid? orderId = null)
+        {
+            try
+            {
+                // Idempotency: if orderId is provided, skip if already synced
+                if (orderId.HasValue)
+                {
+                    var refNum = $"ORDER-{orderId.Value}";
+                    var alreadySynced = await _context.FinanceTransactions
+                        .AnyAsync(t => t.SchoolId == schoolId && t.ReferenceNumber == refNum);
+                    if (alreadySynced)
+                    {
+                        _logger.LogDebug("Store order {OrderId} already synced to wallet, skipping", orderId);
+                        return new FinanceTransactionDto();
+                    }
+                }
+                var account = await GetOrCreateDefaultAccountAsync(schoolId, "Store Income Account", "INCOME");
+                // Get or create Store Sales category
+                var category = await GetOrCreateCategoryAsync(schoolId, "Store Sales", "INCOME");
+
+                // Also record a StoreSale entry so it appears in the store-income tab
+                var invoiceNumber = orderId.HasValue ? $"ORDER-{orderId.Value}" : GenerateInvoiceNumber();
+                var sale = new StoreSale
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    Date = DateTime.UtcNow,
+                    Amount = amount,
+                    ItemsCount = itemsCount,
+                    PaymentMethod = paymentMethod,
+                    InvoiceNumber = invoiceNumber,
+                    Notes = description,
+                    ProcessedByStaffId = staffId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.StoreSales.Add(sale);
+                await _context.SaveChangesAsync();
+
+                // Create the finance transaction
+                var transactionDto = new CreateFinanceTransactionDto
+                {
+                    AccountId = account.Id,
+                    Amount = amount,
+                    Type = "CREDIT",
+                    CategoryId = category.Id,
+                    Date = DateTime.UtcNow,
+                    Description = description,
+                    Source = "STORE",
+                    ReferenceNumber = invoiceNumber
+                };
+
+                return await CreateTransactionAsync(schoolId, transactionDto, staffId ?? Guid.Empty);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding store order income for school {SchoolId}", schoolId);
+                throw;
+            }
+        }
+
+        // ========== STORE ORDERS SYNC ==========
+
+        public async Task<PayrollSyncResultDto> SyncStoreOrdersAsync(Guid schoolId)
+        {
+            try
+            {
+                var paidOrders = await _context.StoreOrders
+                    .Where(o => o.SchoolId == schoolId && o.PaymentStatus == "Paid")
+                    .Include(o => o.OrderItems)
+                    .ToListAsync();
+
+                var existingRefs = (await _context.FinanceTransactions
+                    .Where(t => t.SchoolId == schoolId && t.Source == "STORE" && t.ReferenceNumber != null)
+                    .Select(t => t.ReferenceNumber)
+                    .ToListAsync())
+                    .ToHashSet();
+
+                // Also check StoreSales.InvoiceNumber to prevent duplicates when a StoreSale
+                // was persisted (via internal SaveChangesAsync) but FinanceTransaction was not.
+                var existingSaleInvoices = (await _context.StoreSales
+                    .Where(s => s.SchoolId == schoolId && s.InvoiceNumber != null)
+                    .Select(s => s.InvoiceNumber)
+                    .ToListAsync())
+                    .ToHashSet();
+
+                var account = await GetOrCreateDefaultAccountAsync(schoolId, "Store Income Account", "INCOME");
+                var category = await GetOrCreateCategoryAsync(schoolId, "Store Sales", "INCOME");
+
+                int synced = 0, skipped = 0;
+                foreach (var order in paidOrders)
+                {
+                    var refNumber = $"ORDER-{order.Id}";
+                    if (existingRefs.Contains(refNumber) || existingSaleInvoices.Contains(refNumber))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var itemsCount = order.OrderItems?.Sum(oi => oi.Quantity) ?? 1;
+                    var description = $"Store order #{order.OrderNumber} \u2014 {itemsCount} item(s)";
+
+                    var sale = new StoreSale
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        Date = order.PaymentDate ?? order.CreatedAt,
+                        Amount = order.FinalAmount,
+                        ItemsCount = itemsCount,
+                        PaymentMethod = order.PaymentMethod ?? "Cash",
+                        InvoiceNumber = refNumber,
+                        Notes = description,
+                        ProcessedByStaffId = order.ProcessedByStaffId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    _context.StoreSales.Add(sale);
+
+                    var txDto = new CreateFinanceTransactionDto
+                    {
+                        AccountId = account.Id,
+                        Amount = order.FinalAmount,
+                        Type = "CREDIT",
+                        CategoryId = category.Id,
+                        Date = order.PaymentDate ?? order.CreatedAt,
+                        Description = description,
+                        Source = "STORE",
+                        ReferenceNumber = refNumber
+                    };
+                    await CreateTransactionAsync(schoolId, txDto, order.ProcessedByStaffId ?? Guid.Empty);
+                    synced++;
+                }
+
+                await _context.SaveChangesAsync();
+
+                return new PayrollSyncResultDto
+                {
+                    Synced = synced,
+                    Skipped = skipped,
+                    Total = paidOrders.Count,
+                    CustomMessage = synced > 0
+                        ? $"Synced {synced} store order(s) to wallet income."
+                        : "All paid orders are already synced."
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing store orders for school {SchoolId}", schoolId);
+                throw;
+            }
+        }
+
+        // ========== PAYROLL SYNC ==========
+
+        public async Task<PayrollSyncResultDto> SyncPayrollExpensesAsync(Guid schoolId, int? month, int? year)
+        {
+            try
+            {
+                var query = _context.PayrollRecords
+                    .Include(p => p.Staff)
+                    .Where(p => p.SchoolId == schoolId && (p.Status == "paid" || p.Status == "approved"));
+
+                if (month.HasValue) query = query.Where(p => p.Month == month.Value);
+                if (year.HasValue) query = query.Where(p => p.Year == year.Value);
+
+                var payrollRecords = await query.ToListAsync();
+
+                // Collect already-synced reference numbers to avoid duplicates
+                var existingRefs = (await _context.FinanceTransactions
+                    .Where(t => t.SchoolId == schoolId && t.Source == "PAYROLL" && t.ReferenceNumber != null)
+                    .Select(t => t.ReferenceNumber)
+                    .ToListAsync())
+                    .ToHashSet();
+
+                // Get or create defaults
+                var account = await GetOrCreateDefaultAccountAsync(schoolId, "Payroll Account", "EXPENSE");
+                var category = await GetOrCreateCategoryAsync(schoolId, "Staff Salaries", "EXPENSE");
+
+                int synced = 0;
+                int skipped = 0;
+                foreach (var record in payrollRecords)
+                {
+                    var refNumber = $"PAYROLL-{record.Id}";
+                    if (existingRefs.Contains(refNumber))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var staffName = record.Staff != null
+                        ? $"{record.Staff.FirstName} {record.Staff.LastName}"
+                        : "Unknown Staff";
+                    var monthName = new DateTime(record.Year, record.Month, 1).ToString("MMM yyyy");
+
+                    var transactionDto = new CreateFinanceTransactionDto
+                    {
+                        AccountId = account.Id,
+                        Amount = record.NetSalary,
+                        Type = "DEBIT",
+                        CategoryId = category.Id,
+                        Date = record.PaymentDate ?? new DateTime(record.Year, record.Month, 28),
+                        Description = $"Salary - {staffName} ({monthName})",
+                        Source = "PAYROLL",
+                        ReferenceNumber = refNumber
+                    };
+
+                    try
+                    {
+                        await CreateTransactionAsync(schoolId, transactionDto, Guid.Empty);
+                        synced++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to sync payroll record {RecordId}", record.Id);
+                        skipped++;
+                    }
+                }
+
+                return new PayrollSyncResultDto
+                {
+                    Synced = synced,
+                    Skipped = skipped,
+                    Total = payrollRecords.Count,
+                    CustomMessage = payrollRecords.Count == 0
+                        ? "No paid or approved payroll records found. Process and approve salaries first, then sync."
+                        : null
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing payroll expenses for school {SchoolId}", schoolId);
+                throw;
+            }
+        }
+
+        // ========== PRIVATE HELPERS ==========
+
+        private async Task<FinanceAccount> GetOrCreateDefaultAccountAsync(Guid schoolId, string name, string type)
+        {
+            var account = await _context.FinanceAccounts
+                .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.Name == name && a.Type == type && a.IsActive);
+            if (account == null)
+            {
+                account = new FinanceAccount
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    Name = name,
+                    Type = type,
+                    Balance = 0,
+                    IsActive = true,
+                    Description = $"Auto-created account for {name}",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.FinanceAccounts.Add(account);
+                await _context.SaveChangesAsync();
+            }
+            return account;
+        }
+
+        private async Task<FinanceCategory> GetOrCreateCategoryAsync(Guid schoolId, string name, string type)
+        {
+            var category = await _context.FinanceCategories
+                .FirstOrDefaultAsync(c => c.SchoolId == schoolId && c.Name == name && c.Type == type && c.IsActive);
+            if (category == null)
+            {
+                category = new FinanceCategory
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    Name = name,
+                    Type = type,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.FinanceCategories.Add(category);
+                await _context.SaveChangesAsync();
+            }
+            return category;
+        }
+
         private bool ValidateAccountTransaction(string accountType, string transactionType, string categoryType)
         {
-            // INCOME accounts: CREDIT increases, DEBIT decreases
-            // EXPENSE accounts: DEBIT increases, CREDIT decreases
-            // ASSET accounts: DEBIT increases, CREDIT decreases
-            // LIABILITY accounts: CREDIT increases, DEBIT decreases
+            // Allow any transaction on ASSET accounts — common case is recording income/expenses
+            // directly against a cash or bank account. Balance direction is handled by the
+            // CREDIT/DEBIT logic in CreateTransactionAsync, not enforced here.
+            if (accountType == "ASSET") return true;
 
             if (categoryType == "INCOME")
-            {
-                // Income should CREDIT income accounts or DEBIT asset accounts (receiving money)
-                return (accountType == "INCOME" && transactionType == "CREDIT") ||
-                       (accountType == "ASSET" && transactionType == "DEBIT");
-            }
-            else if (categoryType == "EXPENSE")
-            {
-                // Expense should DEBIT expense accounts or CREDIT asset accounts (spending money)
-                return (accountType == "EXPENSE" && transactionType == "DEBIT") ||
-                       (accountType == "ASSET" && transactionType == "CREDIT");
-            }
+                return accountType == "INCOME" && transactionType == "CREDIT";
 
-            return true; // Allow other combinations
+            if (categoryType == "EXPENSE")
+                return accountType == "EXPENSE" && transactionType == "DEBIT";
+
+            return true;
         }
 
         private string GenerateInvoiceNumber()

@@ -204,6 +204,9 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Immediately block any deactivated/suspended user even with a valid JWT
+app.UseMiddleware<SmsApi.Middleware.UserStatusCheckMiddleware>();
+
 // Use School Feature Access Middleware (after authentication)
 app.UseMiddleware<SmsApi.Middleware.SchoolFeatureAccessMiddleware>();
 
@@ -390,8 +393,13 @@ static async Task SeedEssentialDataAsync(WebApplication app)
 
         // 3b. Seed demo staff & parent users for the main school
         var staffEmail = "suresh.n@demo.edu";
-        if (!await db.UserLogins.AnyAsync(u => u.Email == staffEmail && !u.IsDeleted))
+        var principalUserLogin = await db.UserLogins.FirstOrDefaultAsync(u => u.Email == staffEmail && !u.IsDeleted);
+        if (principalUserLogin == null)
         {
+            // Find the staff member to link via LinkedEntityId
+            var principalStaffMember = await db.StaffMembers
+                .FirstOrDefaultAsync(s => s.Email == staffEmail && s.SchoolId == schoolId);
+            
             db.UserLogins.Add(new SmsApi.Models.Entities.UserLogin
             {
                 Id = Guid.NewGuid(),
@@ -399,9 +407,10 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 Email = staffEmail,
                 FirstName = "Suresh",
                 LastName = "Nair",
-                Role = "Staff",
+                Role = "Principal",
                 Status = "active",
                 SchoolId = schoolId,
+                LinkedEntityId = principalStaffMember?.Id,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(
                     config["DEMO_STAFF_PASSWORD"] ?? (environment.IsDevelopment() ? "staff-dev-change-me" : throw new InvalidOperationException("DEMO_STAFF_PASSWORD is required in non-development environments.")),
                     workFactor: 12),
@@ -411,7 +420,23 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 IsDeleted = false
             });
             await db.SaveChangesAsync();
-            logger.LogInformation("Seeded demo staff user '{Email}'", staffEmail);
+            logger.LogInformation("Seeded demo principal user '{Email}' with role Principal", staffEmail);
+        }
+        else if (principalUserLogin.Role != "Principal")
+        {
+            // Update existing principal to ensure role is set correctly
+            principalUserLogin.Role = "Principal";
+            // Also ensure LinkedEntityId is set if not already
+            if (!principalUserLogin.LinkedEntityId.HasValue)
+            {
+                var principalStaffMember = await db.StaffMembers
+                    .FirstOrDefaultAsync(s => s.Email == staffEmail && s.SchoolId == schoolId);
+                if (principalStaffMember != null)
+                    principalUserLogin.LinkedEntityId = principalStaffMember.Id;
+            }
+            principalUserLogin.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Updated principal user '{Email}' role to Principal and linked staff record", staffEmail);
         }
 
         var parentEmail = "aj@gmail.com";

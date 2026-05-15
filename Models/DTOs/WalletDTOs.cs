@@ -72,11 +72,14 @@ namespace SmsApi.Models.DTOs
         public string Description { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression("^(FEE|STORE|PETTY_CASH|DONATION|OTHER)$")]
+        [RegularExpression("^(FEE|STORE|PETTY_CASH|DONATION|OTHER|PAYROLL)$")]
         public string Source { get; set; } = string.Empty;
 
         [MaxLength(500)]
         public string? ReceiptUrl { get; set; }
+
+        [MaxLength(100)]
+        public string? ReferenceNumber { get; set; }
     }
 
     public class TransactionFiltersDto
@@ -363,5 +366,15 @@ namespace SmsApi.Models.DTOs
         public decimal TotalPending { get; set; }
         public int TotalTransactions { get; set; }
         public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    // ========== PAYROLL SYNC DTOs ==========
+    public class PayrollSyncResultDto
+    {
+        public int Synced { get; set; }
+        public int Skipped { get; set; }
+        public int Total { get; set; }
+        public string? CustomMessage { get; set; }
+        public string Message => CustomMessage ?? $"Synced {Synced} payroll expense(s). {Skipped} already synced or skipped.";
     }
 }

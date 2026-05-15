@@ -2089,32 +2089,70 @@ namespace SmsApi.Services
                             .Where(p => !string.IsNullOrWhiteSpace(p))).Trim();
 
                     if (string.IsNullOrWhiteSpace(resolvedName))
-                        rowErrors.Add("Name is required");
+                        rowErrors.Add("Name/FirstName is required — please fill in either the Name or FirstName column");
                     if (string.IsNullOrWhiteSpace(req.AdmissionNumber))
-                        rowErrors.Add("AdmissionNumber is required");
+                        rowErrors.Add("AdmissionNumber is required — provide a unique ID like 'ADM-2025-001'");
                     if (string.IsNullOrWhiteSpace(req.Class))
-                        rowErrors.Add("Class is required");
+                        rowErrors.Add("Class is required — e.g. 'Class 5' or '5th Grade'");
                     if (string.IsNullOrWhiteSpace(req.Section))
-                        rowErrors.Add("Section is required");
-                    if (req.DateOfBirth == default || req.DateOfBirth > DateTime.UtcNow)
-                        rowErrors.Add("DateOfBirth must be a valid past date");
-                    if (req.AdmissionDate == default || req.AdmissionDate > DateTime.UtcNow.AddDays(1))
-                        rowErrors.Add("AdmissionDate must not be in the future");
+                        rowErrors.Add("Section is required — e.g. 'A', 'B'");
+                    if (req.DateOfBirth == default)
+                        rowErrors.Add("DateOfBirth is required — use DD/MM/YYYY or YYYY-MM-DD format");
+                    else if (req.DateOfBirth > DateTime.UtcNow)
+                        rowErrors.Add($"DateOfBirth '{req.DateOfBirth:yyyy-MM-dd}' is in the future — please check the year");
 
-                    // Enum-like field validation
+                    // Generous: allow AdmissionDate up to 30 days ahead (advance registrations)
+                    if (req.AdmissionDate == default)
+                        req.AdmissionDate = DateTime.UtcNow;
+                    else if (req.AdmissionDate > DateTime.UtcNow.AddDays(30))
+                        rowErrors.Add($"AdmissionDate '{req.AdmissionDate:yyyy-MM-dd}' is more than 30 days in the future");
+
+                    // Enum-like field validation with helpful suggestions
                     if (!string.IsNullOrWhiteSpace(req.Gender) && !validGenders.Contains(req.Gender))
-                        rowErrors.Add($"Gender '{req.Gender}' invalid. Allowed: {string.Join(", ", validGenders)}");
+                        rowErrors.Add($"Gender '{req.Gender}' is not recognised — use: Male, Female, or Other (M/F are also accepted)");
                     if (!string.IsNullOrWhiteSpace(req.BloodGroup) && !validBloodGroups.Contains(req.BloodGroup))
-                        rowErrors.Add($"BloodGroup '{req.BloodGroup}' invalid. Allowed: {string.Join(", ", validBloodGroups)}");
+                        rowErrors.Add($"BloodGroup '{req.BloodGroup}' is not valid — accepted values: {string.Join(", ", validBloodGroups)}");
                     if (!string.IsNullOrWhiteSpace(req.Category) && !validCategories.Contains(req.Category))
-                        rowErrors.Add($"Category '{req.Category}' invalid. Allowed: {string.Join(", ", validCategories)}");
+                    {
+                        // Auto-correct common typos / variations before rejecting
+                        var catFixed = req.Category.Trim() switch
+                        {
+                            var c when c.Equals("gen", StringComparison.OrdinalIgnoreCase)   => "General",
+                            var c when c.Equals("obc-a", StringComparison.OrdinalIgnoreCase) => "OBC",
+                            var c when c.Equals("obc-b", StringComparison.OrdinalIgnoreCase) => "OBC",
+                            var c when c.Equals("sc/st", StringComparison.OrdinalIgnoreCase) => "SC",
+                            _ => null
+                        };
+                        if (catFixed != null)
+                            req.Category = catFixed;
+                        else
+                            rowErrors.Add($"Category '{req.Category}' is not valid — accepted: {string.Join(", ", validCategories)}");
+                    }
+                    // Auto-default Category if empty
+                    if (string.IsNullOrWhiteSpace(req.Category))
+                        req.Category = "General";
+
                     if (!string.IsNullOrWhiteSpace(req.Status) && !validStatuses.Contains(req.Status))
-                        rowErrors.Add($"Status '{req.Status}' invalid. Allowed: {string.Join(", ", validStatuses)}");
+                        rowErrors.Add($"Status '{req.Status}' is not valid — accepted: {string.Join(", ", validStatuses)} (leave blank to default to 'active')");
+
+                    // PAN length check with clear hint
+                    if (!string.IsNullOrWhiteSpace(req.PanNumber) && req.PanNumber.Length != 10)
+                        rowErrors.Add($"PanNumber '{req.PanNumber}' has {req.PanNumber.Length} characters — PAN must be exactly 10 (format: ABCDE1234F)");
+
+                    // Aadhar: strip dashes for length check; keep stored normalised
+                    if (!string.IsNullOrWhiteSpace(req.AadharNumber))
+                    {
+                        var aadharDigits = System.Text.RegularExpressions.Regex.Replace(req.AadharNumber, @"[^\d]", "");
+                        if (aadharDigits.Length != 12)
+                            rowErrors.Add($"AadharNumber '{req.AadharNumber}' must contain exactly 12 digits (e.g. 1234-5678-9012 or 123456789012)");
+                        else
+                            req.AadharNumber = aadharDigits; // store as 12 plain digits
+                    }
 
                     if (rowErrors.Count > 0)
                     {
                         result.FailureCount++;
-                        result.Errors.Add($"[{rowRef}] Validation: {string.Join("; ", rowErrors)}");
+                        result.Errors.Add($"[{rowRef}] {string.Join(" | ", rowErrors)}");
                         continue;
                     }
 
@@ -2122,13 +2160,13 @@ namespace SmsApi.Services
                     if (existingNumbers.Contains(req.AdmissionNumber!))
                     {
                         result.FailureCount++;
-                        result.Errors.Add($"[{rowRef}] Duplicate admission number — already exists in school");
+                        result.Errors.Add($"[{rowRef}] Already exists — a student with admission number '{req.AdmissionNumber}' is already registered in this school");
                         continue;
                     }
                     if (seenInBatch.Contains(req.AdmissionNumber!))
                     {
                         result.FailureCount++;
-                        result.Errors.Add($"[{rowRef}] Duplicate admission number — appears twice in this import");
+                        result.Errors.Add($"[{rowRef}] Duplicate in file — admission number '{req.AdmissionNumber}' appears more than once in this upload");
                         continue;
                     }
                     seenInBatch.Add(req.AdmissionNumber!);
@@ -2605,7 +2643,7 @@ namespace SmsApi.Services
             var allStudentIds = directChildrenIds.Union(siblingIds).Distinct().ToList();
 
             var students = await _context.Students
-                .Where(s => allStudentIds.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted)
+                .Where(s => allStudentIds.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted && s.Status == "active")
                 .OrderBy(s => s.Name)
                 .ToListAsync();
 

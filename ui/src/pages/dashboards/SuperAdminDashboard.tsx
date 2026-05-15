@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import * as superAdminApi from "@/services/api/superAdminApi";
 import type { PlatformStats, SchoolPermissionsResponse } from "@/services/api/superAdminApi";
@@ -36,7 +36,6 @@ const MODULE_LABELS: Record<string, string> = {
 };
 
 export default function SuperAdminDashboard() {
-  const { toast } = useToast();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -59,7 +58,7 @@ export default function SuperAdminDashboard() {
     setPermLoading(true);
     superAdminApi.getSchoolPermissions(selectedSchoolId)
       .then(setPermissions)
-      .catch(() => toast({ title: "Error", description: "Failed to load school permissions", variant: "destructive" }))
+      .catch(() => toast.error("Failed to load school permissions"))
       .finally(() => setPermLoading(false));
   }, [selectedSchoolId]);
 
@@ -83,9 +82,9 @@ export default function SuperAdminDashboard() {
       // Re-fetch from server to ensure UI reflects true DB state
       const fresh = await superAdminApi.getSchoolPermissions(selectedSchoolId);
       setPermissions(fresh);
-      toast({ title: `${!currentEnabled ? "Enabled" : "Disabled"} ${moduleName}`, description: `Feature updated for ${permissions.schoolName}` });
+      toast.success(`${!currentEnabled ? "Enabled" : "Disabled"} ${MODULE_LABELS[moduleName] ?? moduleName}`, { description: `Feature updated for ${permissions.schoolName}` });
     } catch {
-      toast({ title: "Error", description: `Failed to toggle ${moduleName}`, variant: "destructive" });
+      toast.error(`Failed to toggle ${MODULE_LABELS[moduleName] ?? moduleName}`);
     } finally {
       setTogglingModule(null);
     }
@@ -106,7 +105,7 @@ export default function SuperAdminDashboard() {
             <h1 className="text-xl sm:text-2xl font-bold">Super Admin Portal</h1>
             <p className="text-sm text-muted-foreground">Vitana platform management & school feature control</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => { fetchStats(); fetchSchools(); }} className="ml-auto">
+          <Button variant="ghost" size="sm" onClick={() => { fetchStats(); }} className="ml-auto">
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>

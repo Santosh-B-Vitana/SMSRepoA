@@ -77,14 +77,14 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
   },
   "Class Teacher": {
     tier: "Academic", scope: "Standard",
-    keyModules: ["Students", "Attendance", "Grades", "Communication"],
+    keyModules: ["Students", "Attendance", "Grades", "Health"],
     bg: "from-sky-50 to-sky-100/50", border: "border-sky-200",
     iconColor: "text-sky-600", badge: "bg-sky-100 text-sky-700 border-sky-200",
     tierColor: "text-sky-600", scopeBadge: "bg-sky-100 text-sky-700", icon: BookOpen,
   },
   "Teacher": {
     tier: "Academic", scope: "Limited",
-    keyModules: ["Attendance", "Grades", "Exams", "Timetable"],
+    keyModules: ["Attendance", "Grades", "Assignments", "Timetable"],
     bg: "from-cyan-50 to-cyan-100/50", border: "border-cyan-200",
     iconColor: "text-cyan-600", badge: "bg-cyan-100 text-cyan-700 border-cyan-200",
     tierColor: "text-cyan-600", scopeBadge: "bg-cyan-100 text-cyan-700", icon: BookOpen,

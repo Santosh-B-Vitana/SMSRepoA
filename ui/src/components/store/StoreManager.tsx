@@ -35,6 +35,8 @@ import {
   MarkOrderPaidDto,
 } from "@/services/api/storeApi";
 import { StorePaymentProcessor } from "./StorePaymentProcessor";
+import { generateStoreReceipt } from "@/utils/storeReceiptGenerator";
+import { useSchool } from "@/contexts/SchoolContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -110,6 +112,7 @@ interface CartItem {
 
 export function StoreManager() {
   const visitedTabs = useRef(new Set<string>(["dashboard"]));
+  const { schoolInfo } = useSchool();
 
   // ─── Stats
   const [stats, setStats] = useState<StoreStatsDto | null>(null);
@@ -468,7 +471,7 @@ export function StoreManager() {
                       <p className="text-sm text-muted-foreground text-center py-8">No sales yet</p>
                     ) : (
                       <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={Object.entries(stats.revenueByCategory).map(([cat, rev]) => ({ cat, rev }))}>
+                        <BarChart data={Object.entries(stats.revenueByCategory).map(([cat, rev]) => ({ cat: cat.charAt(0).toUpperCase() + cat.slice(1), rev }))}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="cat" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
@@ -1147,7 +1150,37 @@ export function StoreManager() {
           </div>
           <DialogFooter>
             <Button variant="outline" className="flex-1" onClick={() => setCheckoutOrder(null)}>New Sale</Button>
-            <Button className="flex-1" onClick={() => { toast.success("Receipt feature coming soon"); setCheckoutOrder(null); }}>
+            <Button className="flex-1" onClick={() => {
+              if (checkoutOrder) {
+                try {
+                  const doc = generateStoreReceipt(
+                    {
+                      name: schoolInfo?.name ?? "School Store",
+                      address: schoolInfo?.address,
+                      phone: schoolInfo?.phone,
+                      email: schoolInfo?.email,
+                      website: schoolInfo?.websiteUrl,
+                    },
+                    {
+                      receiptNumber: checkoutOrder.orderNumber,
+                      date: new Date(checkoutOrder.orderDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+                      customerName: checkoutOrder.customerName,
+                      items: (checkoutOrder.items ?? []).map((i) => ({
+                        name: i.itemName,
+                        qty: i.quantity,
+                        price: i.unitPrice,
+                      })),
+                      total: checkoutOrder.finalAmount,
+                      paymentMethod: checkoutOrder.paymentMethod ?? "Cash",
+                    }
+                  );
+                  doc.save(`receipt-${checkoutOrder.orderNumber}.pdf`);
+                } catch {
+                  toast.error("Could not generate receipt. Please try again.");
+                }
+              }
+              setCheckoutOrder(null);
+            }}>
               <Download className="h-4 w-4 mr-2" />Receipt
             </Button>
           </DialogFooter>

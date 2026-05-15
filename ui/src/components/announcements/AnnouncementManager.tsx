@@ -194,10 +194,9 @@ interface FormDialogProps {
   editing: AnnouncementBasic | null;
   onClose: () => void;
   onSaved: () => void;
-  staffId: string;
 }
 
-function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProps) {
+function FormDialog({ open, editing, onClose, onSaved }: FormDialogProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
 
   // Reset when dialog opens
@@ -249,7 +248,6 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
       const dto: CreateAnnouncementDto = {
         title:           form.title.trim(),
         content:         form.content.trim(),
-        createdByStaffId: staffId,
         priority:        form.priority,
         targetAudience:  form.targetAudience,
         isPinned:        form.isPinned,
@@ -366,9 +364,6 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
 // ═══════════════════════════════════════════════════════════════════════════
 // Main component
 // ═══════════════════════════════════════════════════════════════════════════
-
-// TODO: replace with real auth/tenant context value when integrated
-const PLACEHOLDER_STAFF_ID = "00000000-0000-0000-0000-000000000001";
 
 export function AnnouncementManager() {
   const qc = useQueryClient();
@@ -698,7 +693,6 @@ export function AnnouncementManager() {
         editing={editing}
         onClose={() => { setShowForm(false); setEditing(null); }}
         onSaved={handleSaved}
-        staffId={PLACEHOLDER_STAFF_ID}
       />
 
       {/* Detail View Dialog */}

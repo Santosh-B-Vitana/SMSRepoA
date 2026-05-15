@@ -90,6 +90,13 @@ export interface UpdateFinanceCategoryDto {
   budget?: number;
 }
 
+export interface PayrollSyncResultDto {
+  synced: number;
+  skipped: number;
+  total: number;
+  message: string;
+}
+
 export interface PettyCashEntryDto {
   id: string;
   date: string;
@@ -266,6 +273,20 @@ export const financeApi = {
     apiClient.post<FinanceCategoryDto>(`${BASE}/categories`, dto).then(r => r.data),
   updateCategory: (id: string, dto: UpdateFinanceCategoryDto) =>
     apiClient.put<FinanceCategoryDto>(`${BASE}/categories/${id}`, dto).then(r => r.data),
+  deleteCategory: (id: string) =>
+    apiClient.delete(`${BASE}/categories/${id}`).then(() => undefined),
+
+  // Payroll sync
+  syncPayroll: (month?: number, year?: number) =>
+    apiClient
+      .post<PayrollSyncResultDto>(`${BASE}/sync-payroll`, null, { params: { month, year } })
+      .then(r => r.data),
+
+  // Store orders sync
+  syncStoreOrders: () =>
+    apiClient
+      .post<PayrollSyncResultDto>(`${BASE}/sync-store`, null)
+      .then(r => r.data),
 
   // Petty Cash
   getPettyCash: (page = 1, pageSize = 20) =>

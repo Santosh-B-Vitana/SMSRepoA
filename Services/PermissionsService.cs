@@ -169,7 +169,6 @@ namespace SmsApi.Services
                 "Grades.View","Grades.Create","Grades.Edit","Grades.Export",
                 "Library.View","Transport.View","Hostel.View",
                 "Health.View","Health.Create","Health.Edit",
-                "Communication.View","Communication.Create","Communication.Edit","Communication.Delete",
                 "Announcements.View","Announcements.Create","Announcements.Edit","Announcements.Delete",
                 "Analytics.View","Analytics.Export",
                 "Reports.View","Reports.Export",
@@ -188,7 +187,6 @@ namespace SmsApi.Services
                 "Examinations.View","Examinations.Create","Examinations.Edit","Examinations.Approve","Examinations.Export",
                 "Grades.View","Grades.Create","Grades.Edit","Grades.Export",
                 "Library.View",
-                "Communication.View","Communication.Create","Communication.Edit",
                 "Announcements.View","Announcements.Create","Announcements.Edit",
                 "Analytics.View",
                 "Reports.View","Reports.Export",
@@ -201,14 +199,10 @@ namespace SmsApi.Services
                 "Attendance.View","Attendance.Create","Attendance.Edit",
                 "Assignments.View","Assignments.Create","Assignments.Edit","Assignments.Delete",
                 "Timetable.View",
-                "Examinations.View","Examinations.Create","Examinations.Edit",
                 "Grades.View","Grades.Create","Grades.Edit",
                 "Library.View",
                 "Health.View",
-                "Communication.View","Communication.Create","Communication.Edit",
                 "Announcements.View","Announcements.Create",
-                "Reports.View","Reports.Export",
-                "Certificates.View",
             },
 
             ["Teacher"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -217,12 +211,9 @@ namespace SmsApi.Services
                 "Attendance.View",
                 "Assignments.View","Assignments.Create","Assignments.Edit",
                 "Timetable.View",
-                "Examinations.View","Examinations.Create","Examinations.Edit",
                 "Grades.View","Grades.Create","Grades.Edit",
                 "Library.View",
-                "Communication.View","Communication.Create",
                 "Announcements.View",
-                "Reports.View",
             },
 
             // -- Tier 3: Finance & HR --------------------------------------------
@@ -234,7 +225,6 @@ namespace SmsApi.Services
                 "Payroll.View","Payroll.Create","Payroll.Edit","Payroll.Approve","Payroll.Export",
                 "Analytics.View","Analytics.Export",
                 "Reports.View","Reports.Export",
-                "Communication.View",
             },
 
             ["HR Manager"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -245,7 +235,6 @@ namespace SmsApi.Services
                 "Payroll.View","Payroll.Create","Payroll.Edit","Payroll.Approve","Payroll.Export",
                 "Analytics.View","Analytics.Export",
                 "Reports.View","Reports.Export",
-                "Communication.View","Communication.Create",
                 "Announcements.View","Announcements.Create",
                 "UserManagement.View","UserManagement.Create","UserManagement.Edit",
             },
@@ -256,7 +245,6 @@ namespace SmsApi.Services
                 "Students.View","Staff.View",
                 "Library.View","Library.Create","Library.Edit","Library.Delete",
                 "Reports.View","Reports.Export",
-                "Communication.View",
             },
 
             ["Transport Manager"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -264,7 +252,6 @@ namespace SmsApi.Services
                 "Students.View",
                 "Transport.View","Transport.Create","Transport.Edit","Transport.Delete",
                 "Reports.View","Reports.Export",
-                "Communication.View",
                 "Announcements.View",
             },
 
@@ -274,7 +261,6 @@ namespace SmsApi.Services
                 "Attendance.View","Attendance.Create",
                 "Hostel.View","Hostel.Create","Hostel.Edit","Hostel.Delete",
                 "Health.View","Health.Create","Health.Edit",
-                "Communication.View","Communication.Create",
                 "Announcements.View","Announcements.Create",
                 "Reports.View","Reports.Export",
             },
@@ -285,7 +271,6 @@ namespace SmsApi.Services
                 "Admissions.View","Admissions.Create","Admissions.Edit","Admissions.Approve",
                 "Fees.View",
                 "Visitor.View","Visitor.Create",
-                "Communication.View","Communication.Create","Communication.Edit",
                 "Announcements.View",
                 "Certificates.View",
                 "Reports.View",
@@ -296,7 +281,6 @@ namespace SmsApi.Services
                 "Students.View",
                 "Attendance.View",
                 "Health.View","Health.Create","Health.Edit",
-                "Communication.View","Communication.Create","Communication.Edit",
                 "Announcements.View","Announcements.Create",
                 "Reports.View",
             },
@@ -307,7 +291,6 @@ namespace SmsApi.Services
                 "Students.View",
                 "Admissions.View",
                 "Visitor.View","Visitor.Create","Visitor.Edit","Visitor.Delete",
-                "Communication.View",
                 "Announcements.View",
                 "Reports.View",
             },

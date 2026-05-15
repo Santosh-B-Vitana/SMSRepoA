@@ -188,7 +188,7 @@ function StudentsTab({ students, loading }: { students: StudentBasic[]; loading:
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">{student.admissionNumber}</TableCell>
-                  <TableCell>{student.rollNumber}</TableCell>
+                  <TableCell className="font-medium text-sm">{student.rollNumber}</TableCell>
                   <TableCell>
                     <Badge
                       variant={student.status === "active" ? "default" : "secondary"}
@@ -973,12 +973,12 @@ function StaffTimetableTab({
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0 overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
+        <table className="w-full text-base border-collapse">
           <thead>
             <tr className="bg-muted/50">
-              <th className="border px-3 py-2 text-left text-xs font-medium text-muted-foreground w-24">Period</th>
+              <th className="border px-3 py-2 text-left text-sm font-semibold text-muted-foreground w-24">Period</th>
               {STAFF_DAYS.map(d => (
-                <th key={d} className="border px-3 py-2 text-center text-xs font-medium min-w-[110px]">{d}</th>
+                <th key={d} className="border px-3 py-2 text-center text-sm font-semibold min-w-[110px]">{d}</th>
               ))}
             </tr>
           </thead>
@@ -991,23 +991,23 @@ function StaffTimetableTab({
               return (
                 <tr key={periodNum} className="hover:bg-muted/20">
                   <td className="border px-3 py-2 bg-muted/30">
-                    <div className="font-medium text-xs">P{periodNum}</div>
-                    <div className="text-xs text-muted-foreground">{timeLabel}</div>
+                    <div className="font-semibold text-sm">P{periodNum}</div>
+                    <div className="text-sm text-muted-foreground font-medium">{timeLabel.replace('–', '-')}</div>
                   </td>
                   {STAFF_DAYS.map(day => {
                     const p = getPeriod(day, periodNum);
                     return (
-                      <td key={`${day}-${periodNum}`} className="border px-2 py-1.5 text-center align-middle">
+                      <td key={`${day}-${periodNum}`} className="border px-2 py-2 text-center align-middle">
                         {p ? (
                           <div className="bg-primary/10 rounded px-1.5 py-1 text-left">
-                            <div className="font-medium text-xs leading-tight">
+                            <div className="font-semibold text-sm leading-tight">
                               {p.subjectName ?? "—"}
                             </div>
                             {p.teacherName && (
-                              <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
+                              <div className="text-sm text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
                             )}
                             {p.room && (
-                              <div className="text-xs text-muted-foreground/60 mt-0.5">{p.room}</div>
+                              <div className="text-sm text-muted-foreground/60 mt-0.5">{p.room}</div>
                             )}
                           </div>
                         ) : (

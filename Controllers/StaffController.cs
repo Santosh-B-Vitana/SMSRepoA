@@ -8,6 +8,7 @@ using SmsApi.Services;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace SmsApi.Controllers
 {
@@ -19,12 +20,14 @@ namespace SmsApi.Controllers
         private readonly IStaffService _staffService;
         private readonly ITenantContext _tenant;
         private readonly AppDbContext _dbContext;
+        private readonly IAcademicsService _academicsService;
 
-        public StaffController(IStaffService staffService, ITenantContext tenant, AppDbContext dbContext)
+        public StaffController(IStaffService staffService, ITenantContext tenant, AppDbContext dbContext, IAcademicsService academicsService)
         {
             _staffService = staffService;
             _tenant = tenant;
             _dbContext = dbContext;
+            _academicsService = academicsService;
         }
 
         /// <summary>
@@ -132,6 +135,143 @@ namespace SmsApi.Controllers
             }
             catch (Exception) { return StatusCode(500, new { message = "An error occurred while updating the staff member." });
             }
+        }
+
+        /// <summary>
+        /// Deactivate a staff member: optionally reassign or remove their class/section assignments,
+        /// then mark their account and login as inactive.
+        /// </summary>
+        [HttpPost("{id}/deactivate")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
+        public async Task<ActionResult> DeactivateStaff(Guid id, [FromBody] DeactivateStaffRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                var staff = await _dbContext.StaffMembers
+                    .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId && !s.IsDeleted);
+                if (staff == null)
+                    return NotFound(new { message = "Staff member not found." });
+
+                // Process assignment actions (reassign / remove)
+                var assignmentErrors = new List<string>();
+                if (request.Assignments != null)
+                {
+                    foreach (var item in request.Assignments)
+                    {
+                        // Load the existing assignment to capture class/section/subject details
+                        var oldAssignment = await _dbContext.TeacherAssignments
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(ta => ta.Id == item.AssignmentId && ta.SchoolId == schoolId);
+                        if (oldAssignment == null)
+                        {
+                            assignmentErrors.Add($"Assignment {item.AssignmentId} not found — skipped.");
+                            continue;
+                        }
+
+                        if (item.Action == "reassign" && item.NewStaffId.HasValue)
+                        {
+                            // Validate replacement staff
+                            var newStaff = await _dbContext.StaffMembers
+                                .FirstOrDefaultAsync(s => s.Id == item.NewStaffId.Value && s.SchoolId == schoolId && !s.IsDeleted);
+                            if (newStaff == null) { assignmentErrors.Add($"Replacement staff not found for assignment {item.AssignmentId}."); continue; }
+                            if (newStaff.Status?.ToLower() == "inactive" || newStaff.Status?.ToLower() == "terminated")
+                            { assignmentErrors.Add($"Replacement staff '{newStaff.FirstName} {newStaff.LastName}' is {newStaff.Status} and cannot be assigned."); continue; }
+
+                            // Step 1 — Remove the old assignment (also revokes role for departing staff)
+                            await _academicsService.RemoveTeacherAssignmentAsync(item.AssignmentId, schoolId);
+
+                            // Step 2 — Create the same assignment for the replacement (grants role + "My Classes" for new staff)
+                            try
+                            {
+                                await _academicsService.AssignTeacherAsync(new SmsApi.Models.DTOs.AssignTeacherRequest
+                                {
+                                    SchoolId = schoolId,
+                                    StaffId = item.NewStaffId.Value,
+                                    ClassId = oldAssignment.ClassId,
+                                    SectionId = oldAssignment.SectionId,
+                                    SubjectId = oldAssignment.SubjectId,
+                                    IsClassTeacher = oldAssignment.IsClassTeacher,
+                                    AcademicYear = oldAssignment.AcademicYear,
+                                    Status = "active"
+                                });
+                            }
+                            catch (InvalidOperationException)
+                            {
+                                // Replacement already has this assignment — treat as success (idempotent)
+                            }
+                        }
+                        else
+                        {
+                            // Remove only — unties from class/section, no replacement now
+                            await _academicsService.RemoveTeacherAssignmentAsync(item.AssignmentId, schoolId);
+                        }
+                    }
+
+                }
+
+                // Mark staff as inactive (proceed even if some assignment lookups failed)
+                staff.Status = "inactive";
+                staff.UpdatedAt = DateTime.UtcNow;
+
+                // Revoke UserLogin — find by email
+                var linkedLogin = await _dbContext.UserLogins
+                    .FirstOrDefaultAsync(u =>
+                        u.SchoolId == schoolId &&
+                        u.Email.ToLower() == staff.Email.ToLower() &&
+                        !u.IsDeleted);
+                if (linkedLogin != null)
+                {
+                    linkedLogin.Status = "inactive";
+                    linkedLogin.RefreshTokenHash = null;
+                    linkedLogin.RefreshTokenExpiry = null;
+                    linkedLogin.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await _dbContext.SaveChangesAsync();
+
+                var warnings = (request.Assignments != null && assignmentErrors.Count > 0) ? assignmentErrors : null;
+                return Ok(new { message = $"{staff.FirstName} {staff.LastName} has been deactivated and their login access revoked.", warnings });
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while deactivating the staff member.", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Reactivate a staff member: restore their account and login.
+        /// </summary>
+        [HttpPost("{id}/reactivate")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
+        public async Task<ActionResult> ReactivateStaff(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var staff = await _dbContext.StaffMembers
+                    .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId && !s.IsDeleted);
+                if (staff == null)
+                    return NotFound(new { message = "Staff member not found." });
+
+                staff.Status = "active";
+                staff.UpdatedAt = DateTime.UtcNow;
+
+                var linkedLogin = await _dbContext.UserLogins
+                    .FirstOrDefaultAsync(u =>
+                        u.SchoolId == schoolId &&
+                        u.Email.ToLower() == staff.Email.ToLower() &&
+                        !u.IsDeleted);
+                if (linkedLogin != null)
+                {
+                    linkedLogin.Status = "active";
+                    linkedLogin.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await _dbContext.SaveChangesAsync();
+                return Ok(new { message = $"{staff.FirstName} {staff.LastName} has been reactivated." });
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while reactivating the staff member.", error = ex.Message }); }
         }
 
         [HttpGet("stats")]
@@ -681,90 +821,216 @@ namespace SmsApi.Controllers
         private static (List<CreateStaffRequest> Requests, List<string> Errors) ParseStaffCsv(string csv)
         {
             var requests = new List<CreateStaffRequest>();
-            var errors = new List<string>();
+            var errors   = new List<string>();
 
-            var lines = csv
-                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(l => l.Trim())
+            var allLines = csv
+                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
                 .ToList();
 
-            if (lines.Count < 2)
-                return (requests, new List<string> { "CSV must contain a header row and at least one data row." });
+            // Find the first non-empty line as header
+            int headerIdx = allLines.FindIndex(l => !string.IsNullOrWhiteSpace(l));
+            if (headerIdx < 0)
+                return (requests, new List<string> { "The CSV file is empty." });
 
-            for (int i = 1; i < lines.Count; i++)
+            var headerCols = SplitCsvLine(allLines[headerIdx]);
+            if (headerCols.Count == 0)
+                return (requests, new List<string> { "Could not read column headers from the first row." });
+
+            // canonical name → column index
+            var headers = headerCols
+                .Select((h, i) => (canon: CanonCol(h), idx: i))
+                .GroupBy(x => x.canon)
+                .ToDictionary(g => g.Key, g => g.First().idx);
+
+            // Column aliases for staff fields
+            var staffAliases = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
             {
-                var cols = SplitCsvLine(lines[i]);
-                var rowNumber = i + 1;
+                ["employeeid"]    = new[] { "empid", "emp_id", "staffid", "staff_id", "employeecode" },
+                ["firstname"]     = new[] { "fname", "givenname" },
+                ["lastname"]      = new[] { "lname", "surname", "familyname" },
+                ["dateofbirth"]   = new[] { "dob", "birthdate" },
+                ["joiningdate"]   = new[] { "joindate", "startdate", "dateofjoining", "hiredate" },
+                ["employmenttype"]= new[] { "emptype", "jobtype", "employment_type", "contracttype" },
+                ["primaryphone"]  = new[] { "phone", "mobile", "mobileno", "contact", "phoneno" },
+                ["aadharnumber"]  = new[] { "aadhar", "aadhaar", "uid" },
+                ["pannumber"]     = new[] { "pan", "panno" },
+                ["qualification"] = new[] { "education", "degree", "educationqualification" },
+                ["experience"]    = new[] { "exp", "yearsofexperience", "workexperience" },
+            };
 
-                if (cols.Count < 11)
+            int GetIdx(string name)
+            {
+                var canon = CanonCol(name);
+                if (headers.TryGetValue(canon, out var i)) return i;
+                if (staffAliases.TryGetValue(canon, out var aliases))
+                    foreach (var a in aliases)
+                        if (headers.TryGetValue(CanonCol(a), out i)) return i;
+                return -1;
+            }
+
+            string? GetCol(List<string> cols, string name)
+            {
+                var idx = GetIdx(name);
+                if (idx < 0 || idx >= cols.Count) return null;
+                var v = cols[idx].Trim();
+                return v.Length == 0 ? null : v;
+            }
+
+            // Flexible date parser (same as student)
+            DateTime? ParseFlexDate(string? raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+                raw = raw.Trim();
+                string[] fmts = {
+                    "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "MM-dd-yyyy",
+                    "d/M/yyyy",   "M/d/yyyy",   "d-M-yyyy",   "M-d-yyyy",
+                    "yyyy/MM/dd", "dd MMM yyyy","d MMM yyyy", "dd-MMM-yyyy",
+                    "d MMM yy",   "dd/MM/yy"
+                };
+                if (DateTime.TryParseExact(raw, fmts, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out var d)) return d;
+                if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None, out d)) return d;
+                return null;
+            }
+
+            // Normalise gender
+            string? NormalizeGender(string? raw) =>
+                raw?.Trim().ToLower() switch
                 {
-                    errors.Add($"Row {rowNumber}: Expected at least 11 columns.");
+                    "m" or "male" or "gents" or "boy"             => "male",
+                    "f" or "female" or "ladies" or "lady" or "girl" => "female",
+                    "other" or "others"                            => "other",
+                    "prefer_not_to_say" or "na" or "n/a"
+                        or "prefer not to say" or "not specified"  => "prefer_not_to_say",
+                    _ => raw?.Trim()
+                };
+
+            // Normalise employment type
+            string? NormalizeEmpType(string? raw) =>
+                raw?.Trim().ToLower() switch
+                {
+                    "permanent" or "full time" or "fulltime" or "full_time" or "regular" => "permanent",
+                    "contract" or "contractual" or "temp" or "temporary"                 => "contract",
+                    "part_time" or "part time" or "parttime"                             => "part_time",
+                    "probation" or "probationary" or "on probation"                      => "probation",
+                    "intern" or "internship" or "trainee" or "apprentice"               => "intern",
+                    "consultant" or "consulting" or "freelance" or "visiting"           => "consultant",
+                    _ => raw?.Trim()
+                };
+
+            // Normalise staff status
+            string NormalizeStatus(string? raw) =>
+                raw?.Trim().ToLower() switch
+                {
+                    "active" or "enabled" or "working"             => "active",
+                    "inactive" or "disabled"                        => "inactive",
+                    "on_leave" or "on leave" or "leave"             => "on_leave",
+                    "terminated" or "dismissed" or "fired"         => "terminated",
+                    "probation" or "probationary"                  => "probation",
+                    _ => "active"
+                };
+
+            // Clean Aadhar: strip all non-digit characters, leave as 12 digits
+            string? CleanAadhar(string? raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+                var digits = System.Text.RegularExpressions.Regex.Replace(raw.Trim(), @"[^\d]", "");
+                return digits.Length == 12 ? digits : raw.Trim();
+            }
+
+            string? CleanPan(string? raw) =>
+                string.IsNullOrWhiteSpace(raw) ? null : raw.Trim().ToUpperInvariant();
+
+            int dataRow = 0;
+            for (int i = headerIdx + 1; i < allLines.Count; i++)
+            {
+                var line = allLines[i];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                var cols = SplitCsvLine(line);
+                if (cols.All(c => string.IsNullOrWhiteSpace(c))) continue;
+                dataRow++;
+                var rowLabel = $"Row {dataRow}";
+
+                // Try to resolve a DOB — give a clear message if unparseable
+                var dobRaw  = GetCol(cols, "dateofbirth");
+                var dob     = ParseFlexDate(dobRaw);
+                if (dobRaw != null && dob == null)
+                {
+                    errors.Add($"[{rowLabel}] DateOfBirth '{dobRaw}' is not a recognisable date. Use DD/MM/YYYY or YYYY-MM-DD (e.g. 15/08/1990).");
                     continue;
                 }
 
-                if (!DateTime.TryParse(cols[4].Trim(), out var dob))
+                var joinRaw  = GetCol(cols, "joiningdate");
+                var joinDate = ParseFlexDate(joinRaw);
+                if (joinRaw != null && joinDate == null)
                 {
-                    errors.Add($"Row {rowNumber}: Invalid DateOfBirth '{cols[4]}'.");
+                    errors.Add($"[{rowLabel}] JoiningDate '{joinRaw}' is not a recognisable date. Use DD/MM/YYYY or YYYY-MM-DD.");
                     continue;
                 }
 
-                if (!DateTime.TryParse(cols[10].Trim(), out var joiningDate))
-                {
-                    errors.Add($"Row {rowNumber}: Invalid JoiningDate '{cols[10]}'.");
-                    continue;
-                }
-
+                // Experience and Salary: ignore if blank, warn if non-numeric
                 int experience = 0;
-                if (cols.Count > 11 && !string.IsNullOrWhiteSpace(cols[11]) && !int.TryParse(cols[11].Trim(), out experience))
-                {
-                    errors.Add($"Row {rowNumber}: Invalid Experience '{cols[11]}'.");
-                    continue;
-                }
+                var expRaw = GetCol(cols, "experience");
+                if (expRaw != null && !int.TryParse(expRaw, out experience))
+                    errors.Add($"[{rowLabel}] Experience '{expRaw}' is not a whole number — defaulting to 0.");
 
-                decimal salary = 0;
-                if (cols.Count > 15 && !string.IsNullOrWhiteSpace(cols[15]) && !decimal.TryParse(cols[15].Trim(), out salary))
+                decimal? salary = null;
+                var salaryRaw = GetCol(cols, "salary");
+                if (salaryRaw != null)
                 {
-                    errors.Add($"Row {rowNumber}: Invalid Salary '{cols[15]}'.");
-                    continue;
+                    if (decimal.TryParse(salaryRaw, System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out var sal))
+                        salary = sal;
+                    else
+                        errors.Add($"[{rowLabel}] Salary '{salaryRaw}' is not a valid number — leaving blank.");
                 }
 
                 requests.Add(new CreateStaffRequest
                 {
-                    EmployeeId = cols[0].Trim(),
-                    FirstName = cols[1].Trim(),
-                    LastName = cols[2].Trim(),
-                    Gender = cols[3].Trim(),
-                    DateOfBirth = dob,
-                    Email = cols[5].Trim(),
-                    Phone = cols[6].Trim(),
-                    Department = cols[7].Trim(),
-                    Designation = cols[8].Trim(),
-                    EmploymentType = cols[9].Trim(),
-                    JoiningDate = joiningDate,
-                    Experience = experience,
-                    Qualification = cols.Count > 12 ? cols[12].Trim() : null,
-                    Address = cols.Count > 16 ? cols[16].Trim() : string.Empty,
-                    City = cols.Count > 17 ? cols[17].Trim() : null,
-                    State = cols.Count > 18 ? cols[18].Trim() : null,
-                    Pincode = cols.Count > 19 ? cols[19].Trim() : null,
-                    AadharNumber = cols.Count > 20 ? cols[20].Trim() : null,
-                    PanNumber = cols.Count > 21 ? cols[21].Trim() : null,
-                    BankName = cols.Count > 22 ? cols[22].Trim() : null,
-                    BankAccountNumber = cols.Count > 23 ? cols[23].Trim() : null,
-                    IfscCode = cols.Count > 24 ? cols[24].Trim() : null,
-                    PfNumber = cols.Count > 25 ? cols[25].Trim() : null,
-                    EsiNumber = cols.Count > 26 ? cols[26].Trim() : null,
-                    UanNumber = cols.Count > 27 ? cols[27].Trim() : null,
-                    EmergencyContactName = cols.Count > 28 ? cols[28].Trim() : null,
-                    EmergencyContactPhone = cols.Count > 29 ? cols[29].Trim() : null,
-                    EmergencyContactRelationship = cols.Count > 30 ? cols[30].Trim() : null,
-                    Status = cols.Count > 14 ? cols[14].Trim() : "active",
-                    Salary = salary
+                    EmployeeId              = GetCol(cols, "employeeid"),
+                    FirstName               = GetCol(cols, "firstname") ?? string.Empty,
+                    LastName                = GetCol(cols, "lastname")  ?? string.Empty,
+                    Gender                  = NormalizeGender(GetCol(cols, "gender")),
+                    DateOfBirth             = dob ?? default,
+                    Email                   = GetCol(cols, "email"),
+                    Phone                   = GetCol(cols, "primaryphone") ?? GetCol(cols, "phone") ?? string.Empty,
+                    Department              = GetCol(cols, "department") ?? string.Empty,
+                    Designation             = GetCol(cols, "designation") ?? string.Empty,
+                    EmploymentType          = NormalizeEmpType(GetCol(cols, "employmenttype")) ?? "permanent",
+                    JoiningDate             = joinDate ?? DateTime.UtcNow,
+                    Experience              = experience,
+                    Qualification           = GetCol(cols, "qualification"),
+                    Specialization          = GetCol(cols, "specialization"),
+                    Status                  = NormalizeStatus(GetCol(cols, "status")),
+                    Salary                  = salary,
+                    Address                 = GetCol(cols, "address") ?? string.Empty,
+                    City                    = GetCol(cols, "city"),
+                    State                   = GetCol(cols, "state"),
+                    Pincode                 = GetCol(cols, "pincode"),
+                    AadharNumber            = CleanAadhar(GetCol(cols, "aadharnumber")),
+                    PanNumber               = CleanPan(GetCol(cols, "pannumber")),
+                    BankName                = GetCol(cols, "bankname"),
+                    BankAccountNumber       = GetCol(cols, "bankaccountnumber"),
+                    IfscCode                = GetCol(cols, "ifsccode"),
+                    PfNumber                = GetCol(cols, "pfnumber"),
+                    EsiNumber               = GetCol(cols, "esinumber"),
+                    UanNumber               = GetCol(cols, "uannumber"),
+                    EmergencyContactName    = GetCol(cols, "emergencycontactname"),
+                    EmergencyContactPhone   = GetCol(cols, "emergencycontactphone"),
+                    EmergencyContactRelationship = GetCol(cols, "emergencycontactrelationship"),
                 });
             }
 
+            if (requests.Count == 0 && errors.Count == 0)
+                errors.Add("The CSV file contained no data rows (only the header was found).");
+
             return (requests, errors);
         }
+
+        // Strip spaces, underscores and hyphens then lowercase — same as student controller.
+        private static string CanonCol(string raw) =>
+            System.Text.RegularExpressions.Regex.Replace(raw.Trim().ToLowerInvariant(), @"[\s_\-]", "");
 
         private static List<string> SplitCsvLine(string line)
         {

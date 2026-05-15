@@ -520,7 +520,7 @@ export default function SectionDetail() {
   // Teacher picker for the period dialog.
   // Primary source: teachers configured for subjects in this class (ClassSubjects).
   // Secondary: any additional staff directly assigned to this section (TeacherAssignments).
-  // We do NOT fall back to all teaching staff ΓÇö only show class-configured teachers.
+  // We do NOT fall back to all teaching staff - only show class-configured teachers.
   const periodTeacherOptions = useMemo(() => {
     // Deduplicated list from class subjects (each teacher appears once, labelled with their subject)
     const fromClassSubjects = classSubjects
@@ -566,7 +566,7 @@ export default function SectionDetail() {
         setTimetablePeriods([]);
       }
     } catch {
-      // silently degrade ΓÇö timetable is non-critical
+      // silently degrade - timetable is non-critical
     } finally {
       setTimetableLoading(false);
     }
@@ -590,7 +590,7 @@ export default function SectionDetail() {
       setTimetableRecord(record);
       setTimetablePeriods([]);
       setTimetableEditMode(true);
-      toast.success("Timetable created ΓÇö add periods by clicking cells");
+      toast.success("Timetable created - add periods by clicking cells");
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? "Failed to create timetable";
       // If duplicate, just reload
@@ -1050,8 +1050,8 @@ export default function SectionDetail() {
                           aria-label="Select all"
                         />
                       </TableHead>
-                      <TableHead>Roll No</TableHead>
-                      <TableHead>Name</TableHead>
+                      <TableHead className="font-semibold">Roll No</TableHead>
+                      <TableHead className="font-semibold">Name</TableHead>
                       <TableHead>Current Section</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -1076,7 +1076,7 @@ export default function SectionDetail() {
                             aria-label={`Select ${student.name}`}
                           />
                         </TableCell>
-                        <TableCell className="font-medium">{student.rollNo || "—"}</TableCell>
+                        <TableCell className="font-semibold text-sm">{student.rollNo || "—"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -1276,7 +1276,7 @@ export default function SectionDetail() {
                                 {(assignment.staffName || "?")[0].toUpperCase()}
                               </span>
                             </div>
-                            <span className="font-medium">{assignment.staffName || "ΓÇö"}</span>
+                            <span className="font-medium">{assignment.staffName || "-"}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1387,7 +1387,7 @@ export default function SectionDetail() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <GraduationCap className="h-5 w-5" />
-                  Assign Staff to {section?.className} ΓÇô {section?.name}
+                  Assign Staff to {section?.className} - {section?.name}
                 </DialogTitle>
                 <DialogDescription>
                   Assign a staff member to this section. Optionally link to a subject and designate as class teacher.
@@ -1395,7 +1395,7 @@ export default function SectionDetail() {
               </DialogHeader>
 
               <div className="space-y-4 pt-2">
-                {/* Subject ΓÇö drives which teacher is pre-filled */}
+                {/* Subject - drives which teacher is pre-filled */}
                 <div>
                   <Label>Subject <span className="text-destructive">*</span></Label>
                   <p className="text-xs text-muted-foreground mt-0.5 mb-1">
@@ -1424,7 +1424,7 @@ export default function SectionDetail() {
                       <SelectValue placeholder="Select a subject..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">ΓÇö Class Teacher (no subject) ΓÇö</SelectItem>
+                      <SelectItem value="none">- Class Teacher (no subject) -</SelectItem>
                       {classSubjects.length === 0 && (
                         <div className="px-3 py-2 text-sm text-muted-foreground">
                           No subjects assigned to this class yet
@@ -1439,7 +1439,7 @@ export default function SectionDetail() {
                   </Select>
                 </div>
 
-                {/* Staff Member ΓÇö auto-filled from subject, override allowed */}
+                {/* Staff Member - auto-filled from subject, override allowed */}
                 <div>
                   <Label>
                     Staff Member <span className="text-destructive">*</span>
@@ -1660,7 +1660,7 @@ export default function SectionDetail() {
                 <div className="flex items-center gap-2">
                   {timetableEditMode && (
                     <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md">
-                      Edit mode ΓÇö click cells to add/edit
+                      Edit mode - click cells to add/edit
                     </span>
                   )}
                   <Button
@@ -1679,9 +1679,9 @@ export default function SectionDetail() {
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-muted/50">
-                        <th className="border px-3 py-2 text-left text-xs font-medium text-muted-foreground w-28">Period</th>
+                        <th className="border px-3 py-2 text-left text-sm font-semibold text-muted-foreground w-28">Period</th>
                         {TIMETABLE_DAYS.map(day => (
-                          <th key={day} className="border px-3 py-2 text-center text-xs font-medium min-w-[120px]">{day}</th>
+                          <th key={day} className="border px-3 py-2 text-center text-sm font-semibold min-w-[120px]">{day}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1695,15 +1695,15 @@ export default function SectionDetail() {
                         return (
                           <tr key={periodNum} className="hover:bg-muted/20">
                             <td className="border px-3 py-2 bg-muted/30">
-                              <div className="font-medium text-xs">P{periodNum}</div>
-                              <div className="text-xs text-muted-foreground">{rowStart}ΓÇô{rowEnd}</div>
+                              <div className="font-semibold text-sm">P{periodNum}</div>
+                              <div className="text-sm text-muted-foreground font-medium">{rowStart}-{rowEnd}</div>
                             </td>
                             {TIMETABLE_DAYS.map(day => {
                               const p = getPeriodForCell(day, periodNum);
                               return (
                                 <td
                                   key={`${day}-${periodNum}`}
-                                  className={`border px-2 py-1.5 text-center align-middle ${timetableEditMode ? "cursor-pointer" : ""}`}
+                                  className={`border px-2 py-2 text-center align-middle ${timetableEditMode ? "cursor-pointer" : ""}`}
                                   onClick={() => {
                                     if (!timetableEditMode) return;
                                     if (p) openEditPeriod(p);
@@ -1712,14 +1712,14 @@ export default function SectionDetail() {
                                 >
                                   {p ? (
                                     <div className={`rounded px-1.5 py-1 text-left transition-colors ${timetableEditMode ? "bg-primary/15 hover:bg-primary/25" : "bg-primary/10"}`}>
-                                      <div className="font-medium text-xs leading-tight">
-                                        {p.subjectName ?? <span className="text-muted-foreground">ΓÇö</span>}
+                                      <div className="font-semibold text-sm leading-tight">
+                                        {p.subjectName ?? <span className="text-muted-foreground">-</span>}
                                       </div>
                                       {p.teacherName && (
-                                        <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
+                                        <div className="text-sm text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
                                       )}
                                       {p.room && (
-                                        <div className="text-xs text-muted-foreground/70 mt-0.5">{p.room}</div>
+                                        <div className="text-sm text-muted-foreground/70 mt-0.5">{p.room}</div>
                                       )}
                                       {timetableEditMode && (
                                         <div className="flex justify-end mt-1">
@@ -1737,7 +1737,7 @@ export default function SectionDetail() {
                                     </div>
                                   ) : (
                                     <div className={`text-muted-foreground/40 text-xs py-1 rounded transition-colors ${timetableEditMode ? "hover:bg-primary/10 hover:text-primary" : ""}`}>
-                                      {timetableEditMode ? <Plus className="h-3.5 w-3.5 mx-auto" /> : "ΓÇö"}
+                                      {timetableEditMode ? <Plus className="h-3.5 w-3.5 mx-auto" /> : "-"}
                                     </div>
                                   )}
                                 </td>
@@ -1759,7 +1759,7 @@ export default function SectionDetail() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Clock className="h-5 w-5" />
-                  {editingPeriodId ? "Edit Period" : `Add Period ΓÇö ${periodForm.day}, P${periodForm.periodNumber}`}
+                  {editingPeriodId ? "Edit Period" : `Add Period - ${periodForm.day}, P${periodForm.periodNumber}`}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-3 pt-2">
@@ -1829,7 +1829,7 @@ export default function SectionDetail() {
                   >
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Select subject..." /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">ΓÇö No subject ΓÇö</SelectItem>
+                      <SelectItem value="none">- No subject -</SelectItem>
                       {classSubjects.map(cs => (
                         <SelectItem key={cs.subjectId} value={cs.subjectId}>
                           {cs.subjectName}{cs.teacherName ? ` ┬╖ ${cs.teacherName}` : ""}
@@ -1839,7 +1839,7 @@ export default function SectionDetail() {
                   </Select>
                 </div>
 
-                {/* Teacher ΓÇö card picker */}
+                {/* Teacher - card picker */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label>Teacher</Label>
@@ -1999,8 +1999,8 @@ export default function SectionDetail() {
                     <div className="space-y-1">
                       <CardTitle className="text-lg">{selectedAssignment.title}</CardTitle>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" />{selectedAssignment.subjectName || "ΓÇö"}</span>
-                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{selectedAssignment.assignedByName || "ΓÇö"}</span>
+                        <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" />{selectedAssignment.subjectName || "-"}</span>
+                        <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{selectedAssignment.assignedByName || "-"}</span>
                         <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />Due: {new Date(selectedAssignment.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
                         <span className="flex items-center gap-1"><Award className="h-3.5 w-3.5" />Max: {selectedAssignment.maxMarks} marks</span>
                       </div>
@@ -2040,7 +2040,7 @@ export default function SectionDetail() {
                   {submissionsLoading ? (
                     <div className="flex items-center justify-center py-10">
                       <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                      <span className="text-muted-foreground">Loading submissionsΓÇª</span>
+                      <span className="text-muted-foreground">Loading submissions...</span>
                     </div>
                   ) : assignmentSubmissions.length === 0 ? (
                     <div className="text-center py-10 text-muted-foreground">
@@ -2065,7 +2065,7 @@ export default function SectionDetail() {
                         {assignmentSubmissions.map(sub => (
                           <TableRow key={sub.id}>
                             <TableCell className="font-medium">{sub.studentName || sub.studentId.slice(0, 8)}</TableCell>
-                            <TableCell className="text-muted-foreground">{sub.studentRollNo || "ΓÇö"}</TableCell>
+                            <TableCell className="text-muted-foreground">{sub.studentRollNo || "-"}</TableCell>
                             <TableCell className="text-sm">{new Date(sub.submissionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</TableCell>
                             <TableCell>
                               <Badge variant={sub.status === "graded" ? "default" : "secondary"} className="capitalize text-xs">{sub.status}</Badge>

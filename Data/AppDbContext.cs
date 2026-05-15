@@ -2471,7 +2471,7 @@ namespace SmsApi.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(soi => soi.Order)
-                    .WithMany()
+                    .WithMany(o => o.OrderItems)
                     .HasForeignKey(soi => soi.OrderId)
                     .OnDelete(DeleteBehavior.Restrict);
 

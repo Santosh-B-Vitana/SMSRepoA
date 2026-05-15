@@ -302,8 +302,10 @@ namespace SmsApi.Controllers
                     return NotFound(new { message = "School not found" });
 
                 // Only update fields that were explicitly provided (null = skip)
-                if (request.Phone != null) school.Phone = request.Phone.Trim();
-                if (request.Email != null) school.Email = request.Email.Trim();
+                if (request.Name    != null) school.Name    = request.Name.Trim();
+                if (request.Logo    != null) school.Logo    = request.Logo.Trim();
+                if (request.Phone   != null) school.Phone   = request.Phone.Trim();
+                if (request.Email   != null) school.Email   = request.Email.Trim();
                 if (request.Address != null) school.Address = request.Address.Trim();
 
                 await _db.SaveChangesAsync();

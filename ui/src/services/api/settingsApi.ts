@@ -105,6 +105,8 @@ export function buildUserSetting(
 }
 
 export interface UpdateSchoolContactRequest {
+  name?:    string;
+  logo?:    string;
   phone?:   string;
   email?:   string;
   address?: string;

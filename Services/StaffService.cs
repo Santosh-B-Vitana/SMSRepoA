@@ -594,19 +594,66 @@ namespace SmsApi.Services
             if (string.IsNullOrWhiteSpace(request.Phone))
                 return (false, "Phone is required.");
             if (string.IsNullOrWhiteSpace(request.Department))
-                return (false, "Department is required.");
+                return (false, "Department is required — e.g. 'Science', 'Mathematics', 'Administration'.");
             if (string.IsNullOrWhiteSpace(request.Designation))
-                return (false, "Designation is required.");
-            if (!ValidGenders.Contains(request.Gender))
-                return (false, $"Gender must be one of: {string.Join(", ", ValidGenders)}.");
-            if (!string.IsNullOrWhiteSpace(request.Status) && !ValidStatuses.Contains(request.Status))
-                return (false, $"Status must be one of: {string.Join(", ", ValidStatuses)}.");
-            if (!string.IsNullOrWhiteSpace(request.EmploymentType) && !ValidEmploymentTypes.Contains(request.EmploymentType))
-                return (false, $"EmploymentType must be one of: {string.Join(", ", ValidEmploymentTypes)}.");
+                return (false, "Designation is required — e.g. 'Teacher', 'Principal', 'Clerk'.");
+
+            // Normalise gender before checking (M/F accepted in addition to full words)
+            request.Gender = request.Gender?.Trim().ToLower() switch
+            {
+                "m" or "gents" or "boy"                              => "male",
+                "f" or "ladies" or "lady" or "girl"                  => "female",
+                "other" or "others"                                   => "other",
+                "prefer_not_to_say" or "na" or "not specified"       => "prefer_not_to_say",
+                var g                                                 => g
+            };
+            if (!ValidGenders.Contains(request.Gender ?? ""))
+                return (false, $"Gender '{request.Gender}' is not recognised — use: Male, Female, Other (or M/F as shorthand).");
+
+            // Normalise status
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                request.Status = request.Status.Trim().ToLower() switch
+                {
+                    "enabled" or "working"             => "active",
+                    "disabled"                          => "inactive",
+                    "on leave" or "leave"               => "on_leave",
+                    "dismissed" or "fired"             => "terminated",
+                    "probationary"                     => "probation",
+                    var s                              => s
+                };
+                if (!ValidStatuses.Contains(request.Status))
+                    return (false, $"Status '{request.Status}' is not valid — accepted: {string.Join(", ", ValidStatuses)} (leave blank to default to 'active').");
+            }
+
+            // Normalise employment type
+            if (!string.IsNullOrWhiteSpace(request.EmploymentType))
+            {
+                request.EmploymentType = request.EmploymentType.Trim().ToLower() switch
+                {
+                    "full time" or "fulltime" or "full_time" or "regular" => "permanent",
+                    "contractual" or "temp" or "temporary"                => "contract",
+                    "part time" or "parttime"                             => "part_time",
+                    "probationary" or "on probation"                      => "probation",
+                    "internship" or "trainee" or "apprentice"            => "intern",
+                    "consulting" or "freelance" or "visiting"            => "consultant",
+                    var e                                                 => e
+                };
+                if (!ValidEmploymentTypes.Contains(request.EmploymentType))
+                    return (false, $"EmploymentType '{request.EmploymentType}' is not valid — accepted: {string.Join(", ", ValidEmploymentTypes)}.");
+            }
+
+            if (request.DateOfBirth == default)
+                return (false, "DateOfBirth is required — use DD/MM/YYYY or YYYY-MM-DD format.");
             if (request.DateOfBirth >= DateTime.UtcNow.Date)
-                return (false, "DateOfBirth must be in the past.");
+                return (false, $"DateOfBirth '{request.DateOfBirth:yyyy-MM-dd}' is in the future — please check the year.");
             if (request.DateOfBirth > DateTime.UtcNow.AddYears(-18))
                 return (false, "Staff member must be at least 18 years old.");
+
+            // PAN length check
+            if (!string.IsNullOrWhiteSpace(request.PanNumber) && request.PanNumber.Length != 10)
+                return (false, $"PanNumber '{request.PanNumber}' has {request.PanNumber.Length} characters — PAN must be exactly 10 (format: ABCDE1234F).");
+
             if (request.Salary.HasValue && request.Salary.Value < 0)
                 return (false, "Salary cannot be negative.");
             return (true, string.Empty);
@@ -1063,6 +1110,9 @@ namespace SmsApi.Services
 
                     _context.StaffMembers.Add(staff);
                     await _context.SaveChangesAsync();
+
+                    // Provision a login account + system role (same as single-create flow)
+                    await AutoProvisionUserLoginAsync(staff);
 
                     result.SuccessCount++;
                     result.SuccessfulIds.Add(staff.Id);

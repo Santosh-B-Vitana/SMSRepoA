@@ -264,17 +264,35 @@ export default function TimetableManager() {
     if (!selectedClassObj || !selectedYear || !selectedSection) return;
     setCreating(true);
     try {
+      // Ensure section ID is resolved — re-fetch if not yet available
+      let sectionId = resolvedSectionId;
+      if (!sectionId) {
+        try {
+          const secRes = await academicApi.listSections(selectedClassObj.id, 1, 50);
+          const secs = secRes.sections ?? [];
+          setClassSections(secs);
+          const sec = secs.find(s => s.name === selectedSection);
+          sectionId = sec?.id;
+          if (sectionId) setResolvedSectionId(sectionId);
+        } catch { /* proceed without sectionId — creates class-level timetable */ }
+      }
       const tt = await timetableApi.create({
         ClassId: selectedClassObj.id,
-        SectionId: resolvedSectionId,
+        SectionId: sectionId,
         AcademicYear: selectedYear,
         Status: "active",
       });
       setActiveTimetable(tt);
       setPeriodsMap({});
       toast.success("Timetable initialized — click any cell to assign subjects");
-    } catch {
-      toast.error("Failed to initialize timetable");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to initialize timetable";
+      if (msg.toLowerCase().includes("already exists")) {
+        toast.info("Timetable already exists, loading...");
+        await loadTimetableData();
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setCreating(false);
     }
@@ -312,7 +330,7 @@ export default function TimetableManager() {
           TeacherId:  editForm.teacherId || undefined,
           Room:       editForm.room      || undefined,
           Notes:      editForm.notes     || undefined,
-          PeriodType: "class",
+          PeriodType: "lecture",
         });
       } else {
         saved = await timetableApi.createPeriod({
@@ -325,14 +343,14 @@ export default function TimetableManager() {
           TeacherId:   editForm.teacherId || undefined,
           Room:        editForm.room      || undefined,
           Notes:       editForm.notes     || undefined,
-          PeriodType:  "class",
+          PeriodType:  "lecture",
         });
       }
       setPeriodsMap(prev => ({ ...prev, [key]: saved }));
       setEditCell(null);
       toast.success("Period saved");
-    } catch {
-      toast.error("Failed to save period");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to save period");
     } finally {
       setCellSaving(false);
     }

@@ -227,6 +227,9 @@ public class AuthController : ControllerBase
             if (userLogin == null)
                 return Unauthorized(new { message = "User not found" });
 
+            if (userLogin.Status is "inactive" or "suspended")
+                return Unauthorized(new { message = $"Account is {userLogin.Status}. Contact your administrator." });
+
             if (userLogin.RefreshTokenExpiry == null || userLogin.RefreshTokenExpiry < DateTime.UtcNow)
                 return Unauthorized(new { message = "Refresh token has expired. Please log in again." });
 

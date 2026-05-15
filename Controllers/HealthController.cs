@@ -37,6 +37,11 @@ namespace SmsApi.Controllers
             return Guid.Parse(userIdClaim ?? throw new UnauthorizedAccessException());
         }
 
+        private string? GetDesignation()
+        {
+            return User.FindFirst("Designation")?.Value;
+        }
+
         // ========== HEALTH RECORDS API ==========
 
         /// <summary>
@@ -52,7 +57,12 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                var result = await _service.GetHealthRecordsAsync(schoolId, filters, page, pageSize);
+                // Class Teachers can only see health records for students in their own class
+                Guid? ctUserId = null;
+                var designation = GetDesignation();
+                if (string.Equals(designation, "Class Teacher", StringComparison.OrdinalIgnoreCase))
+                    ctUserId = GetUserId();
+                var result = await _service.GetHealthRecordsAsync(schoolId, filters, page, pageSize, ctUserId);
                 return Ok(result);
             }
             catch (Exception ex)

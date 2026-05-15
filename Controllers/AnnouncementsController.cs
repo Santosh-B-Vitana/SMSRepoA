@@ -139,7 +139,15 @@ namespace SmsApi.Controllers
         {
             try
             {
-                var schoolId     = _tenant.GetEffectiveSchoolId();
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Always resolve the author from the JWT — never trust a client-supplied ID.
+                var staffId = await ResolveStaffIdAsync();
+                if (staffId == null || staffId == Guid.Empty)
+                    return Unauthorized(new { message = "Could not resolve your staff profile. Ensure your account is linked to a staff record." });
+
+                request.CreatedByStaffId = staffId.Value;
+
                 var announcement = await _svc.CreateAnnouncementAsync(schoolId, request);
                 return CreatedAtAction(
                     nameof(GetAnnouncementById),

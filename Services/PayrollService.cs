@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SmsApi.Data;
 using SmsApi.Models.Entities;
@@ -46,11 +47,13 @@ namespace SmsApi.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<PayrollService> _logger;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public PayrollService(AppDbContext context, ILogger<PayrollService> logger)
+        public PayrollService(AppDbContext context, ILogger<PayrollService> logger, IServiceScopeFactory scopeFactory)
         {
             _context = context;
             _logger = logger;
+            _scopeFactory = scopeFactory;
         }
 
         // ========== PAYROLL RECORDS API ==========
@@ -492,6 +495,22 @@ namespace SmsApi.Services
 
                 record.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
+
+                // Sync to wallet if status is being set to 'paid'
+                if (dto.Status?.ToLower() == "paid")
+                {
+                    var capturedSchoolId = record.SchoolId;
+                    var capturedMonth = record.Month;
+                    var capturedYear = record.Year;
+                    var capturedRecordId = record.Id;
+                    _ = Task.Run(async () =>
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var financeService = scope.ServiceProvider.GetRequiredService<IFinanceService>();
+                        try { await financeService.SyncPayrollExpensesAsync(capturedSchoolId, capturedMonth, capturedYear); }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to sync payroll record {Id} to wallet", capturedRecordId); }
+                    });
+                }
 
                 _logger.LogInformation("Updated payroll record {Id}", id);
 

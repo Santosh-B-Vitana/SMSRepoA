@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SmsApi.Data;
 using SmsApi.Models.Entities;
@@ -60,11 +61,13 @@ namespace SmsApi.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<FeeService> _logger;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public FeeService(AppDbContext context, ILogger<FeeService> logger)
+        public FeeService(AppDbContext context, ILogger<FeeService> logger, IServiceScopeFactory scopeFactory)
         {
             _context = context;
             _logger = logger;
+            _scopeFactory = scopeFactory;
         }
 
         public async Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null)
@@ -725,8 +728,31 @@ namespace SmsApi.Services
                 await transaction.CommitAsync();
 
                 _logger?.LogInformation(
-                    "Payment {PaymentId} committed (₹{Amount}) for FeeRecord {FeeRecordId}. New balance: ₹{Balance}, Status: {Status}",
+                    "Payment {PaymentId} committed (\u20b9{Amount}) for FeeRecord {FeeRecordId}. New balance: \u20b9{Balance}, Status: {Status}",
                     payment.Id, request.Amount, request.FeeRecordId, feeRecord.PendingAmount, feeRecord.Status);
+
+                // Fire-and-log: sync fee payment to wallet (non-blocking)
+                var capturedSchoolId = request.SchoolId!.Value;
+                var capturedAmount = request.Amount;
+                var capturedMethod = request.Method ?? "Cash";
+                var capturedReceipt = payment.ReceiptNumber ?? payment.Id.ToString();
+                var capturedStudentId = request.StudentId;
+                _ = Task.Run(async () =>
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var financeService = scope.ServiceProvider.GetRequiredService<IFinanceService>();
+                    try
+                    {
+                        await financeService.AddFeeIncomeAsync(
+                            capturedSchoolId, capturedAmount,
+                            $"Fee payment via {capturedMethod} — receipt {capturedReceipt}",
+                            capturedMethod, capturedReceipt, capturedStudentId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError(ex, "Failed to sync fee payment {Receipt} to wallet", capturedReceipt);
+                    }
+                });
 
                 return new PaymentResponse
                 {

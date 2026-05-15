@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Models.Entities;
@@ -29,10 +31,14 @@ namespace SmsApi.Services
     public class StoreService : IStoreService
     {
         private readonly AppDbContext _context;
+        private readonly IServiceScopeFactory _scopeFactory;
+        private readonly ILogger<StoreService> _logger;
 
-        public StoreService(AppDbContext context)
+        public StoreService(AppDbContext context, IServiceScopeFactory scopeFactory, ILogger<StoreService> logger)
         {
             _context = context;
+            _scopeFactory = scopeFactory;
+            _logger = logger;
         }
 
         public async Task<StoreItemListResponse> GetItemsAsync(Guid schoolId, int page = 1, int pageSize = 10, string? category = null, string? searchTerm = null)
@@ -576,6 +582,31 @@ namespace SmsApi.Services
             order.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
+
+            // Auto-sync income to wallet (fire-and-log — does not fail the order)
+            var itemsCount = order.OrderItems?.Sum(oi => oi.Quantity) ?? 1;
+            var description = $"Store order #{order.OrderNumber} — {itemsCount} item(s)";
+            var capturedSchoolId = order.SchoolId;
+            var capturedAmount = order.FinalAmount;
+            var capturedPaymentMethod = order.PaymentMethod ?? "Cash";
+            var capturedStaffId = order.ProcessedByStaffId;
+            var capturedOrderId = orderId;
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var financeService = scope.ServiceProvider.GetRequiredService<IFinanceService>();
+                try
+                {
+                    await financeService.AddStoreOrderIncomeAsync(
+                        capturedSchoolId, capturedAmount, description,
+                        capturedPaymentMethod, itemsCount, capturedStaffId,
+                        capturedOrderId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to sync store order {OrderId} income to wallet", capturedOrderId);
+                }
+            });
 
             var response = MapToOrderResponse(order);
             response.Items = order.OrderItems?.Select(MapToOrderItemResponse).ToList() ?? new();

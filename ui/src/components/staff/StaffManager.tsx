@@ -110,8 +110,8 @@ export function StaffManager() {
     return {
       total: staff.length,
       active: staff.filter(s => s.status === 'active').length,
+      inactive: staff.filter(s => s.status !== 'active').length,
       departments: getDepartments().length,
-      teachers: staff.filter(s => (s.designation ?? '').toLowerCase().includes('teacher')).length
     };
   };
 
@@ -188,15 +188,18 @@ export function StaffManager() {
                     </Button>
                     <ImportButton
                       columns={[
-                        { key: 'name', label: 'Name', required: true },
+                        { key: 'firstName', label: 'FirstName', required: true },
+                        { key: 'lastName', label: 'LastName', required: true },
                         { key: 'email', label: 'Email', required: true },
                         { key: 'phone', label: 'Phone', required: true },
                         { key: 'department', label: 'Department', required: true },
                         { key: 'designation', label: 'Designation', required: true },
-                        { key: 'joiningDate', label: 'Joining Date', required: true },
+                        { key: 'joiningDate', label: 'JoiningDate', required: true },
                       ]}
-                      onImport={async (data) => {
-                        toast({ title: "Import Complete", description: `Successfully imported ${data.length} staff records` });
+                      apiTemplateUrl="/Staff/bulk-import/template"
+                      apiImportUrl="/Staff/bulk-import/csv"
+                      onImport={async (_data) => {
+                        toast({ title: "Import Complete", description: "Staff imported successfully — login accounts created automatically" });
                         await fetchStaff();
                       }}
                       templateFilename="staff_import_template"
@@ -204,6 +207,7 @@ export function StaffManager() {
                     <ExportButton
                       data={filteredStaff}
                       filename="staff"
+                      apiExportUrl="/Staff/export"
                       columns={[
                         { key: 'name', label: 'Name' },
                         { key: 'email', label: 'Email' },
@@ -278,8 +282,8 @@ export function StaffManager() {
                           <Users className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                         </div>
                         <div>
-                          <p className="text-sm text-muted-foreground">{t('staff.teachers')}</p>
-                          <p className="text-xl font-semibold">{stats.teachers}</p>
+                          <p className="text-sm text-muted-foreground">{t('common.inactive')}</p>
+                          <p className="text-xl font-semibold">{stats.inactive}</p>
                         </div>
                       </div>
                     </CardContent>
@@ -288,41 +292,10 @@ export function StaffManager() {
               </AnimatedWrapper>
 
               <AnimatedWrapper variant="fadeInUp" delay={0.15}>
-                <ModernCard variant="glass">
-                  <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="flex-1">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                          <Input
-                            placeholder={t('staffMgmt.searchPlaceholder')}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
-                      <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                        <SelectTrigger className="w-full sm:w-48">
-                          <SelectValue placeholder={t('staffMgmt.filterDepartment')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">{t('staffMgmt.allDepartments')}</SelectItem>
-                          {getDepartments().map(department => (
-                            <SelectItem key={department} value={department}>{department}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </CardContent>
-                </ModernCard>
-              </AnimatedWrapper>
-
-              <AnimatedWrapper variant="fadeInUp" delay={0.2}>
-                {filteredStaff.length === 0 ? (
+                {staff.length === 0 ? (
                   <EmptyState title={t('staff.noStaffFound')} description={t('staff.noStaffDesc')} />
                 ) : (
-                  <StaffList staff={filteredStaff} refreshStaff={handleStaffSuccess} />
+                  <StaffList staff={staff} refreshStaff={handleStaffSuccess} />
                 )}
               </AnimatedWrapper>
             </>

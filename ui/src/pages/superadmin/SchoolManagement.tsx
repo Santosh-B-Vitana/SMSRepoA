@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import * as superAdminApi from "@/services/api/superAdminApi";
 import type { SchoolListItem, SchoolDetail } from "@/services/api/superAdminApi";
 
@@ -24,7 +24,6 @@ interface SchoolForm {
 const emptyForm: SchoolForm = { name: "", schoolCode: "", address: "", phone: "", email: "", logo: "" };
 
 export default function SchoolManagement() {
-  const { toast } = useToast();
   const [schools, setSchools] = useState<SchoolListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -43,7 +42,7 @@ export default function SchoolManagement() {
       const data = await superAdminApi.getAllSchools();
       setSchools(data);
     } catch {
-      toast({ title: "Error", description: "Failed to load schools", variant: "destructive" });
+      toast.error("Failed to load schools");
     } finally {
       setLoading(false);
     }
@@ -61,12 +60,12 @@ export default function SchoolManagement() {
         email: addForm.email || undefined,
         logo: addForm.logo || undefined,
       });
-      toast({ title: "School created successfully" });
+      toast.success("School created successfully");
       setAddDialog(false);
       setAddForm(emptyForm);
       await fetchSchools();
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.message ?? "Failed to create school", variant: "destructive" });
+      toast.error(err?.response?.data?.message ?? "Failed to create school");
     } finally {
       setSubmitting(false);
     }
@@ -88,11 +87,11 @@ export default function SchoolManagement() {
         email: editForm.email || undefined,
         logo: editForm.logo || undefined,
       });
-      toast({ title: "School updated" });
+      toast.success("School updated");
       setEditSchool(null);
       await fetchSchools();
     } catch {
-      toast({ title: "Error", description: "Failed to update school", variant: "destructive" });
+      toast.error("Failed to update school");
     } finally {
       setSubmitting(false);
     }
@@ -101,10 +100,10 @@ export default function SchoolManagement() {
   const handleToggleStatus = async (school: SchoolListItem) => {
     try {
       await superAdminApi.toggleSchoolStatus(school.id);
-      toast({ title: school.isActive ? "School deactivated" : "School activated" });
+      toast.success(school.isActive ? "School deactivated" : "School activated");
       await fetchSchools();
     } catch {
-      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+      toast.error("Failed to update status");
     }
   };
 

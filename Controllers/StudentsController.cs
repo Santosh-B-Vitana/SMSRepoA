@@ -716,7 +716,8 @@ namespace SmsApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred during CSV import.", error = ex.Message });
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                return StatusCode(500, new { message = "An error occurred during CSV import.", error = ex.Message, detail });
             }
         }
 
@@ -803,6 +804,95 @@ namespace SmsApi.Controllers
             }
         }
 
+        // ── Generous CSV import helpers ──────────────────────────────────────
+        // Strips spaces, underscores, hyphens and lowercases so that
+        // "First Name", "first_name" and "FirstName" all map to "firstname".
+        private static string CanonCol(string raw) =>
+            System.Text.RegularExpressions.Regex.Replace(raw.Trim().ToLowerInvariant(), @"[\s_\-]", "");
+
+        // Column aliases: canonical name → list of accepted alternatives.
+        // GetCol will try the primary name first, then each alias in order.
+        private static readonly Dictionary<string, string[]> ColAliases = new()
+        {
+            ["admissionnumber"] = new[] { "admno", "admissionno", "regno", "registrationno", "rollno" },
+            ["firstname"]       = new[] { "fname", "givenname" },
+            ["lastname"]        = new[] { "lname", "surname", "familyname" },
+            ["dateofbirth"]     = new[] { "dob", "birthdate", "bdate" },
+            ["admissiondate"]   = new[] { "joiningdate", "dateofjoining", "enrollmentdate" },
+            ["primaryphone"]    = new[] { "phone", "mobile", "mobileno", "contact", "phoneno" },
+            ["guardianname"]    = new[] { "parentname", "fathername", "mothername" },
+            ["guardianphone"]   = new[] { "parentphone", "fatherphone", "motherphone" },
+            ["guardianrelation"]= new[] { "relation", "parentrelation" },
+            ["bloodgroup"]      = new[] { "blood", "bgroup" },
+            ["aadharnumber"]    = new[] { "aadhar", "aadhaar", "aadhaarno", "uid", "uidno" },
+            ["pannumber"]       = new[] { "pan", "panno" },
+            ["emergencycontact"]= new[] { "emergencyname", "emcontact" },
+            ["emergencyphone"]  = new[] { "emphone", "emergencyno" },
+            ["transportrequired"]= new[] { "transport", "busfacility", "busrequired" },
+            ["hostelrequired"]  = new[] { "hostel", "boarding", "boardingrequired" },
+            ["previousschool"]  = new[] { "lastschool", "prevschool" },
+            ["previousclass"]   = new[] { "lastclass", "prevclass", "previousgrade" },
+        };
+
+        // Accept dates in any of the common formats used in Indian schools.
+        private static DateTime? ParseFlexDate(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            raw = raw.Trim();
+            string[] fmts = {
+                "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "MM-dd-yyyy",
+                "d/M/yyyy",   "M/d/yyyy",   "d-M-yyyy",   "M-d-yyyy",
+                "yyyy/MM/dd", "dd MMM yyyy","d MMM yyyy", "dd-MMM-yyyy",
+                "d MMM yy",   "dd MMM yy",  "d/M/yy",     "dd/MM/yy"
+            };
+            if (DateTime.TryParseExact(raw, fmts, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var d)) return d;
+            if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out d)) return d;
+            return null;
+        }
+
+        // Accept true/yes/y/1 as true; everything else (including blank) as false.
+        private static bool ParseFlexBool(string? raw) =>
+            raw?.Trim().ToLower() switch { "true" or "yes" or "y" or "1" => true, _ => false };
+
+        // Normalise gender to the enum expected by the service.
+        private static string? NormalizeGender(string? raw) =>
+            raw?.Trim().ToLower() switch
+            {
+                "m" or "male" or "boy" or "gents"         => "male",
+                "f" or "female" or "girl" or "ladies"     => "female",
+                "other" or "others" or "third gender"     => "other",
+                "prefer_not_to_say" or "prefer not to say"
+                    or "na" or "n/a" or "not specified"   => "prefer_not_to_say",
+                _ => raw?.Trim()
+            };
+
+        // Normalise student status.
+        private static string NormalizeStudentStatus(string? raw) =>
+            raw?.Trim().ToLower() switch
+            {
+                "active" or "enabled" or "enrolled" or "studying" or "current" => "active",
+                "inactive" or "disabled"                                         => "inactive",
+                "transferred" or "transfer"                                      => "transferred",
+                "graduated" or "passed" or "completed"                          => "graduated",
+                "left" or "dropout" or "dropped_out" or "drop out"              => "dropped_out",
+                "on_leave" or "on leave" or "leave"                              => "on_leave",
+                _ => "active"          // safe default
+            };
+
+        // Auto-clean Aadhar: strip spaces, keep digits + optional dashes.
+        private static string? CleanAadhar(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var digits = System.Text.RegularExpressions.Regex.Replace(raw.Trim(), @"[^\d]", "");
+            return digits.Length == 12 ? digits : raw.Trim();   // return normalised or original
+        }
+
+        // Auto-clean PAN: trim + uppercase.
+        private static string? CleanPan(string? raw) =>
+            string.IsNullOrWhiteSpace(raw) ? null : raw.Trim().ToUpperInvariant();
+
         private static List<CreateStudentRequest> ParseStudentCsv(System.IO.StreamReader reader)
         {
             var requests = new List<CreateStudentRequest>();
@@ -810,16 +900,29 @@ namespace SmsApi.Controllers
             if (string.IsNullOrWhiteSpace(headerLine))
                 return requests;
 
+            // Build canonical header→index map
             var headers = SplitCsvLine(headerLine)
-                .Select((h, i) => (h.Trim().ToLowerInvariant(), i))
-                .ToDictionary(x => x.Item1, x => x.i);
+                .Select((h, i) => (canon: CanonCol(h), idx: i))
+                .GroupBy(x => x.canon)
+                .ToDictionary(g => g.Key, g => g.First().idx);
 
-            int GetIdx(string name) => headers.TryGetValue(name.ToLowerInvariant(), out var i) ? i : -1;
+            // Resolve column index by name or any of its aliases.
+            int GetIdx(string name)
+            {
+                var canon = CanonCol(name);
+                if (headers.TryGetValue(canon, out var i)) return i;
+                if (ColAliases.TryGetValue(canon, out var aliases))
+                    foreach (var a in aliases)
+                        if (headers.TryGetValue(CanonCol(a), out i)) return i;
+                return -1;
+            }
 
             string? GetCol(string[] cols, string name)
             {
                 var idx = GetIdx(name);
-                return idx >= 0 && idx < cols.Length ? cols[idx].Trim() : null;
+                if (idx < 0 || idx >= cols.Length) return null;
+                var v = cols[idx].Trim();
+                return v.Length == 0 ? null : v;
             }
 
             string? line;
@@ -827,41 +930,42 @@ namespace SmsApi.Controllers
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 var cols = SplitCsvLine(line);
+                if (cols.All(c => string.IsNullOrWhiteSpace(c))) continue; // blank data row
 
-                DateTime ParseDate(string? v, string field)
-                {
-                    if (string.IsNullOrWhiteSpace(v)) return default;
-                    if (DateTime.TryParse(v, out var d)) return d;
-                    throw new FormatException($"Cannot parse date '{v}' in column '{field}'. Use yyyy-MM-dd format.");
-                }
+                // Resolve name: full Name column OR compose from parts
+                var fullName = GetCol(cols, "name");
+                if (string.IsNullOrWhiteSpace(fullName))
+                    fullName = string.Join(" ", new[] {
+                        GetCol(cols, "firstname"), GetCol(cols, "middlename"), GetCol(cols, "lastname")
+                    }.Where(p => !string.IsNullOrWhiteSpace(p)));
 
                 var req = new CreateStudentRequest
                 {
                     AdmissionNumber   = GetCol(cols, "admissionnumber") ?? string.Empty,
-                    Name              = GetCol(cols, "name") ?? string.Empty,
+                    Name              = fullName ?? string.Empty,
                     FirstName         = GetCol(cols, "firstname"),
                     MiddleName        = GetCol(cols, "middlename"),
                     LastName          = GetCol(cols, "lastname"),
                     Class             = GetCol(cols, "class") ?? string.Empty,
                     Section           = GetCol(cols, "section") ?? string.Empty,
                     RollNumber        = GetCol(cols, "rollnumber"),
-                    DateOfBirth       = ParseDate(GetCol(cols, "dateofbirth"), "DateOfBirth"),
-                    Gender            = GetCol(cols, "gender"),
+                    DateOfBirth       = ParseFlexDate(GetCol(cols, "dateofbirth")) ?? default,
+                    Gender            = NormalizeGender(GetCol(cols, "gender")),
                     Nationality       = GetCol(cols, "nationality"),
                     Religion          = GetCol(cols, "religion"),
                     Caste             = GetCol(cols, "caste"),
                     Category          = GetCol(cols, "category") ?? "General",
                     MotherTongue      = GetCol(cols, "mothertongue"),
-                    AdmissionDate     = ParseDate(GetCol(cols, "admissiondate"), "AdmissionDate") is DateTime ad && ad != default ? ad : DateTime.UtcNow,
-                    Status            = GetCol(cols, "status") ?? "active",
+                    AdmissionDate     = ParseFlexDate(GetCol(cols, "admissiondate")) ?? DateTime.UtcNow,
+                    Status            = NormalizeStudentStatus(GetCol(cols, "status")),
                     Email             = GetCol(cols, "email"),
                     PrimaryPhone      = GetCol(cols, "primaryphone"),
                     SecondaryPhone    = GetCol(cols, "secondaryphone"),
                     Address           = GetCol(cols, "address") ?? string.Empty,
                     PermanentAddress  = GetCol(cols, "permanentaddress"),
                     BloodGroup        = GetCol(cols, "bloodgroup"),
-                    AadharNumber      = GetCol(cols, "aadharnumber"),
-                    PanNumber         = GetCol(cols, "pannumber"),
+                    AadharNumber      = CleanAadhar(GetCol(cols, "aadharnumber")),
+                    PanNumber         = CleanPan(GetCol(cols, "pannumber")),
                     PassportNumber    = GetCol(cols, "passportnumber"),
                     GuardianName      = GetCol(cols, "guardianname") ?? string.Empty,
                     GuardianPhone     = GetCol(cols, "guardianphone") ?? string.Empty,
@@ -873,8 +977,8 @@ namespace SmsApi.Controllers
                     ChronicConditions = GetCol(cols, "chronicconditions"),
                     Medications       = GetCol(cols, "medications"),
                     SpecialNeeds      = GetCol(cols, "specialneeds"),
-                    TransportRequired = string.Equals(GetCol(cols, "transportrequired"), "true", StringComparison.OrdinalIgnoreCase),
-                    HostelRequired    = string.Equals(GetCol(cols, "hostelrequired"), "true", StringComparison.OrdinalIgnoreCase),
+                    TransportRequired = ParseFlexBool(GetCol(cols, "transportrequired")),
+                    HostelRequired    = ParseFlexBool(GetCol(cols, "hostelrequired")),
                     PreviousSchool    = GetCol(cols, "previousschool"),
                     PreviousClass     = GetCol(cols, "previousclass"),
                     PhotoUrl          = GetCol(cols, "photourl"),

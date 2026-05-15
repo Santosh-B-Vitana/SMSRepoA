@@ -416,11 +416,15 @@ export function EnhancedLibraryManager() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={(canManageBooks || canEditBooks) ? tab : "catalog"} onValueChange={v => (canManageBooks || canEditBooks) ? setTab(v) : setTab("catalog")}>
         <TabsList className="h-9 w-full sm:w-auto">
           <TabsTrigger value="catalog" className="gap-1.5 text-xs sm:text-sm"><Book className="h-3.5 w-3.5" />Book Catalog</TabsTrigger>
-          <TabsTrigger value="issues" className="gap-1.5 text-xs sm:text-sm"><BookMarked className="h-3.5 w-3.5" />Issued Books</TabsTrigger>
-          <TabsTrigger value="overdue" className="gap-1.5 text-xs sm:text-sm"><AlertCircle className="h-3.5 w-3.5" />Overdue / Fines</TabsTrigger>
+          {(canManageBooks || canEditBooks) && (
+            <>
+              <TabsTrigger value="issues" className="gap-1.5 text-xs sm:text-sm"><BookMarked className="h-3.5 w-3.5" />Issued Books</TabsTrigger>
+              <TabsTrigger value="overdue" className="gap-1.5 text-xs sm:text-sm"><AlertCircle className="h-3.5 w-3.5" />Overdue / Fines</TabsTrigger>
+            </>
+          )}
         </TabsList>
 
         {/* Catalog */}
@@ -466,8 +470,10 @@ export function EnhancedLibraryManager() {
           </CardContent></Card>
         </TabsContent>
 
-        {/* Issued */}
-        <TabsContent value="issues" className="mt-4 space-y-4">
+        {(canManageBooks || canEditBooks) && (
+          <>
+            {/* Issued */}
+            <TabsContent value="issues" className="mt-4 space-y-4">
           <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between">
             <div className="flex gap-2 flex-1">
               <div className="relative flex-1 max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input className="pl-9 h-9" placeholder="Search book or student…" value={issueSearch} onChange={e => setIssueSearch(e.target.value)} /></div>
@@ -512,6 +518,8 @@ export function EnhancedLibraryManager() {
         <TabsContent value="overdue" className="mt-4">
           <OverduePanel onReturnClick={setReturnIssue} onFinePaid={handleMarkFinePaid} />
         </TabsContent>
+          </>
+        )}
       </Tabs>
 
       {/* Dialogs */}

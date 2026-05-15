@@ -188,4 +188,18 @@ export const staffApi = {
   /** Returns students who have this staff member as their parent/guardian */
   getChildren: (staffId: string) =>
     apiGet<import('./studentApi').StaffChildDto[]>(`/staff/${staffId}/children`),
+
+  /** Deactivate staff: process class assignment actions then revoke login */
+  deactivate: (id: string, assignments: DeactivateStaffAssignmentAction[]) =>
+    apiPost<{ message: string }>(`/staff/${id}/deactivate`, { assignments }),
+
+  /** Reactivate a previously deactivated staff member */
+  reactivate: (id: string) =>
+    apiPost<{ message: string }>(`/staff/${id}/reactivate`, {}),
 };
+
+export interface DeactivateStaffAssignmentAction {
+  assignmentId: string;
+  action: 'remove' | 'reassign';
+  newStaffId?: string;
+}

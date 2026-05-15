@@ -93,8 +93,10 @@ export function StudentsManager() {
                     { key: "guardianPhone", label: "Guardian Phone", required: true },
                     { key: "address", label: "Address", required: false },
                   ]}
-                  onImport={async (data) => {
-                    toast.success(`Successfully imported ${data.length} student records`);
+                  apiTemplateUrl="/Students/bulk-import/template"
+                  apiImportUrl="/Students/bulk-import/csv"
+                  onImport={async (_data) => {
+                    toast.success(`Students imported successfully`);
                     await fetchStudents();
                   }}
                   templateFilename="students_import_template"
@@ -102,6 +104,7 @@ export function StudentsManager() {
                 <ExportButton
                   data={students}
                   filename="students"
+                  apiExportUrl="/Students/export"
                   columns={[
                     { key: "name", label: "Name" },
                     { key: "admissionNumber", label: "Admission No" },

@@ -74,7 +74,7 @@ namespace SmsApi.Services
     public interface IHealthService
     {
         Task<PaginatedResponse<HealthRecordBasicDto>> GetHealthRecordsAsync(
-            Guid schoolId, HealthFiltersDto filters, int page, int pageSize);
+            Guid schoolId, HealthFiltersDto filters, int page, int pageSize, Guid? classTeacherUserId = null);
         Task<HealthRecordFullDto?> GetHealthRecordByIdAsync(Guid schoolId, Guid id);
         Task<HealthRecordFullDto> CreateHealthRecordAsync(Guid schoolId, CreateHealthRecordDto dto, Guid userId);
         Task<HealthRecordFullDto> UpdateHealthRecordAsync(Guid schoolId, Guid id, UpdateHealthRecordDto dto);
@@ -105,7 +105,7 @@ namespace SmsApi.Services
         // ========== HEALTH RECORDS ==========
 
         public async Task<PaginatedResponse<HealthRecordBasicDto>> GetHealthRecordsAsync(
-            Guid schoolId, HealthFiltersDto filters, int page, int pageSize)
+            Guid schoolId, HealthFiltersDto filters, int page, int pageSize, Guid? classTeacherUserId = null)
         {
             try
             {
@@ -113,9 +113,51 @@ namespace SmsApi.Services
                 page = Math.Max(1, page);
                 pageSize = Math.Min(100, Math.Max(1, pageSize));
 
+                // If a class teacher is calling, restrict to students in their CT class/section only
+                List<string>? ctAllowedClasses = null;
+                List<string>? ctAllowedSections = null;
+                if (classTeacherUserId.HasValue)
+                {
+                    var userLogin = await _context.UserLogins
+                        .FirstOrDefaultAsync(ul => ul.Id == classTeacherUserId.Value && !ul.IsDeleted);
+                    if (userLogin != null)
+                    {
+                        var staffMember = await _context.StaffMembers
+                            .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == userLogin.Email && !s.IsDeleted);
+                        if (staffMember != null)
+                        {
+                            var ctAssignments = await _context.TeacherAssignments
+                                .Include(ta => ta.Class)
+                                .Include(ta => ta.Section)
+                                .Where(ta => ta.StaffId == staffMember.Id && ta.SchoolId == schoolId
+                                    && ta.IsClassTeacher && ta.Status == "active" && !ta.IsDeleted)
+                                .ToListAsync();
+                            ctAllowedClasses = ctAssignments
+                                .Where(ta => ta.Class != null)
+                                .Select(ta => ta.Class!.Name)
+                                .Distinct().ToList();
+                            ctAllowedSections = ctAssignments
+                                .Where(ta => ta.Section != null)
+                                .Select(ta => ta.Section!.Name)
+                                .Distinct().ToList();
+                        }
+                    }
+                    // If we couldn't resolve the staff's CT assignment, return empty (deny by default)
+                    if (ctAllowedClasses == null || ctAllowedClasses.Count == 0)
+                        return new PaginatedResponse<HealthRecordBasicDto> { Items = new(), TotalCount = 0, Page = page, PageSize = pageSize, TotalPages = 0 };
+                }
+
                 var query = _context.HealthRecords
                     .AsNoTracking()
                     .Where(h => h.SchoolId == schoolId);
+
+                // Apply class teacher scope: only students in the CT's class/section
+                if (ctAllowedClasses != null)
+                {
+                    query = query.Where(h => h.Student != null && ctAllowedClasses.Contains(h.Student.Class));
+                    if (ctAllowedSections != null && ctAllowedSections.Count > 0)
+                        query = query.Where(h => h.Student != null && ctAllowedSections.Contains(h.Student.Section));
+                }
 
                 // Apply filters
                 if (filters.StudentId.HasValue)
