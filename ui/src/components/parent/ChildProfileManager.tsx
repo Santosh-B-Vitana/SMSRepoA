@@ -2,7 +2,7 @@
 import {
   User, Calendar, Award, BookOpen, Loader2, AlertCircle,
   CheckCircle, XCircle, Timer, GraduationCap, TrendingUp,
-  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home, Trophy
+  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home, Trophy,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -237,7 +237,7 @@ export function ChildProfileManager() {
   )).sort().reverse();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       <h1 className="text-2xl font-bold">Child Profile</h1>
 
       {/* Child Selector */}
@@ -309,32 +309,35 @@ export function ChildProfileManager() {
           if (val === "academics" && examResults.length === 0) { loadAcademics(); if (gradeRecords.length === 0) loadGrades(); }
           if (val === "assignments" && assignments.length === 0) loadAssignments();
         }}>
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="overview">
-              <User className="h-4 w-4 mr-1.5" />
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="attendance">
-              <Calendar className="h-4 w-4 mr-1.5" />
-              Attendance
-            </TabsTrigger>
-            <TabsTrigger value="exam-results">
-              <Trophy className="h-4 w-4 mr-1.5" />
-              Exam Results
-            </TabsTrigger>
-            <TabsTrigger value="academics">
-              <Award className="h-4 w-4 mr-1.5" />
-              Academic Performance
-            </TabsTrigger>
-            <TabsTrigger value="assignments">
-              <BookOpen className="h-4 w-4 mr-1.5" />
-              Assignments
-            </TabsTrigger>
-            <TabsTrigger value="leave">
-              <CalendarDays className="h-4 w-4 mr-1.5" />
-              Leave
-            </TabsTrigger>
-          </TabsList>
+          {/* Scrollable tab strip — no cramping on mobile */}
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 pb-1">
+            <TabsList className="flex h-auto w-max min-w-full gap-1 p-1 rounded-xl bg-muted">
+              <TabsTrigger value="overview" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                <span>Overview</span>
+              </TabsTrigger>
+              <TabsTrigger value="attendance" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
+                <span>Attendance</span>
+              </TabsTrigger>
+              <TabsTrigger value="exam-results" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <Trophy className="h-3.5 w-3.5 shrink-0" />
+                <span>Exam Results</span>
+              </TabsTrigger>
+              <TabsTrigger value="academics" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <Award className="h-3.5 w-3.5 shrink-0" />
+                <span>Academics</span>
+              </TabsTrigger>
+              <TabsTrigger value="assignments" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span>Assignments</span>
+              </TabsTrigger>
+              <TabsTrigger value="leave" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                <span>Leave</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* ── Attendance Tab (READ-ONLY) ── */}
           <TabsContent value="attendance">
@@ -465,6 +468,12 @@ export function ChildProfileManager() {
 
           {/* ── Academics Tab ── */}
           <TabsContent value="academics">
+            {/* Exam Results History (moved from the old dedicated tab) */}
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Previous Exam Results</p>
+              <ParentExamResultsTab studentId={selectedChildId} mode="previous" />
+            </div>
+
             {(academicLoading || gradesLoading) ? (
               <Card>
                 <CardContent className="p-8 text-center">
@@ -845,9 +854,9 @@ export function ChildProfileManager() {
             )}
           </TabsContent>
 
-          {/* ── Exam Results Tab ── */}
+          {/* ── Exam Results Tab (latest only) ── */}
           <TabsContent value="exam-results">
-            <ParentExamResultsTab studentId={selectedChildId} />
+            <ParentExamResultsTab studentId={selectedChildId} mode="latest" />
           </TabsContent>
 
           {/* ── Leave Tab ── */}

@@ -1,6 +1,5 @@
 import { UserCheck, Clock, ChevronDown, ChevronUp, CheckCircle2, XCircle, CalendarOff, TrendingUp, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { StaffIdCardTemplate } from "@/components/id-cards/StaffIdCardTemplate";
 import { useEffect, useState, ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,13 +23,15 @@ import {
   GraduationCap,
   RotateCcw
 } from "lucide-react";
-import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
+import { staffApi, Staff as RealStaff, StaffBasic } from "@/services/api/staffApi";
+import { StaffDeactivateDialog } from "@/components/staff/StaffDeactivateDialog";
 import { StaffChildDto } from "@/services/api/studentApi";
 import { academicApi, MyClassAssignment, TeacherAssignmentResponse } from "@/services/api/academicApi";
 import { attendanceApi, StaffAttendanceResponse, CreateStaffAttendanceRequest, StaffAttendanceStatus, UpdateStaffAttendanceRequest } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
 import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSchool } from "@/contexts/SchoolContext";
 
 // Extended type that merges real API Staff with legacy mockApi fields still rendered in the template
 type Staff = RealStaff & {
@@ -51,15 +52,15 @@ type Staff = RealStaff & {
   personalEmail?: string;
   accountHolderName?: string;
 };
-import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
-import { ExperienceCertificateTemplate } from "@/components/certificates/ExperienceCertificateTemplate";
-import { SalaryCertificateTemplate } from "@/components/certificates/SalaryCertificateTemplate";
+import { ProfessionalCertificateDialog } from "@/components/documents/ProfessionalCertificateDialog";
+import { ProfessionalIdCardDialog } from "@/components/documents/ProfessionalIdCardDialog";
 import { useToast } from "@/hooks/use-toast";
 import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function StaffProfile() {
   const { user } = useAuth();
+  const { schoolInfo } = useSchool();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   // Late dialog state
   const [lateDialog, setLateDialog] = useState<{ open: boolean; index?: number }>({ open: false });
@@ -86,6 +87,7 @@ export default function StaffProfile() {
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [deactivateTarget, setDeactivateTarget] = useState<StaffBasic | null>(null);
   const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
   const [childrenInSchool, setChildrenInSchool] = useState<StaffChildDto[]>([]);
   const [showChildrenExpanded, setShowChildrenExpanded] = useState(false);
@@ -323,8 +325,7 @@ export default function StaffProfile() {
             <Button
               variant="destructive"
               size="sm"
-              disabled={actionLoading}
-              onClick={() => handleStatusChange('inactive')}
+              onClick={() => setDeactivateTarget(staff as StaffBasic)}
             >
               {t('staffProfilePage.deactivate')}
             </Button>
@@ -1135,86 +1136,80 @@ export default function StaffProfile() {
         </TabsContent>
 
         <TabsContent value="documents">
-          {/* ID Card Dialog */}
+          {/* Professional Staff ID Card Dialog */}
           {showIdCardDialog && staff && (
-            <Dialog open={showIdCardDialog} onOpenChange={setShowIdCardDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Staff ID Card Preview</DialogTitle>
-                </DialogHeader>
-                <div className="print-container">
-                  <IdCardTemplate 
-                    person={staff}
-                    type="staff"
-                  />
-                </div>
-                <div className="flex justify-end gap-2 mt-4 print:hidden">
-                  <Button variant="outline" onClick={() => setShowIdCardDialog(false)}>
-                    Close
-                  </Button>
-                  <Button onClick={() => window.print()}>
-                    <CreditCard className="h-4 w-4 mr-2" />
-                    Print
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalIdCardDialog
+              open={showIdCardDialog}
+              onOpenChange={setShowIdCardDialog}
+              personType="staff"
+              personData={{
+                name: staff.name,
+                employeeId: staff.id,
+                designation: staff.designation,
+                department: staff.department,
+                phone: staff.phone,
+                email: staff.email,
+                bloodGroup: staff.bloodGroup,
+                photoUrl: staff.profilePhoto,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logo,
+              }}
+            />
           )}
 
-          {/* Experience Certificate Dialog */}
+          {/* Professional Experience Certificate Dialog */}
           {showExperienceCertDialog && staff && (
-            <Dialog open={showExperienceCertDialog} onOpenChange={setShowExperienceCertDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Experience Certificate</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <ExperienceCertificateTemplate
-                    staffName={staff.name}
-                    designation={staff.designation}
-                    department={staff.department}
-                    employeeId={staff.id}
-                    joiningDate="01/04/2020"
-                    relievingDate={new Date().toLocaleDateString()}
-                    workDuration="5 years"
-                    responsibilities={[
-                      "Teaching assigned subjects to students",
-                      "Conducting regular assessments and evaluations",
-                      "Maintaining student records and progress reports",
-                      "Participating in school events and activities"
-                    ]}
-                    performance="Excellent"
-                    issueDate={new Date().toLocaleDateString()}
-                    certificateNumber={`EXP${Date.now().toString().slice(-6)}`}
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalCertificateDialog
+              open={showExperienceCertDialog}
+              onOpenChange={setShowExperienceCertDialog}
+              certType="experience"
+              personData={{
+                staffName: staff.name,
+                employeeId: staff.id,
+                designation: staff.designation,
+                department: staff.department,
+                joiningDate: staff.joiningDate,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logo,
+                principalName: schoolInfo?.principalName,
+              }}
+            />
           )}
 
-          {/* Salary Certificate Dialog */}
+          {/* Professional Salary Certificate Dialog */}
           {showSalaryCertDialog && staff && (
-            <Dialog open={showSalaryCertDialog} onOpenChange={setShowSalaryCertDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Salary Certificate</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <SalaryCertificateTemplate
-                    staffName={staff.name}
-                    designation={staff.designation}
-                    department={staff.department}
-                    employeeId={staff.id}
-                    joiningDate="01/04/2020"
-                    basicSalary="45,000"
-                    allowances="8,000"
-                    totalSalary="53,000"
-                    issueDate={new Date().toLocaleDateString()}
-                    certificateNumber={`SAL${Date.now().toString().slice(-6)}`}
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalCertificateDialog
+              open={showSalaryCertDialog}
+              onOpenChange={setShowSalaryCertDialog}
+              certType="salary"
+              personData={{
+                staffName: staff.name,
+                employeeId: staff.id,
+                designation: staff.designation,
+                department: staff.department,
+                joiningDate: staff.joiningDate,
+                grossSalary: staff.salary != null ? String(staff.salary) : undefined,
+                bankName: staff.bankName,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logo,
+                principalName: schoolInfo?.principalName,
+              }}
+            />
           )}
 
           <Card>
@@ -1320,7 +1315,15 @@ export default function StaffProfile() {
         )}
       </Tabs>
 
-
+      {/* Deactivate dialog — shows class reassignment flow before deactivating */}
+      <StaffDeactivateDialog
+        staff={deactivateTarget}
+        onClose={() => setDeactivateTarget(null)}
+        onSuccess={() => {
+          setDeactivateTarget(null);
+          fetchStaff();
+        }}
+      />
     </div>
   );
 }

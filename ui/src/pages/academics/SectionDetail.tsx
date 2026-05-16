@@ -556,11 +556,35 @@ export default function SectionDetail() {
     if (!classId || !sectionId) return;
     setTimetableLoading(true);
     try {
-      const res = await timetableApi.list(classId, 1, 5, sectionId);
-      const active = res.timetables.find(t => t.status === "active") ?? res.timetables[0] ?? null;
-      setTimetableRecord(active);
-      if (active) {
-        const detail = await timetableApi.getDetail(active.id);
+      // Resolve current academic year for filtering
+      const yearsRes = await academicApi.listAcademicYears(1, 5);
+      const currentYear =
+        yearsRes.academicYears?.find(y => y.isCurrent)?.name ??
+        yearsRes.academicYears?.[0]?.name;
+      const normalizeYear = (y: string) => y.replace(/\//g, '-').trim();
+
+      const findTarget = (list: TimetableRecord[]) => {
+        if (!currentYear) return list.find(t => t.status === 'active') ?? list[0] ?? null;
+        const byYear = list.filter(
+          t => normalizeYear(t.academicYear) === normalizeYear(currentYear)
+        );
+        return byYear.find(t => t.status === 'active') ?? byYear[0] ??
+          list.find(t => t.status === 'active') ?? list[0] ?? null;
+      };
+
+      // 1. Try section-specific timetable
+      const secRes = await timetableApi.list(classId, 1, 50, sectionId, currentYear);
+      let target = findTarget(secRes.timetables ?? []);
+
+      // 2. Fall back to class-level (no sectionId) timetable if none found
+      if (!target) {
+        const classRes = await timetableApi.list(classId, 1, 50, undefined, currentYear);
+        target = findTarget(classRes.timetables ?? []);
+      }
+
+      setTimetableRecord(target);
+      if (target) {
+        const detail = await timetableApi.getDetail(target.id);
         setTimetablePeriods(detail.periods ?? []);
       } else {
         setTimetablePeriods([]);

@@ -46,6 +46,10 @@ namespace SmsApi.Services
         // Staff view: exam setups where staff is assigned to enter marks
         Task<List<ExamSetupBasicDto>> GetExamSetupsForStaffAsync(Guid schoolId, string userEmail, string? academicYear);
 
+        // Staff grades dashboard
+        Task<StaffExamStatsDto> GetStaffExamStatsAsync(Guid schoolId, string userEmail);
+        Task<StaffStudentMarksPageDto> GetStaffStudentMarksAsync(Guid schoolId, string userEmail, Guid? classId, Guid? sectionId, int page, int pageSize);
+
         // Unlock a locked subject so marks can be re-edited (admin only)
         Task UnlockSubjectForEditAsync(Guid schoolId, Guid examSetupId, Guid examSetupSubjectId);
 
@@ -1035,26 +1039,271 @@ namespace SmsApi.Services
             var setups = await query.OrderByDescending(e => e.CreatedAt).ToListAsync();
             return setups.Select(e => new ExamSetupBasicDto
             {
-                Id                   = e.Id,
-                Name                 = e.Name,
-                ExamType             = e.IsCustomType ? (e.CustomTypeName ?? "Custom") : (e.ExamTypeRef?.Name ?? ""),
-                IsCustomType         = e.IsCustomType,
-                CustomTypeName       = e.CustomTypeName,
-                ClassId              = e.ClassId,
-                ClassName            = e.ClassRef?.Name ?? "",
-                SectionId            = e.SectionId,
-                SectionName          = e.SectionRef?.Name,
-                BoardConfigurationId = e.BoardConfigurationId,
-                BoardName            = e.BoardConfig?.Name,
-                AcademicYear         = e.AcademicYear,
-                Term                 = e.Term,
-                StartDate            = e.StartDate,
-                EndDate              = e.EndDate,
-                Status               = e.Status,
-                SubjectCount         = e.Subjects.Count(s => !s.IsDeleted),
-                MarksEnteredCount    = e.Subjects.Count(s => !s.IsDeleted && (s.Status == "marks_entry" || s.Status == "locked")),
-                CreatedAt            = e.CreatedAt,
+                Id                          = e.Id,
+                Name                        = e.Name,
+                ExamType                    = e.IsCustomType ? (e.CustomTypeName ?? "Custom") : (e.ExamTypeRef?.Name ?? ""),
+                IsCustomType                = e.IsCustomType,
+                CustomTypeName              = e.CustomTypeName,
+                ClassId                     = e.ClassId,
+                ClassName                   = e.ClassRef?.Name ?? "",
+                SectionId                   = e.SectionId,
+                SectionName                 = e.SectionRef?.Name,
+                BoardConfigurationId        = e.BoardConfigurationId,
+                BoardName                   = e.BoardConfig?.Name,
+                AcademicYear                = e.AcademicYear,
+                Term                        = e.Term,
+                StartDate                   = e.StartDate,
+                EndDate                     = e.EndDate,
+                Status                      = e.Status,
+                SubjectCount                = e.Subjects.Count(s => !s.IsDeleted),
+                MarksEnteredCount           = e.Subjects.Count(s => !s.IsDeleted && (s.Status == "marks_entry" || s.Status == "locked")),
+                CreatedAt                   = e.CreatedAt,
+                // Staff-specific access info — computed here where resolvedStaffId is known
+                IsClassTeacherForThisClass  = staffClassIds.Contains(e.ClassId),
+                MyAssignedSubjectIds        = e.Subjects
+                    .Where(s => !s.IsDeleted && s.AssignedStaffId == resolvedStaffId)
+                    .Select(s => s.Id)
+                    .ToList(),
             }).ToList();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // STAFF GRADES DASHBOARD — STATS
+        // ─────────────────────────────────────────────────────────────────────
+
+        public async Task<StaffExamStatsDto> GetStaffExamStatsAsync(Guid schoolId, string userEmail)
+        {
+            if (string.IsNullOrWhiteSpace(userEmail))
+                return new StaffExamStatsDto();
+
+            var staffMember = await _context.StaffMembers
+                .Where(s => s.Email == userEmail && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync();
+            var resolvedStaffId = staffMember?.Id ?? Guid.Empty;
+
+            var explicitSetupIds = resolvedStaffId == Guid.Empty
+                ? new List<Guid>()
+                : await _context.ExamSetupSubjects
+                    .Where(s => s.SchoolId == schoolId && s.AssignedStaffId == resolvedStaffId)
+                    .Select(s => s.ExamSetupId)
+                    .Distinct()
+                    .ToListAsync();
+
+            var staffClassIds = resolvedStaffId == Guid.Empty
+                ? new List<Guid>()
+                : await _context.TeacherAssignments
+                    .Where(ta => ta.StaffId == resolvedStaffId && ta.SchoolId == schoolId
+                        && ta.IsClassTeacher && ta.Status == "active" && !ta.IsDeleted)
+                    .Select(ta => ta.ClassId)
+                    .Distinct()
+                    .ToListAsync();
+
+            var mySetups = await _context.ExamSetups
+                .Where(e => e.SchoolId == schoolId
+                    && (explicitSetupIds.Contains(e.Id) || staffClassIds.Contains(e.ClassId)))
+                .Select(e => new { e.Id, e.Status })
+                .ToListAsync();
+
+            var totalExams = mySetups.Count;
+            var publishedExams = mySetups.Count(e => e.Status == "published");
+            var mySetupIdList = mySetups.Select(e => e.Id).ToList();
+
+            var publishedEntries = mySetupIdList.Count == 0
+                ? new List<(decimal? Percentage, bool IsPass)>()
+                : await _context.ExamMarksEntries
+                    .Where(em => mySetupIdList.Contains(em.ExamSetupId) && em.Status == "published")
+                    .Select(em => new { em.Percentage, em.IsPass })
+                    .ToListAsync()
+                    .ContinueWith(t => t.Result.Select(x => (x.Percentage, x.IsPass)).ToList());
+
+            var totalEntries = publishedEntries.Count;
+            var pctEntries = publishedEntries.Where(e => e.Percentage.HasValue).ToList();
+            var avgPct = pctEntries.Count > 0
+                ? Math.Round(pctEntries.Average(e => e.Percentage!.Value), 2)
+                : 0m;
+            var passRate = totalEntries > 0
+                ? Math.Round((decimal)publishedEntries.Count(e => e.IsPass) / totalEntries * 100, 2)
+                : 0m;
+
+            return new StaffExamStatsDto
+            {
+                TotalExams = totalExams,
+                PublishedExams = publishedExams,
+                TotalMarksEntries = totalEntries,
+                AveragePercentage = avgPct,
+                PassRate = passRate,
+            };
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // STAFF GRADES DASHBOARD — STUDENT MARKS (published only)
+        // ─────────────────────────────────────────────────────────────────────
+
+        public async Task<StaffStudentMarksPageDto> GetStaffStudentMarksAsync(
+            Guid schoolId, string userEmail, Guid? classId, Guid? sectionId, int page, int pageSize)
+        {
+            if (string.IsNullOrWhiteSpace(userEmail))
+                return new StaffStudentMarksPageDto();
+
+            var staffMember = await _context.StaffMembers
+                .Where(s => s.Email == userEmail && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync();
+            var resolvedStaffId = staffMember?.Id ?? Guid.Empty;
+
+            if (resolvedStaffId == Guid.Empty)
+                return new StaffStudentMarksPageDto();
+
+            // Only subjects this staff is directly assigned to teach
+            var assignedSubjects = await _context.ExamSetupSubjects
+                .Where(s => s.SchoolId == schoolId && s.AssignedStaffId == resolvedStaffId && !s.IsDeleted)
+                .Select(s => new { s.Id, s.ExamSetupId })
+                .ToListAsync();
+
+            var assignedSetupIds = assignedSubjects.Select(s => s.ExamSetupId).Distinct().ToList();
+
+            if (assignedSetupIds.Count == 0)
+                return new StaffStudentMarksPageDto();
+
+            // Only published exam setups where this staff has assigned subjects
+            var mySetupsQuery = _context.ExamSetups
+                .Where(e => e.SchoolId == schoolId
+                    && e.Status == "published"
+                    && assignedSetupIds.Contains(e.Id));
+
+            if (classId.HasValue)
+                mySetupsQuery = mySetupsQuery.Where(e => e.ClassId == classId.Value);
+            if (sectionId.HasValue)
+                mySetupsQuery = mySetupsQuery.Where(e => e.SectionId == sectionId.Value);
+
+            var setups = await mySetupsQuery
+                .Select(e => new { e.Id, e.Name, e.ClassId, e.SectionId, e.AcademicYear })
+                .ToListAsync();
+
+            // Build class/section lookup dictionaries
+            var allClassIds = setups.Select(e => e.ClassId).Distinct().ToList();
+            var allSectionIds = setups.Where(e => e.SectionId.HasValue)
+                .Select(e => e.SectionId!.Value).Distinct().ToList();
+
+            var classNames = await _context.Classes
+                .Where(c => allClassIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.Name })
+                .ToDictionaryAsync(c => c.Id, c => c.Name);
+
+            var sectionNames = allSectionIds.Count > 0
+                ? await _context.Sections
+                    .Where(s => allSectionIds.Contains(s.Id))
+                    .Select(s => new { s.Id, s.Name })
+                    .ToDictionaryAsync(s => s.Id, s => s.Name)
+                : new Dictionary<Guid, string>();
+
+            // Build filter options for ALL of staff's published setups (unfiltered, for the dropdown)
+            var allMySetups = await _context.ExamSetups
+                .Where(e => e.SchoolId == schoolId
+                    && e.Status == "published"
+                    && assignedSetupIds.Contains(e.Id))
+                .Select(e => new { e.ClassId, e.SectionId })
+                .ToListAsync();
+
+            var allFilterClassIds = allMySetups.Select(e => e.ClassId).Distinct().ToList();
+            var allFilterSectionIds = allMySetups.Where(e => e.SectionId.HasValue)
+                .Select(e => e.SectionId!.Value).Distinct().ToList();
+
+            var allClassNamesForFilter = await _context.Classes
+                .Where(c => allFilterClassIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.Name })
+                .ToDictionaryAsync(c => c.Id, c => c.Name);
+
+            var allSectionNamesForFilter = allFilterSectionIds.Count > 0
+                ? await _context.Sections
+                    .Where(s => allFilterSectionIds.Contains(s.Id))
+                    .Select(s => new { s.Id, s.Name })
+                    .ToDictionaryAsync(s => s.Id, s => s.Name)
+                : new Dictionary<Guid, string>();
+
+            var classOptions = allMySetups
+                .GroupBy(e => new { e.ClassId, e.SectionId })
+                .Select(g => new ClassSectionFilterOption
+                {
+                    ClassId = g.Key.ClassId,
+                    ClassName = allClassNamesForFilter.GetValueOrDefault(g.Key.ClassId, ""),
+                    SectionId = g.Key.SectionId,
+                    SectionName = g.Key.SectionId.HasValue
+                        ? allSectionNamesForFilter.GetValueOrDefault(g.Key.SectionId.Value)
+                        : null,
+                })
+                .OrderBy(x => x.ClassName).ThenBy(x => x.SectionName)
+                .ToList();
+
+            var setupIds = setups.Select(e => e.Id).ToList();
+            if (setupIds.Count == 0)
+                return new StaffStudentMarksPageDto { Classes = classOptions };
+
+            // Filter to only the staff's assigned subjects within the filtered setups
+            var filteredSubjectIds = assignedSubjects
+                .Where(s => setupIds.Contains(s.ExamSetupId))
+                .Select(s => s.Id)
+                .ToList();
+
+            if (filteredSubjectIds.Count == 0)
+                return new StaffStudentMarksPageDto { Classes = classOptions };
+
+            var totalCount = await _context.ExamMarksEntries
+                .Where(em => filteredSubjectIds.Contains(em.ExamSetupSubjectId) && em.Status == "published")
+                .CountAsync();
+
+            var entries = await _context.ExamMarksEntries
+                .Where(em => filteredSubjectIds.Contains(em.ExamSetupSubjectId) && em.Status == "published")
+                .Include(em => em.Student)
+                .Include(em => em.ExamSetupSubject)
+                    .ThenInclude(s => s!.Subject)
+                .OrderBy(em => em.ExamSetupId)
+                .ThenBy(em => em.Student!.RollNumber)
+                .ThenBy(em => em.Student!.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var setupMap = setups.ToDictionary(e => e.Id);
+
+            var items = entries.Select(em =>
+            {
+                var setup = setupMap.GetValueOrDefault(em.ExamSetupId);
+                return new StaffStudentMarkDto
+                {
+                    ExamMarksEntryId    = em.Id,
+                    ExamSetupId         = em.ExamSetupId,
+                    ExamName            = setup?.Name ?? "",
+                    AcademicYear        = setup?.AcademicYear ?? "",
+                    ClassId             = setup?.ClassId ?? Guid.Empty,
+                    ClassName           = setup != null ? classNames.GetValueOrDefault(setup.ClassId, "") : "",
+                    SectionId           = setup?.SectionId,
+                    SectionName         = setup?.SectionId.HasValue == true
+                        ? sectionNames.GetValueOrDefault(setup.SectionId!.Value)
+                        : null,
+                    StudentId           = em.StudentId,
+                    StudentName         = !string.IsNullOrWhiteSpace(em.Student?.Name)
+                        ? em.Student!.Name
+                        : $"{em.Student?.FirstName} {em.Student?.LastName}".Trim(),
+                    RollNumber          = em.Student?.RollNumber,
+                    SubjectId           = em.ExamSetupSubject?.SubjectId ?? Guid.Empty,
+                    SubjectName         = em.ExamSetupSubject?.Subject?.Name ?? "",
+                    ObtainedMarks       = em.ObtainedMarks,
+                    MaxMarks            = em.ExamSetupSubject?.MaxTotalMarks ?? 0,
+                    Percentage          = em.Percentage,
+                    Grade               = em.Grade,
+                    IsPass              = em.IsPass,
+                    IsAbsent            = em.IsAbsent,
+                };
+            }).ToList();
+
+            return new StaffStudentMarksPageDto
+            {
+                Total    = totalCount,
+                Page     = page,
+                PageSize = pageSize,
+                Items    = items,
+                Classes  = classOptions,
+            };
         }
 
         // ─────────────────────────────────────────────────────────────────────

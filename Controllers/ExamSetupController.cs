@@ -536,5 +536,55 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Returns KPI stats for the grades dashboard, scoped to the calling staff member's exam assignments.
+        /// Counts: total exams, published exams, total published marks entries, average percentage, pass rate.
+        /// </summary>
+        [HttpGet("my-stats")]
+        [ProducesResponseType(typeof(StaffExamStatsDto), 200)]
+        public async Task<ActionResult<StaffExamStatsDto>> GetMyStats()
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var userEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? string.Empty;
+                var result = await _service.GetStaffExamStatsAsync(schoolId, userEmail);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting staff exam stats");
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Returns paginated published student marks for the calling staff member's exam assignments.
+        /// Supports optional class and section filtering. Includes available class/section options for dropdowns.
+        /// </summary>
+        [HttpGet("my-student-marks")]
+        [ProducesResponseType(typeof(StaffStudentMarksPageDto), 200)]
+        public async Task<ActionResult<StaffStudentMarksPageDto>> GetMyStudentMarks(
+            [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? sectionId = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 100)
+        {
+            try
+            {
+                if (page < 1) page = 1;
+                if (pageSize < 1 || pageSize > 500) pageSize = 100;
+                var schoolId = GetSchoolId();
+                var userEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? string.Empty;
+                var result = await _service.GetStaffStudentMarksAsync(schoolId, userEmail, classId, sectionId, page, pageSize);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting staff student marks");
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
 }

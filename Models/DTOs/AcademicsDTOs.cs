@@ -200,6 +200,12 @@ namespace SmsApi.Models.DTOs
     }
 
     // Class Subject DTOs
+    public class UpdateClassSubjectTeacherRequest
+    {
+        /// <summary>Assign a teacher; pass null to unassign.</summary>
+        public Guid? TeacherId { get; set; }
+    }
+
     public class AssignSubjectRequest
     {
         [Required]
@@ -559,7 +565,15 @@ namespace SmsApi.Models.DTOs
     // My Class Assignments DTO — returned for logged-in teacher
     public class MyClassAssignmentDto
     {
-        public Guid AssignmentId { get; set; }
+        /// <summary>
+        /// Unique key for this assignment view. For section-specific TeacherAssignment rows this is
+        /// the assignment Guid as a string. For class-wide assignments expanded per section this is a
+        /// composite "{assignmentGuid}|{sectionGuid}" string.  The frontend matches on this value when
+        /// routing to /staff-class/:assignmentId.
+        /// </summary>
+        public string AssignmentId { get; set; } = string.Empty;
+        /// <summary>The StaffMember.Id (not the UserLogin.Id) — use this to match against ExamSetupSubjectDto.AssignedStaffId.</summary>
+        public Guid StaffId { get; set; }
         public Guid ClassId { get; set; }
         public string ClassName { get; set; } = string.Empty;
         public Guid? SectionId { get; set; }

@@ -41,6 +41,7 @@ const MyClasses            = lazy(() => import("@/pages/MyClasses"));
 const Assignments          = lazy(() => import("@/pages/Assignments"));
 const Examinations         = lazy(() => import("@/pages/Examinations"));
 const Reports              = lazy(() => import("@/pages/Reports"));
+const ReportCards          = lazy(() => import("@/pages/ReportCards"));
 const Timetable            = lazy(() => import("@/pages/Timetable"));
 const Transport            = lazy(() => import("@/pages/Transport"));
 const Library              = lazy(() => import("@/pages/Library"));
@@ -213,6 +214,7 @@ function App() {
                   <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ClassAnalysis /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><GradeDistribution /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><SubjectPerformance /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/report-cards" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><ModuleGuard module="reports"><ReportCards /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="analytics"><Analytics /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: optional modules ───────────────────────── */}

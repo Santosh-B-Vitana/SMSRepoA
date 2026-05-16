@@ -221,28 +221,6 @@ export function StaffList({ staff, refreshStaff }: { staff: Staff[]; refreshStaf
                             <Eye className="h-4 w-4 mr-1" />
                             {t("common.manage")}
                           </Button>
-                          {isAdmin && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={togglingId === member.id}
-                              onClick={() => handleToggleStatus(member)}
-                              className={view === "inactive"
-                                ? "text-green-600 border-green-200 hover:bg-green-50"
-                                : "text-orange-600 border-orange-200 hover:bg-orange-50"}
-                            >
-                              {togglingId === member.id ? (
-                                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
-                              ) : view === "inactive" ? (
-                                <><UserCheck className="h-4 w-4 mr-1" />Reactivate</>
-                              ) : (
-                                <><UserX className="h-4 w-4 mr-1" />Deactivate</>
-                              )}
-                            </Button>
-                          )}
                           {view === "active" && (
                             <StaffLeaveDialog
                               staffId={member.id}

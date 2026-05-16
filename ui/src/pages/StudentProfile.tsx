@@ -48,6 +48,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StudentExitDialog } from "@/components/students/StudentExitDialog";
+import { StudentDetainDialog } from "@/components/students/StudentDetainDialog";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
 import { StudentLeaveRequests } from "@/components/leave-management/StudentLeaveRequests";
@@ -55,11 +56,8 @@ import { getIssues, type BookIssue } from "@/services/api/libraryApi";
 import { applyStaffDiscount } from "@/services/api/feeApi";
 
 import { Input } from "@/components/ui/input";
-import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
-import { BonafideCertificateTemplate } from "@/components/documents/BonafideCertificateTemplate";
-import { ConductCertificateTemplate } from "@/components/documents/ConductCertificateTemplate";
-import { TransferCertificateTemplate } from "@/components/documents/TransferCertificateTemplate";
-import { CertificateTemplate } from "@/components/documents/CertificateTemplate";
+import { ProfessionalCertificateDialog, CertificateType } from "@/components/documents/ProfessionalCertificateDialog";
+import { ProfessionalIdCardDialog } from "@/components/documents/ProfessionalIdCardDialog";
 import { ReportCardTemplate } from "@/components/examinations/ReportCardTemplate";
 import { useToast } from "@/hooks/use-toast";
 import placeholderImg from '/placeholder.svg';
@@ -156,6 +154,7 @@ export default function StudentProfile() {
   const [showPromoteDialog, setShowPromoteDialog] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [exitType, setExitType] = useState<'dropout' | 'passout'>('dropout');
+  const [showDetainDialog, setShowDetainDialog] = useState(false);
   const [promoteData, setPromoteData] = useState({
     newClass: student?.class || '',
     newSection: student?.section || '',
@@ -516,7 +515,15 @@ export default function StudentProfile() {
                     onSelect={() => { setExitType('dropout'); setShowExitDialog(true); }}
                   >
                     <FileText className="h-4 w-4 mr-2" />
-                    Drop Out
+                    Drop Out (Transfer)
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    className="text-amber-600 focus:text-amber-600"
+                    onSelect={() => setShowDetainDialog(true)}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Detain in Same Class
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
@@ -1599,101 +1606,65 @@ export default function StudentProfile() {
 
 
         <TabsContent value="documents">
-          {/* Document Generation Dialogs */}
+          {/* Professional ID Card Dialog */}
           {showIdCardDialog && student && (
-            <Dialog open={showIdCardDialog} onOpenChange={setShowIdCardDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Printable Student ID Card</DialogTitle>
-                  <DialogDescription>Preview below and use your browser print.</DialogDescription>
-                </DialogHeader>
-                <div className="print-container">
-                  <IdCardTemplate person={student} type="student" />
-                </div>
-                <div className="flex justify-end gap-2 mt-4 print:hidden">
-                  <Button variant="outline" onClick={() => setShowIdCardDialog(false)}>Close</Button>
-                  <Button variant="default" onClick={() => {
-                    window.print();
-                  }}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Print
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalIdCardDialog
+              open={showIdCardDialog}
+              onOpenChange={setShowIdCardDialog}
+              personType="student"
+              personData={{
+                name: student.name,
+                admissionNumber: student.admissionNumber,
+                rollNumber: student.rollNumber,
+                className: student.class,
+                section: student.section,
+                dateOfBirth: student.dateOfBirth?.split('T')[0],
+                bloodGroup: student.bloodGroup,
+                parentName: student.guardianName,
+                parentPhone: student.guardianPhone,
+                photoUrl: student.photoUrl,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logo,
+              }}
+            />
           )}
 
-          {/* Certificate Generation Dialog */}
+          {/* Certificate Generation Dialog — professional multi-template */}
           {showCertificateDialog && student && (
-            <Dialog open={showCertificateDialog} onOpenChange={setShowCertificateDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>{certificateType}</DialogTitle>
-                  <DialogDescription>Use the Preview & Print button inside the certificate.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  {certificateType === "Bonafide Certificate" && (
-                    <BonafideCertificateTemplate
-                      studentName={student.name}
-                      fatherName={student.guardianName}
-                      className={`${student.class}-${student.section}`}
-                      schoolName={schoolInfo?.name || ""}
-                      principalName={schoolInfo?.principalName || ""}
-                      academicYear={contextYear || "2024-25"}
-                      rollNumber={student.rollNumber}
-                      purpose="Higher Education"
-                      certificateNumber={`BC${Date.now().toString().slice(-6)}`}
-                      issueDate={new Date().toLocaleDateString()}
-                    />
-                  )}
-                  {certificateType === "Conduct Certificate" && (
-                    <ConductCertificateTemplate
-                      studentName={student.name}
-                      className={`${student.class}-${student.section}`}
-                      schoolName={schoolInfo?.name || ""}
-                      principalName={schoolInfo?.principalName || ""}
-                      academicYear={contextYear || "2024-25"}
-                      conduct="Excellent"
-                      issueDate={new Date().toLocaleDateString()}
-                      certificateNumber={`CC${Date.now().toString().slice(-6)}`}
-                    />
-                  )}
-                  {certificateType === "Character Certificate" && student && (
-                    <CertificateTemplate
-                      type="character"
-                      studentName={student.name}
-                      studentId={student.id}
-                      class={`${student.class}-${student.section}`}
-                      issuedDate={new Date().toLocaleDateString()}
-                      certificateId={`CHC${Date.now().toString().slice(-6)}`}
-                    />
-                  )}
-                  {certificateType === "Transfer Certificate" && (
-                    <TransferCertificateTemplate
-                      studentName={student.name}
-                      fatherName={student.guardianName}
-                      motherName=""
-                      className={`${student.class}-${student.section}`}
-                      schoolName={schoolInfo?.name || ""}
-                      principalName={schoolInfo?.principalName || ""}
-                      academicYear={contextYear || "2024-25"}
-                      dateOfBirth={student.dateOfBirth?.split('T')[0]}
-                      dateOfAdmission={student.admissionDate}
-                      dateOfLeaving={new Date().toLocaleDateString()}
-                      reasonForLeaving="Higher Studies"
-                      conduct="Excellent"
-                      certificateNumber={`TC${Date.now().toString().slice(-6)}`}
-                      issueDate={new Date().toLocaleDateString()}
-                    />
-                  )}
-                </div>
-                <div className="flex justify-end gap-2 mt-4 print:hidden">
-                  <Button variant="outline" onClick={() => setShowCertificateDialog(false)}>
-                    Close
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalCertificateDialog
+              open={showCertificateDialog}
+              onOpenChange={setShowCertificateDialog}
+              certType={
+                certificateType === "Bonafide Certificate" ? "bonafide"
+                : certificateType === "Conduct Certificate" ? "conduct"
+                : certificateType === "Character Certificate" ? "character"
+                : "transfer"
+              }
+              personData={{
+                studentName: student.name,
+                admissionNumber: student.admissionNumber,
+                rollNumber: student.rollNumber,
+                className: student.class,
+                section: student.section,
+                dateOfBirth: student.dateOfBirth?.split('T')[0],
+                fatherName: student.guardianName,
+                academicYear: contextYear || "2024-25",
+                gender: student.gender,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logo,
+                principalName: schoolInfo?.principalName,
+              }}
+            />
           )}
 
           {/* Report Card Generation Dialog */}
@@ -2004,6 +1975,20 @@ export default function StudentProfile() {
           onComplete={(_result: StudentExitResponse) => {
             setShowExitDialog(false);
             // Refresh student data so status badge updates
+            void studentApi.getById(student.id).then((s) => setStudent(s));
+          }}
+        />
+      )}
+
+      {/* Student Detain Dialog — student stays active in same class */}
+      {student && (
+        <StudentDetainDialog
+          student={student}
+          open={showDetainDialog}
+          onClose={() => setShowDetainDialog(false)}
+          onComplete={(_result: StudentExitResponse) => {
+            setShowDetainDialog(false);
+            // Refresh student data (status remains active)
             void studentApi.getById(student.id).then((s) => setStudent(s));
           }}
         />

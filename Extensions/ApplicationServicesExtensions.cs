@@ -87,6 +87,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<ICertificateService, CertificateService>();
+        services.AddScoped<IReportCardDocumentService, ReportCardDocumentService>();
 
         // ── Extended features ──────────────────────────────────────────────
         services.AddScoped<IStoreService, StoreService>();

@@ -6,14 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Plus, Loader2, Trash2, AlertTriangle, Printer, MapPin, X, LayoutGrid, CalendarClock, RefreshCw, BookOpen, Download
+  Plus, Loader2, Trash2, AlertTriangle, Printer, MapPin, X, LayoutGrid, CalendarClock, RefreshCw, BookOpen, Download, AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { timetableApi, TimetableRecord, TimetablePeriod } from "@/services/api/timetableApi";
+import { timetableApi, TimetableRecord, TimetablePeriod, TeacherConflictInfo } from "@/services/api/timetableApi";
 import { academicApi, ClassResponse, AcademicYearResponse, ClassSubjectResponse, SubjectResponse, SectionResponse } from "@/services/api/academicApi";
 import { staffApi, StaffBasic } from "@/services/api/staffApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { DialogFooter } from "@/components/ui/dialog";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -95,6 +96,9 @@ export default function TimetableManager() {
   const [loadingTimetable, setLoadingTimetable] = useState(false);
   const [loadingSubjects, setLoadingSubjects]   = useState(false);
   const [creating, setCreating]                 = useState(false);
+
+  // Conflict override: stores conflict info so admin can confirm and retry with ForceOverride=true
+  const [conflictPending, setConflictPending] = useState<TeacherConflictInfo | null>(null);
 
   // ─── Derived ─────────────────────────────────────────────────────────────
   const availableStandards = useMemo(
@@ -316,7 +320,7 @@ export default function TimetableManager() {
     setEditForm(f => ({ ...f, subjectId, teacherId: cs?.teacherId ?? f.teacherId }));
   };
 
-  const handleSaveCell = async () => {
+  const handleSaveCell = async (forceOverride = false) => {
     if (!editCell || !activeTimetable || !editForm.subjectId) return;
     const key    = `${editCell.day}-${editCell.period}`;
     const slot   = PERIOD_SLOTS.find(s => s.periodNumber === editCell.period)!;
@@ -326,31 +330,47 @@ export default function TimetableManager() {
       let saved: TimetablePeriod;
       if (existing) {
         saved = await timetableApi.updatePeriod(existing.id, {
-          SubjectId:  editForm.subjectId,
-          TeacherId:  editForm.teacherId || undefined,
-          Room:       editForm.room      || undefined,
-          Notes:      editForm.notes     || undefined,
-          PeriodType: "lecture",
+          SubjectId:     editForm.subjectId,
+          TeacherId:     editForm.teacherId || undefined,
+          Room:          editForm.room      || undefined,
+          Notes:         editForm.notes     || undefined,
+          PeriodType:    "lecture",
+          ForceOverride: forceOverride,
         });
       } else {
         saved = await timetableApi.createPeriod({
-          TimetableId: activeTimetable.id,
-          DayOfWeek:   editCell.day,
-          PeriodNumber: editCell.period,
-          StartTime:   slot.startTime + ":00",
-          EndTime:     slot.endTime   + ":00",
-          SubjectId:   editForm.subjectId,
-          TeacherId:   editForm.teacherId || undefined,
-          Room:        editForm.room      || undefined,
-          Notes:       editForm.notes     || undefined,
-          PeriodType:  "lecture",
+          TimetableId:   activeTimetable.id,
+          DayOfWeek:     editCell.day,
+          PeriodNumber:  editCell.period,
+          StartTime:     slot.startTime + ":00",
+          EndTime:       slot.endTime   + ":00",
+          SubjectId:     editForm.subjectId,
+          TeacherId:     editForm.teacherId || undefined,
+          Room:          editForm.room      || undefined,
+          Notes:         editForm.notes     || undefined,
+          PeriodType:    "lecture",
+          ForceOverride: forceOverride,
         });
       }
       setPeriodsMap(prev => ({ ...prev, [key]: saved }));
       setEditCell(null);
+      setConflictPending(null);
       toast.success("Period saved");
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Failed to save period");
+      const msg: string = err?.response?.data?.message ?? err?.message ?? "";
+      const status: number = err?.response?.status ?? 0;
+      if (status === 409 || msg.toLowerCase().includes("scheduling conflict")) {
+        const info: TeacherConflictInfo | undefined = err?.response?.data?.conflictInfo;
+        setConflictPending(info ?? {
+          conflictingPeriodId: "",
+          className: "another class",
+          dayOfWeek: "",
+          startTime: "",
+          endTime: "",
+        });
+      } else {
+        toast.error(msg || "Failed to save period");
+      }
     } finally {
       setCellSaving(false);
     }
@@ -856,7 +876,7 @@ export default function TimetableManager() {
             {/* Buttons */}
             <div className="flex items-center gap-2 pt-1">
               <Button
-                onClick={handleSaveCell}
+                onClick={() => handleSaveCell()}
                 disabled={cellSaving || !editForm.subjectId}
                 className="flex-1"
               >
@@ -884,6 +904,57 @@ export default function TimetableManager() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Conflict Override Confirmation Dialog ── */}
+      <Dialog open={!!conflictPending} onOpenChange={open => { if (!open) setConflictPending(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              Teacher Scheduling Conflict
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground space-y-2 py-1">
+            <p>
+              The selected teacher is already assigned to{" "}
+              <span className="font-semibold text-foreground">
+                {conflictPending?.subjectName ? `${conflictPending.subjectName} — ` : ""}
+                {conflictPending?.className ?? "another class"}
+                {conflictPending?.sectionName ? ` (${conflictPending.sectionName})` : ""}
+              </span>{" "}
+              {conflictPending?.startTime && conflictPending?.endTime
+                ? `at ${conflictPending.startTime}–${conflictPending.endTime} on ${conflictPending.dayOfWeek}.`
+                : "at this time slot."}
+            </p>
+            <p className="font-medium text-foreground">
+              Overriding will remove that existing assignment and replace it with this one.
+            </p>
+          </div>
+          <DialogFooter className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setConflictPending(null)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={cellSaving}
+              onClick={() => {
+                setConflictPending(null);
+                handleSaveCell(true);
+              }}
+            >
+              {cellSaving
+                ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+                : "Override & Replace"
+              }
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

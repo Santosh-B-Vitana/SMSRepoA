@@ -152,6 +152,45 @@ public class AuthController : ControllerBase
             }
         }
 
+        // ── Staff / Teacher guard: block login if linked StaffMember is inactive ──
+        // Mirrors the parent guard above — queries StaffMembers directly so that
+        // deactivation takes effect immediately on the next login attempt, regardless
+        // of whether the UserLogin.Status update was applied correctly.
+        if (string.Equals(userLogin.LinkedEntityType, "staff", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "staff", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "teacher", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "principal", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "hrmanager", StringComparison.OrdinalIgnoreCase))
+        {
+            string? staffStatus = null;
+
+            // Primary: LinkedEntityId lookup (most reliable — set at provisioning)
+            if (userLogin.LinkedEntityId.HasValue)
+            {
+                staffStatus = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Id == userLogin.LinkedEntityId.Value && s.SchoolId == userLogin.SchoolId)
+                    .Select(s => (string?)s.Status)
+                    .FirstOrDefaultAsync();
+            }
+
+            // Fallback: email-based lookup
+            if (staffStatus == null && !string.IsNullOrEmpty(userLogin.Email))
+            {
+                staffStatus = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Email.ToLower() == userLogin.Email.ToLower() && s.SchoolId == userLogin.SchoolId)
+                    .Select(s => (string?)s.Status)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (staffStatus == "inactive")
+            {
+                _logger.LogWarning("Staff login blocked — StaffMember inactive for {Email}", userLogin.Email);
+                return Unauthorized(new { message = "Account is inactive. Contact your administrator." });
+            }
+        }
+
         // Successful login - check 2FA first
         if (userLogin.TwoFactorEnabled && !string.IsNullOrEmpty(userLogin.TwoFactorSecret))
         {

@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -20,9 +20,9 @@
 
 | Module | Status | Unit Tests | Notes |
 |--------|--------|-----------|-------|
-| **Auth / JWT** | ✅ Production Ready | ✅ | Role-based, brute-force lockout, Redis-backed; principal role can now switch academic year context |
+| **Auth / JWT** | ✅ Production Ready | ✅ | Role-based, brute-force lockout, Redis-backed; principal role can now switch academic year context; **Staff deactivation guard (May 16 2026)** — login blocked if `StaffMember.Status = "inactive"` (live DB check, mirrors parent guard); `OnTokenValidated` kills existing sessions immediately on deactivation |
 | **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export; Staff Parent tab (GuardianStaffId) added May 2026 |
-| **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix |
+| **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix; **Two-step Deactivation Dialog (May 16 2026)** — step 1 shows pending assignment count, step 2 shows confirmation + downloadable Experience Certificate / Relieving Letter / No Dues Certificate; **UserLogin sync fix** — `DeactivateStaff` now reliably marks `UserLogin.Status = "inactive"` + clears refresh token via `LinkedEntityId` lookup |
 | **Admissions** | ✅ Production Ready | ✅ | 5-step wizard, RTE support, CSV export |
 | **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId; Parent portal fee breakdown shows itemised components + non-itemised gap + module fees (transport/hostel pro-rata) with correct Grand Total; **Fee Heads** (normalised label catalogue); **Fee Terms** (installment schedule per structure); **Receipt Templates** (school branding); **Bulk Payment Upload** (CSV, 500 rows); **Promote Fee Structure** (clone to new year with % increment); **Deleted Transactions audit** — all added May 2026 |
 | **Attendance** | ✅ Production Ready | 16/16 | Staff + student tracking |
@@ -32,7 +32,7 @@
 | **Communication** | ✅ Production Ready | 89/89 | Messages, announcements, templates |
 | **Payroll** | ✅ Production Ready | 30/30 | Salary slips, allowances, deductions |
 | **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading; Staff assignments page fully rewritten — class-grouped with per-class colour coding, section sub-tabs, clickable cards with submission/grading detail sheet; tiles refresh live after grading; **Parent notifications** on grade (and on new assignment) — end-to-end via `StudentGuardians → UserLogins` email join |
-| **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation; **Hall Tickets** (bulk-generate with prefix, per-class filter, CSV export, print); **Co-Scholastic Grading** (A+→E grade per area per term, area CRUD); **Promote Exam Structure** — added May 2026; **Exam Marks Entry (admin + staff)** — end-to-end fixed May 13, 2026; **Exams tab in My Classes** — shows all class exams (not just assigned) |
+| **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation; **Hall Tickets** (bulk-generate with prefix, per-class filter, CSV export, print); **Co-Scholastic Grading** (A+→E grade per area per term, area CRUD); **Promote Exam Structure** — added May 2026; **Exam Marks Entry (admin + staff)** — end-to-end fixed May 13, 2026; **Exams tab in My Classes** — shows all class exams (not just assigned); **ExamResultsTab Class + Section filter (May 16 2026)** — replaced status dropdown with Class + Section cascading filter, loads results per class/section |
 | **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash |
 | **Reports** | ✅ Production Ready | ✅ | PDF/CSV export for all modules |
 | **Staff-Student Guardian Relationship** | ✅ Production Ready | ✅ | GuardianStaffId on Student entity; bidirectional link/unlink UI; fee concession eligible |

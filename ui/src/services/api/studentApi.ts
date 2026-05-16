@@ -287,14 +287,15 @@ export interface CreateStudentRequest {
 }
 
 export interface BulkPromoteRequest {
-  fromClass: string;
-  toClass: string;
-  studentIds?: string[];
+  studentIds: string[];
+  newClass: string;
+  newSection: string;
+  academicYear?: string;
 }
 
 export interface BulkOperationResult {
-  succeeded: number;
-  failed: number;
+  successCount: number;
+  failureCount: number;
   errors?: string[];
 }
 

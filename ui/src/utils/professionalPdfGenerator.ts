@@ -272,7 +272,7 @@ export const generateProfessionalFeeReceipt = (
   });
 
   // Amount in words - Compact
-  yPosition = (doc as any).lastAutoTable.finalY + 5;
+  yPosition = (doc as any).lastAutoTable?.finalY != null ? (doc as any).lastAutoTable.finalY + 5 : yPosition + 5;
   doc.setFillColor(...COLORS.light);
   doc.roundedRect(15, yPosition, pageWidth - 30, 10, 2, 2, 'F');
   
@@ -297,9 +297,10 @@ export const generateProfessionalFeeReceipt = (
  */
 export const generateProfessionalReportCard = (
   schoolInfo: SchoolInfo,
-  reportData: ReportCardData
+  reportData: ReportCardData,
+  format: 'a4' | 'letter' = 'a4'
 ): jsPDF => {
-  const doc = new jsPDF();
+  const doc = new jsPDF({ format });
   const pageWidth = doc.internal.pageSize.width;
 
   // Add header
@@ -331,7 +332,7 @@ export const generateProfessionalReportCard = (
   });
 
   // Subject Marks Table - Compact
-  yPosition = (doc as any).lastAutoTable.finalY + 5;
+  yPosition = (doc as any).lastAutoTable?.finalY != null ? (doc as any).lastAutoTable.finalY + 5 : yPosition + 5;
   
   const marksTableData = reportData.subjects.map(subject => [
     subject.name,
@@ -384,7 +385,7 @@ export const generateProfessionalReportCard = (
   });
 
   // Performance Summary - Compact
-  yPosition = (doc as any).lastAutoTable.finalY + 5;
+  yPosition = (doc as any).lastAutoTable?.finalY != null ? (doc as any).lastAutoTable.finalY + 5 : yPosition + 5;
   
   doc.setFillColor(...COLORS.light);
   doc.roundedRect(15, yPosition, pageWidth - 30, 12, 2, 2, 'F');
@@ -457,3 +458,156 @@ function numberToWords(num: number): string {
 
   return result.trim();
 }
+
+// ─── Exit document PDF generation ────────────────────────────────────────────
+
+export interface DocumentPdfFields {
+  [key: string]: string | undefined;
+}
+
+/**
+ * Generate a downloadable PDF for student exit documents.
+ * Covers: Transfer Certificate, Character Certificate, Bonafide Certificate,
+ * Progress Report, No-Dues Certificate, and a generic fallback.
+ */
+export const generateDocumentPdf = (
+  docType: string,
+  fields: DocumentPdfFields,
+  schoolInfo?: { name?: string; address?: string; phone?: string; email?: string; principalName?: string; websiteUrl?: string },
+): jsPDF => {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+
+  const school = {
+    name: schoolInfo?.name ?? 'School',
+    address: schoolInfo?.address ?? '',
+    phone: schoolInfo?.phone ?? '',
+    email: schoolInfo?.email ?? '',
+    principalName: schoolInfo?.principalName,
+    websiteUrl: schoolInfo?.websiteUrl,
+  };
+
+  // Title map
+  const titleMap: Record<string, string> = {
+    transfer_certificate:    'TRANSFER CERTIFICATE',
+    character_certificate:   'CHARACTER CERTIFICATE',
+    bonafide_certificate:    'BONAFIDE CERTIFICATE',
+    progress_report:         'PROGRESS REPORT / REPORT CARD',
+    no_dues_certificate:     'NO DUES / FEE CLEARANCE CERTIFICATE',
+    experience_certificate:  'EXPERIENCE CERTIFICATE',
+    relieving_letter:        'RELIEVING LETTER',
+    staff_no_dues:           'NO DUES CERTIFICATE',
+  };
+  const docTitle = titleMap[docType] ?? fields['title'] ?? 'SCHOOL DOCUMENT';
+
+  // Header
+  let y = addProfessionalHeader(doc, school, docTitle);
+  y += 4;
+
+  // Student info block (fields common to most certificates)
+  const infoRows: [string, string][] = [];
+
+  const push = (label: string, key: string) => {
+    const v = fields[key];
+    if (v) infoRows.push([label, v]);
+  };
+
+  push('Student Name',      'studentName');
+  push('Admission No.',     'admissionNumber');
+  push('Date of Birth',     'dateOfBirth');
+  push('Father / Guardian', 'fatherName');
+  push('Class at Leaving',  'class');
+  push('Section',           'section');
+  push('Academic Year',     'academicYear');
+  push('Date of Admission', 'dateOfAdmission');
+  push('Date of Leaving',   'dateOfLeaving');
+  push('Reason for Leaving','reasonForLeaving');
+  push('Conduct',           'conduct');
+  push('TC Number',         'tcNumber');
+  push('Certificate No.',   'certificateNumber');
+  push('Issue Date',        'issueDate');
+  push('Purpose',           'purpose');
+  push('Promoted to Class', 'promotedToClass');
+  // Staff document fields
+  push('Staff Name',        'staffName');
+  push('Employee ID',       'employeeId');
+  push('Designation',       'designation');
+  push('Department',        'department');
+  push('Date of Joining',   'joiningDate');
+  push('Date of Relieving', 'relievingDate');
+  push('Years of Service',  'yearsOfService');
+
+  // Add rows for any other fields not already mapped
+  for (const [k, v] of Object.entries(fields)) {
+    if (v && !infoRows.find(r => r[1] === v) &&
+        !['title','studentName','admissionNumber','dateOfBirth','fatherName',
+          'class','section','academicYear','dateOfAdmission','dateOfLeaving',
+          'reasonForLeaving','conduct','tcNumber','certificateNumber',
+          'issueDate','purpose','promotedToClass',
+          'staffName','employeeId','designation','department',
+          'joiningDate','relievingDate','yearsOfService'].includes(k)) {
+      infoRows.push([k.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()), v]);
+    }
+  }
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Field', 'Details']],
+    body: infoRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: COLORS.primary,
+      textColor: [255, 255, 255] as [number, number, number],
+      fontStyle: 'bold',
+      fontSize: 9,
+      halign: 'center',
+      cellPadding: 3,
+    },
+    bodyStyles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 55, fillColor: COLORS.light },
+      1: { cellWidth: 'auto' },
+    },
+    margin: { left: 15, right: 15 },
+  });
+
+  const afterTable: number = ((doc as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? y + 60) + 10;
+
+  // Certification text
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...COLORS.dark);
+
+  let certText = '';
+  if (docType === 'transfer_certificate') {
+    certText = `This is to certify that ${fields.studentName ?? 'the student'} (Adm. No. ${fields.admissionNumber ?? '—'}) was a bonafide student of this institution. The student has been granted Transfer Certificate as per the above details. All fees and dues have been cleared.`;
+  } else if (docType === 'character_certificate') {
+    certText = `This is to certify that ${fields.studentName ?? 'the student'} has been a student of this institution during the academic year ${fields.academicYear ?? '—'}. Based on our records and personal observation, the student has been of ${fields.conduct ?? 'Good'} conduct throughout the tenure. This certificate is issued on request for the purpose stated herein.`;
+  } else if (docType === 'bonafide_certificate') {
+    certText = `This is to certify that ${fields.studentName ?? 'the student'}, Admission No. ${fields.admissionNumber ?? '—'}, is/was a bonafide student of Class ${fields.class ?? '—'} at this institution during the academic year ${fields.academicYear ?? '—'}. This certificate is issued for the purpose of: ${fields.purpose ?? 'official purposes'}.`;
+  } else if (docType === 'no_dues_certificate') {
+    certText = `This is to certify that ${fields.studentName ?? 'the student'}, Admission No. ${fields.admissionNumber ?? '—'}, has cleared all dues and there are no outstanding payments as on the date of issue. This No Dues Certificate is issued on request.`;
+  } else if (docType === 'experience_certificate') {
+    certText = `This is to certify that ${fields.staffName ?? 'the staff member'} (Employee ID: ${fields.employeeId ?? '—'}) served as ${fields.designation ?? '—'} in the ${fields.department ?? '—'} Department at this institution from ${fields.joiningDate ?? '—'} to ${fields.relievingDate ?? '—'} (${fields.yearsOfService ?? '—'}). During this tenure, the staff member demonstrated ${fields.conduct ?? 'Good'} conduct and satisfactory performance. This certificate is issued on request.`;
+  } else if (docType === 'relieving_letter') {
+    certText = `This is to certify that ${fields.staffName ?? 'the staff member'} (Employee ID: ${fields.employeeId ?? '—'}), serving as ${fields.designation ?? '—'} in the ${fields.department ?? '—'} Department, has been relieved from duties effective ${fields.relievingDate ?? '—'}. All handover formalities have been completed. We wish them success in their future endeavours.`;
+  } else if (docType === 'staff_no_dues') {
+    certText = `This is to certify that ${fields.staffName ?? 'the staff member'} (Employee ID: ${fields.employeeId ?? '—'}), who served as ${fields.designation ?? '—'} in the ${fields.department ?? '—'} Department, has cleared all dues and there are no outstanding payments or liabilities as on the date of issue. This No Dues Certificate is issued on request.`;
+  }
+
+  if (certText) {
+    const splitText = doc.splitTextToSize(certText, pageWidth - 30);
+    doc.text(splitText, 15, afterTable);
+  }
+
+  addProfessionalFooter(doc, school, true);
+
+  // Watermark
+  doc.setFontSize(48);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(230, 230, 230);
+  doc.text('COPY', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
+
+  return doc;
+};

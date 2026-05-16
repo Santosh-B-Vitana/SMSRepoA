@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using SmsApi.Data;
+using System.Security.Claims;
 using System.Text;
 
 namespace SmsApi.Extensions;
@@ -41,6 +44,62 @@ public static class AuthExtensions
 
             options.Events = new JwtBearerEvents
             {
+                // Reject any request whose account has been deactivated or suspended,
+                // even if the JWT itself is still within its expiry window.
+                OnTokenValidated = async context =>
+                {
+                    var userIdClaim = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    if (!Guid.TryParse(userIdClaim, out var userId)) return;
+
+                    var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+
+                    var login = await db.UserLogins
+                        .Where(u => u.Id == userId && !u.IsDeleted)
+                        .Select(u => new { u.Status, u.LinkedEntityId, u.LinkedEntityType, u.Role, u.SchoolId, u.Email })
+                        .FirstOrDefaultAsync();
+
+                    if (login == null || login.Status is "inactive" or "suspended")
+                    {
+                        context.Fail("Account is inactive or suspended.");
+                        return;
+                    }
+
+                    // For staff/teacher roles: also verify the linked StaffMember is still active.
+                    // This blocks existing sessions immediately when a staff member is deactivated,
+                    // even if the UserLogin.Status has not yet been updated.
+                    var isStaffRole =
+                        string.Equals(login.LinkedEntityType, "staff", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(login.Role, "staff", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(login.Role, "teacher", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(login.Role, "principal", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(login.Role, "hrmanager", StringComparison.OrdinalIgnoreCase);
+
+                    if (isStaffRole)
+                    {
+                        string? staffStatus = null;
+
+                        if (login.LinkedEntityId.HasValue)
+                        {
+                            staffStatus = await db.StaffMembers
+                                .IgnoreQueryFilters()
+                                .Where(s => s.Id == login.LinkedEntityId.Value && s.SchoolId == login.SchoolId)
+                                .Select(s => (string?)s.Status)
+                                .FirstOrDefaultAsync();
+                        }
+
+                        if (staffStatus == null && !string.IsNullOrEmpty(login.Email))
+                        {
+                            staffStatus = await db.StaffMembers
+                                .IgnoreQueryFilters()
+                                .Where(s => s.Email.ToLower() == login.Email.ToLower() && s.SchoolId == login.SchoolId)
+                                .Select(s => (string?)s.Status)
+                                .FirstOrDefaultAsync();
+                        }
+
+                        if (staffStatus == "inactive")
+                            context.Fail("Account is inactive. Contact your administrator.");
+                    }
+                },
                 OnAuthenticationFailed = context =>
                 {
                     if (context.Exception is SecurityTokenExpiredException)

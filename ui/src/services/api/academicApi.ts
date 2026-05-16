@@ -78,6 +78,8 @@ export interface CreateSectionRequest {
 // =========== My Class Assignments (Teacher) ===========
 export interface MyClassAssignment {
   assignmentId: string;
+  /** StaffMember.Id — use this to match against ExamSetupSubjectDto.assignedStaffId */
+  staffId: string;
   classId: string;
   className: string;
   sectionId?: string;
@@ -414,4 +416,29 @@ export const academicApi = {
 
   updateClassSettings: (settingsId: string, data: UpdateClassSettingsRequest) =>
     apiPut<ClassSettingsResponse>(`/academics/classes/settings/${settingsId}`, data),
+
+  // ========== Section Timetable (from academic setup) ==========
+  getSectionTimetable: (sectionId: string) =>
+    apiGet<SectionTimetableResponse>(`/academics/sections/${sectionId}/timetable`),
 };
+
+// ─── Section Timetable types (academic setup) ────────────────────────────────
+export interface SectionTimetableEntry {
+  id: string;
+  sectionId: string;
+  dayOfWeek: string;   // "Monday" ... "Sunday"
+  period: number;
+  subjectId?: string;
+  subjectName?: string;
+  teacherId?: string;
+  teacherName?: string | null;
+  startTime?: string;  // "HH:MM:SS"
+  endTime?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SectionTimetableResponse {
+  entries: SectionTimetableEntry[];
+  total: number;
+}

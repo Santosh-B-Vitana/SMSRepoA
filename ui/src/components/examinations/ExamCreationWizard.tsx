@@ -32,7 +32,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from '@/components/ui/accordion';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ChevronRight, ChevronLeft, Check, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
+import { Loader2, ChevronRight, ChevronLeft, Check, BookOpen, GraduationCap, AlertCircle, Calendar } from 'lucide-react';
 import {
   previewExamName, getClassBoards, getClassSubjectsForExam, createExamSetup,
   type ClassBoardDto, type ClassSubjectForExamDto, type CreateExamSetupDto,
@@ -170,7 +170,7 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
         setExamTypes(etRes.examTypes ?? []);
         setAcademicYears(ayRes.academicYears ?? []);
         setClasses(clRes.classes ?? []);
-        setStaffList(stRes.staff ?? []);
+        setStaffList((stRes.staff ?? []).filter(s => s.status === 'active'));
 
         // Pre-select current academic year if available
         const current = (ayRes.academicYears ?? []).find(a => a.isCurrent);
@@ -270,6 +270,9 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
     if (!form.academicYear) e.academicYear = 'Select an academic year.';
     if (!form.classId) e.classId = 'Select a class.';
     if (boards.length > 1 && !form.boardConfigurationId) e.boardConfigurationId = 'Select a board.';
+    if (!form.startDate) e.startDate = 'Start date is required.';
+    if (!form.endDate) e.endDate = 'End date is required.';
+    if (form.startDate && form.endDate && form.startDate > form.endDate) e.endDate = 'End date must be after start date.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -281,6 +284,10 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
     selected.forEach(s => {
       if ((s.maxTheoryMarks + s.maxPracticalMarks + s.maxInternalMarks) === 0)
         e[`marks_${s.subjectId}`] = `${s.subjectName}: Total marks must be > 0`;
+      if (s.examDate && form.startDate && s.examDate < form.startDate)
+        e[`examDate_${s.subjectId}`] = `${s.subjectName}: Exam date is before the exam start date.`;
+      if (s.examDate && form.endDate && s.examDate > form.endDate)
+        e[`examDate_${s.subjectId}`] = `${s.subjectName}: Exam date is after the exam end date.`;
     });
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -300,6 +307,26 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
   };
 
   const handleBack = () => setStep(prev => Math.max(0, prev - 1));
+
+  // ─── Suggest Dates ────────────────────────────────────────────────────────
+
+  const handleSuggestDates = () => {
+    const selected = form.subjects.filter(s => s.selected);
+    if (!form.startDate || selected.length === 0) return;
+    const start = new Date(form.startDate);
+    const end = form.endDate ? new Date(form.endDate) : start;
+    const totalDays = Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    const step = selected.length > 1 ? totalDays / (selected.length - 1) : 0;
+    setForm(prev => ({
+      ...prev,
+      subjects: prev.subjects.map(s => {
+        if (!s.selected) return s;
+        const idx = selected.findIndex(sel => sel.subjectId === s.subjectId);
+        const d = new Date(start.getTime() + Math.round(idx * step) * 24 * 60 * 60 * 1000);
+        return { ...s, examDate: d.toISOString().split('T')[0] };
+      }),
+    }));
+  };
 
   // ─── Submit ───────────────────────────────────────────────────────────────
 
@@ -529,14 +556,16 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
 
                     {/* Start Date */}
                     <div>
-                      <Label>Start Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                      <Input type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)} />
+                      <Label>Start Date *</Label>
+                      <Input type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)} className={errors.startDate ? 'border-destructive' : ''} />
+                      {errors.startDate && <p className="text-xs text-destructive mt-1">{errors.startDate}</p>}
                     </div>
 
                     {/* End Date */}
                     <div>
-                      <Label>End Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                      <Input type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} />
+                      <Label>End Date *</Label>
+                      <Input type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)} min={form.startDate || undefined} className={errors.endDate ? 'border-destructive' : ''} />
+                      {errors.endDate && <p className="text-xs text-destructive mt-1">{errors.endDate}</p>}
                     </div>
                   </div>
 
@@ -562,7 +591,14 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
 
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
                     <span>{selectedCount} subject{selectedCount !== 1 ? 's' : ''} selected</span>
-                    <span>Configure marks and staff for each subject</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs hidden sm:inline">Configure marks and staff for each subject</span>
+                      {form.startDate && (
+                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleSuggestDates}>
+                          <Calendar className="h-3 w-3" /> Suggest Dates
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <Accordion type="multiple" defaultValue={['core', 'elective']} className="space-y-2">
@@ -586,6 +622,9 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
                                 staffList={staffList}
                                 onChange={updateSubject}
                                 error={errors[`marks_${sub.subjectId}`]}
+                                dateError={errors[`examDate_${sub.subjectId}`]}
+                                startDate={form.startDate || undefined}
+                                endDate={form.endDate || undefined}
                               />
                             ))}
                           </div>
@@ -612,6 +651,9 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
                                 staffList={staffList}
                                 onChange={updateSubject}
                                 error={errors[`marks_${sub.subjectId}`]}
+                                dateError={errors[`examDate_${sub.subjectId}`]}
+                                startDate={form.startDate || undefined}
+                                endDate={form.endDate || undefined}
                               />
                             ))}
                           </div>
@@ -725,11 +767,14 @@ interface SubjectRowProps {
   staffList: Staff[];
   onChange: (subjectId: string, field: keyof SubjectConfig, value: string | number | boolean) => void;
   error?: string;
+  dateError?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
-function SubjectRow({ sub, staffList, onChange, error }: SubjectRowProps) {
+function SubjectRow({ sub, staffList, onChange, error, dateError, startDate, endDate }: SubjectRowProps) {
   return (
-    <div className={`rounded-lg border p-3 space-y-3 ${!sub.selected ? 'opacity-60' : ''} ${error ? 'border-destructive/50 bg-destructive/5' : ''}`}>
+    <div className={`rounded-lg border p-3 space-y-3 ${!sub.selected ? 'opacity-60' : ''} ${error || dateError ? 'border-destructive/50 bg-destructive/5' : ''}`}>
       {/* Header row: checkbox + name */}
       <div className="flex items-center gap-3">
         <Checkbox
@@ -741,6 +786,7 @@ function SubjectRow({ sub, staffList, onChange, error }: SubjectRowProps) {
           {sub.subjectName}
         </Label>
         {error && <span className="text-xs text-destructive">{error}</span>}
+        {dateError && <span className="text-xs text-destructive">{dateError}</span>}
       </div>
 
       {sub.selected && (
@@ -805,8 +851,10 @@ function SubjectRow({ sub, staffList, onChange, error }: SubjectRowProps) {
             <Input
               type="date"
               value={sub.examDate}
+              min={startDate || undefined}
+              max={endDate || undefined}
               onChange={e => onChange(sub.subjectId, 'examDate', e.target.value)}
-              className="h-8 text-sm"
+              className={`h-8 text-sm ${dateError ? 'border-destructive' : ''}`}
             />
           </div>
 

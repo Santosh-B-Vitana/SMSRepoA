@@ -52,11 +52,6 @@ export function StudentsManager() {
 
   const stats = getStats();
 
-  const handleBulkPromotion = async (fromClass: string, toClass: string) => {
-    await studentApi.bulkPromote({ fromClass, toClass });
-    await fetchStudents();
-  };
-
   if (loading) {
     return <LoadingState variant="cards" message="Loading students..." />;
   }
@@ -204,7 +199,7 @@ export function StudentsManager() {
             <BulkPromotionDialog
               open={promotionDialogOpen}
               onOpenChange={setPromotionDialogOpen}
-              onPromote={handleBulkPromotion}
+              onComplete={fetchStudents}
             />
           </AnimatedWrapper>
         </div>

@@ -12,6 +12,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -19,7 +25,7 @@ import {
 } from '@/components/ui/table';
 import {
   Trophy, ChevronDown, ChevronUp, Award, TrendingUp,
-  CheckCircle2, XCircle, BookOpen, BarChart3, Download, Loader2,
+  CheckCircle2, XCircle, BookOpen, BarChart3, Download, Loader2, ChevronDown as CaretDown,
 } from 'lucide-react';
 import {
   getExamSetups, getStudentExamSetupResult,
@@ -74,7 +80,7 @@ function ExamResultCard({ setup, result, studentId, defaultExpanded = false }: E
   const coreSubjects = (result.subjects ?? []).filter(s => !s.isElective);
   const electiveSubjects = (result.subjects ?? []).filter(s => s.isElective);
 
-  const handleDownload = () => {
+  const handleDownload = (format: 'a4' | 'letter' = 'a4') => {
     if (!schoolInfo) { toast.error('School info not loaded yet'); return; }
     setDownloading(true);
     try {
@@ -107,9 +113,9 @@ function ExamResultCard({ setup, result, studentId, defaultExpanded = false }: E
         rank: result.rank,
         remarks: result.isPass ? 'Pass' : 'Fail',
       };
-      const doc = generateProfessionalReportCard(schoolData, reportData);
+      const doc = generateProfessionalReportCard(schoolData, reportData, format);
       doc.save(`ReportCard_${result.studentName.replace(/\s+/g, '_')}_${setup.name.replace(/\s+/g, '_')}.pdf`);
-      toast.success('Report card downloaded');
+      toast.success(`Report card downloaded (${format.toUpperCase()})`);
     } catch (e) {
       toast.error('Failed to generate report card');
     } finally {
@@ -138,16 +144,32 @@ function ExamResultCard({ setup, result, studentId, defaultExpanded = false }: E
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1 text-xs"
-              onClick={handleDownload}
-              disabled={downloading}
-            >
-              {downloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-              Report Card
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs"
+                  disabled={downloading}
+                >
+                  {downloading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Download className="h-3 w-3" />
+                  )}
+                  Report Card
+                  <CaretDown className="h-3 w-3 ml-0.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownload('a4')}>
+                  PDF (A4)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownload('letter')}>
+                  PDF (Letter)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <div className="text-right">
               <p className={`text-xl font-bold ${scoreColor}`}>{result.percentage.toFixed(1)}%</p>
               <p className="text-xs text-muted-foreground">{Number(result.totalObtained)}/{Number(result.totalMax)}</p>
@@ -259,6 +281,12 @@ function ExamResultCard({ setup, result, studentId, defaultExpanded = false }: E
 
 interface ParentExamResultsTabProps {
   studentId: string;
+  /**
+   * "latest"   — shows only the most recent result (prominent)
+   * "previous" — shows all results except the latest (historical list)
+   * "all"      — default: shows stats + latest + previous
+   */
+  mode?: "latest" | "previous" | "all";
 }
 
 interface ExamResultEntry {
@@ -266,7 +294,7 @@ interface ExamResultEntry {
   result: StudentExamResultSummaryDto;
 }
 
-export function ParentExamResultsTab({ studentId }: ParentExamResultsTabProps) {
+export function ParentExamResultsTab({ studentId, mode = "all" }: ParentExamResultsTabProps) {
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<ExamResultEntry[]>([]);
 
@@ -314,6 +342,14 @@ export function ParentExamResultsTab({ studentId }: ParentExamResultsTabProps) {
   }
 
   if (entries.length === 0) {
+    // For "previous" mode inside academics tab, show a small inline note
+    if (mode === "previous") {
+      return (
+        <p className="text-sm text-muted-foreground py-4 text-center">
+          No previous exam results yet. Once additional exams are completed, they'll appear here.
+        </p>
+      );
+    }
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-14 text-center">
@@ -327,14 +363,69 @@ export function ParentExamResultsTab({ studentId }: ParentExamResultsTabProps) {
     );
   }
 
-  // Summary strip
   const latest = entries[0];
   const previous = entries.slice(1);
   const passed = entries.filter(e => e.result.isPass).length;
   const avgPct = entries.reduce((s, e) => s + e.result.percentage, 0) / entries.length;
 
-  return (
-    <div className="space-y-5">
+  // ── "latest" mode: stats + the most recent exam only ──────────────────────
+  if (mode === "latest") {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="bg-primary/5 border-primary/20">
+            <CardContent className="p-4 text-center">
+              <BookOpen className="h-5 w-5 text-primary mx-auto mb-1" />
+              <p className="text-2xl font-bold text-primary">{entries.length}</p>
+              <p className="text-xs text-muted-foreground">Exams Taken</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-green-50 border-green-200">
+            <CardContent className="p-4 text-center">
+              <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-green-600">{passed}/{entries.length}</p>
+              <p className="text-xs text-muted-foreground">Passed</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="p-4 text-center">
+              <TrendingUp className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+              <p className="text-2xl font-bold text-blue-600">{avgPct.toFixed(1)}%</p>
+              <p className="text-xs text-muted-foreground">Avg Score</p>
+            </CardContent>
+          </Card>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <Trophy className="h-3.5 w-3.5 text-amber-500" />
+            Latest Result
+          </p>
+          <ExamResultCard setup={latest.setup} result={latest.result} studentId={studentId} defaultExpanded />
+        </div>
+      </div>
+    );
+  }
+
+  // ── "previous" mode: historical list only (no latest) ─────────────────────
+  if (mode === "previous") {
+    if (previous.length === 0) {
+      return (
+        <p className="text-sm text-muted-foreground py-4 text-center">
+          No previous results yet — only one exam is recorded so far.
+        </p>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        {previous.map(e => (
+          <ExamResultCard key={e.setup.id} setup={e.setup} result={e.result} studentId={studentId} />
+        ))}
+      </div>
+    );
+  }
+
+  // ── "all" mode (default) ───────────────────────────────────────────────────
+  return (    <div className="space-y-5">
       {/* Quick stats */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="bg-primary/5 border-primary/20">

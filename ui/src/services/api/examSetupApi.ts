@@ -74,6 +74,17 @@ export interface ExamSetupBasicDto {
   subjectCount: number;
   marksEnteredCount: number;
   createdAt?: string;
+  /**
+   * True when the requesting staff is the class teacher for this exam's class.
+   * Set by the staff-scoped endpoint (GET /exam-setup/my-assignments).
+   */
+  isClassTeacherForThisClass?: boolean;
+  /**
+   * Subject IDs within this exam explicitly assigned to the requesting staff.
+   * Set by the staff-scoped endpoint. Empty if the staff is the class teacher
+   * (class teachers can access all subjects via isClassTeacherForThisClass).
+   */
+  myAssignedSubjectIds?: string[];
 }
 
 export interface ExamSetupDetailDto extends ExamSetupBasicDto {
@@ -317,3 +328,66 @@ export const getStudentExamSetupResult = (
 
 export const getMyExamAssignments = (academicYear?: string): Promise<ExamSetupBasicDto[]> =>
   apiGet('/examinations/exam-setup/my-assignments', academicYear ? { academicYear } : undefined);
+
+// ── Staff grades dashboard ────────────────────────────────────────────────────
+
+export interface StaffExamStatsDto {
+  totalExams: number;
+  publishedExams: number;
+  totalMarksEntries: number;
+  averagePercentage: number;
+  passRate: number;
+}
+
+export interface ClassSectionFilterOption {
+  classId: string;
+  className: string;
+  sectionId?: string;
+  sectionName?: string;
+}
+
+export interface StaffStudentMarkDto {
+  examMarksEntryId: string;
+  examSetupId: string;
+  examName: string;
+  academicYear: string;
+  classId: string;
+  className: string;
+  sectionId?: string;
+  sectionName?: string;
+  studentId: string;
+  studentName: string;
+  rollNumber?: string;
+  subjectId: string;
+  subjectName: string;
+  obtainedMarks: number;
+  maxMarks: number;
+  percentage?: number;
+  grade?: string;
+  isPass: boolean;
+  isAbsent: boolean;
+}
+
+export interface StaffStudentMarksPageDto {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: StaffStudentMarkDto[];
+  classes: ClassSectionFilterOption[];
+}
+
+export const getMyExamStats = (): Promise<StaffExamStatsDto> =>
+  apiGet('/examinations/exam-setup/my-stats');
+
+export const getMyStudentMarks = (
+  classId?: string,
+  sectionId?: string,
+  page = 1,
+  pageSize = 100,
+): Promise<StaffStudentMarksPageDto> =>
+  apiGet('/examinations/exam-setup/my-student-marks', {
+    ...(classId   ? { classId }   : {}),
+    ...(sectionId ? { sectionId } : {}),
+    page,
+    pageSize,
+  });

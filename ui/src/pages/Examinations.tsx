@@ -1,18 +1,33 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Award, Calendar, TrendingUp, Plus, BarChart3,
+  Award, Calendar, TrendingUp, BarChart3,
   Clock, CheckCircle2, AlertCircle, GraduationCap,
   Loader2, PenLine, ClipboardList,
   Zap, LayoutDashboard, Trophy,
+  Users, BookOpen, ChevronRight, Eye, Printer, Download, Search, RefreshCw,
 } from "lucide-react";
 import ExamAnalyticsInline from "@/components/examinations/ExamAnalyticsInline";
 import { ExamsListTab } from "@/components/examinations/ExamsListTab";
 import { ExamResultsTab } from "@/components/examinations/ExamResultsTab";
 import examinationApi, { ExamBasic, ExamStats } from "@/services/api/examinationApi";
+import { getExamSetups, getStudentExamSetupResult, type ExamSetupBasicDto } from "@/services/api/examSetupApi";
+import { academicApi } from "@/services/api/academicApi";
+import { studentApi } from "@/services/api/studentApi";
+import type { ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { useSchool } from "@/contexts/SchoolContext";
+import { generateProfessionalReportCard } from "@/utils/professionalPdfGenerator";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────
 interface ExamEvent {
@@ -185,6 +200,11 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
       .sort((a, b) => a.dateFrom.localeCompare(b.dateFrom)).slice(0, 8)
   , [events, today, in30Days]);
 
+  const recentCompleted = useMemo(() =>
+    events.filter(e => e.status === "completed")
+      .sort((a, b) => b.dateTo.localeCompare(a.dateTo)).slice(0, 5)
+  , [events]);
+
   const termProgress = useMemo(() => [
     { type: "unit-test",   label: "Unit Tests"  },
     { type: "quarterly",   label: "Quarterly"   },
@@ -224,7 +244,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* Left: Pending + Upcoming */}
+        {/* Left: Pending + Upcoming + Recent Completed */}
         <div className="lg:col-span-2 space-y-5">
           <Card>
             <CardHeader className="pb-3">
@@ -302,6 +322,49 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
               </CardContent>
             </Card>
           )}
+
+          {/* Recent completed exams */}
+          {recentCompleted.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Recent Results
+                  <button className="ml-auto text-xs text-primary hover:underline" onClick={() => onNavigate("results")}>
+                    View in Results tab →
+                  </button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {recentCompleted.map(ev => {
+                    const tm = EXAM_TYPE_META[ev.examType];
+                    return (
+                      <div key={ev.key} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 group">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-9 w-9 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
+                            <Trophy className="h-4 w-4 text-green-700" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{ev.examName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Class {ev.classGroup}{ev.section ? ` – ${ev.section}` : ""} ·{" "}
+                              {new Date(ev.dateTo).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          {tm && <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tm.color}`}>{ev.examType.replace(/-/g, " ")}</span>}
+                          <Button size="sm" variant="ghost" className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onNavigate("results")}>
+                            <Eye className="h-3 w-3 mr-1" /> Results
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right: Term cycle + top performers */}
@@ -331,14 +394,18 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
             </CardContent>
           </Card>
 
-          {stats.topPerformers && stats.topPerformers.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Award className="h-4 w-4 text-amber-500" /> Top Performers
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
+          {/* Top performers - show even if empty with a placeholder */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Award className="h-4 w-4 text-amber-500" /> Top Performers
+                <span className="ml-auto text-xs text-muted-foreground">{academicYear}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {statsLoading ? (
+                <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+              ) : stats.topPerformers && stats.topPerformers.length > 0 ? (
                 <div className="divide-y">
                   {stats.topPerformers.slice(0, 5).map((p, i) => (
                     <div key={p.studentId} className="flex items-center justify-between px-4 py-2.5">
@@ -353,9 +420,15 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
+                  <Trophy className="h-8 w-8 opacity-25" />
+                  <p className="text-xs text-center">Publish exam results to<br />see top performers here.</p>
+                  <button className="text-xs text-primary hover:underline" onClick={() => onNavigate("results")}>Go to Results →</button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
@@ -462,21 +535,52 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
 
 // ─── Report Card Tab ──────────────────────────────────────────
 function ReportCardTab({ academicYear }: { academicYear: string }) {
+  const { schoolInfo } = useSchool();
   const [allClasses, setAllClasses] = useState<ClassResponse[]>([]);
   const [selectedClass, setSelectedClass] = useState("");
   const [selectedSection, setSelectedSection] = useState("all");
-  const [selectedExamType, setSelectedExamType] = useState("");
+  const [selectedSetupId, setSelectedSetupId] = useState("");
+  const [publishedSetups, setPublishedSetups] = useState<ExamSetupBasicDto[]>([]);
+  const [loadingSetups, setLoadingSetups] = useState(false);
   const [students, setStudents] = useState<{ id: string; name: string; rollNumber: string; generated: boolean }[]>([]);
   const [generating, setGenerating] = useState<string | null>(null);
   const [teacherRemarks, setTeacherRemarks] = useState("");
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [viewCard, setViewCard] = useState<GeneratedReportCard | null>(null);
+  const [search, setSearch] = useState("");
+  const [reportFormat, setReportFormat] = useState<"a4" | "letter">("a4");
 
-  const examTypes = ["unit-test", "quarterly", "half-yearly", "annual", "pre-board", "practical"];
   const standards = Array.from(new Set(allClasses.map(c => c.standard))).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
   const sections = selectedClass ? allClasses.filter(c => c.standard === selectedClass).map(c => c.section).sort() : [];
 
+  // Selected exam setup
+  const selectedSetup = publishedSetups.find(s => s.id === selectedSetupId);
+  const selectedExamType = selectedSetup?.examType ?? "";
+
+  // Load classes once
   useEffect(() => { academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(() => {}); }, []);
+
+  // Load published exam setups for current academic year
+  useEffect(() => {
+    if (!academicYear) return;
+    setLoadingSetups(true);
+    getExamSetups({ status: 'published', academicYear, pageSize: 200 })
+      .then(r => setPublishedSetups(r.items ?? []))
+      .catch(() => setPublishedSetups([]))
+      .finally(() => setLoadingSetups(false));
+  }, [academicYear]);
+
+  // Filter setups by selected class standard
+  const filteredSetups = useMemo(() => {
+    if (!selectedClass) return publishedSetups;
+    return publishedSetups.filter(s => {
+      // className may be like "10", "Class 10", "10-A" — match by standard
+      const name = s.className ?? "";
+      return name === selectedClass || name.startsWith(selectedClass + "-") || name.startsWith(selectedClass + " ") || name.includes(` ${selectedClass}`) || name.includes(`${selectedClass}`);
+    });
+  }, [publishedSetups, selectedClass]);
+
+  // Load students when class/section changes
   useEffect(() => {
     if (!selectedClass) { setStudents([]); return; }
     setLoadingStudents(true);
@@ -490,43 +594,76 @@ function ReportCardTab({ academicYear }: { academicYear: string }) {
       .finally(() => setLoadingStudents(false));
   }, [selectedClass, selectedSection]);
 
-  const handleGenerate = async (studentId: string) => {
-    if (!selectedExamType) { toast.error("Select exam type first"); return; }
+  const filteredStudents = useMemo(() => {
+    if (!search.trim()) return students;
+    const q = search.toLowerCase();
+    return students.filter(s => s.name.toLowerCase().includes(q) || s.rollNumber.toLowerCase().includes(q));
+  }, [students, search]);
+
+  const handleGenerate = async (studentId: string, fmt: "a4" | "letter" = reportFormat) => {
+    if (!selectedSetupId) { toast.error("Select a published exam first"); return; }
     setGenerating(studentId);
     try {
-      const result = await examinationApi.generateReportCard({
-        schoolId: "", studentId,
-        academicYear: academicYear || "", examType: selectedExamType,
-        teacherRemarks: teacherRemarks || undefined,
-      });
+      const result = await getStudentExamSetupResult(selectedSetupId, studentId);
+      const setup = selectedSetup!;
+      const schoolData = {
+        name: schoolInfo?.name ?? "School",
+        address: schoolInfo?.address ?? "",
+        phone: schoolInfo?.phone ?? "",
+        email: schoolInfo?.email ?? "",
+        principalName: schoolInfo?.principalName,
+        websiteUrl: schoolInfo?.websiteUrl,
+      };
+      const reportData = {
+        studentName: result.studentName,
+        studentId: result.studentId,
+        class: setup.className,
+        section: setup.sectionName ?? "",
+        academicYear: setup.academicYear,
+        examName: setup.name,
+        rollNo: result.rollNumber ?? "",
+        subjects: (result.subjects ?? []).map(s => ({
+          name: s.subjectName,
+          marks: Number(s.obtainedMarks),
+          maxMarks: Number(s.maxMarks),
+          grade: s.grade ?? "",
+        })),
+        totalMarks: Number(result.totalObtained),
+        totalMaxMarks: Number(result.totalMax),
+        percentage: Number(result.percentage),
+        overallGrade: result.overallGrade ?? "",
+        rank: result.rank,
+        remarks: teacherRemarks || (result.isPass ? "Pass" : "Fail"),
+      };
+      const doc = generateProfessionalReportCard(schoolData, reportData, fmt);
+      doc.save(`ReportCard_${result.studentName.replace(/\s+/g, "_")}_${setup.name.replace(/\s+/g, "_")}.pdf`);
       setStudents(prev => prev.map(s => s.id === studentId ? { ...s, generated: true } : s));
-      if (result) setViewCard(result as unknown as GeneratedReportCard);
-      toast.success("Report card generated");
+      toast.success(`Report card downloaded (${fmt.toUpperCase()})`);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string } } };
-      toast.error(err?.response?.data?.message ?? "Failed to generate report card");
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      const msg = err?.response?.data?.message ?? err?.message ?? "No results found for this student in the selected exam";
+      toast.error(msg);
     } finally {
       setGenerating(null);
     }
   };
 
   const handleGenerateAll = async () => {
-    if (!selectedExamType) { toast.error("Select exam type first"); return; }
+    if (!selectedSetupId) { toast.error("Select a published exam first"); return; }
     if (!students.length) return;
     setGenerating("all");
     let ok = 0, fail = 0;
     for (const s of students) {
       try {
-        await examinationApi.generateReportCard({ schoolId: "", studentId: s.id, academicYear: academicYear || "", examType: selectedExamType, teacherRemarks: teacherRemarks || undefined });
+        await handleGenerate(s.id, reportFormat);
         ok++;
-        setStudents(prev => prev.map(st => st.id === s.id ? { ...st, generated: true } : st));
       } catch { fail++; }
     }
     setGenerating(null);
-    toast.success(`Generated ${ok} cards${fail ? `, ${fail} failed` : ""}`);
+    if (ok > 0) toast.success(`Generated ${ok} cards${fail ? `, ${fail} failed` : ""}`);
   };
 
-  if (viewCard) return <PrintableReportCard card={viewCard} onBack={() => setViewCard(null)} />;
+  // viewCard no longer used — PDFs are generated directly via jsPDF
 
   return (
     <div className="space-y-5">
@@ -538,7 +675,7 @@ function ReportCardTab({ academicYear }: { academicYear: string }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div>
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Class *</Label>
-              <Select value={selectedClass} onValueChange={v => { setSelectedClass(v); setSelectedSection("all"); }}>
+              <Select value={selectedClass} onValueChange={v => { setSelectedClass(v); setSelectedSection("all"); setSelectedSetupId(""); }}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select class" /></SelectTrigger>
                 <SelectContent>{standards.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
@@ -553,26 +690,53 @@ function ReportCardTab({ academicYear }: { academicYear: string }) {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Exam Type *</Label>
-              <Select value={selectedExamType} onValueChange={setSelectedExamType}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select type" /></SelectTrigger>
-                <SelectContent>{examTypes.map(t => <SelectItem key={t} value={t} className="capitalize">{t.replace(/-/g, " ")}</SelectItem>)}</SelectContent>
+            <div className="col-span-2">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+                Published Exam *
+                {filteredSetups.length === 0 && selectedClass && !loadingSetups && (
+                  <span className="text-amber-600 font-normal ml-2 normal-case">(no published exams for this class)</span>
+                )}
+              </Label>
+              <Select value={selectedSetupId} onValueChange={setSelectedSetupId} disabled={filteredSetups.length === 0}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder={loadingSetups ? "Loading…" : filteredSetups.length === 0 ? "No published exams" : "Select published exam"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredSetups.map(s => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} — {s.className}{s.sectionName ? ` · ${s.sectionName}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="col-span-2">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Teacher Remarks</Label>
+              <Input className="h-9 text-sm" placeholder="Optional remarks for all students' cards…" value={teacherRemarks} onChange={e => setTeacherRemarks(e.target.value)} />
+            </div>
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Remarks</Label>
-              <Input className="h-9 text-sm" placeholder="Optional teacher remarks…" value={teacherRemarks} onChange={e => setTeacherRemarks(e.target.value)} />
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">PDF Format</Label>
+              <Select value={reportFormat} onValueChange={v => setReportFormat(v as "a4" | "letter")}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="a4">PDF – A4</SelectItem>
+                  <SelectItem value="letter">PDF – Letter (US)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          {selectedClass && selectedExamType && students.length > 0 && (
+
+          {selectedClass && selectedSetupId && students.length > 0 && (
             <div className="flex items-center justify-between pt-3 border-t">
               <span className="text-sm text-muted-foreground">
                 {students.length} students · {students.filter(s => s.generated).length} generated
               </span>
               <Button onClick={handleGenerateAll} disabled={generating === "all"} className="gap-2">
                 {generating === "all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GraduationCap className="h-4 w-4" />}
-                Generate All
+                Generate All ({reportFormat.toUpperCase()})
               </Button>
             </div>
           )}
@@ -581,45 +745,83 @@ function ReportCardTab({ academicYear }: { academicYear: string }) {
 
       {selectedClass && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-muted-foreground">
-              {loadingStudents ? "Loading…" : `${students.length} students`}
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center justify-between">
+              <span className="text-muted-foreground">
+                {loadingStudents ? "Loading students…" : `${students.length} students`}
+                {selectedSetup && (
+                  <span className="ml-2 font-normal text-foreground">· {selectedSetup.name}</span>
+                )}
+              </span>
+              {students.length > 5 && (
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input className="pl-8 h-8 text-xs w-48" placeholder="Search student…" value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {loadingStudents ? (
               <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : students.length === 0 ? (
-              <p className="text-center p-8 text-muted-foreground text-sm">No students found</p>
+              <p className="text-center p-8 text-muted-foreground text-sm">No students found for this class/section.</p>
             ) : (
-              <div className="divide-y">
-                {students.map((s, i) => (
-                  <div key={s.id} className="flex items-center justify-between px-5 py-3 hover:bg-muted/20">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground w-6">{i + 1}</span>
-                      <div>
-                        <p className="font-medium text-sm">{s.name}</p>
-                        {s.rollNumber && <p className="text-xs text-muted-foreground">Roll #{s.rollNumber}</p>}
+              <ScrollArea style={{ maxHeight: '480px' }}>
+                <div className="divide-y">
+                  {filteredStudents.map((s, i) => (
+                    <div key={s.id} className="flex items-center justify-between px-5 py-3 hover:bg-muted/20">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-6">{i + 1}</span>
+                        <div>
+                          <p className="font-medium text-sm">{s.name}</p>
+                          {s.rollNumber && <p className="text-xs text-muted-foreground">Roll #{s.rollNumber}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {s.generated && <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Done</span>}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant={s.generated ? "outline" : "default"}
+                              className="h-7 text-xs gap-1"
+                              disabled={!!generating || !selectedSetupId}
+                            >
+                              {generating === s.id
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : s.generated
+                                  ? <Eye className="h-3.5 w-3.5" />
+                                  : <Download className="h-3.5 w-3.5" />
+                              }
+                              {s.generated ? "Re-generate" : "Generate"}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleGenerate(s.id, "a4")}>
+                              PDF – A4
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleGenerate(s.id, "letter")}>
+                              PDF – Letter (US)
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {s.generated && <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Done</span>}
-                      <Button size="sm" variant={s.generated ? "outline" : "default"} className="h-7 text-xs gap-1"
-                        onClick={() => handleGenerate(s.id)} disabled={!!generating || !selectedExamType}>
-                        {generating === s.id
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : s.generated
-                            ? <><Eye className="h-3.5 w-3.5" /> View</>
-                            : <><Download className="h-3.5 w-3.5" /> Generate</>
-                        }
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </CardContent>
         </Card>
+      )}
+
+      {!selectedClass && (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground border-2 border-dashed rounded-xl gap-3">
+          <ClipboardList className="h-10 w-10 opacity-30" />
+          <p className="text-sm font-medium">Select a class to generate report cards</p>
+          <p className="text-xs">Only published exams are shown — publish results first in the Results tab.</p>
+        </div>
       )}
     </div>
   );
@@ -784,12 +986,13 @@ export default function Examinations() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 h-auto">
+        <TabsList className="grid w-full grid-cols-5 h-auto">
           {[
-            { value: "overview",  icon: <LayoutDashboard className="h-4 w-4" />, label: "Overview" },
-            { value: "exams",     icon: <ClipboardList className="h-4 w-4" />,   label: "All Exams" },
-            { value: "results",   icon: <PenLine className="h-4 w-4" />,         label: "Results" },
-            { value: "analytics", icon: <BarChart3 className="h-4 w-4" />,       label: "Analytics" },
+            { value: "overview",      icon: <LayoutDashboard className="h-4 w-4" />, label: "Overview" },
+            { value: "exams",         icon: <ClipboardList className="h-4 w-4" />,   label: "All Exams" },
+            { value: "results",       icon: <PenLine className="h-4 w-4" />,         label: "Results" },
+            { value: "report-cards",  icon: <Trophy className="h-4 w-4" />,          label: "Report Cards" },
+            { value: "analytics",     icon: <BarChart3 className="h-4 w-4" />,       label: "Analytics" },
           ].map(t => (
             <TabsTrigger key={t.value} value={t.value} className="flex-col py-2 gap-0.5 text-xs sm:text-sm sm:flex-row sm:gap-1.5">
               {t.icon}<span>{t.label}</span>
@@ -815,6 +1018,10 @@ export default function Examinations() {
 
         <TabsContent value="analytics" className="mt-4">
           <ExamAnalyticsInline />
+        </TabsContent>
+
+        <TabsContent value="report-cards" className="mt-4">
+          <ReportCardTab academicYear={academicYear ?? ""} />
         </TabsContent>
       </Tabs>
     </div>

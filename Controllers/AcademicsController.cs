@@ -313,6 +313,22 @@ namespace SmsApi.Controllers
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
 
+        [HttpPatch("class-subjects/{id}/teacher")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        public async Task<ActionResult<ClassSubjectResponse>> UpdateClassSubjectTeacher(Guid id, [FromBody] UpdateClassSubjectTeacherRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _academicsService.UpdateClassSubjectTeacherAsync(id, schoolId, request.TeacherId);
+                if (result == null) return NotFound();
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
         // Teacher Assignments Endpoints
         [HttpGet("teacher-assignments")]
         [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]

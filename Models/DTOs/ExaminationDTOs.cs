@@ -481,6 +481,19 @@ namespace SmsApi.Models.DTOs
         public int SubjectCount { get; set; }
         public int MarksEnteredCount { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>
+        /// True when the requesting staff member is the class teacher for this exam's class.
+        /// Only set when returned via the staff-scoped endpoint (GetExamSetupsForStaffAsync).
+        /// </summary>
+        public bool IsClassTeacherForThisClass { get; set; }
+
+        /// <summary>
+        /// The subject IDs within this exam that are explicitly assigned to the requesting staff.
+        /// Empty when <see cref="IsClassTeacherForThisClass"/> is true (they can access all subjects).
+        /// Only set when returned via the staff-scoped endpoint (GetExamSetupsForStaffAsync).
+        /// </summary>
+        public List<Guid> MyAssignedSubjectIds { get; set; } = new();
     }
 
     /// <summary>Detail DTO for ExamSetup with subjects list.</summary>
@@ -727,6 +740,61 @@ namespace SmsApi.Models.DTOs
         public decimal? GradePoint { get; set; }
         public bool IsAbsent { get; set; }
         public bool IsPass { get; set; }
+    }
+
+    // ========== STAFF GRADES DASHBOARD DTOs ==========
+
+    /// <summary>KPI stats for the staff grades dashboard — scoped to this staff's exam assignments.</summary>
+    public class StaffExamStatsDto
+    {
+        public int TotalExams { get; set; }
+        public int PublishedExams { get; set; }
+        public int TotalMarksEntries { get; set; }
+        public decimal AveragePercentage { get; set; }
+        public decimal PassRate { get; set; }
+    }
+
+    /// <summary>One row in the student grades history tab — one student × one subject × one exam.</summary>
+    public class StaffStudentMarkDto
+    {
+        public Guid ExamMarksEntryId { get; set; }
+        public Guid ExamSetupId { get; set; }
+        public string ExamName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+        public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? RollNumber { get; set; }
+        public Guid SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
+        public decimal ObtainedMarks { get; set; }
+        public decimal MaxMarks { get; set; }
+        public decimal? Percentage { get; set; }
+        public string? Grade { get; set; }
+        public bool IsPass { get; set; }
+        public bool IsAbsent { get; set; }
+    }
+
+    /// <summary>Paginated response for staff student marks, includes class/section filter options.</summary>
+    public class StaffStudentMarksPageDto
+    {
+        public int Total { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public List<StaffStudentMarkDto> Items { get; set; } = new();
+        public List<ClassSectionFilterOption> Classes { get; set; } = new();
+    }
+
+    /// <summary>Class+section combo for the filter dropdowns in the staff grades tab.</summary>
+    public class ClassSectionFilterOption
+    {
+        public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
     }
 
 }

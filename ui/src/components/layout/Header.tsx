@@ -151,7 +151,7 @@ export function Header() {
             >
               <GraduationCap className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden md:inline">{currentYear?.name ?? 'Year'}</span>
-              <span className="md:hidden">{currentYear?.name?.slice(-4) ?? 'Yr'}</span>
+              <span className="md:hidden text-[11px]">{currentYear?.name ?? 'Yr'}</span>
               {!currentYear?.isCurrent && <span className="hidden sm:inline text-[9px] font-bold uppercase tracking-wider ml-0.5 opacity-75">Historical</span>}
               <ChevronDown className="h-3 w-3 opacity-60" />
             </Button>
@@ -191,7 +191,7 @@ export function Header() {
         >
           <GraduationCap className="h-3.5 w-3.5 shrink-0" />
           <span className="hidden md:inline">{currentYear.name}</span>
-          <span className="md:hidden">{currentYear.name?.slice(-4)}</span>
+          <span className="md:hidden text-[11px]">{currentYear.name}</span>
         </div>
       )}
       {/* Notification Center */}

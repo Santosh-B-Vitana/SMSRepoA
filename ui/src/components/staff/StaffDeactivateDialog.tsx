@@ -23,10 +23,17 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, BookOpen, UserX, Loader2, GraduationCap, RefreshCw } from "lucide-react";
-import { staffApi, type StaffBasic, type DeactivateStaffAssignmentAction } from "@/services/api/staffApi";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AlertTriangle, BookOpen, UserX, Loader2, GraduationCap, RefreshCw,
+  Download, FileText, CheckCircle, ChevronDown, ChevronRight,
+} from "lucide-react";
+import { staffApi, type StaffBasic, type Staff, type DeactivateStaffAssignmentAction } from "@/services/api/staffApi";
 import { academicApi, type TeacherAssignmentResponse } from "@/services/api/academicApi";
 import { toast } from "sonner";
+import { generateDocumentPdf } from "@/utils/professionalPdfGenerator";
+import { useSchool } from "@/contexts/SchoolContext";
 
 // ─── Local types ─────────────────────────────────────────────────────────────
 
@@ -51,14 +58,126 @@ function getStaffName(s: StaffBasic): string {
   return (s.name || `${(s as any).firstName ?? ""} ${(s as any).lastName ?? ""}`.trim()) || s.email;
 }
 
+/** Format months of service into a human-readable string */
+function calcYearsOfService(joining: Date, today: Date): string {
+  const totalMonths =
+    (today.getFullYear() - joining.getFullYear()) * 12 +
+    (today.getMonth() - joining.getMonth());
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  if (years > 0 && months > 0)
+    return `${years} year${years !== 1 ? "s" : ""} ${months} month${months !== 1 ? "s" : ""}`;
+  if (years > 0) return `${years} year${years !== 1 ? "s" : ""}`;
+  return `${months} month${months !== 1 ? "s" : ""}`;
+}
+
+// ─── StaffDocCard — collapsible editable document card ────────────────────────
+
+function StaffDocCard({
+  docKey,
+  title,
+  isMandatory = false,
+  fields,
+  onFieldChange,
+  schoolInfo,
+}: {
+  docKey: string;
+  title: string;
+  isMandatory?: boolean;
+  fields: Record<string, string>;
+  onFieldChange: (key: string, val: string) => void;
+  schoolInfo?: { name?: string; address?: string; phone?: string; email?: string; principalName?: string };
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  function handleDownload() {
+    setDownloading(true);
+    try {
+      const pdf = generateDocumentPdf(docKey, fields, schoolInfo);
+      const safeName = (fields.staffName ?? "document").replace(/\s+/g, "_");
+      pdf.save(`${title.replace(/\s+/g, "_")}_${safeName}.pdf`);
+    } catch (err) {
+      console.error("PDF generation error:", err);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <FileText className="h-4 w-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm">{title}</p>
+          {isMandatory && (
+            <span className="text-xs text-muted-foreground">Recommended</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0"
+        >
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {expanded ? "Hide fields" : "Edit fields"}
+        </button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="shrink-0"
+        >
+          {downloading ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+          )}
+          Download
+        </Button>
+      </div>
+
+      {/* Editable fields */}
+      {expanded && (
+        <div className="border-t px-4 pb-4 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-muted/20">
+          {Object.entries(fields).map(([key, val]) => (
+            <div key={key} className="flex flex-col gap-1">
+              <Label className="text-xs capitalize text-muted-foreground">
+                {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
+              </Label>
+              <Input
+                value={val}
+                onChange={(e) => onFieldChange(key, e.target.value)}
+                className="h-7 text-xs"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
+  const { schoolInfo } = useSchool();
   const [rows, setRows] = useState<AssignmentRow[]>([]);
   const [allActiveStaff, setAllActiveStaff] = useState<StaffBasic[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [openDropdownIdx, setOpenDropdownIdx] = useState<number | null>(null);
+
+  // ── Result step ───────────────────────────────────────────────────────────
+  const [step, setStep] = useState<"assignments" | "result">("assignments");
+  const [fullStaff, setFullStaff] = useState<Staff | null>(null);
+  // docFields[docKey] = { fieldKey: value, … }
+  const [docFields, setDocFields] = useState<Record<string, Record<string, string>>>({});
 
   const open = staff !== null;
   const staffName = staff ? getStaffName(staff) : "";
@@ -68,9 +187,10 @@ export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
     if (!staff) return;
     setLoadingData(true);
     try {
-      const [assignRes, staffRes] = await Promise.all([
+      const [assignRes, staffRes, fullStaffRes] = await Promise.all([
         academicApi.getTeacherAssignments({ staffId: staff.id, pageSize: 100 }),
         staffApi.list({ pageSize: 1000 }),
+        staffApi.getById(staff.id),
       ]);
       setRows(
         (assignRes.assignments ?? []).map((a) => ({
@@ -86,6 +206,7 @@ export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
           (s) => s.id !== staff.id && s.status === "active"
         )
       );
+      setFullStaff(fullStaffRes);
     } catch {
       toast.error("Error loading data", {
         description: "Could not fetch class assignments. Please close and try again.",
@@ -100,6 +221,9 @@ export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
       setRows([]);
       setAllActiveStaff([]);
       setOpenDropdownIdx(null);
+      setStep("assignments");
+      setFullStaff(null);
+      setDocFields({});
       loadData();
     }
   }, [open, loadData]);
@@ -139,18 +263,54 @@ export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
 
       await staffApi.deactivate(staff.id, actions);
 
-      const removed = rows.filter((r) => r.action === "remove").length;
-      const reassigned = rows.filter((r) => r.action === "reassign").length;
-      const parts: string[] = [];
-      if (removed > 0) parts.push(`${removed} assignment(s) removed`);
-      if (reassigned > 0) parts.push(`${reassigned} assignment(s) reassigned`);
+      // Build autofilled document fields from staff details
+      const today = new Date();
+      const fmtDate = (d: Date) =>
+        d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      const todayStr = fmtDate(today);
+      const joiningDateStr =
+        fullStaff?.joiningDate ? fmtDate(new Date(fullStaff.joiningDate)) : "";
+      const yearsStr =
+        fullStaff?.joiningDate
+          ? calcYearsOfService(new Date(fullStaff.joiningDate), today)
+          : "";
+      const sName = `${staff.firstName} ${staff.lastName}`.trim() || staff.email;
+      const empId = fullStaff?.employeeId || staff.employeeId || "";
+      const desig = fullStaff?.designation || staff.designation || "";
+      const dept  = fullStaff?.department  || staff.department  || "";
 
-      toast.success("Staff Deactivated", {
-        description: `${staffName} has been deactivated. Login access revoked.${parts.length ? " " + parts.join(", ") + "." : ""}`,
+      setDocFields({
+        experience_certificate: {
+          staffName: sName,
+          employeeId: empId,
+          designation: desig,
+          department: dept,
+          joiningDate: joiningDateStr,
+          relievingDate: todayStr,
+          yearsOfService: yearsStr,
+          conduct: "Good",
+          issueDate: todayStr,
+        },
+        relieving_letter: {
+          staffName: sName,
+          employeeId: empId,
+          designation: desig,
+          department: dept,
+          joiningDate: joiningDateStr,
+          relievingDate: todayStr,
+          issueDate: todayStr,
+        },
+        staff_no_dues: {
+          staffName: sName,
+          employeeId: empId,
+          designation: desig,
+          department: dept,
+          issueDate: todayStr,
+        },
       });
 
-      onSuccess();
-      onClose();
+      // Switch to the result/documents step instead of closing immediately
+      setStep("result");
     } catch (err: unknown) {
       // Extract backend error message
       let msg = "Failed to deactivate staff member.";
@@ -170,26 +330,89 @@ export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && !submitting && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && !submitting && step === "assignments" && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <UserX className="h-5 w-5" />
-            Deactivate Staff Member
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground mt-1">
-            Review and handle all class assignments before confirming deactivation of{" "}
-            <strong>{staffName}</strong>.
-          </DialogDescription>
+          {step === "result" ? (
+            <>
+              <DialogTitle className="flex items-center gap-2 text-green-700">
+                <CheckCircle className="h-5 w-5" />
+                Staff Successfully Deactivated
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground mt-1">
+                <strong>{staffName}</strong>'s account has been deactivated and login access revoked.
+                Download the exit documents below. You can edit any autofilled field before downloading.
+              </DialogDescription>
+            </>
+          ) : (
+            <>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <UserX className="h-5 w-5" />
+                Deactivate Staff Member
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground mt-1">
+                Review and handle all class assignments before confirming deactivation of{" "}
+                <strong>{staffName}</strong>.
+              </DialogDescription>
+            </>
+          )}
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+
+          {/* ── RESULT STEP: success + exit documents ── */}
+          {step === "result" ? (
+            <>
+              {/* Success banner */}
+              <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-green-800 text-sm">{staffName} — Deactivated</p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    Login access revoked. Issue the relevant exit documents below.
+                  </p>
+                </div>
+              </div>
+
+              {/* Document cards */}
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Exit Documents
+              </p>
+              <div className="space-y-3">
+                {(
+                  [
+                    { key: "experience_certificate", title: "Experience Certificate", mandatory: true },
+                    { key: "relieving_letter",        title: "Relieving Letter",       mandatory: false },
+                    { key: "staff_no_dues",           title: "No Dues Certificate",    mandatory: false },
+                  ] as const
+                ).map(({ key, title, mandatory }) => (
+                  <StaffDocCard
+                    key={key}
+                    docKey={key}
+                    title={title}
+                    isMandatory={mandatory}
+                    fields={docFields[key] ?? {}}
+                    onFieldChange={(fKey, val) =>
+                      setDocFields((prev) => ({
+                        ...prev,
+                        [key]: { ...(prev[key] ?? {}), [fKey]: val },
+                      }))
+                    }
+                    schoolInfo={schoolInfo ?? undefined}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            /* ── ASSIGNMENTS STEP ── */
+            <>
           {/* Warning */}
           <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
             <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
             <ul className="text-xs text-orange-700 space-y-0.5 list-disc list-inside">
               <li>Login access will be revoked immediately.</li>
               <li>Active sessions are blocked on next API request.</li>
+              <li>Subject-teacher links in class subjects will be automatically cleared.</li>
               {rows.length > 0 && (
                 <li>
                   <strong>{rows.length}</strong> class assignment(s) must be handled below.
@@ -329,31 +552,45 @@ export function StaffDeactivateDialog({ staff, onClose, onSuccess }: Props) {
               </p>
             </div>
           )}
+            </>
+          )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — conditional based on step */}
         <DialogFooter className="px-6 py-4 border-t border-border flex-shrink-0 flex flex-row gap-2 justify-end">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleConfirm}
-            disabled={loadingData || submitting}
-            className="gap-2 min-w-[160px]"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Deactivating…
-              </>
-            ) : (
-              <>
-                <UserX className="h-4 w-4" />
-                Confirm Deactivation
-              </>
-            )}
-          </Button>
+          {step === "result" ? (
+            <Button
+              className="min-w-[140px]"
+              onClick={() => { onSuccess(); onClose(); }}
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleConfirm}
+                disabled={loadingData || submitting}
+                className="gap-2 min-w-[160px]"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Deactivating…
+                  </>
+                ) : (
+                  <>
+                    <UserX className="h-4 w-4" />
+                    Confirm Deactivation
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -7,6 +7,11 @@
  *  1. Load "my assignments" via GET /examinations/exam-setup/my-assignments
  *  2. Each card shows: exam name, class, subject, date range, status
  *  3. Click "Enter Marks" → opens MarksEntryGrid for that subject
+ *
+ * Access rules (enforced in the dialog):
+ *  - Class teacher of the exam's class  → see & edit ALL subjects (unless locked)
+ *  - Subject teacher (assigned staff)   → see & edit ONLY their assigned subject(s)
+ *  - Other subjects                     → hidden entirely for subject teachers
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -22,7 +27,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import {
   PenLine, BookOpen, Users, Calendar, Trophy, Loader2,
-  Lock, CheckCircle2, Clock,
+  Lock, CheckCircle2, Clock, ShieldOff,
 } from 'lucide-react';
 import { MarksEntryGrid } from '@/components/examinations/MarksEntryGrid';
 import {
@@ -62,11 +67,15 @@ export function StaffExamMarksTab() {
 
   // Dialog
   const [marksSetup, setMarksSetup] = useState<ExamSetupDetailDto | null>(null);
+  // Only subjects this staff is authorised to see
+  const [visibleSubjects, setVisibleSubjects] = useState<ExamSetupSubjectDto[]>([]);
+  // Whether each visible subject can be edited (not locked + staff is authorised)
+  const [editableSubjectIds, setEditableSubjectIds] = useState<Set<string>>(new Set());
   const [marksSubject, setMarksSubject] = useState<ExamSetupSubjectDto | null>(null);
   const [marksOpen, setMarksOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // ─── Load academic years ─────────────────────────────────────────────────────
+  // ─── Load academic years ──────────────────────────────────────────────────
 
   useEffect(() => {
     academicApi.listAcademicYears(1, 50)
@@ -97,8 +106,43 @@ export function StaffExamMarksTab() {
     setMarksOpen(true);
     try {
       const detail = await getExamSetupById(setupId);
+
+      // Access info is baked into the exam card by the backend when it was fetched.
+      // The backend knows the requesting staff's role at query time — no separate call needed.
+      const card = setups.find(s => s.id === setupId);
+      const isClassTeacher = card?.isClassTeacherForThisClass ?? false;
+      // Set of subject IDs (lowercase) this staff is explicitly assigned to in this exam
+      const assignedSubjectIdSet = new Set(
+        (card?.myAssignedSubjectIds ?? []).map(id => id.toLowerCase())
+      );
+
+      let visible: ExamSetupSubjectDto[];
+      if (isClassTeacher) {
+        // Class teacher of THIS class → sees all subjects
+        visible = detail.subjects;
+      } else {
+        // Subject teacher → sees ONLY subjects explicitly assigned to them
+        visible = detail.subjects.filter(
+          s => assignedSubjectIdSet.has(s.id.toLowerCase())
+        );
+      }
+
+      // A subject is editable when it is NOT locked AND the staff has authority:
+      //   - class teacher of this class: can edit all non-locked subjects
+      //   - subject teacher: can only edit their explicitly assigned, non-locked subjects
+      const editable = new Set(
+        visible
+          .filter(s => s.status !== 'locked')
+          .map(s => s.id)
+      );
+
       setMarksSetup(detail);
-      setMarksSubject(detail.subjects[0] ?? null);
+      setVisibleSubjects(visible);
+      setEditableSubjectIds(editable);
+      // Default to the first subject the staff can actually edit, else first visible
+      const defaultSubject =
+        visible.find(s => editable.has(s.id)) ?? visible[0] ?? null;
+      setMarksSubject(defaultSubject);
     } catch {
       toast({ title: 'Error', description: 'Failed to load exam details.', variant: 'destructive' });
       setMarksOpen(false);
@@ -204,24 +248,37 @@ export function StaffExamMarksTab() {
               <PenLine className="h-4 w-4 text-primary" />
               {marksSetup?.name ?? 'Marks Entry'}
             </DialogTitle>
-            {/* Subject selector tabs (staff may be assigned to multiple subjects) */}
-            {marksSetup && marksSetup.subjects.length > 1 && (
+            {/* Subject tabs — only shows subjects this staff is authorised to see */}
+            {marksSetup && visibleSubjects.length > 1 && (
               <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {marksSetup.subjects.map(sub => (
-                  <button
-                    key={sub.id}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      marksSubject?.id === sub.id
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'hover:bg-muted border-border'
-                    }`}
-                    onClick={() => setMarksSubject(sub)}
-                  >
-                    {sub.subjectName}
-                    {sub.status === 'locked' && <Lock className="h-2.5 w-2.5 ml-1 inline" />}
-                  </button>
-                ))}
+                {visibleSubjects.map(sub => {
+                  const canEdit = editableSubjectIds.has(sub.id);
+                  return (
+                    <button
+                      key={sub.id}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                        marksSubject?.id === sub.id
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'hover:bg-muted border-border'
+                      }`}
+                      onClick={() => setMarksSubject(sub)}
+                    >
+                      {sub.subjectName}
+                      {!canEdit
+                        ? <Lock className="h-2.5 w-2.5 ml-1 inline opacity-60" />
+                        : sub.status === 'locked'
+                          ? <Lock className="h-2.5 w-2.5 ml-1 inline" />
+                          : null}
+                    </button>
+                  );
+                })}
               </div>
+            )}
+            {/* Single subject label when only one subject is visible */}
+            {marksSetup && visibleSubjects.length === 1 && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Subject: <span className="font-medium text-foreground">{visibleSubjects[0].subjectName}</span>
+              </p>
             )}
           </DialogHeader>
 
@@ -230,11 +287,20 @@ export function StaffExamMarksTab() {
               <div className="flex items-center justify-center h-40">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               </div>
+            ) : visibleSubjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                <ShieldOff className="h-8 w-8 opacity-30" />
+                <p className="text-sm font-medium">No subjects assigned to you</p>
+                <p className="text-xs text-center max-w-xs">
+                  You are not listed as the subject teacher for any subject in this exam.
+                  Contact your administrator.
+                </p>
+              </div>
             ) : marksSetup && marksSubject ? (
               <MarksEntryGrid
                 examSetupId={marksSetup.id}
                 examSetupSubjectId={marksSubject.id}
-                readOnly={marksSubject.status === 'locked'}
+                readOnly={!editableSubjectIds.has(marksSubject.id)}
                 onSaved={loadAssignments}
               />
             ) : (

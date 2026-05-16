@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Calendar, Bell, BadgeIndianRupee, BookOpen,
   GraduationCap, CheckCircle, XCircle, Timer, ArrowRight,
@@ -85,6 +85,7 @@ export default function ParentDashboard() {
   const { user, logout } = useAuth();
   const { schoolInfo } = useSchool();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [children,      setChildren]      = useState<StudentBasic[]>([]);
   const [childData,     setChildData]     = useState<Map<string, ChildDashboardData>>(new Map());
@@ -100,6 +101,14 @@ export default function ParentDashboard() {
 
   const requirePwChange = !!(user as Record<string, unknown>)?.requirePasswordChange;
   useEffect(() => { if (requirePwChange) setPwOpen(true); }, [requirePwChange]);
+
+  // Handle ?changePassword=1 deep-link from mobile More sheet
+  useEffect(() => {
+    if (searchParams.get("changePassword") === "1") {
+      setPwOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const loadExams = useCallback(async (sid: string) => {
     setExamLoading(true);
@@ -179,7 +188,7 @@ export default function ParentDashboard() {
   const latest   = examEntries[0];
 
   return (
-    <div className="space-y-5 pb-8">
+    <div className="space-y-5 pb-24 md:pb-8">
       <HeroBanner name={user?.name} school={schoolInfo?.name} child={curChild ?? null} />
       <ChangePasswordDialog open={pwOpen} onOpenChange={setPwOpen} forced={requirePwChange} onSuccess={logout} />
 

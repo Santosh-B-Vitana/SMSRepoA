@@ -246,7 +246,7 @@ export default function ParentDiaryView() {
   );
 
   return (
-    <div className="space-y-5 pb-8">
+    <div className="space-y-5 pb-24 md:pb-8">
 
       {/* ─── Hero header ────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl px-6 py-5"

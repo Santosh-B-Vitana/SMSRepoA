@@ -2,7 +2,18 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.4 | **Last Updated:** May 15, 2026 (Session 6) | **Project:** SMSRepoA
+**Version:** 2.5 | **Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 16, 2026 (Session 7)
+
+| Area | Change |
+|------|--------|
+| **Staff Deactivation — Two-Step Dialog** | The "Deactivate" action on a staff profile now opens a two-step dialog. **Step 1:** Shows the number of pending (ungraded) assignments the staff member still owns — warns the admin before proceeding. **Step 2:** Confirmation with three immediately downloadable HR documents: **Experience Certificate**, **Relieving Letter**, and **No Dues Certificate** (generated as PDFs with school branding). |
+| **Staff Deactivation — Portal Access Revoked** | When a staff member is deactivated, their portal login is now blocked immediately: `UserLogin.Status` is set to `"inactive"` and their refresh token is cleared. Any active browser session is terminated on the next API call — no manual intervention required. |
+| **Staff Login — Inactive Guard** | Even if `UserLogin.Status` is stale, an inactive staff member cannot log in. The login endpoint queries `StaffMember.Status` directly at login time, identical to how parent/student deactivation is enforced. |
+| **Exam Results — Class + Section Filter** | The Examination Results tab now has a cascading **Class → Section** filter instead of a status dropdown. Admins select a class, then a section, and results load for that group. Matches the UX pattern used in attendance and assignments. |
 
 ---
 

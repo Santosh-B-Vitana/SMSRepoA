@@ -94,7 +94,7 @@ export default function ParentFees() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       <div>
         <h1 className="text-2xl font-bold">Fee Management</h1>
         <p className="text-muted-foreground mt-1">View and manage fee payments for your children</p>

@@ -3304,6 +3304,7 @@ namespace SmsApi.Services
                         ["dateOfLeaving"]       = DateTime.UtcNow.ToString("dd/MM/yyyy"),
                         ["lastExamResult"]      = string.Empty,
                         ["qualifiedForHigher"]  = "Yes",
+                        ["detainedInSameClass"] = "No",
                         ["additionalRemarks"]   = string.Empty
                     }
                 },

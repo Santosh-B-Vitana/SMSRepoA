@@ -1,6 +1,6 @@
 # Coding Agent Guidelines — SMS API
 
-**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 13, 2026 (Session 5)  
+**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 16, 2026 (Session 7)  
 **Status:** Production Release Candidate
 
 This is the primary instruction set for AI coding agents and developers performing bug fixes, maintenance, and feature work. Follow these architectural patterns to maintain code quality and system integrity.
@@ -408,6 +408,8 @@ refactor: simplify attendance entity mapping
 | **FK violation on EnteredByStaffId** | Store `UserLogin.Id` | Store resolved `StaffMember.Id` (nullable for admins who have no StaffMember row) |
 | **Parent lookup via Guardians table** | `_context.Guardians` / `_context.GuardianStudents` | These tables are empty legacy tables. Use `from sg in _context.StudentGuardians join ul in _context.UserLogins on sg.Email equals ul.Email` |
 | **Parent notification RecipientId** | Store student ID or guardian name | Store `UserLogins.Id` (the login record of the parent). `Notifications.RecipientId = UserLogin.Id` |
+| **Staff deactivation — UserLogin sync** | Update only `StaffMember.Status` | Always also update `UserLogin.Status = "inactive"` + clear `RefreshTokenHash`/`RefreshTokenExpiry`. Use `LinkedEntityId`-first lookup: `UserLogins.Where(u => u.LinkedEntityId == staffId && u.LinkedEntityType == "staff")`. Email fallback only if `LinkedEntityId` is null. |
+| **Staff login guard** | Trust only `UserLogin.Status` for staff roles | Query `StaffMember.Status` live at login (same as parent guard). A stale `UserLogin.Status` must not let an inactive staff member in. Pattern in `AuthController.Login` and `OnTokenValidated`. |
 
 ---
 
@@ -461,6 +463,6 @@ Before committing any code, verify:
 
 ---
 
-**Last Updated:** May 13, 2026 (Session 5) | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA (Release Candidate)  
 **For architecture details:** [TECHNICAL_DOCUMENT.md](./TECHNICAL_DOCUMENT.md)  
 **For deployment:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)

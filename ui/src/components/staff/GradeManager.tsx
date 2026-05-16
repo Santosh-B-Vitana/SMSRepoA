@@ -2,7 +2,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Award, BarChart3, BookOpen, ClipboardList, Plus,
-  Trash2, Filter, RefreshCw, CheckCircle2, AlertCircle, ChevronDown, ShieldOff
+  Trash2, Filter, RefreshCw, CheckCircle2, AlertCircle, ChevronDown, ShieldOff,
+  TrendingUp, FileCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,12 @@ import {
 } from "@/services/api/gradesApi";
 import { academicApi } from "@/services/api/academicApi";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
+import {
+  getMyExamStats,
+  getMyStudentMarks,
+  type StaffStudentMarkDto,
+  type ClassSectionFilterOption,
+} from "@/services/api/examSetupApi";
 
 // --- GRADE BADGE ---
 
@@ -79,30 +86,63 @@ function StatusBadge({ status }: { status: string }) {
 
 function StatsBar() {
   const { data: stats, isLoading } = useQuery({
-    queryKey: ["grades", "stats"],
-    queryFn: () => gradesApi.getStats(),
+    queryKey: ["exam", "my-stats"],
+    queryFn: getMyExamStats,
     staleTime: 30_000,
   });
 
   const cards = [
-    { label: "Grade Items",    value: stats?.totalGradeItems,   icon: BookOpen,    color: "text-blue-600" },
-    { label: "Total Grades",   value: stats?.totalStudentGrades, icon: ClipboardList, color: "text-green-600" },
-    { label: "Average Score",  value: stats ? `${stats.averageMarks}` : undefined, icon: Award,   color: "text-purple-600" },
-    { label: "Pass Rate",      value: stats ? `${stats.passRate}%` : undefined,    icon: BarChart3, color: "text-orange-600" },
+    {
+      label: "Exam Setups",
+      value: stats?.totalExams,
+      sub: stats ? `${stats.publishedExams} published` : undefined,
+      icon: FileCheck,
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+    },
+    {
+      label: "Total Grades",
+      value: stats?.totalMarksEntries,
+      sub: "published entries",
+      icon: ClipboardList,
+      color: "text-green-600",
+      bg: "bg-green-50",
+    },
+    {
+      label: "Average Score",
+      value: stats ? `${stats.averagePercentage}%` : undefined,
+      sub: "across all subjects",
+      icon: TrendingUp,
+      color: "text-purple-600",
+      bg: "bg-purple-50",
+    },
+    {
+      label: "Pass Rate",
+      value: stats ? `${stats.passRate}%` : undefined,
+      sub: "of published marks",
+      icon: Award,
+      color: "text-orange-600",
+      bg: "bg-orange-50",
+    },
   ];
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {cards.map(({ label, value, icon: Icon, color }) => (
+      {cards.map(({ label, value, sub, icon: Icon, color, bg }) => (
         <Card key={label}>
           <CardContent className="p-5">
-            <div className="flex items-center gap-3">
-              <Icon className={`h-7 w-7 ${color}`} />
-              <div>
+            <div className="flex items-start gap-3">
+              <div className={`rounded-lg p-2 ${bg} flex-shrink-0`}>
+                <Icon className={`h-5 w-5 ${color}`} />
+              </div>
+              <div className="min-w-0">
                 {isLoading
                   ? <Skeleton className="h-7 w-16 mb-1" />
-                  : <p className="text-2xl font-bold">{value ?? "-"}</p>}
-                <p className="text-xs text-muted-foreground">{label}</p>
+                  : <p className="text-2xl font-bold leading-tight">{value ?? "-"}</p>}
+                <p className="text-xs font-medium text-foreground">{label}</p>
+                {sub && !isLoading && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -830,82 +870,283 @@ function ClassGradeSection({
   );
 }
 
-function StudentGradesHistoryTab() {
-  const { data: itemsData, isLoading: itemsLoading } = useQuery({
-    queryKey: ["grades", "items-for-history"],
-    queryFn: () => gradesApi.getGradeItems(undefined, undefined, 1, 200),
-    staleTime: 60_000,
-  });
+// --- STUDENT GRADES HISTORY TAB (exam-marks based, staff-scoped) ---
 
-  const { data: gradesData, isLoading: gradesLoading, refetch } = useQuery({
-    queryKey: ["grades", "student-grades-history"],
-    queryFn: () => gradesApi.getStudentGrades(undefined, undefined, 1, 500),
+/** Inline chip showing one subject's result for a student */
+function SubjectChip({ mark }: { mark: StaffStudentMarkDto }) {
+  if (mark.isAbsent) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-500">
+        <span className="font-medium">{mark.subjectName}</span>
+        <span className="text-gray-400">: Absent</span>
+      </span>
+    );
+  }
+  const pass = mark.isPass;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${pass ? "border-green-200 bg-green-50 text-green-900" : "border-red-200 bg-red-50 text-red-900"}`}>
+      <span className="font-medium">{mark.subjectName}</span>
+      <span className="opacity-70">: {mark.obtainedMarks}/{mark.maxMarks}</span>
+      {mark.grade && (
+        <span className={`font-bold ml-0.5 ${pass ? "text-green-700" : "text-red-700"}`}>
+          {mark.grade}
+        </span>
+      )}
+    </span>
+  );
+}
+
+interface StudentExamRow {
+  studentId: string;
+  studentName: string;
+  rollNumber?: string;
+  subjects: StaffStudentMarkDto[];
+  avgPercentage?: number;
+}
+
+interface ExamGroupEntry {
+  label: string;
+  examSetupId: string;
+  students: StudentExamRow[];
+}
+
+/** One collapsible card per exam (class + section), rows per student with subject chips */
+function ExamMarksSection({ group }: { group: ExamGroupEntry }) {
+  const [expanded, setExpanded] = useState(true);
+  const passCount = group.students.filter(s => s.subjects.every(sub => sub.isAbsent || sub.isPass)).length;
+  return (
+    <Card>
+      <CardHeader
+        className="py-3 px-4 cursor-pointer select-none"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-blue-600" />
+            {group.label}
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-green-100 text-green-800 px-2.5 py-0.5 text-xs font-medium">
+              {passCount}/{group.students.length} passed
+            </span>
+            <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+              {group.students.length} student{group.students.length !== 1 ? "s" : ""}
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[180px]">Student</TableHead>
+                <TableHead className="w-[80px]">Roll No</TableHead>
+                <TableHead>Subjects</TableHead>
+                <TableHead className="text-right w-[80px]">Avg %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {group.students.map(stu => (
+                <TableRow key={stu.studentId}>
+                  <TableCell className="font-medium">{stu.studentName || "-"}</TableCell>
+                  <TableCell>{stu.rollNumber ?? "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1.5 py-0.5">
+                      {stu.subjects
+                        .slice()
+                        .sort((a, b) => a.subjectName.localeCompare(b.subjectName))
+                        .map(s => <SubjectChip key={s.examMarksEntryId} mark={s} />)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {stu.avgPercentage != null ? `${stu.avgPercentage.toFixed(1)}%` : "-"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function StudentGradesHistoryTab() {
+  const [filterClassId, setFilterClassId] = useState<string>("");
+  const [filterSectionId, setFilterSectionId] = useState<string>("");
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["exam", "my-student-marks", filterClassId, filterSectionId],
+    queryFn: () =>
+      getMyStudentMarks(
+        filterClassId  || undefined,
+        filterSectionId || undefined,
+        1,
+        500,
+      ),
     staleTime: 20_000,
   });
 
-  const itemMap = useMemo(() => {
-    const map = new Map<string, { className: string; subjectName: string }>();
-    (itemsData?.items ?? []).forEach(item => {
-      map.set(item.id, {
-        className: item.className ?? "Unknown Class",
-        subjectName: item.subjectName ?? "",
-      });
-    });
-    return map;
-  }, [itemsData]);
+  const items = data?.items ?? [];
+  const classOptions: ClassSectionFilterOption[] = data?.classes ?? [];
 
-  const gradesByClass = useMemo(() => {
-    const grouped = new Map<string, StudentGradeResponse[]>();
-    (gradesData?.studentGrades ?? []).forEach(g => {
-      const info = itemMap.get(g.gradeItemId);
-      const cn = info?.className ?? "Unassigned";
-      if (!grouped.has(cn)) grouped.set(cn, []);
-      grouped.get(cn)!.push(g);
-    });
-    return Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [gradesData, itemMap]);
-
-  const isLoading = itemsLoading || gradesLoading;
-
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="py-3 px-4">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-4 w-4 rounded" />
-                <Skeleton className="h-5 w-32" />
-              </div>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
+  // Build section options based on selected class filter
+  const sectionOptions = useMemo((): ClassSectionFilterOption[] => {
+    if (!filterClassId) return [];
+    return classOptions.filter(
+      o => o.classId === filterClassId && o.sectionId != null,
     );
-  }
+  }, [classOptions, filterClassId]);
 
-  const totalGrades = gradesData?.total ?? 0;
+  // Group by examSetupId → studentId to build one row per student per exam
+  const grouped = useMemo((): ExamGroupEntry[] => {
+    // examSetupId → studentId → subjects[]
+    const byExam = new Map<string, Map<string, StaffStudentMarkDto[]>>();
+    const examMeta = new Map<string, { examName: string; className: string; sectionName?: string }>();
+
+    items.forEach(r => {
+      if (!byExam.has(r.examSetupId)) byExam.set(r.examSetupId, new Map());
+      const byStudent = byExam.get(r.examSetupId)!;
+      if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, []);
+      byStudent.get(r.studentId)!.push(r);
+      examMeta.set(r.examSetupId, { examName: r.examName, className: r.className, sectionName: r.sectionName ?? undefined });
+    });
+
+    const groups: ExamGroupEntry[] = [];
+    byExam.forEach((byStudent, examSetupId) => {
+      const meta = examMeta.get(examSetupId)!;
+      const label = meta.sectionName
+        ? `${meta.examName} — ${meta.className} (${meta.sectionName})`
+        : `${meta.examName} — ${meta.className}`;
+
+      const students: StudentExamRow[] = [];
+      byStudent.forEach((subjects, studentId) => {
+        const first = subjects[0];
+        const nonAbsent = subjects.filter(s => !s.isAbsent && s.percentage != null);
+        const avgPercentage = nonAbsent.length > 0
+          ? nonAbsent.reduce((sum, s) => sum + (s.percentage ?? 0), 0) / nonAbsent.length
+          : undefined;
+        students.push({ studentId, studentName: first.studentName, rollNumber: first.rollNumber, subjects, avgPercentage });
+      });
+
+      students.sort((a, b) => {
+        if (a.rollNumber && b.rollNumber) return a.rollNumber.localeCompare(b.rollNumber);
+        return a.studentName.localeCompare(b.studentName);
+      });
+
+      groups.push({ label, examSetupId, students });
+    });
+
+    return groups.sort((a, b) => a.label.localeCompare(b.label));
+  }, [items]);
+
+  const totalStudents = grouped.reduce((sum, g) => sum + g.students.length, 0);
+
+  // Unique class options for the class dropdown (de-duped by classId)
+  const uniqueClassOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return classOptions.filter(o => {
+      if (seen.has(o.classId)) return false;
+      seen.add(o.classId);
+      return true;
+    });
+  }, [classOptions]);
+
+  const handleClassChange = (val: string) => {
+    setFilterClassId(val === "_all" ? "" : val);
+    setFilterSectionId(""); // Reset section when class changes
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">
-          {totalGrades} grade{totalGrades !== 1 ? "s" : ""} recorded across {gradesByClass.length} class{gradesByClass.length !== 1 ? "es" : ""}
-        </p>
-        <Button size="sm" variant="outline" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-1" /> Refresh
-        </Button>
+      {/* Filters row */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Select value={filterClassId || "_all"} onValueChange={handleClassChange}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="All classes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All classes</SelectItem>
+              {uniqueClassOptions.map(o => (
+                <SelectItem key={o.classId} value={o.classId}>
+                  {o.className}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {sectionOptions.length > 0 && (
+            <Select
+              value={filterSectionId || "_all"}
+              onValueChange={v => setFilterSectionId(v === "_all" ? "" : v)}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="All sections" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">All sections</SelectItem>
+                {sectionOptions.map(o => (
+                  <SelectItem key={o.sectionId!} value={o.sectionId!}>
+                    Section {o.sectionName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {(filterClassId || filterSectionId) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { setFilterClassId(""); setFilterSectionId(""); }}
+            >
+              <Filter className="h-4 w-4 mr-1" /> Clear
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {!isLoading && grouped.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              {totalStudents} student{totalStudents !== 1 ? "s" : ""} across {grouped.length} exam{grouped.length !== 1 ? "s" : ""}
+            </p>
+          )}
+          <Button size="sm" variant="outline" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+          </Button>
+        </div>
       </div>
 
-      {gradesByClass.length === 0 ? (
+      {/* Loading skeletons */}
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="py-3 px-4">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-5 w-40" />
+                </div>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+      ) : grouped.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No student grades recorded yet. Use the Exam Marks tab to record student marks.
+            {filterClassId || filterSectionId
+              ? "No published marks found for the selected filters."
+              : "No published exam marks yet. Marks appear here once an exam is published."}
           </CardContent>
         </Card>
       ) : (
-        gradesByClass.map(([cn, grades]) => (
-          <ClassGradeSection key={cn} className={cn} grades={grades} itemMap={itemMap} />
+        grouped.map(g => (
+          <ExamMarksSection key={g.examSetupId} group={g} />
         ))
       )}
     </div>

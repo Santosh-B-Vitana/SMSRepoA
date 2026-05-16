@@ -891,18 +891,47 @@ namespace SmsApi.Services
 
             staff.UpdatedAt = DateTime.UtcNow;
 
-            // Sync UserLogin status
-            if (request.Status != null && !string.IsNullOrEmpty(staff.Email))
+            // Sync UserLogin status — primary lookup by LinkedEntityId, email fallback
+            if (request.Status != null)
             {
                 var linkedLogin = await _context.UserLogins
                     .FirstOrDefaultAsync(u =>
                         u.SchoolId == staff.SchoolId &&
-                        u.Email.ToLower() == staff.Email.ToLower() &&
+                        u.LinkedEntityId == id &&
+                        u.LinkedEntityType == "staff" &&
                         !u.IsDeleted);
+
+                if (linkedLogin == null && !string.IsNullOrEmpty(staff.Email))
+                {
+                    linkedLogin = await _context.UserLogins
+                        .FirstOrDefaultAsync(u =>
+                            u.SchoolId == staff.SchoolId &&
+                            u.Email.ToLower() == staff.Email.Trim().ToLower() &&
+                            !u.IsDeleted);
+                }
+
                 if (linkedLogin != null)
                 {
                     linkedLogin.Status = request.Status == "inactive" ? "inactive" : "active";
+                    if (request.Status == "inactive")
+                    {
+                        linkedLogin.RefreshTokenHash = null;
+                        linkedLogin.RefreshTokenExpiry = null;
+                    }
                     linkedLogin.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            // Clear ClassSubjects.TeacherId when staff is deactivated via plain update
+            if (request.Status == "inactive")
+            {
+                var classSubjectsToUnassign = await _context.ClassSubjects
+                    .Where(cs => cs.SchoolId == schoolId && cs.TeacherId == id)
+                    .ToListAsync();
+                foreach (var cs in classSubjectsToUnassign)
+                {
+                    cs.TeacherId = null;
+                    cs.UpdatedAt = DateTime.UtcNow;
                 }
             }
 
@@ -1341,18 +1370,32 @@ namespace SmsApi.Services
                     staff.Status = request.Status;
                     staff.UpdatedAt = DateTime.UtcNow;
 
-                    if (!string.IsNullOrEmpty(staff.Email))
+                    // Primary lookup by LinkedEntityId, email fallback
+                    var linkedLogin = await _context.UserLogins
+                        .FirstOrDefaultAsync(u =>
+                            u.SchoolId == schoolId &&
+                            u.LinkedEntityId == staff.Id &&
+                            u.LinkedEntityType == "staff" &&
+                            !u.IsDeleted);
+
+                    if (linkedLogin == null && !string.IsNullOrEmpty(staff.Email))
                     {
-                        var linkedLogin = await _context.UserLogins
+                        linkedLogin = await _context.UserLogins
                             .FirstOrDefaultAsync(u =>
                                 u.SchoolId == schoolId &&
-                                u.Email.ToLower() == staff.Email.ToLower() &&
+                                u.Email.ToLower() == staff.Email.Trim().ToLower() &&
                                 !u.IsDeleted);
-                        if (linkedLogin != null)
+                    }
+
+                    if (linkedLogin != null)
+                    {
+                        linkedLogin.Status = request.Status == "inactive" ? "inactive" : "active";
+                        if (request.Status == "inactive")
                         {
-                            linkedLogin.Status = request.Status == "inactive" ? "inactive" : "active";
-                            linkedLogin.UpdatedAt = DateTime.UtcNow;
+                            linkedLogin.RefreshTokenHash = null;
+                            linkedLogin.RefreshTokenExpiry = null;
                         }
+                        linkedLogin.UpdatedAt = DateTime.UtcNow;
                     }
 
                     result.SuccessCount++;

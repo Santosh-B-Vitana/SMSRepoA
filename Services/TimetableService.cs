@@ -305,14 +305,39 @@ namespace SmsApi.Services
                     throw new KeyNotFoundException("Teacher not found");
 
                 // VALIDATION 10: Check for teacher scheduling conflicts
-                var teacherConflict = await _context.TimetablePeriods
+                var conflictingPeriods = await _context.TimetablePeriods
                     .IgnoreQueryFilters()
+                    .Include(tp => tp.Timetable).ThenInclude(t => t!.Class)
+                    .Include(tp => tp.Timetable).ThenInclude(t => t!.Section)
+                    .Include(tp => tp.Subject)
                     .Where(tp => tp.TeacherId == request.TeacherId &&
                                 tp.DayOfWeek.ToUpper() == dayOfWeek.ToUpper() &&
-                                !tp.IsDeleted)
-                    .AnyAsync(tp => (tp.StartTime < request.EndTime && tp.EndTime > request.StartTime));
-                if (teacherConflict)
-                    throw new InvalidOperationException("Teacher has a scheduling conflict at this time");
+                                !tp.IsDeleted &&
+                                tp.StartTime < request.EndTime && tp.EndTime > request.StartTime)
+                    .ToListAsync();
+                if (conflictingPeriods.Count > 0)
+                {
+                    if (!request.ForceOverride)
+                    {
+                        var first = conflictingPeriods.First();
+                        throw new TeacherConflictException(new TeacherConflictInfo
+                        {
+                            ConflictingPeriodId = first.Id,
+                            ClassName = first.Timetable?.Class?.Name ?? "Unknown Class",
+                            SectionName = first.Timetable?.Section?.Name,
+                            SubjectName = first.Subject?.Name,
+                            DayOfWeek = first.DayOfWeek,
+                            StartTime = first.StartTime.ToString(@"hh\:mm"),
+                            EndTime = first.EndTime.ToString(@"hh\:mm"),
+                        });
+                    }
+                    // ForceOverride: soft-delete all conflicting periods — they will be replaced
+                    foreach (var cp in conflictingPeriods)
+                    {
+                        cp.IsDeleted = true;
+                        cp.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
             }
 
             // VALIDATION 11: Period type validation (if provided)
@@ -404,15 +429,40 @@ namespace SmsApi.Services
                     throw new KeyNotFoundException("Teacher not found");
 
                 // VALIDATION 6: Check for teacher scheduling conflicts (excluding current period)
-                var teacherConflict = await _context.TimetablePeriods
+                var conflictingPeriods = await _context.TimetablePeriods
                     .IgnoreQueryFilters()
+                    .Include(tp => tp.Timetable).ThenInclude(t => t!.Class)
+                    .Include(tp => tp.Timetable).ThenInclude(t => t!.Section)
+                    .Include(tp => tp.Subject)
                     .Where(tp => tp.TeacherId == request.TeacherId &&
                                 tp.Id != id &&
                                 tp.DayOfWeek.ToUpper() == period.DayOfWeek.ToUpper() &&
-                                !tp.IsDeleted)
-                    .AnyAsync(tp => (tp.StartTime < endTime && tp.EndTime > startTime));
-                if (teacherConflict)
-                    throw new InvalidOperationException("Teacher has a scheduling conflict at this time");
+                                !tp.IsDeleted &&
+                                tp.StartTime < endTime && tp.EndTime > startTime)
+                    .ToListAsync();
+                if (conflictingPeriods.Count > 0)
+                {
+                    if (!request.ForceOverride)
+                    {
+                        var first = conflictingPeriods.First();
+                        throw new TeacherConflictException(new TeacherConflictInfo
+                        {
+                            ConflictingPeriodId = first.Id,
+                            ClassName = first.Timetable?.Class?.Name ?? "Unknown Class",
+                            SectionName = first.Timetable?.Section?.Name,
+                            SubjectName = first.Subject?.Name,
+                            DayOfWeek = first.DayOfWeek,
+                            StartTime = first.StartTime.ToString(@"hh\:mm"),
+                            EndTime = first.EndTime.ToString(@"hh\:mm"),
+                        });
+                    }
+                    // ForceOverride: soft-delete all conflicting periods — they will be replaced
+                    foreach (var cp in conflictingPeriods)
+                    {
+                        cp.IsDeleted = true;
+                        cp.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
                 
                 period.TeacherId = request.TeacherId;
             }

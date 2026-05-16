@@ -38,9 +38,8 @@ import {
   StudentExitResponse,
   GeneratedDocumentInfo,
 } from "@/services/api/studentApi";
-import { TransferCertificateTemplate } from "@/components/documents/TransferCertificateTemplate";
-import { ConductCertificateTemplate } from "@/components/documents/ConductCertificateTemplate";
-import { BonafideCertificateTemplate } from "@/components/documents/BonafideCertificateTemplate";
+import { generateDocumentPdf } from "@/utils/professionalPdfGenerator";
+import { useSchool } from "@/contexts/SchoolContext";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -130,90 +129,53 @@ function DocumentCard({
 // ─── GeneratedDocumentViewer ─────────────────────────────────────────────────
 
 function GeneratedDocumentViewer({ doc }: { doc: GeneratedDocumentInfo }) {
-  const [show, setShow] = useState(false);
-  const f = doc.fields;
+  const { schoolInfo } = useSchool();
+  const [downloading, setDownloading] = useState(false);
 
-  const content = (() => {
-    if (doc.documentKey === "transfer_certificate") {
-      return (
-        <TransferCertificateTemplate
-          tcNumber={f.tcNumber ?? ("TC-" + Date.now())}
-          issueDate={f.issueDate ?? new Date().toLocaleDateString("en-IN")}
-          admissionNumber={f.admissionNumber ?? ""}
-          studentName={f.studentName ?? ""}
-          fatherName={f.fatherName ?? ""}
-          dateOfBirth={f.dateOfBirth ?? ""}
-          dateOfAdmission={f.dateOfAdmission ?? ""}
-          academicYear={f.academicYear ?? ""}
-          classAtLeaving={f.class ?? ""}
-          sectionAtLeaving={f.section ?? ""}
-          dateOfLeaving={f.dateOfLeaving ?? ""}
-          reasonForLeaving={f.reasonForLeaving ?? ""}
-          conduct={f.conduct ?? "Good"}
-          additionalRemarks={f.additionalRemarks ?? ""}
-        />
-      );
+  function handleDownloadPdf() {
+    setDownloading(true);
+    try {
+      const pdf = generateDocumentPdf(doc.documentKey, doc.fields, schoolInfo ?? undefined);
+      const fileName = `${doc.title.replace(/\s+/g, "_")}_${doc.fields.studentName?.replace(/\s+/g, "_") ?? "document"}.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error("PDF generation error:", err);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setDownloading(false);
     }
-    if (doc.documentKey === "character_certificate") {
-      return (
-        <ConductCertificateTemplate
-          studentName={f.studentName ?? ""}
-          className={`${f.class ?? ""} ${f.section ?? ""}`.trim()}
-          schoolName=""
-          principalName=""
-          academicYear={f.academicYear ?? ""}
-          conduct={f.conduct ?? "Good"}
-          issueDate={f.issueDate ?? new Date().toLocaleDateString("en-IN")}
-          certificateNumber={f.certificateNumber ?? ("CC-" + Date.now())}
-        />
-      );
-    }
-    if (doc.documentKey === "bonafide_certificate") {
-      return (
-        <BonafideCertificateTemplate
-          certificateNumber={f.certificateNumber ?? ("BC-" + Date.now())}
-          issueDate={f.issueDate ?? new Date().toLocaleDateString("en-IN")}
-          purpose={f.purpose ?? ""}
-          studentName={f.studentName ?? ""}
-          fatherName={f.fatherName ?? ""}
-          admissionNumber={f.admissionNumber ?? ""}
-          dateOfBirth={f.dateOfBirth ?? ""}
-          className={f.class ?? ""}
-          section={f.section ?? ""}
-          academicYear={f.academicYear ?? ""}
-        />
-      );
-    }
-    // Generic fallback
-    return (
-      <div className="p-6 border rounded text-sm space-y-2">
-        <h3 className="font-semibold text-base">{doc.title}</h3>
-        {Object.entries(f).map(([k, v]) => (
-          <p key={k}><span className="font-medium capitalize">{k.replace(/([A-Z])/g, " $1")}: </span>{v}</p>
-        ))}
-      </div>
-    );
-  })();
+  }
 
   return (
-    <div className="border rounded-lg p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-primary" />
-          <span className="font-medium text-sm">{doc.title}</span>
+    <div className="border rounded-lg overflow-hidden">
+      <div className="flex items-center gap-3 p-4">
+        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <FileText className="h-5 w-5 text-primary" />
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShow((v) => !v)}>
-            {show ? "Hide" : "Preview"}
-          </Button>
-          {show && (
-            <Button size="sm" onClick={() => window.print()}>
-              <Download className="h-3.5 w-3.5 mr-1" /> Print / Save PDF
-            </Button>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm">{doc.title}</p>
+          {doc.fileUrl && (
+            <a
+              href={doc.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              Server copy ↗
+            </a>
           )}
         </div>
+        <div className="flex gap-2 shrink-0">
+          <Button size="sm" onClick={handleDownloadPdf} disabled={downloading}>
+            {downloading ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            Download PDF
+          </Button>
+        </div>
       </div>
-      {show && <div className="mt-2 print:block">{content}</div>}
     </div>
   );
 }
@@ -315,7 +277,7 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
       let res: StudentExitResponse;
       if (exitType === "dropout") {
         const payload: StudentDropoutRequest = {
-          dropoutType,
+          dropoutType: "transfer",
           destinationSchool: destinationSchool || undefined,
           reason: reason || undefined,
           conduct,
@@ -341,7 +303,9 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
       setResult(res);
       setStep("result");
       toast({ title: "Done", description: res.message });
-      onComplete(res);
+      // NOTE: onComplete is intentionally NOT called here.
+      // It is called when the user clicks "Done" on the result step
+      // so the parent doesn't close the dialog before the result is visible.
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "Action failed. Please try again.";
       toast({ title: "Error", description: msg, variant: "destructive" });
@@ -352,10 +316,10 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
 
   // ── title / description per exit type ────────────────────────────────────
 
-  const title = exitType === "dropout" ? "Drop Out Student" : "Mark as Passed Out";
+  const title = exitType === "dropout" ? "Drop Out Student — Transfer" : "Mark as Passed Out";
   const description =
     exitType === "dropout"
-      ? "Process a student dropout — transfer to another school or detain in the same class."
+      ? "Process a student dropout — transfer to another school. An alumni record will be created."
       : "Mark the student as having passed out — an alumni record will be created.";
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -485,41 +449,12 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
         {/* ── STEP: confirm ────────────────────────────────────────────────  */}
         {step === "confirm" && clearance && (
           <div className="space-y-5">
-            {/* dropout-specific options */}
-            {exitType === "dropout" && (
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Dropout Type</p>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="radio"
-                      name="dropoutType"
-                      value="transfer"
-                      checked={dropoutType === "transfer"}
-                      onChange={() => setDropoutType("transfer")}
-                      className="accent-primary"
-                    />
-                    Transfer to another school
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="radio"
-                      name="dropoutType"
-                      value="detain"
-                      checked={dropoutType === "detain"}
-                      onChange={() => setDropoutType("detain")}
-                      className="accent-primary"
-                    />
-                    Detain in same class
-                  </label>
-                </div>
-              </div>
-            )}
+            {/* dropout is always transfer now — detain is handled by StudentDetainDialog */}
 
             {/* destination school (optional for both) */}
             <div className="space-y-1.5">
               <Label className="text-sm">
-                {exitType === "dropout" && dropoutType === "transfer" ? "Destination School" : "Next Institution (optional)"}
+                {exitType === "dropout" ? "Destination School" : "Next Institution (optional)"}
               </Label>
               <Input
                 placeholder="e.g. ABC High School, City"
@@ -552,9 +487,7 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
               <p><span className="font-medium">Student: </span>{clearance.studentName} ({clearance.currentClass})</p>
               <p>
                 <span className="font-medium">Action: </span>
-                {exitType === "dropout"
-                  ? dropoutType === "transfer" ? "Drop Out — Transfer" : "Drop Out — Detain"
-                  : "Passed Out"}
+                {exitType === "dropout" ? "Drop Out — Transfer" : "Passed Out"}
               </p>
               {destinationSchool && (
                 <p><span className="font-medium">Destination: </span>{destinationSchool}</p>
@@ -565,12 +498,7 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
                   .filter(Boolean)
                   .join(", ")}
               </p>
-              {exitType === "dropout" && dropoutType === "transfer" && (
-                <p className="text-muted-foreground text-xs mt-1">
-                  Student will be marked inactive and an alumni record will be created.
-                </p>
-              )}
-              {exitType === "passout" && (
+              {exitType === "dropout" && (
                 <p className="text-muted-foreground text-xs mt-1">
                   Student will be marked inactive and an alumni record will be created.
                 </p>
@@ -594,30 +522,82 @@ export function StudentExitDialog({ student, exitType, open, onClose, onComplete
         {/* ── STEP: result ─────────────────────────────────────────────────  */}
         {step === "result" && result && (
           <div className="space-y-5">
-            <div className="flex items-start gap-3 rounded-lg border border-green-300 bg-green-50 dark:bg-green-950 p-4">
-              <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-              <div className="text-sm space-y-1">
-                <p className="font-semibold text-green-800 dark:text-green-200">{result.message}</p>
-                {result.alumniMessage && (
-                  <p className="text-green-700 dark:text-green-300">{result.alumniMessage}</p>
-                )}
-                <p className="text-muted-foreground">
-                  Status: <Badge variant="secondary">{result.newStatus}</Badge>
-                </p>
+            {/* Success header */}
+            <div className="text-center space-y-3 py-2">
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/40 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle className="h-9 w-9 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-green-800 dark:text-green-200">
+                  {exitType === "dropout" ? "Student Dropped Out Successfully" : "Student Passed Out Successfully"}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">{result.message}</p>
               </div>
             </div>
 
-            {result.generatedDocuments.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Generated Documents</p>
-                {result.generatedDocuments.map((doc) => (
-                  <GeneratedDocumentViewer key={doc.documentKey} doc={doc} />
-                ))}
+            {/* Student details card */}
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Student Record</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6 text-sm">
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-muted-foreground">Student</span>
+                  <span className="font-semibold">{result.studentName}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant="secondary" className="capitalize">{result.newStatus}</Badge>
+                </div>
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-muted-foreground">Exit Type</span>
+                  <span className="font-medium capitalize">{result.exitType.replace(/_/g, " ")}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-muted-foreground">Date</span>
+                  <span className="font-medium">
+                    {new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                  </span>
+                </div>
+                {result.alumniId && (
+                  <div className="flex justify-between col-span-full border-b pb-1.5">
+                    <span className="text-muted-foreground">Alumni Record ID</span>
+                    <span className="font-mono font-semibold text-primary text-xs">{result.alumniId}</span>
+                  </div>
+                )}
+                {result.alumniMessage && (
+                  <div className="col-span-full text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/40 rounded p-2 mt-1">
+                    {result.alumniMessage}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Generated documents */}
+            {result.generatedDocuments.length > 0 ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">
+                    Generated Documents ({result.generatedDocuments.length})
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Click <strong>Download PDF</strong> to save each document directly.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {result.generatedDocuments.map((doc) => (
+                    <GeneratedDocumentViewer key={doc.documentKey} doc={doc} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No documents were generated for this exit.
               </div>
             )}
 
-            <div className="flex justify-end pt-1">
-              <Button onClick={onClose}>Close</Button>
+            <Separator />
+
+            <div className="flex justify-end">
+              <Button onClick={() => { onComplete(result); onClose(); }} className="min-w-24">Done</Button>
             </div>
           </div>
         )}

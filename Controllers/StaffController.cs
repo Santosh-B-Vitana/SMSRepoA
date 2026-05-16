@@ -215,12 +215,33 @@ namespace SmsApi.Controllers
                 staff.Status = "inactive";
                 staff.UpdatedAt = DateTime.UtcNow;
 
-                // Revoke UserLogin — find by email
+                // Clear ClassSubjects.TeacherId where this staff is assigned as subject teacher
+                var classSubjectsToUnassign = await _dbContext.ClassSubjects
+                    .Where(cs => cs.SchoolId == schoolId && cs.TeacherId == id)
+                    .ToListAsync();
+                foreach (var cs in classSubjectsToUnassign)
+                {
+                    cs.TeacherId = null;
+                    cs.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // Revoke UserLogin — primary lookup by LinkedEntityId (most reliable), email fallback
                 var linkedLogin = await _dbContext.UserLogins
                     .FirstOrDefaultAsync(u =>
                         u.SchoolId == schoolId &&
-                        u.Email.ToLower() == staff.Email.ToLower() &&
+                        u.LinkedEntityId == id &&
+                        u.LinkedEntityType == "staff" &&
                         !u.IsDeleted);
+
+                if (linkedLogin == null && !string.IsNullOrEmpty(staff.Email))
+                {
+                    linkedLogin = await _dbContext.UserLogins
+                        .FirstOrDefaultAsync(u =>
+                            u.SchoolId == schoolId &&
+                            u.Email.ToLower() == staff.Email.Trim().ToLower() &&
+                            !u.IsDeleted);
+                }
+
                 if (linkedLogin != null)
                 {
                     linkedLogin.Status = "inactive";
@@ -228,6 +249,7 @@ namespace SmsApi.Controllers
                     linkedLogin.RefreshTokenExpiry = null;
                     linkedLogin.UpdatedAt = DateTime.UtcNow;
                 }
+                // No UserLogin to revoke — staff may not have a portal account yet
 
                 await _dbContext.SaveChangesAsync();
 
@@ -259,8 +281,19 @@ namespace SmsApi.Controllers
                 var linkedLogin = await _dbContext.UserLogins
                     .FirstOrDefaultAsync(u =>
                         u.SchoolId == schoolId &&
-                        u.Email.ToLower() == staff.Email.ToLower() &&
+                        u.LinkedEntityId == id &&
+                        u.LinkedEntityType == "staff" &&
                         !u.IsDeleted);
+
+                if (linkedLogin == null && !string.IsNullOrEmpty(staff.Email))
+                {
+                    linkedLogin = await _dbContext.UserLogins
+                        .FirstOrDefaultAsync(u =>
+                            u.SchoolId == schoolId &&
+                            u.Email.ToLower() == staff.Email.Trim().ToLower() &&
+                            !u.IsDeleted);
+                }
+
                 if (linkedLogin != null)
                 {
                     linkedLogin.Status = "active";

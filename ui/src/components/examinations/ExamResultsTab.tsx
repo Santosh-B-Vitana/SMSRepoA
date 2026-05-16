@@ -11,10 +11,12 @@
  *    - Publish button (finalized)
  *    - Results table (published)
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -28,7 +30,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import {
   PenLine, CheckCircle2, Send, Loader2, BookOpen, Trophy,
-  TrendingUp, Users, Award, RotateCcw,
+  TrendingUp, Users, Award, RotateCcw, Search, Calendar,
 } from 'lucide-react';
 import { MarksEntryGrid } from './MarksEntryGrid';
 import {
@@ -432,15 +434,22 @@ export function ExamResultsTab({ initialSetupId }: ExamResultsTabProps) {
   const [setups, setSetups] = useState<ExamSetupBasicDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string>(initialSetupId ?? '');
+  const [search, setSearch] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
+  const [sectionFilter, setSectionFilter] = useState('all');
 
   const loadSetups = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getExamSetups({ pageSize: 100 });
-      const items = res.items ?? [];
+      const res = await getExamSetups({ pageSize: 200 });
+      const items = (res.items ?? []).slice().sort((a, b) => {
+        // Sort most recent first: by startDate desc, then createdAt desc
+        const da = a.startDate ?? a.createdAt ?? '';
+        const db = b.startDate ?? b.createdAt ?? '';
+        return db.localeCompare(da);
+      });
       setSetups(items);
       if (!selectedId && items.length > 0) {
-        // Prefer an exam with marks_entry or finalized status
         const priority = items.find(s => s.status === 'marks_entry' || s.status === 'finalized') ?? items[0];
         setSelectedId(priority.id);
       }
@@ -457,10 +466,34 @@ export function ExamResultsTab({ initialSetupId }: ExamResultsTabProps) {
     if (initialSetupId) setSelectedId(initialSetupId);
   }, [initialSetupId]);
 
+  const filteredSetups = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return setups.filter(s => {
+      const matchSearch = !q ||
+        s.name.toLowerCase().includes(q) ||
+        s.className.toLowerCase().includes(q) ||
+        (s.sectionName ?? '').toLowerCase().includes(q) ||
+        (s.academicYear ?? '').includes(q);
+      const matchClass   = classFilter   === 'all' || s.className              === classFilter;
+      const matchSection = sectionFilter === 'all' || (s.sectionName ?? '') === sectionFilter;
+      return matchSearch && matchClass && matchSection;
+    });
+  }, [setups, search, classFilter, sectionFilter]);
+
+  // Derived filter options
+  const availableClasses = useMemo(
+    () => [...new Set(setups.map(s => s.className))].sort(),
+    [setups],
+  );
+  const availableSections = useMemo(() => {
+    const base = classFilter === 'all' ? setups : setups.filter(s => s.className === classFilter);
+    return [...new Set(base.map(s => s.sectionName ?? '').filter(Boolean))].sort();
+  }, [setups, classFilter]);
+
   if (loading) {
     return (
-      <div className="grid grid-cols-[260px,1fr] gap-4">
-        <div className="space-y-2">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
+      <div className="grid grid-cols-[280px,1fr] gap-4">
+        <div className="space-y-2">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 rounded-lg" />)}</div>
         <Skeleton className="h-80 rounded-xl" />
       </div>
     );
@@ -475,14 +508,76 @@ export function ExamResultsTab({ initialSetupId }: ExamResultsTabProps) {
     );
   }
 
+  const publishedCount = setups.filter(s => s.status === 'published').length;
+  const pendingCount = setups.filter(s => s.status === 'marks_entry' || s.status === 'finalized').length;
+
   return (
     <div className="flex gap-4 min-h-[500px]">
       {/* Left: exam list */}
-      <div className="w-64 shrink-0">
-        <ScrollArea className="h-[600px]">
+      <div className="w-72 shrink-0 flex flex-col gap-2">
+        {/* Stats bar */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground px-0.5">
+          <span className="font-medium text-foreground">{setups.length} exams</span>
+          {publishedCount > 0 && <span className="text-green-600">· {publishedCount} published</span>}
+          {pendingCount > 0 && <span className="text-amber-600">· {pendingCount} pending</span>}
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            className="pl-8 h-8 text-xs"
+            placeholder="Search exam or class…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Class filter */}
+        <Select
+          value={classFilter}
+          onValueChange={v => { setClassFilter(v); setSectionFilter('all'); }}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="All Classes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Classes</SelectItem>
+            {availableClasses.map(c => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Section filter */}
+        <Select
+          value={sectionFilter}
+          onValueChange={setSectionFilter}
+          disabled={availableSections.length === 0}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="All Sections" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sections</SelectItem>
+            {availableSections.map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* List */}
+        <ScrollArea className="flex-1" style={{ height: 'calc(100vh - 340px)', minHeight: '400px' }}>
           <div className="space-y-1.5 pr-1">
-            {setups.map(s => {
+            {filteredSetups.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-6">No exams match your filters.</p>
+            ) : filteredSetups.map(s => {
               const sc = STATUS_CFG[s.status] ?? STATUS_CFG.draft;
+              const dateStr = s.startDate
+                ? s.startDate === s.endDate || !s.endDate
+                  ? new Date(s.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                  : `${new Date(s.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(s.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : null;
               return (
                 <button
                   key={s.id}
@@ -490,15 +585,22 @@ export function ExamResultsTab({ initialSetupId }: ExamResultsTabProps) {
                   className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors text-sm ${
                     selectedId === s.id
                       ? 'bg-primary/5 border-primary/40 shadow-sm'
-                      : 'hover:bg-muted/60 border-transparent'
+                      : 'hover:bg-muted/60 border-transparent hover:border-border'
                   }`}
                 >
-                  <div className="font-medium leading-tight truncate">{s.name}</div>
-                  <div className="flex items-center justify-between mt-1 gap-2">
+                  <div className="font-medium leading-tight truncate mb-1">{s.name}</div>
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
                     <span className="text-xs text-muted-foreground truncate">{s.className}{s.sectionName ? ` · ${s.sectionName}` : ''}</span>
-                    <Badge variant="outline" className={`text-[10px] px-1 py-0 shrink-0 ${sc.color}`}>{sc.label}</Badge>
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 shrink-0 ${sc.color}`}>{sc.label}</Badge>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{s.marksEnteredCount}/{s.subjectCount} locked</div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{s.marksEnteredCount}/{s.subjectCount} subjects locked</span>
+                    {dateStr && (
+                      <span className="flex items-center gap-1 shrink-0 ml-1">
+                        <Calendar className="h-3 w-3" />{dateStr}
+                      </span>
+                    )}
+                  </div>
                 </button>
               );
             })}

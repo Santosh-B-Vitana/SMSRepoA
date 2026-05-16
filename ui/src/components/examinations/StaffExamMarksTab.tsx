@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { MarksEntryGrid } from './MarksEntryGrid';
 import {
-  getExamSetups, getExamSetupById,
+  getMyExamAssignments, getExamSetupById,
   type ExamSetupBasicDto, type ExamSetupDetailDto, type ExamSetupSubjectDto,
 } from '@/services/api/examSetupApi';
 
@@ -41,11 +41,13 @@ const STATUS_CFG: Record<string, { label: string; color: string }> = {
 
 function ExamMarksPanel({
   examId,
-  staffId,
+  isClassTeacher,
+  myAssignedSubjectIds,
   onMarksSaved,
 }: {
   examId: string;
-  staffId: string;
+  isClassTeacher: boolean;
+  myAssignedSubjectIds: string[];
   onMarksSaved: () => void;
 }) {
   const { toast } = useToast();
@@ -58,19 +60,19 @@ function ExamMarksPanel({
     try {
       const d = await getExamSetupById(examId);
       setSetup(d);
-      // Default to first subject assigned to this staff
-      const mySubjects = (d.subjects ?? []).filter(
-        s => !s.assignedStaffId || s.assignedStaffId === staffId
-      );
-      if (!activeSubject && mySubjects.length) {
-        setActiveSubject(mySubjects[0].id);
+      // Default to first subject this staff can see
+      const visible = isClassTeacher
+        ? (d.subjects ?? [])
+        : (d.subjects ?? []).filter(s => myAssignedSubjectIds.includes(s.id));
+      if (!activeSubject && visible.length) {
+        setActiveSubject(visible[0].id);
       }
     } catch {
       toast({ title: 'Error', description: 'Failed to load exam details.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
-  }, [examId, staffId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [examId, isClassTeacher, myAssignedSubjectIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setActiveSubject('');
@@ -89,11 +91,10 @@ function ExamMarksPanel({
 
   if (!setup) return null;
 
-  // For published exams show all subjects (read-only results view);
-  // for active exams only show subjects assigned to this staff.
-  const mySubjects: ExamSetupSubjectDto[] = (setup.subjects ?? []).filter(
-    (s) => setup.status === 'published' || !s.assignedStaffId || s.assignedStaffId === staffId
-  );
+  // Class teacher sees all subjects; subject teacher sees only their assigned ones.
+  const mySubjects: ExamSetupSubjectDto[] = isClassTeacher
+    ? (setup.subjects ?? [])
+    : (setup.subjects ?? []).filter(s => myAssignedSubjectIds.includes(s.id));
 
   if (mySubjects.length === 0) {
     return (
@@ -188,14 +189,12 @@ function ExamMarksPanel({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface StaffExamMarksTabProps {
-  staffId: string;
   classId: string;
   sectionId?: string;
   academicYear: string;
 }
 
 export function StaffExamMarksTab({
-  staffId,
   classId,
   academicYear,
 }: StaffExamMarksTabProps) {
@@ -207,8 +206,8 @@ export function StaffExamMarksTab({
   const loadExams = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getExamSetups({ classId, academicYear, pageSize: 100 });
-      const filtered = res.items ?? [];
+      const all = await getMyExamAssignments(academicYear);
+      const filtered = all.filter(e => e.classId === classId);
       setExams(filtered);
       if (!selectedId && filtered.length > 0) {
         // Prefer active marks-entry exam
@@ -256,9 +255,9 @@ export function StaffExamMarksTab({
   }
 
   return (
-    <div className="flex gap-4 min-h-[500px]">
-      {/* Left: exam list */}
-      <div className="w-60 shrink-0">
+    <div className="flex flex-col gap-4 md:flex-row md:min-h-[500px]">
+      {/* Exam list — horizontal scroll chips on mobile, fixed side panel on desktop */}
+      <div className="md:w-60 md:shrink-0">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Exams ({exams.length})
@@ -267,7 +266,37 @@ export function StaffExamMarksTab({
             <RefreshCw className="h-3 w-3" />
           </Button>
         </div>
-        <ScrollArea className="h-[540px]">
+
+        {/* Mobile: horizontal scrollable chips */}
+        <div className="overflow-x-auto -mx-1 px-1 pb-1 md:hidden">
+          <div className="flex gap-2 w-max">
+            {exams.map(e => {
+              const sc = STATUS_CFG[e.status] ?? STATUS_CFG.draft;
+              return (
+                <button
+                  key={e.id}
+                  onClick={() => setSelectedId(e.id)}
+                  className={`flex-shrink-0 text-left rounded-xl border px-3 py-2 transition-colors max-w-[180px] ${
+                    selectedId === e.id
+                      ? 'bg-primary/5 border-primary/40 shadow-sm'
+                      : 'bg-muted/40 border-transparent'
+                  }`}
+                >
+                  <div className="font-medium text-xs leading-tight truncate">{e.name}</div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Badge variant="outline" className={`text-[9px] px-1 py-0 ${sc.color}`}>
+                      {sc.label}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">{e.marksEnteredCount}/{e.subjectCount}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Desktop: scrollable vertical list */}
+        <ScrollArea className="hidden md:block h-[540px]">
           <div className="space-y-1.5 pr-1">
             {exams.map(e => {
               const sc = STATUS_CFG[e.status] ?? STATUS_CFG.draft;
@@ -307,18 +336,19 @@ export function StaffExamMarksTab({
         </ScrollArea>
       </div>
 
-      {/* Right: marks panel */}
+      {/* Marks panel */}
       <div className="flex-1 border rounded-xl p-4 overflow-auto">
         {selectedId ? (
           <ExamMarksPanel
             key={selectedId}
             examId={selectedId}
-            staffId={staffId}
+            isClassTeacher={exams.find(e => e.id === selectedId)?.isClassTeacherForThisClass ?? false}
+            myAssignedSubjectIds={(exams.find(e => e.id === selectedId)?.myAssignedSubjectIds ?? []) as string[]}
             onMarksSaved={loadExams}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            Select an exam from the list.
+          <div className="flex items-center justify-center h-full min-h-[120px] text-muted-foreground text-sm">
+            Select an exam above.
           </div>
         )}
       </div>

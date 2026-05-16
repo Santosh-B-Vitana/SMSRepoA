@@ -47,6 +47,17 @@ export interface TimetablePeriodListResponse {
   total: number;
 }
 
+/** Returned in 409 responses when a teacher has a scheduling conflict. */
+export interface TeacherConflictInfo {
+  conflictingPeriodId: string;
+  className: string;
+  sectionName?: string;
+  subjectName?: string;
+  dayOfWeek: string;
+  startTime: string;  // "HH:MM"
+  endTime: string;
+}
+
 export interface CreateTimetableRequest {
   SchoolId?: string;   // server resolves from JWT tenant context; safe to omit
   ClassId: string;
@@ -66,6 +77,8 @@ export interface CreatePeriodRequest {
   PeriodType?: string;
   Room?: string;
   Notes?: string;
+  /** Admin-only: skip teacher scheduling-conflict check and override. */
+  ForceOverride?: boolean;
 }
 
 export interface UpdatePeriodRequest {
@@ -76,6 +89,8 @@ export interface UpdatePeriodRequest {
   PeriodType?: string;
   Room?: string;
   Notes?: string;
+  /** Admin-only: skip teacher scheduling-conflict check and override. */
+  ForceOverride?: boolean;
 }
 export interface TeacherScheduleEntry {
   periodId: string;

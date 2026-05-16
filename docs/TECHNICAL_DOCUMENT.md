@@ -1,7 +1,50 @@
 # sms-api — Technical Document
 
-> **Version 2.5** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
-> **Last Updated:** May 15, 2026 (Session 6) | **Project:** SMSRepoA
+> **Version 2.6** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
+> **Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 16, 2026 (Session 7)
+
+| Area | Change |
+|------|--------|
+| **`Controllers/AuthController.cs` — Staff login guard** | Added a live `StaffMember` DB query at login time for staff/teacher/principal/hrmanager roles (mirrors the existing parent/student guard). If `StaffMember.Status == "inactive"`, login returns 401 immediately — even when `UserLogin.Status` is stale/active. Falls back to email lookup if `LinkedEntityId` is null. |
+| **`Extensions/AuthExtensions.cs` — `OnTokenValidated`** | Extended the per-request JWT validation hook to also query `StaffMember.Status` for staff roles. After deactivation, the **next API call** from an existing staff session fails with 401, forcing logout with no delay. Uses `LinkedEntityId` for the primary lookup with email fallback. |
+| **`Controllers/StaffController.cs` — `DeactivateStaff` / `ReactivateStaff`** | Replaced the unreliable email-only `UserLogin` lookup with a `LinkedEntityId`-first lookup (`u.LinkedEntityId == id && u.LinkedEntityType == "staff"`) and email fallback. `DeactivateStaff` now also clears `RefreshTokenHash` and `RefreshTokenExpiry` to invalidate active refresh-token sessions. |
+| **`Services/StaffService.cs` — `UpdateStaffAsync` + `BulkUpdateStaffStatusAsync`** | Both update paths now use the same `LinkedEntityId`-first + email-fallback pattern to sync `UserLogin.Status`. When setting inactive, refresh tokens are cleared. |
+| **`ui/src/components/staff/StaffDeactivateDialog.tsx`** | New two-step deactivation dialog: step 1 shows pending assignment count (warns if ungraded work exists); step 2 shows confirmation with three downloadable HR documents — **Experience Certificate**, **Relieving Letter**, **No Dues Certificate** (PDF via `professionalPdfGenerator.ts`). |
+| **`ui/src/components/examinations/ExamResultsTab.tsx`** | Replaced the old status-dropdown filter with a cascading **Class + Section** filter. Results now load per class/section, matching the same UX pattern used elsewhere in Examinations. |
+| **`ui/src/utils/professionalPdfGenerator.ts`** | Added three staff-specific document generators: `generateExperienceCertificate`, `generateRelievingLetter`, `generateNoDuesCertificate`. Used by `StaffDeactivateDialog`. |
+
+### Staff deactivation auth flow (after fix)
+
+```
+Admin clicks "Deactivate"  →  DeactivateStaff (StaffController)
+    → StaffMember.Status = "inactive"
+    → UserLogin found via LinkedEntityId (reliable) or email fallback
+    → UserLogin.Status = "inactive"
+    → UserLogin.RefreshTokenHash = null          ← refresh token invalidated
+    → SaveChangesAsync
+
+Staff tries fresh login  →  AuthController Login
+    → isStaffRole check
+    → SELECT Status FROM StaffMembers WHERE Id = LinkedEntityId  ← live DB
+    → Status == "inactive" → 401 Unauthorized
+
+Staff has EXISTING JWT session  →  Any API call
+    → OnTokenValidated (AuthExtensions)
+    → SELECT StaffMember.Status WHERE Id = LinkedEntityId  ← live DB, per request
+    → Status == "inactive" → context.Fail() → 401 Unauthorized → frontend redirects to login
+```
+
+### Root cause of the pre-fix failure
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| Email-based UserLogin lookup failed silently | `UserLogin.Status` stayed `"active"` after deactivation | Use `LinkedEntityId` as primary key; email as fallback |
+| `OnTokenValidated` only checked `UserLogin.Status` | Existing JWT sessions never invalidated | Now also checks `StaffMember.Status` directly |
+| Old server binary running (file lock) | Code changes compiled but never loaded | Kill server before build; confirmed with `dotnet run --no-build` after clean build |
 
 ---
 
