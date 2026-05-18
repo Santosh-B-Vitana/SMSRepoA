@@ -19,6 +19,7 @@ namespace SmsApi.Services
         Task<bool> MarkAsReadAsync(Guid schoolId, MarkAnnouncementAsReadRequest request);
         Task<AnnouncementRecipientsListResponse> GetRecipientsAsync(Guid announcementId, Guid schoolId, bool? isRead, int page, int pageSize);
         Task<List<AnnouncementResponse>> GetMyAnnouncementsAsync(Guid recipientId, string recipientType, Guid schoolId);
+        Task<List<AnnouncementResponse>> GetParentAnnouncementsAsync(string parentEmail, Guid schoolId);
         Task<AnnouncementStatsDto> GetStatsAsync(Guid schoolId);
     }
 
@@ -464,6 +465,69 @@ namespace SmsApi.Services
                                      ta.StaffId == staffEntityId &&
                                      ta.Status == "active" &&
                                      ta.SectionId == a.TargetSectionId))
+                            ))
+                .OrderByDescending(a => a.IsPinned)
+                .ThenByDescending(a => a.PublishedDate)
+                .Take(100)
+                .ToListAsync();
+
+            return announcements.Select(MapToResponse).ToList();
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // PARENT ANNOUNCEMENTS
+        // Returns announcements visible to a parent: audience "all",
+        // "parents", or class/section announcements for their children.
+        // ─────────────────────────────────────────────────────────────
+        public async Task<List<AnnouncementResponse>> GetParentAnnouncementsAsync(
+            string parentEmail, Guid schoolId)
+        {
+            var now = DateTime.UtcNow;
+
+            // Resolve class/section IDs of children linked to this parent
+            var childIds = await _context.StudentGuardians
+                .Where(sg => sg.SchoolId == schoolId &&
+                             sg.Email != null &&
+                             sg.Email.ToLower() == parentEmail.ToLower())
+                .Select(sg => sg.StudentId)
+                .Distinct()
+                .ToListAsync();
+
+            var childClassIds = childIds.Any()
+                ? await _context.StudentEnrollments
+                    .Where(e => e.SchoolId == schoolId &&
+                                childIds.Contains(e.StudentId) &&
+                                e.Status == "active")
+                    .Select(e => e.ClassId)
+                    .Distinct()
+                    .ToListAsync()
+                : new List<Guid>();
+
+            var childSectionIds = childIds.Any()
+                ? await _context.StudentEnrollments
+                    .Where(e => e.SchoolId == schoolId &&
+                                childIds.Contains(e.StudentId) &&
+                                e.Status == "active")
+                    .Select(e => e.SectionId)
+                    .Distinct()
+                    .ToListAsync()
+                : new List<Guid>();
+
+            var announcements = await _context.Announcements
+                .Include(a => a.CreatedByStaff)
+                .Include(a => a.TargetClass)
+                .Where(a => a.SchoolId == schoolId &&
+                            a.IsActive &&
+                            (a.ExpiryDate == null || a.ExpiryDate > now) &&
+                            (
+                                a.TargetAudience == AnnouncementConstants.AudienceAll
+                                || a.TargetAudience == AnnouncementConstants.AudienceParents
+                                || (a.TargetAudience == AnnouncementConstants.AudienceClass &&
+                                    a.TargetClassId.HasValue &&
+                                    childClassIds.Contains(a.TargetClassId.Value))
+                                || (a.TargetAudience == AnnouncementConstants.AudienceSection &&
+                                    a.TargetSectionId.HasValue &&
+                                    childSectionIds.Contains(a.TargetSectionId.Value))
                             ))
                 .OrderByDescending(a => a.IsPinned)
                 .ThenByDescending(a => a.PublishedDate)

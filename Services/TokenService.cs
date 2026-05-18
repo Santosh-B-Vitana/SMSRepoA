@@ -81,6 +81,9 @@ public class TokenService : ITokenService
             "hostel warden" or "hostelwarden"              => "HostelWarden",
             "accountant" or "finance officer"              => "Accountant",
             "receptionist" or "front desk" or "front desk officer" => "Receptionist",
+            "head of department" or "hod"                  => "Teacher",
+            "admissions officer" or "admissions"           => "Staff",
+            "counselor" or "counsellor"                    => "Staff",
             _                                              => NormalizeRole(rawRole)
         };
     }
@@ -92,17 +95,22 @@ public class TokenService : ITokenService
     /// </summary>
     private static string NormalizeRole(string? rawRole) => (rawRole ?? "").ToLowerInvariant() switch
     {
-        "admin" or "administrator"          => "Admin",
-        "principal"                         => "Principal",
-        "teacher"                           => "Teacher",
-        "staff"                             => "Staff",
-        "parent" or "guardian"              => "Parent",
-        "student"                           => "Student",
-        "hrmanager" or "hr manager"         => "HRManager",
-        "super_admin" or "superadmin"       => "SuperAdmin",
-        "classteacher" or "class teacher"   => "Teacher",
-        _                                   => string.IsNullOrWhiteSpace(rawRole) ? "Staff"
-                                              : char.ToUpperInvariant(rawRole[0]) + rawRole[1..]
+        "admin" or "administrator"                         => "Admin",
+        "principal"                                        => "Principal",
+        "teacher"                                          => "Teacher",
+        "staff"                                            => "Staff",
+        "parent" or "guardian"                             => "Parent",
+        "student"                                          => "Student",
+        "hrmanager" or "hr manager"                        => "HRManager",
+        "super_admin" or "superadmin"                      => "SuperAdmin",
+        "classteacher" or "class teacher"                  => "Teacher",
+        "head of department" or "hod"                      => "Teacher",
+        "subject teacher"                                  => "Teacher",
+        "vice principal"                                   => "Principal",
+        "admissions officer" or "admissions"               => "Staff",
+        "counselor" or "counsellor"                        => "Staff",
+        _                                                  => string.IsNullOrWhiteSpace(rawRole) ? "Staff"
+                                                            : char.ToUpperInvariant(rawRole[0]) + rawRole[1..]
     };
 
     public ClaimsPrincipal ValidateToken(string token)

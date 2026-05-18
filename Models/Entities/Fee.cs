@@ -135,6 +135,15 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("StudentEnrollmentId")]
         public virtual StudentEnrollment? StudentEnrollment { get; set; }
+
+        /// <summary>
+        /// Per-student fee head overrides stored as a JSON dictionary.
+        /// Example: {"libraryFee":0,"examFee":400}
+        /// When set, TotalAmount reflects these per-head reductions instead of the structure total.
+        /// These are NOT counted as concessions (DiscountAmount is unaffected).
+        /// </summary>
+        [MaxLength(2000)]
+        public string? FeeHeadOverrides { get; set; }
     }
 
     public class PaymentTransaction : BaseEntity

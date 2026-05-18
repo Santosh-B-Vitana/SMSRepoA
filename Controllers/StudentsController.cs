@@ -64,6 +64,28 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Get the logged-in student's own profile (resolved by JWT email). Student role only.
+        /// </summary>
+        [HttpGet("me")]
+        [Authorize(Roles = "Student")]
+        public async Task<ActionResult<StudentResponse>> GetMyProfile()
+        {
+            try
+            {
+                var callerEmail = _tenant.UserEmail;
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var student = await _studentService.GetStudentByEmailAsync(callerEmail, schoolId);
+                if (student == null)
+                    return NotFound(new { message = "Student profile not found." });
+                return Ok(student);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while fetching your profile.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get a specific student by ID
         /// </summary>
         [HttpGet("{id}")]

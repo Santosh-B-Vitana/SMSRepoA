@@ -65,11 +65,12 @@ interface ItemProps {
   n: NotificationItem;
   onMarkRead: (id: string) => void;
   onDelete: (id: string) => void;
+  onNavigate: (url: string) => void;
   markingId: string | null;
   deletingId: string | null;
 }
 
-function NotificationListItem({ n, onMarkRead, onDelete, markingId, deletingId }: ItemProps) {
+function NotificationListItem({ n, onMarkRead, onDelete, onNavigate, markingId, deletingId }: ItemProps) {
   return (
     <div
       className={cn(
@@ -90,9 +91,12 @@ function NotificationListItem({ n, onMarkRead, onDelete, markingId, deletingId }
         )}
         <div className="flex items-center gap-2 mt-1.5">
           {n.actionUrl && (
-            <a href={n.actionUrl} className="text-xs text-primary flex items-center gap-1 hover:underline">
+            <button
+              onClick={() => onNavigate(n.actionUrl!)}
+              className="text-xs text-primary flex items-center gap-1 hover:underline"
+            >
               <ExternalLink className="h-3 w-3" /> View
-            </a>
+            </button>
           )}
           {!n.isRead && (
             <button
@@ -242,6 +246,7 @@ export function NotificationCenter() {
                   n={n}
                   onMarkRead={(id) => markReadMutation.mutate(id)}
                   onDelete={(id) => deleteMutation.mutate(id)}
+                  onNavigate={(url) => { setOpen(false); navigate(url); }}
                   markingId={markingId}
                   deletingId={deletingId}
                 />

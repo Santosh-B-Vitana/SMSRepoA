@@ -1,7 +1,61 @@
 # sms-api — Technical Document
 
-> **Version 2.6** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
-> **Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA
+> **Version 2.7** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
+> **Last Updated:** May 19, 2026 (Session 8) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 19, 2026 (Session 8)
+
+| Area | Change |
+|------|--------|
+| **`Models/Entities/Fee.cs` — `FeeRecord.FeeHeadOverrides`** | New nullable `string?` property (`[MaxLength(2000)]`) added to `FeeRecord`. Stores per-student fee head exemptions as a JSON dictionary (e.g. `{"libraryFee":0,"labFee":500}`). This is the persisted store for structural fee overrides that reduce `TotalAmount` directly. |
+| **`Models/DTOs/FeeDTOs.cs` — `FeeRecordResponse`** | `FeeHeadOverrides` property added to the response DTO so the fee dialog can restore saved overrides when reopened. |
+| **`Services/FeeService.cs`** | `FeeHeadOverrides` mapped in both `GetFeeRecordByIdAsync` (single record) and `GetFeeRecordsAsync` (list) projections. |
+| **`Controllers/FeesController.cs` — `PATCH records/{id}/fee-head-overrides`** | New endpoint: merges the submitted `overrides` dict with any existing overrides on the record, computes `overrideReduction` by comparing each head's new value against the gross structure value, sets `TotalAmount = structureGross − overrideReduction`, recalculates `PendingAmount`, writes the merged dict as JSON to `FeeHeadOverrides`, audit-logs with action `"fee_head_override"`. Does **not** touch `DiscountAmount`. Authorised roles: Admin, Principal, Finance, FinanceOfficer, Accountant. |
+| **`Controllers/FeesController.cs` — `POST records/{id}/remove-discount`** | New endpoint: sets `DiscountAmount = 0`, resets `PendingAmount = TotalAmount + LateFeeAmount − PaidAmount`, sets `BalanceAmount = PendingAmount`, marks `Status = "paid"` if `PendingAmount ≤ 0`, audit-logs with action `"discount_removed"`. Authorised roles: Admin, Principal, Finance, FinanceOfficer, Accountant (not Teacher/Staff). |
+| **`Controllers/FeesController.cs` — new DTOs** | `FeeHeadOverridesRequest { Overrides: Dictionary<string,decimal>; AppliedBy?: string }` and `RemoveDiscountRequest { Reason?: string; RemovedBy?: string }` added near `InlineDiscountRequest`. |
+| **`Migrations/20260518181950_AddFeeHeadOverridesColumn.cs`** | EF migration that adds `FeeHeadOverrides NVARCHAR(2000) NULL` to `FeeRecords`. **Note:** this column was applied to the live database via direct `ALTER TABLE` before the server restarted (to avoid a downtime window). The migration was then inserted into `__EFMigrationsHistory` so EF does not try to run it again on startup. |
+| **`Migrations/AppDbContextModelSnapshot.cs`** | `FeeHeadOverrides` property block added to the `FeeRecords` entity in the snapshot (between `DueDate` and `FeeStructureId`). |
+| **`ui/src/services/api/feeApi.ts`** | `FeeRecord` interface: added `feeHeadOverrides?: string \| null`. New exported functions: `applyFeeHeadOverrides(recordId, overrides, appliedBy?)` (PATCH) and `removeDiscount(recordId, reason?, removedBy?)` (POST). Both functions added to the `feeApi` export object. |
+| **`ui/src/pages/Fees.tsx` — handleApplyAdjustments** | Replaced the old `inline-discount` call with `applyFeeHeadOverrides`. Guard changed from `adjustmentDelta <= 0` to `Object.keys(headOverrides).length === 0`. Response `feeHeadOverrides` JSON merged into `confirmedOverrides`. 75% cap check removed (doesn't apply to structural overrides). |
+| **`ui/src/pages/Fees.tsx` — handleRemoveConcession** | New handler: calls `removeDiscount`, refreshes `liveRecord`, recalculates amount field. Uses `setApplyingConcession` as loading state flag. |
+| **`ui/src/pages/Fees.tsx` — Remove button** | Added to the concession panel: visible only when `activeRecord.discountAmount > 0` and `canEditFees`. Red destructive button triggers `handleRemoveConcession`. |
+| **`ui/src/pages/Fees.tsx` — dialog open effect** | After fetching fresh record, parses `fresh.feeHeadOverrides` JSON into `confirmedOverrides` state so saved overrides are restored when the dialog reopens. |
+| **`ui/src/pages/Fees.tsx` — stale prop bug fix (5 locations)** | `record.discountAmount`, `record.totalAmount`, `record.lateFeeAmount`, `record.paidAmount` in the fee breakdown table, the concession badge header, and the fallback grid were all reading from the initial prop (`record`), which never changes. All five replaced with `activeRecord.*` so displayed values reflect the live-fetched record after any concession operation. |
+
+### Fee amount architecture (post-session 8)
+
+```
+FeeRecord fields:
+  TotalAmount      = gross fee structure total − FeeHeadOverrides reduction
+                     (updated by PATCH fee-head-overrides)
+  DiscountAmount   = concession/waiver applied (additive, 75% cap)
+                     (updated by POST inline-discount; zeroed by POST remove-discount)
+  PaidAmount       = sum of completed FeePayment records
+  PendingAmount    = TotalAmount + LateFeeAmount − PaidAmount − DiscountAmount
+  FeeHeadOverrides = JSON dict {"headKey": reducedAmount, ...}
+                     (null = no overrides; gross values come from FeeStructure)
+
+UI display:
+  Sub-total      = activeRecord.totalAmount − adjustmentDelta − activeRecord.discountAmount
+  Total Payable  = activeRecord.totalAmount − activeRecord.discountAmount
+                   + activeRecord.lateFeeAmount − pendingHeadAdjustmentDelta + extraCharges
+  Outstanding    = activeRecord.pendingAmount + transportFee + hostelFee
+```
+
+### Migration deployment pattern (lesson learned this session)
+
+When using `dotnet ef migrations add --no-build`, the tool uses the **already-compiled** assembly. If the model has been changed but `dotnet build` was not run first, the migration's `Up()` will be empty (no model diff detected). Fix:
+
+1. Always run `dotnet build SmsApi.csproj` before `dotnet ef migrations add`
+2. If a migration was created empty, **manually write** the correct `Up()` / `Down()` SQL
+3. Apply the column directly to the live DB if the server is currently running (avoids downtime)
+4. Insert a row into `__EFMigrationsHistory` to prevent EF from trying to run it again on next startup:
+   ```sql
+   INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion)
+   VALUES ('20260518181950_AddFeeHeadOverridesColumn', '8.0.11');
+   ```
 
 ---
 

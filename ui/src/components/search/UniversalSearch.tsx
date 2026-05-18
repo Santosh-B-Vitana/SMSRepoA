@@ -3,7 +3,9 @@ import { Search, Users, UserCheck, BookOpen, FileText, Calendar, Award, Settings
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { mockApi } from '@/services/mockApi';
+import { academicApi } from '@/services/api/academicApi';
+import { getExams } from '@/services/api/examinationApi';
+import { getAnnouncements } from '@/services/api/announcementApi';
 import { studentApi } from '@/services/api/studentApi';
 import { staffApi } from '@/services/api/staffApi';
 import { useNavigate } from 'react-router-dom';
@@ -137,8 +139,8 @@ export function UniversalSearch({ className }: UniversalSearchProps) {
 
         // Search classes
         try {
-          const classes = await mockApi.getClasses();
-          classes.forEach(cls => {
+          const response = await academicApi.listClasses(1, 200);
+          response.classes.forEach(cls => {
             if (
               `${cls.standard} ${cls.section}`.toLowerCase().includes(term) ||
               cls.standard.toLowerCase().includes(term) ||
@@ -147,7 +149,7 @@ export function UniversalSearch({ className }: UniversalSearchProps) {
               searchResults.push({
                 id: `class-${cls.id}`,
                 title: `Class ${cls.standard} ${cls.section}`,
-                subtitle: `${cls.totalStudents} students • ${cls.classTeacher}`,
+                subtitle: `${cls.totalStudents} students • ${cls.classTeacher ?? ''}`,
                 type: 'class',
                 icon: BookOpen,
                 path: `/academics/classes/${cls.id}`,
@@ -161,8 +163,8 @@ export function UniversalSearch({ className }: UniversalSearchProps) {
 
         // Search exams
         try {
-          const exams = await mockApi.getExams();
-          exams.forEach(exam => {
+          const response = await getExams(undefined, 1, 100);
+          response.items.forEach(exam => {
             if (
               exam.name.toLowerCase().includes(term) ||
               exam.subject.toLowerCase().includes(term) ||
@@ -185,8 +187,8 @@ export function UniversalSearch({ className }: UniversalSearchProps) {
 
         // Search announcements
         try {
-          const announcements = await mockApi.getAnnouncements();
-          announcements.forEach(announcement => {
+          const response = await getAnnouncements(undefined, 1, 100);
+          response.items.forEach(announcement => {
             if (
               announcement.title.toLowerCase().includes(term) ||
               announcement.content.toLowerCase().includes(term)

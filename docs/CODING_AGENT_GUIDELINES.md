@@ -1,6 +1,6 @@
 # Coding Agent Guidelines — SMS API
 
-**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 16, 2026 (Session 7)  
+**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 19, 2026 (Session 8)  
 **Status:** Production Release Candidate
 
 This is the primary instruction set for AI coding agents and developers performing bug fixes, maintenance, and feature work. Follow these architectural patterns to maintain code quality and system integrity.
@@ -410,6 +410,10 @@ refactor: simplify attendance entity mapping
 | **Parent notification RecipientId** | Store student ID or guardian name | Store `UserLogins.Id` (the login record of the parent). `Notifications.RecipientId = UserLogin.Id` |
 | **Staff deactivation — UserLogin sync** | Update only `StaffMember.Status` | Always also update `UserLogin.Status = "inactive"` + clear `RefreshTokenHash`/`RefreshTokenExpiry`. Use `LinkedEntityId`-first lookup: `UserLogins.Where(u => u.LinkedEntityId == staffId && u.LinkedEntityType == "staff")`. Email fallback only if `LinkedEntityId` is null. |
 | **Staff login guard** | Trust only `UserLogin.Status` for staff roles | Query `StaffMember.Status` live at login (same as parent guard). A stale `UserLogin.Status` must not let an inactive staff member in. Pattern in `AuthController.Login` and `OnTokenValidated`. |
+| **Fee structural override vs concession** | Call `inline-discount` to exempt a student from Library Fee | Use `PATCH /fees/records/{id}/fee-head-overrides` with `Overrides: {"libraryFee": 0}`. This reduces `TotalAmount` directly. `DiscountAmount` must stay for concessions/waivers only. Mixing them corrupts reports. |
+| **FeeRecord fields — do not confuse** | Treat `DiscountAmount` as "total fee reduction" | `TotalAmount` = gross minus fee-head overrides. `DiscountAmount` = concession/waiver only. `PendingAmount` = `TotalAmount + LateFeeAmount − PaidAmount − DiscountAmount`. All three are distinct. |
+| **Fee dialog — stale prop** | Read from the `record` prop passed into the fee dialog | Use `activeRecord = liveRecord ?? record`. After any fee operation, `liveRecord` is refreshed via `getFeeRecordById`; `record` is never mutated. Reading `record.*` after an operation shows stale data. |
+| **Empty EF migration after model change** | Run `dotnet ef migrations add` immediately | Always `dotnet build SmsApi.csproj` first. The migrations tool uses the compiled assembly; if the binary is stale it produces an empty `Up()`. Manually write the SQL if the migration came out empty. |
 
 ---
 

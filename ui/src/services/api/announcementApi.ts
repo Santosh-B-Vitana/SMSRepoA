@@ -150,6 +150,10 @@ export async function getMyAnnouncements(): Promise<AnnouncementBasic[]> {
   return apiGet<AnnouncementBasic[]>('announcements/my');
 }
 
+export async function getParentAnnouncements(): Promise<AnnouncementBasic[]> {
+  return apiGet<AnnouncementBasic[]>('announcements/for-parent');
+}
+
 export async function createAnnouncement(
   data: CreateAnnouncementDto,
 ): Promise<AnnouncementBasic> {

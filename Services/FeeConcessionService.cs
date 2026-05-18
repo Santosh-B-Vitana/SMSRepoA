@@ -83,8 +83,11 @@ namespace SmsApi.Services
             if (request.ValidFrom.HasValue && request.ValidTo.HasValue && request.ValidTo.Value < request.ValidFrom.Value)
                 throw new ArgumentException("Valid-to date cannot be before valid-from date.");
 
-            // VALIDATION: Duplicate check
-            var duplicate = await _context.ConcessionTypes.AnyAsync(ct => ct.SchoolId == request.SchoolId && ct.Name == request.Name);
+            // VALIDATION: Duplicate check — use IgnoreQueryFilters so soft-deleted records are included,
+            // preventing a unique-index violation on the (SchoolId, Name) composite key.
+            var duplicate = await _context.ConcessionTypes
+                .IgnoreQueryFilters()
+                .AnyAsync(ct => ct.SchoolId == request.SchoolId && ct.Name == request.Name);
             if (duplicate)
                 throw new InvalidOperationException("A concession type with this name already exists.");
 
@@ -126,6 +129,7 @@ namespace SmsApi.Services
             type.RequiresApproval = request.RequiresApproval;
             type.ValidFrom = request.ValidFrom;
             type.ValidTo = request.ValidTo;
+            type.IsActive = request.IsActive;
             type.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -543,6 +547,7 @@ namespace SmsApi.Services
                 RequiresApproval = type.RequiresApproval,
                 ValidFrom = type.ValidFrom,
                 ValidTo = type.ValidTo,
+                IsActive = type.IsActive,
                 CreatedAt = type.CreatedAt,
                 UpdatedAt = type.UpdatedAt
             };

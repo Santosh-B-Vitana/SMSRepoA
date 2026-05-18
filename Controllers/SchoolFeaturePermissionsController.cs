@@ -42,6 +42,34 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Get feature permissions for the current user's own school.
+        /// Accessible to all authenticated users (staff, admin, parent) so that
+        /// every login can respect school-level feature toggles.
+        /// </summary>
+        [HttpGet("my-school")]
+        [Authorize]
+        public async Task<ActionResult<SchoolPermissionsResponse>> GetMySchoolPermissions()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                if (schoolId == Guid.Empty)
+                    return BadRequest(new { message = "No school associated with this account" });
+
+                var permissions = await _service.GetSchoolPermissionsAsync(schoolId);
+                return Ok(permissions);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get feature permissions for a specific school
         /// </summary>
         [HttpGet("schools/{schoolId}")]

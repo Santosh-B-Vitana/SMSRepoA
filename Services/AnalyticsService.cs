@@ -345,7 +345,9 @@ namespace SmsApi.Services
             var totalStaff    = await _context.StaffMembers.AsNoTracking().CountAsync(s => s.SchoolId == schoolId && s.Status == "active");
             var totalClasses  = await _context.Classes.AsNoTracking().CountAsync(c => c.SchoolId == schoolId);
             var todayPresent  = await _context.AttendanceRecords.AsNoTracking().CountAsync(a => a.SchoolId == schoolId && a.Date.Date == today && a.Status == "present");
-            var pendingFees   = await _context.FeeRecords.AsNoTracking().Where(f => f.SchoolId == schoolId && f.Status == "pending").SumAsync(f => f.PendingAmount);
+            var pendingFees     = await _context.FeeRecords.AsNoTracking().Where(f => f.SchoolId == schoolId && f.Status != "paid").SumAsync(f => f.PendingAmount);
+            var totalCollected  = await _context.FeeRecords.AsNoTracking().Where(f => f.SchoolId == schoolId).SumAsync(f => f.PaidAmount);
+            var totalFees       = await _context.FeeRecords.AsNoTracking().Where(f => f.SchoolId == schoolId).SumAsync(f => f.TotalAmount);
             var upcomingExams = await _context.Examinations.AsNoTracking().CountAsync(e => e.SchoolId == schoolId && e.ExamDate >= today && e.ExamDate <= sevenDaysFromNow);
             var recentRaw     = await _context.AnalyticsRecords.AsNoTracking().Where(a => a.SchoolId == schoolId).OrderByDescending(a => a.CreatedAt).Take(10).ToListAsync();
 
@@ -358,6 +360,8 @@ namespace SmsApi.Services
                 TotalClasses = totalClasses,
                 TodayAttendancePercentage = todayAttPct,
                 PendingFees = pendingFees,
+                TotalCollected = totalCollected,
+                TotalFees = totalFees,
                 UpcomingExams = upcomingExams,
                 PendingAssignments = 0,
                 UnreadNotifications = 0,

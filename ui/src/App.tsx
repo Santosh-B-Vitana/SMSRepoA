@@ -60,7 +60,6 @@ const ClassManager         = lazy(() => import("@/pages/academics/ClassManager")
 const ClassDetail          = lazy(() => import("@/pages/academics/ClassDetail"));
 const SectionDetail        = lazy(() => import("@/pages/academics/SectionDetail"));
 const ClassProfile         = lazy(() => import("@/pages/ClassProfile"));
-const StaffClassProfile    = lazy(() => import("@/pages/StaffClassProfile"));
 const StaffMyClassDetail   = lazy(() => import("@/pages/StaffMyClassDetail"));
 const StudentFeeDetails    = lazy(() => import("./pages/StudentFeeDetails"));
 const MyClassDetail        = lazy(() => import("./pages/MyClassDetail"));
@@ -68,13 +67,14 @@ const ParentFees           = lazy(() => import("./pages/ParentFees"));
 const ParentChildFeeDetails = lazy(() => import("./pages/ParentChildFeeDetails"));
 const ParentChildFeePayment = lazy(() => import("./pages/ParentChildFeePayment"));
 const ParentNotifications  = lazy(() => import("./pages/ParentNotifications"));
+const ParentAnnouncements  = lazy(() => import("./pages/ParentAnnouncements"));
 const StudentAttendance    = lazy(() => import("./pages/StudentAttendance"));
 const Alumni               = lazy(() => import("./pages/Alumni"));
 const StaffAttendanceTeacher = lazy(() => import("./pages/StaffAttendanceTeacher"));
 const Wallet               = lazy(() => import("./pages/Wallet"));
 const SchoolConnect        = lazy(() => import("./pages/SchoolConnect"));
 const Store                = lazy(() => import("./pages/Store"));
-const CCEManagement        = lazy(() => import("./pages/CCEManagement"));
+
 const FeeConcession        = lazy(() => import("./pages/FeeConcession"));
 const PaymentGateway       = lazy(() => import("./pages/PaymentGateway"));
 const PFESIManagement      = lazy(() => import("./pages/PFESIManagement"));
@@ -171,6 +171,7 @@ function App() {
                   <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeePayment /></Layout></ProtectedRoute>} />
                   <Route path="/parent-notifications" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentNotifications /></Layout></ProtectedRoute>} />
                   <Route path="/parent-diary" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDiaryView /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-announcements" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentAnnouncements /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: admin + staff shared ──────────────────── */}
                   <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="admissions"><Admissions /></ModuleGuard></Layout></ProtectedRoute>} />
@@ -190,7 +191,7 @@ function App() {
                   <Route path="/grades" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Grades /></Layout></ProtectedRoute>} />
                   <Route path="/assignments" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Assignments /></Layout></ProtectedRoute>} />
                   <Route path="/examinations" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="examinations"><Examinations /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/cce-management" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="examinations"><CCEManagement /></ModuleGuard></Layout></ProtectedRoute>} />
+
                   <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="timetable"><Timetable /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/alumni" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Alumni /></Layout></ProtectedRoute>} />
                   <Route path="/announcements" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />

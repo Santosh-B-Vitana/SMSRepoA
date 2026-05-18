@@ -115,10 +115,13 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     }
 
     try {
-      // Fetch school-level module toggles
-      const data = await apiGet<ApiSchoolPermissionsResponse>(
-        `/school-feature-permissions/schools/${schoolId}`
-      );
+      // Fetch school-level module toggles.
+      // Admin/SuperAdmin use the school-scoped endpoint; staff & parent use /my-school
+      // (the school-scoped endpoint is admin-only and returns 403 for other roles).
+      const moduleEndpoint = (user.role === 'admin' || user.role === 'super_admin')
+        ? `/school-feature-permissions/schools/${schoolId}`
+        : `/school-feature-permissions/my-school`;
+      const data = await apiGet<ApiSchoolPermissionsResponse>(moduleEndpoint);
 
       const parsed: Partial<Record<ModuleName, ModulePermissions>> = {};
       for (const [name, mod] of Object.entries(data.modules ?? {})) {
@@ -231,9 +234,13 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     const d = (designation ?? '').toLowerCase().trim();
     // Principals / VP / HOD can view everything
     if (['principal', 'vice principal', 'head of department'].includes(d)) return true;
-    // Class teachers / subject teachers can view their teaching modules
-    if (d === 'class teacher' || d === 'teacher' || d === 'subject teacher') {
-      return ['Attendance', 'Grades', 'Assignments'].includes(module);
+    // Class teachers can view their teaching modules including Health for their class
+    if (d === 'class teacher') {
+      return ['Attendance', 'Grades', 'Assignments', 'Health', 'Students', 'Library'].includes(module);
+    }
+    // Subject/general teachers: no Attendance (they are not class in-charge)
+    if (d === 'teacher' || d === 'subject teacher') {
+      return ['Grades', 'Assignments', 'Students', 'Library'].includes(module);
     }
     return false;
   }

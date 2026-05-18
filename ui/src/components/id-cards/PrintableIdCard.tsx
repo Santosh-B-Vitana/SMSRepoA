@@ -12,11 +12,11 @@ interface Person {
 }
 
 interface Student extends Person {
-  rollNo: string;
+  rollNumber: string;
   class: string;
   section: string;
-  guardianName: string;
-  guardianPhone: string;
+  guardianName?: string;
+  guardianPhone?: string;
 }
 
 interface Staff extends Person {
@@ -98,7 +98,7 @@ export function PrintableIdCard({ person, type }: PrintableIdCardProps) {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Roll:</span>
-                    <span className="font-semibold">{student.rollNo}</span>
+                    <span className="font-semibold">{student.rollNumber}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">ID:</span>

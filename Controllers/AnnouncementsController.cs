@@ -111,6 +111,25 @@ namespace SmsApi.Controllers
         }
 
         // ──────────────────────────────────────────────────
+        // GET /api/announcements/for-parent
+        // Returns announcements visible to the authenticated parent:
+        // targeted at "all", "parents", or class/section for their children.
+        // ──────────────────────────────────────────────────
+        [HttpGet("for-parent")]
+        [Authorize(Roles = "Parent")]
+        [ProducesResponseType(200)]
+        public async Task<ActionResult> GetAnnouncementsForParent()
+        {
+            var schoolId    = _tenant.GetEffectiveSchoolId();
+            var parentEmail = _tenant.UserEmail;
+            if (string.IsNullOrWhiteSpace(parentEmail))
+                return Unauthorized(new { message = "Parent email not found in token." });
+
+            var list = await _svc.GetParentAnnouncementsAsync(parentEmail, schoolId);
+            return Ok(list);
+        }
+
+        // ──────────────────────────────────────────────────
         // GET /api/announcements/{id}
         // ──────────────────────────────────────────────────
         [HttpGet("{id}")]

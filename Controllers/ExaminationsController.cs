@@ -727,6 +727,8 @@ namespace SmsApi.Controllers
                 {
                     Id = Guid.NewGuid(), SchoolId = schoolId, Name = request.Name, Code = request.Code,
                     Description = request.Description, GradeScale = request.GradeScale ?? "A-E",
+                    Category = request.Category, ApplicableFromGrade = request.ApplicableFromGrade,
+                    ApplicableToGrade = request.ApplicableToGrade,
                     DisplayOrder = request.DisplayOrder, IsActive = true
                 };
                 _context.CoScholasticAreas.Add(entity);
@@ -734,6 +736,177 @@ namespace SmsApi.Controllers
                 return CreatedAtAction(nameof(GetCoScholasticAreas), new { entity.Id }, new { entity.Id, entity.Name });
             }
             catch (Exception ex) { return StatusCode(500, new { message = "Failed to create area.", error = ex.Message }); }
+        }
+
+        /// <summary>Update a co-scholastic area</summary>
+        [HttpPut("coscholastic/areas/{id}")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult> UpdateCoScholasticArea(Guid id, [FromBody] UpdateCoScholasticAreaRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = GetSchoolId();
+                var area = await _context.CoScholasticAreas.FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId && !a.IsDeleted);
+                if (area == null) return NotFound(new { message = "Area not found." });
+                if (request.Name != null) { area.Name = request.Name; area.UpdatedAt = DateTime.UtcNow; }
+                if (request.Code != null) area.Code = request.Code;
+                if (request.Description != null) area.Description = request.Description;
+                if (request.GradeScale != null) area.GradeScale = request.GradeScale;
+                if (request.Category != null) area.Category = request.Category;
+                if (request.ApplicableFromGrade.HasValue) area.ApplicableFromGrade = request.ApplicableFromGrade;
+                if (request.ApplicableToGrade.HasValue) area.ApplicableToGrade = request.ApplicableToGrade;
+                if (request.DisplayOrder.HasValue) area.DisplayOrder = request.DisplayOrder.Value;
+                if (request.IsActive.HasValue) area.IsActive = request.IsActive.Value;
+                area.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return Ok(new { area.Id, area.Name, area.Category, area.GradeScale, area.IsActive, area.DisplayOrder });
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "Failed to update area.", error = ex.Message }); }
+        }
+
+        /// <summary>Delete (soft-delete) a co-scholastic area</summary>
+        [HttpDelete("coscholastic/areas/{id}")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult> DeleteCoScholasticArea(Guid id)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var area = await _context.CoScholasticAreas.FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId && !a.IsDeleted);
+                if (area == null) return NotFound(new { message = "Area not found." });
+                area.IsDeleted = true; area.DeletedAt = DateTime.UtcNow; area.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return NoContent();
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "Failed to delete area.", error = ex.Message }); }
+        }
+
+        /// <summary>Seed CBSE CCE default co-scholastic areas for the school (idempotent)</summary>
+        [HttpPost("coscholastic/areas/seed")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult> SeedCoScholasticAreas()
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var defaults = new[]
+                {
+                    // Part A — Co-Scholastic Activities (Mandatory CBSE)
+                    new { Name = "Work Education", Code = "WE", Category = "co_scholastic_activities", From = 6, To = 10, Order = 1 },
+                    new { Name = "Art Education", Code = "AE", Category = "co_scholastic_activities", From = 1, To = 10, Order = 2 },
+                    new { Name = "Health & Physical Education", Code = "HPE", Category = "co_scholastic_activities", From = 1, To = 12, Order = 3 },
+                    // Part B — Club & Society Activities
+                    new { Name = "Literary & Creative Skills", Code = "LCS", Category = "co_scholastic_activities", From = 1, To = 12, Order = 4 },
+                    new { Name = "Scientific & Technological Skills", Code = "STS", Category = "co_scholastic_activities", From = 1, To = 12, Order = 5 },
+                    new { Name = "ICT Skills", Code = "ICT", Category = "co_scholastic_activities", From = 3, To = 12, Order = 6 },
+                    new { Name = "Organizational & Leadership Skills", Code = "OLS", Category = "co_scholastic_activities", From = 6, To = 12, Order = 7 },
+                    // Part C — Attitudes & Values
+                    new { Name = "Attitude towards Teachers", Code = "ATT", Category = "attitudes_values", From = 1, To = 12, Order = 8 },
+                    new { Name = "Attitude towards School-mates", Code = "ATS", Category = "attitudes_values", From = 1, To = 12, Order = 9 },
+                    new { Name = "Attitude towards School Programs", Code = "ATP", Category = "attitudes_values", From = 1, To = 12, Order = 10 },
+                    new { Name = "Attitude towards Society & Nation", Code = "ATN", Category = "attitudes_values", From = 1, To = 12, Order = 11 },
+                    // Life Skills (CBSE Classes 9-10)
+                    new { Name = "Self-Awareness & Empathy", Code = "SAE", Category = "life_skills", From = 9, To = 10, Order = 12 },
+                    new { Name = "Problem Solving & Decision Making", Code = "PDM", Category = "life_skills", From = 9, To = 10, Order = 13 },
+                    new { Name = "Effective Communication", Code = "EC", Category = "life_skills", From = 9, To = 10, Order = 14 },
+                    new { Name = "Interpersonal Relationships", Code = "IR", Category = "life_skills", From = 9, To = 10, Order = 15 },
+                    // Discipline
+                    new { Name = "Attendance & Regularity", Code = "AR", Category = "discipline", From = 1, To = 12, Order = 16 },
+                    new { Name = "Sincerity & Behaviour", Code = "SB", Category = "discipline", From = 1, To = 12, Order = 17 },
+                };
+
+                int created = 0, skipped = 0;
+                var existingNames = (await _context.CoScholasticAreas
+                    .Where(a => a.SchoolId == schoolId && !a.IsDeleted)
+                    .Select(a => a.Name).ToListAsync()).ToHashSet();
+
+                foreach (var d in defaults)
+                {
+                    if (existingNames.Contains(d.Name)) { skipped++; continue; }
+                    _context.CoScholasticAreas.Add(new SmsApi.Models.Entities.CoScholasticArea
+                    {
+                        Id = Guid.NewGuid(), SchoolId = schoolId, Name = d.Name, Code = d.Code,
+                        Category = d.Category, ApplicableFromGrade = d.From, ApplicableToGrade = d.To,
+                        GradeScale = "A-E", DisplayOrder = d.Order, IsActive = true
+                    });
+                    created++;
+                }
+                await _context.SaveChangesAsync();
+                return Ok(new { created, skipped, message = $"Seeded {created} areas. {skipped} already existed." });
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "Seed failed.", error = ex.Message }); }
+        }
+
+        /// <summary>Get class-level co-scholastic grid: all students × all areas for a term</summary>
+        [HttpGet("coscholastic/class/{classId}")]
+        [Authorize(Roles = "Admin,Principal,Teacher")]
+        public async Task<ActionResult> GetClassCoScholasticAssessments(
+            Guid classId,
+            [FromQuery] string? academicYear = null,
+            [FromQuery] int term = 1,
+            [FromQuery] Guid? sectionId = null)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+
+                // Resolve academic year
+                if (string.IsNullOrWhiteSpace(academicYear))
+                {
+                    var curYear = await _context.AcademicYears.FirstOrDefaultAsync(y => y.SchoolId == schoolId && y.IsCurrent && !y.IsDeleted);
+                    academicYear = curYear?.Name ?? DateTime.UtcNow.Year.ToString();
+                }
+
+                // Get all active students in this class/section
+                var enrolledStudentIds = _context.StudentEnrollments
+                    .Where(e => e.ClassId == classId && e.Status == "active" && !e.IsDeleted);
+                if (sectionId.HasValue)
+                    enrolledStudentIds = enrolledStudentIds.Where(e => e.SectionId == sectionId.Value);
+                var enrolledIds = await enrolledStudentIds.Select(e => e.StudentId).Distinct().ToListAsync();
+
+                var students = await _context.Students
+                    .Where(s => s.SchoolId == schoolId && s.Status == "active" && !s.IsDeleted && enrolledIds.Contains(s.Id))
+                    .OrderBy(s => s.FirstName ?? s.Name).ThenBy(s => s.LastName)
+                    .Select(s => new { s.Id, s.Name, s.FirstName, s.LastName, s.RollNumber })
+                    .ToListAsync();
+
+                // Get active co-scholastic areas for the school
+                var areas = await _context.CoScholasticAreas
+                    .Where(a => a.SchoolId == schoolId && a.IsActive && !a.IsDeleted)
+                    .OrderBy(a => a.DisplayOrder).ThenBy(a => a.Name)
+                    .Select(a => new { a.Id, a.Name, a.Code, a.Category, a.GradeScale, a.ApplicableFromGrade, a.ApplicableToGrade })
+                    .ToListAsync();
+
+                // Get existing assessments for this class+term+year
+                var studentIds = students.Select(s => s.Id).ToList();
+                var existing = await _context.CoScholasticAssessments
+                    .Where(a => a.SchoolId == schoolId && studentIds.Contains(a.StudentId) &&
+                                a.AcademicYear == academicYear && a.Term == term && !a.IsDeleted)
+                    .Select(a => new { a.StudentId, a.CoScholasticAreaId, a.Grade, a.Remarks })
+                    .ToListAsync();
+
+                // Build lookup: studentId → areaId → {grade, remarks}
+                var gradeMap = existing.GroupBy(e => e.StudentId).ToDictionary(
+                    g => g.Key,
+                    g => g.ToDictionary(e => e.CoScholasticAreaId, e => new { e.Grade, e.Remarks })
+                );
+
+                var studentRows = students.Select(s => new
+                {
+                    studentId = s.Id,
+                    name = (!string.IsNullOrWhiteSpace(s.FirstName) || !string.IsNullOrWhiteSpace(s.LastName))
+                        ? $"{s.FirstName} {s.LastName}".Trim()
+                        : s.Name,
+                    rollNumber = s.RollNumber,
+                    grades = gradeMap.TryGetValue(s.Id, out var map)
+                        ? areas.ToDictionary(a => a.Id.ToString(), a => map.TryGetValue(a.Id, out var g) ? (object)new { grade = g.Grade, remarks = g.Remarks } : (object)new { grade = "", remarks = "" })
+                        : areas.ToDictionary(a => a.Id.ToString(), _ => (object)new { grade = "", remarks = "" })
+                }).ToList();
+
+                return Ok(new { academicYear, term, areas, students = studentRows });
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "Failed to fetch class assessments.", error = ex.Message }); }
         }
 
         /// <summary>Get co-scholastic assessments for a student in an academic year</summary>
@@ -826,7 +999,23 @@ public class CreateCoScholasticAreaRequest
     [System.ComponentModel.DataAnnotations.MaxLength(20)] public string? Code { get; set; }
     [System.ComponentModel.DataAnnotations.MaxLength(500)] public string? Description { get; set; }
     [System.ComponentModel.DataAnnotations.MaxLength(50)] public string? GradeScale { get; set; } = "A-E";
+    [System.ComponentModel.DataAnnotations.MaxLength(50)] public string? Category { get; set; }
+    public int? ApplicableFromGrade { get; set; }
+    public int? ApplicableToGrade { get; set; }
     public int DisplayOrder { get; set; } = 0;
+}
+
+public class UpdateCoScholasticAreaRequest
+{
+    [System.ComponentModel.DataAnnotations.MaxLength(100)] public string? Name { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(20)] public string? Code { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(500)] public string? Description { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(50)] public string? GradeScale { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(50)] public string? Category { get; set; }
+    public int? ApplicableFromGrade { get; set; }
+    public int? ApplicableToGrade { get; set; }
+    public int? DisplayOrder { get; set; }
+    public bool? IsActive { get; set; }
 }
 
 public class SaveCoScholasticAssessmentRequest

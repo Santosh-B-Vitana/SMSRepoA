@@ -1,8 +1,9 @@
 ﻿import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Bell, Loader2, AlertCircle, CheckCircle, Calendar, Award,
   BadgeIndianRupee, MessageSquare, Check, CheckCheck, Filter,
-  ChevronDown, BookOpen
+  ChevronDown, BookOpen, ExternalLink
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import { toast } from "sonner";
 const TYPES = ["All", "Diary", "Fee", "Exam", "Attendance", "Announcement", "Assignment", "Message", "Payment"];
 
 export default function ParentNotifications() {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -138,7 +140,7 @@ export default function ParentNotifications() {
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground leading-relaxed">{notif.content}</p>
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0">{notif.type}</Badge>
                           {notif.priority !== "Normal" && (
                             <Badge
@@ -149,6 +151,14 @@ export default function ParentNotifications() {
                             </Badge>
                           )}
                           <span className="text-[10px] text-muted-foreground">{formatDateTime(notif.createdAt)}</span>
+                          {notif.actionUrl && (
+                            <button
+                              onClick={() => navigate(notif.actionUrl!)}
+                              className="text-xs text-primary flex items-center gap-1 hover:underline ml-auto"
+                            >
+                              <ExternalLink className="h-3 w-3" /> View
+                            </button>
+                          )}
                         </div>
                       </div>
                       {!notif.isRead && (

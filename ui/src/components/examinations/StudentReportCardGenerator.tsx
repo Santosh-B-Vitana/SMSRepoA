@@ -9,7 +9,7 @@ import { FileText, Download, Printer, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ReportCardTemplate } from "./ReportCardTemplate";
-import { Student } from "../../services/mockApi";
+import { type StudentBasic as Student } from "@/services/api/studentApi";
 import { generateProfessionalReportCard } from "@/utils/professionalPdfGenerator";
 import { useSchool } from "@/contexts/SchoolContext";
 
@@ -122,7 +122,7 @@ export function StudentReportCardGenerator({ students, exams, results }: Student
         section: reportCard.section,
         academicYear: "2024-25",
         examName: reportCard.term,
-        rollNo: students.find(s => s.id === reportCard.studentId)?.rollNo || '',
+        rollNo: students.find(s => s.id === reportCard.studentId)?.rollNumber || '',
         subjects: reportCard.subjects.map((s: any) => ({
           name: s.name,
           marks: s.marksObtained,

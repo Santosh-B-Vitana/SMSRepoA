@@ -124,6 +124,8 @@ export interface DashboardSummaryResponse {
   totalClasses: number;
   todayAttendancePercentage: number;
   pendingFees: number;
+  totalCollected: number;
+  totalFees: number;
   upcomingExams: number;
   pendingAssignments: number;
   unreadNotifications: number;

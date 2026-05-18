@@ -17,7 +17,7 @@ namespace SmsApi.Services
         Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null);
         Task<FeeStructureResponse?> GetFeeStructureByIdAsync(Guid id, Guid schoolId);
         Task<FeeStructureResponse> CreateFeeStructureAsync(CreateFeeStructureRequest request);
-        Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status);
+        Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, string? academicYear = null);
         Task<FeeRecordResponse?> GetFeeRecordByIdAsync(Guid id, Guid schoolId);
         Task<FeeRecordResponse?> UpdateModuleFeesAsync(Guid feeRecordId, Guid schoolId, decimal? transportMonthlyFee, decimal? hostelMonthlyFee);
         Task<FeeRecordResponse> CreateFeeRecordAsync(CreateFeeRecordRequest request);
@@ -55,6 +55,18 @@ namespace SmsApi.Services
 
         // Auto-link the default fee structure for the student's class
         Task<LinkStructureResponse> LinkStructureAsync(Guid recordId, Guid schoolId);
+
+        // Update an existing fee structure
+        Task<FeeStructureResponse?> UpdateFeeStructureAsync(Guid id, Guid schoolId, UpdateFeeStructureRequest request);
+
+        // Delete a fee structure (only if no fee records reference it)
+        Task DeleteFeeStructureAsync(Guid id, Guid schoolId);
+
+        // Get recent payments for a given date (defaults to today UTC)
+        Task<List<RecentPaymentDto>> GetRecentPaymentsAsync(Guid schoolId, DateTime? date = null);
+
+        // Seed default fee structures for all classes that lack one for the given academic year
+        Task<(int Created, int Skipped)> SeedStructuresAsync(Guid schoolId, string academicYear);
     }
 
     public class FeeService : IFeeService
@@ -115,7 +127,10 @@ namespace SmsApi.Services
                     
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
-                    UpdatedAt = f.UpdatedAt
+                    UpdatedAt = f.UpdatedAt,
+
+                    // How many student fee records are linked to this structure
+                    AssignedStudentCount = _context.FeeRecords.Count(r => r.FeeStructureId == f.Id)
                 })
                 .ToListAsync();
 
@@ -178,7 +193,7 @@ namespace SmsApi.Services
                 throw new ArgumentException("Description cannot exceed 500 characters.");
 
             var existingStructure = await _context.FeeStructures
-                .AnyAsync(fs => fs.SchoolId == request.SchoolId &&
+                .AnyAsync(fs => fs.SchoolId == request.SchoolId!.Value &&
                                fs.Class == request.Class &&
                                fs.AcademicYear == request.AcademicYear &&
                                fs.Name == request.Name);
@@ -216,7 +231,7 @@ namespace SmsApi.Services
             var structure = new FeeStructure
             {
                 Id = Guid.NewGuid(),
-                SchoolId = request.SchoolId,
+                SchoolId = request.SchoolId!.Value, // guaranteed by controller before this call
                 Name = request.Name,
                 Class = request.Class,
                 AcademicYear = request.AcademicYear,
@@ -281,7 +296,7 @@ namespace SmsApi.Services
             };
         }
 
-        public async Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status)
+        public async Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, string? academicYear = null)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 20;
@@ -299,6 +314,11 @@ namespace SmsApi.Services
             if (!string.IsNullOrWhiteSpace(status))
             {
                 query = query.Where(f => f.Status == status);
+            }
+
+            if (!string.IsNullOrWhiteSpace(academicYear))
+            {
+                query = query.Where(f => f.AcademicYear == academicYear);
             }
 
             var total = await query.CountAsync();
@@ -333,26 +353,74 @@ namespace SmsApi.Services
                 await _context.SaveChangesAsync();
             }
 
+            // Batch-fetch structure names to avoid N+1 queries
+            var structureIds = feeRecords
+                .Where(f => f.FeeStructureId.HasValue)
+                .Select(f => f.FeeStructureId!.Value)
+                .Distinct()
+                .ToList();
+            var structureNames = structureIds.Count > 0
+                ? await _context.FeeStructures
+                    .Where(s => structureIds.Contains(s.Id))
+                    .Select(s => new { s.Id, s.Name })
+                    .ToDictionaryAsync(s => s.Id, s => s.Name)
+                : new Dictionary<Guid, string>();
+
+            // Batch-load payments for all records in one round-trip
+            var allRecordIds = feeRecords.Select(f => f.Id).ToList();
+            var allPaymentEntities = allRecordIds.Count > 0
+                ? await _context.PaymentTransactions
+                    .Where(p => allRecordIds.Contains(p.FeeRecordId))
+                    .OrderByDescending(p => p.Date)
+                    .ToListAsync()
+                : new List<Models.Entities.PaymentTransaction>();
+
+            var paymentsByRecord = allPaymentEntities
+                .GroupBy(p => p.FeeRecordId)
+                .ToDictionary(g => g.Key, g => g.Select(p => new PaymentTransactionDto
+                {
+                    Id = p.Id,
+                    FeeRecordId = p.FeeRecordId,
+                    Amount = p.Amount,
+                    Date = p.Date,
+                    Method = p.Method,
+                    Status = p.Status,
+                    ReceiptNumber = p.ReceiptNumber,
+                    GatewayRef = p.GatewayRef,
+                    GatewayOrderId = p.GatewayOrderId,
+                    ChequeNumber = p.ChequeNumber,
+                    ChequeDate = p.ChequeDate,
+                    BankName = p.BankName,
+                    ProcessedBy = p.ProcessedBy,
+                    Remarks = p.Remarks,
+                    CreatedAt = p.CreatedAt,
+                }).ToList());
+
             var records = feeRecords.Select(f => new FeeRecordResponse
             {
                 Id = f.Id,
                 SchoolId = f.SchoolId,
                 StudentId = f.StudentId,
                 StudentName = f.Student != null ? f.Student.Name : "",
+                AdmissionNumber = f.Student?.AdmissionNumber ?? "",
                 Class = f.Student != null ? f.Student.Class : "",
                 FeeStructureId = f.FeeStructureId,
+                FeeStructureName = f.FeeStructureId.HasValue
+                    ? structureNames.GetValueOrDefault(f.FeeStructureId.Value)
+                    : null,
                 DueDate = f.DueDate,
                 TotalAmount = f.TotalAmount,
                 PaidAmount = f.PaidAmount,
-                    DiscountAmount = f.DiscountAmount,
-                    LateFeeAmount = f.LateFeeAmount,
-                    PendingAmount = f.PendingAmount,
-                    LastPaymentDate = f.LastPaymentDate,
-                    AcademicYear = f.AcademicYear,
-                    Status = f.Status,
-                Payments = new List<PaymentTransactionDto>(), // Load separately if needed
+                DiscountAmount = f.DiscountAmount,
+                LateFeeAmount = f.LateFeeAmount,
+                PendingAmount = f.PendingAmount,
+                LastPaymentDate = f.LastPaymentDate,
+                AcademicYear = f.AcademicYear,
+                Status = f.Status,
+                Payments = paymentsByRecord.GetValueOrDefault(f.Id, new()),
                 CreatedAt = f.CreatedAt,
-                UpdatedAt = f.UpdatedAt
+                UpdatedAt = f.UpdatedAt,
+                FeeHeadOverrides = f.FeeHeadOverrides,
             }).ToList();
 
             return new FeeListResponse
@@ -399,6 +467,7 @@ namespace SmsApi.Services
                 .Select(p => new PaymentTransactionDto
                 {
                     Id = p.Id,
+                    FeeRecordId = p.FeeRecordId,
                     Amount = p.Amount,
                     Date = p.Date,
                     Method = p.Method,
@@ -440,13 +509,23 @@ namespace SmsApi.Services
                     ? transportAssignment.CreatedAt.Date
                     : transportAssignment.CreatedAt.Date;
                 var yearEnd = record.DueDate > DateTime.UtcNow ? record.DueDate : DateTime.UtcNow.AddMonths(10);
-                transportFee = CalculateProrataForDisplay(transportAssignment.MonthlyFee ?? 0m, from, yearEnd);
+                transportFee = CalculateMonthFeeForDisplay(transportAssignment.MonthlyFee ?? 0m, from, yearEnd);
             }
             if (hostelAssignment?.MonthlyFee > 0)
             {
                 var from = hostelAssignment.CreatedAt.Date;
                 var yearEnd = record.DueDate > DateTime.UtcNow ? record.DueDate : DateTime.UtcNow.AddMonths(10);
-                hostelFee = CalculateProrataForDisplay(hostelAssignment.MonthlyFee, from, yearEnd);
+                hostelFee = CalculateMonthFeeForDisplay(hostelAssignment.MonthlyFee, from, yearEnd);
+            }
+
+            // Resolve the structure name for the single-record view
+            string? feeStructureName = null;
+            if (record.FeeStructureId.HasValue)
+            {
+                feeStructureName = await _context.FeeStructures
+                    .Where(s => s.Id == record.FeeStructureId.Value)
+                    .Select(s => s.Name)
+                    .FirstOrDefaultAsync();
             }
 
             return new FeeRecordResponse
@@ -455,8 +534,10 @@ namespace SmsApi.Services
                 SchoolId = record.SchoolId,
                 StudentId = record.StudentId,
                 StudentName = record.Student?.Name ?? "",
+                AdmissionNumber = record.Student?.AdmissionNumber ?? "",
                 Class = record.Student?.Class ?? "",
                 FeeStructureId = record.FeeStructureId,
+                FeeStructureName = feeStructureName,
                 DueDate = record.DueDate,
                 TotalAmount = record.TotalAmount,
                 PaidAmount = record.PaidAmount,
@@ -476,20 +557,17 @@ namespace SmsApi.Services
                 HostelFee = hostelFee,
                 HostelMonthlyFee = hostelAssignment?.MonthlyFee ?? 0m,
                 HostelRoom = hostelAssignment?.Room?.RoomNumber,
+                FeeHeadOverrides = record.FeeHeadOverrides,
             };
         }
 
-        private static decimal CalculateProrataForDisplay(decimal monthlyFee, DateTime from, DateTime yearEnd)
+        private static decimal CalculateMonthFeeForDisplay(decimal monthlyFee, DateTime from, DateTime yearEnd)
         {
             if (monthlyFee <= 0) return 0m;
-            var daysInMonth = DateTime.DaysInMonth(from.Year, from.Month);
-            var remainingDays = daysInMonth - from.Day + 1;
-            var prorataThisMonth = Math.Round(monthlyFee * remainingDays / daysInMonth, 2);
-            var nextMonth = new DateTime(from.Year, from.Month, 1).AddMonths(1);
-            var firstMonthAfterEnd = new DateTime(yearEnd.Year, yearEnd.Month, 1).AddMonths(1);
-            var fullMonths = 0;
-            for (var m = nextMonth; m < firstMonthAfterEnd; m = m.AddMonths(1)) fullMonths++;
-            return prorataThisMonth + fullMonths * monthlyFee;
+            var startMonthNum = from.Year * 12 + from.Month;
+            var endMonthNum   = yearEnd.Year * 12 + yearEnd.Month;
+            var months = Math.Max(0, endMonthNum - startMonthNum + 1);
+            return Math.Round(monthlyFee * months, 2);
         }
 
         public async Task<FeeRecordResponse?> UpdateModuleFeesAsync(Guid feeRecordId, Guid schoolId, decimal? transportMonthlyFee, decimal? hostelMonthlyFee)
@@ -1500,13 +1578,50 @@ namespace SmsApi.Services
             if (structure == null)
                 throw new KeyNotFoundException("Fee structure not found.");
 
-            // Fetch all active students in the matching class for this school
-            var students = await _context.Students
-                .Where(s => s.SchoolId == schoolId && s.Class == structure.Class && s.Status == "active")
-                .Select(s => new { s.Id })
-                .ToListAsync();
+            var baseClass = structure.Class;
 
-            if (students.Count == 0)
+            // Prefer modern enrollment-based lookup (StudentEnrollments FK model).
+            // Fall back to the legacy Student.Class string if the class/year entities don't exist yet.
+            var academicYearEntity = await _context.AcademicYears
+                .Where(y => y.SchoolId == schoolId && y.Name == structure.AcademicYear)
+                .FirstOrDefaultAsync();
+
+            var classEntity = await _context.Classes
+                .Where(c => c.SchoolId == schoolId && c.Name == baseClass)
+                .FirstOrDefaultAsync();
+
+            List<Guid> studentIds;
+            var studentEnrollmentMap = new Dictionary<Guid, Guid>(); // studentId -> enrollmentId
+
+            if (academicYearEntity != null && classEntity != null)
+            {
+                // Modern path: resolve students via active StudentEnrollments for this class + year.
+                var enrollments = await _context.StudentEnrollments
+                    .Where(e => e.SchoolId == schoolId &&
+                                e.ClassId == classEntity.Id &&
+                                e.AcademicYearId == academicYearEntity.Id &&
+                                e.Status == "active")
+                    .Select(e => new { e.StudentId, EnrollmentId = e.Id })
+                    .ToListAsync();
+
+                studentIds = enrollments.Select(e => e.StudentId).ToList();
+                studentEnrollmentMap = enrollments.ToDictionary(e => e.StudentId, e => e.EnrollmentId);
+            }
+            else
+            {
+                // Legacy fallback: match by the deprecated Student.Class string field.
+                // Covers "Class 10", "Class 10 A", "Class 10-B", etc.
+                studentIds = await _context.Students
+                    .Where(s => s.SchoolId == schoolId &&
+                                s.Status == "active" &&
+                                (s.Class == baseClass ||
+                                 s.Class.StartsWith(baseClass + " ") ||
+                                 s.Class.StartsWith(baseClass + "-")))
+                    .Select(s => s.Id)
+                    .ToListAsync();
+            }
+
+            if (studentIds.Count == 0)
                 return (0, 0);
 
             // Get existing fee records for this structure+year combo to avoid duplicates
@@ -1518,9 +1633,9 @@ namespace SmsApi.Services
                 .ToListAsync()).ToHashSet();
 
             var assigned = 0;
-            foreach (var student in students)
+            foreach (var studentId in studentIds)
             {
-                if (existingStudentIds.Contains(student.Id))
+                if (existingStudentIds.Contains(studentId))
                     continue;
 
                 var dueDate = DateTime.UtcNow.Date.AddDays(30); // 30-day rolling grace
@@ -1528,8 +1643,9 @@ namespace SmsApi.Services
                 {
                     Id = Guid.NewGuid(),
                     SchoolId = schoolId,
-                    StudentId = student.Id,
+                    StudentId = studentId,
                     FeeStructureId = structureId,
+                    StudentEnrollmentId = studentEnrollmentMap.TryGetValue(studentId, out var eid) ? eid : null,
                     DueDate = dueDate,
                     TotalAmount = structure.TotalAmount,
                     PaidAmount = 0,
@@ -1548,7 +1664,7 @@ namespace SmsApi.Services
             if (assigned > 0)
                 await _context.SaveChangesAsync();
 
-            return (assigned, students.Count - assigned);
+            return (assigned, studentIds.Count - assigned);
         }
 
         /// <summary>
@@ -1770,6 +1886,251 @@ namespace SmsApi.Services
                 StructureName = structure.Name,
                 Message = $"Linked to '{structure.Name}' (Class {structure.Class}).",
             };
+        }
+
+        /// <summary>
+        /// Update an existing fee structure's name, fee heads, and installment settings.
+        /// </summary>
+        public async Task<FeeStructureResponse?> UpdateFeeStructureAsync(Guid id, Guid schoolId, UpdateFeeStructureRequest request)
+        {
+            var structure = await _context.FeeStructures
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+
+            if (structure == null)
+                return null;
+
+            // Apply partial updates — only overwrite fields that are provided
+            if (request.Name != null)
+            {
+                if (request.Name.Trim().Length < 3)
+                    throw new ArgumentException("Fee structure name must be at least 3 characters.");
+                if (request.Name.Length > 100)
+                    throw new ArgumentException("Fee structure name cannot exceed 100 characters.");
+                structure.Name = request.Name.Trim();
+            }
+            if (request.AcademicYear != null)
+            {
+                if (request.AcademicYear.Length > 20)
+                    throw new ArgumentException("Academic year cannot exceed 20 characters.");
+                structure.AcademicYear = request.AcademicYear;
+            }
+            if (request.Description != null) structure.Description = request.Description;
+
+            // Update fee components
+            if (request.TuitionFee.HasValue)    { if (request.TuitionFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.TuitionFee    = request.TuitionFee.Value; }
+            if (request.AdmissionFee.HasValue)  { if (request.AdmissionFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.AdmissionFee  = request.AdmissionFee.Value; }
+            if (request.ExamFee.HasValue)       { if (request.ExamFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.ExamFee       = request.ExamFee.Value; }
+            if (request.LibraryFee.HasValue)    { if (request.LibraryFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.LibraryFee    = request.LibraryFee.Value; }
+            if (request.LabFee.HasValue)        { if (request.LabFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.LabFee        = request.LabFee.Value; }
+            if (request.SportsFee.HasValue)     { if (request.SportsFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.SportsFee     = request.SportsFee.Value; }
+            if (request.TransportFee.HasValue)  { if (request.TransportFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.TransportFee  = request.TransportFee.Value; }
+            if (request.HostelFee.HasValue)     { if (request.HostelFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.HostelFee     = request.HostelFee.Value; }
+            if (request.UniformFee.HasValue)    { if (request.UniformFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.UniformFee    = request.UniformFee.Value; }
+            if (request.BooksFee.HasValue)      { if (request.BooksFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.BooksFee      = request.BooksFee.Value; }
+            if (request.DevelopmentFee.HasValue){ if (request.DevelopmentFee.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.DevelopmentFee= request.DevelopmentFee.Value; }
+            if (request.Miscellaneous.HasValue) { if (request.Miscellaneous.Value < 0) throw new ArgumentException("Fee components must be non-negative."); structure.Miscellaneous = request.Miscellaneous.Value; }
+
+            // Recompute total
+            structure.TotalAmount = structure.TuitionFee + structure.AdmissionFee + structure.ExamFee
+                + structure.LibraryFee + structure.LabFee + structure.SportsFee
+                + structure.TransportFee + structure.HostelFee + structure.UniformFee
+                + structure.BooksFee + structure.DevelopmentFee + structure.Miscellaneous;
+
+            if (structure.TotalAmount <= 0)
+                throw new ArgumentException("Total fee must be greater than zero.");
+
+            if (request.InstallmentCount.HasValue)
+            {
+                if (request.InstallmentCount.Value < 1 || request.InstallmentCount.Value > 12)
+                    throw new ArgumentException("Installment count must be between 1 and 12.");
+                structure.InstallmentCount = request.InstallmentCount.Value;
+            }
+            if (request.InstallmentAmounts != null)  structure.InstallmentAmounts  = request.InstallmentAmounts;
+            if (request.InstallmentDueDates != null) structure.InstallmentDueDates = request.InstallmentDueDates;
+
+            structure.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return new FeeStructureResponse
+            {
+                Id = structure.Id,
+                SchoolId = structure.SchoolId,
+                Name = structure.Name,
+                Class = structure.Class,
+                AcademicYear = structure.AcademicYear,
+                TuitionFee = structure.TuitionFee,
+                AdmissionFee = structure.AdmissionFee,
+                ExamFee = structure.ExamFee,
+                LibraryFee = structure.LibraryFee,
+                LabFee = structure.LabFee,
+                SportsFee = structure.SportsFee,
+                TransportFee = structure.TransportFee,
+                HostelFee = structure.HostelFee,
+                UniformFee = structure.UniformFee,
+                BooksFee = structure.BooksFee,
+                DevelopmentFee = structure.DevelopmentFee,
+                Miscellaneous = structure.Miscellaneous,
+                TotalAmount = structure.TotalAmount,
+                InstallmentCount = structure.InstallmentCount,
+                InstallmentAmounts = structure.InstallmentAmounts,
+                InstallmentDueDates = structure.InstallmentDueDates,
+                Description = structure.Description,
+                CreatedAt = structure.CreatedAt,
+                UpdatedAt = structure.UpdatedAt
+            };
+        }
+
+        /// <summary>
+        /// Delete a fee structure. Refuses if any fee records are still linked to it.
+        /// </summary>
+        public async Task DeleteFeeStructureAsync(Guid id, Guid schoolId)
+        {
+            var structure = await _context.FeeStructures
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId)
+                ?? throw new KeyNotFoundException("Fee structure not found.");
+
+            var linkedCount = await _context.FeeRecords
+                .CountAsync(r => r.FeeStructureId == id && !r.IsDeleted);
+
+            if (linkedCount > 0)
+                throw new InvalidOperationException(
+                    $"Cannot delete: {linkedCount} fee record(s) are linked to this structure. " +
+                    "Unlink or delete those records first.");
+
+            _context.FeeStructures.Remove(structure);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<List<RecentPaymentDto>> GetRecentPaymentsAsync(Guid schoolId, DateTime? date = null)
+        {
+            var targetDate = (date ?? DateTime.UtcNow).Date;
+            var nextDate = targetDate.AddDays(1);
+
+            return await (
+                from p in _context.PaymentTransactions
+                join f in _context.FeeRecords on p.FeeRecordId equals f.Id
+                join s in _context.Students on f.StudentId equals s.Id into studentJoin
+                from s in studentJoin.DefaultIfEmpty()
+                where f.SchoolId == schoolId
+                   && p.Date >= targetDate
+                   && p.Date < nextDate
+                   && p.Status != "voided"
+                   && p.Status != "refunded"
+                orderby p.Date descending
+                select new RecentPaymentDto
+                {
+                    Id = p.Id,
+                    StudentName = s != null ? s.Name : "",
+                    Class = s != null ? s.Class : "",
+                    Amount = p.Amount,
+                    Date = p.Date,
+                    Method = p.Method ?? "",
+                    ReceiptNumber = p.ReceiptNumber ?? "",
+                    Status = p.Status ?? ""
+                }
+            ).Take(100).ToListAsync();
+        }
+
+        public async Task<(int Created, int Skipped)> SeedStructuresAsync(Guid schoolId, string academicYear)
+        {
+            // Collect all unique class names from active enrollments for this academic year.
+            // Prefer the modern StudentEnrollments → Class entity path; fall back to deprecated Student.Class.
+            var academicYearEntity = await _context.AcademicYears
+                .Where(y => y.SchoolId == schoolId && y.Name == academicYear)
+                .FirstOrDefaultAsync();
+
+            List<string> allClasses;
+            if (academicYearEntity != null)
+            {
+                allClasses = await _context.StudentEnrollments
+                    .Where(e => e.SchoolId == schoolId && e.AcademicYearId == academicYearEntity.Id && e.Status == "active")
+                    .Join(_context.Classes, e => e.ClassId, c => c.Id, (e, c) => c.Name)
+                    .Distinct()
+                    .ToListAsync();
+            }
+            else
+            {
+                // Legacy fallback
+                allClasses = await _context.Students
+                    .Where(s => s.SchoolId == schoolId && s.Status == "active" && s.Class != null && s.Class != "")
+                    .Select(s => s.Class!)
+                    .Distinct()
+                    .ToListAsync();
+            }
+
+            // Collect classes that already have at least one structure for this year
+            var coveredClasses = await _context.FeeStructures
+                .Where(f => f.SchoolId == schoolId && f.AcademicYear == academicYear)
+                .Select(f => f.Class)
+                .Distinct()
+                .ToListAsync();
+
+            var covered = new HashSet<string>(coveredClasses, StringComparer.OrdinalIgnoreCase);
+            var missing = allClasses.Where(c => !covered.Contains(c)).OrderBy(c => c).ToList();
+
+            if (missing.Count == 0)
+                return (0, allClasses.Count);
+
+            // For each missing class, determine a reasonable tuition fee based on grade number
+            var now = DateTime.UtcNow;
+            // Parse academic year for schedule start (e.g. "2026-2027" → start year 2026)
+            int startYear = now.Year;
+            if (academicYear.Length >= 4 && int.TryParse(academicYear.Substring(0, 4), out var parsed))
+                startYear = parsed;
+            int endYear = startYear + 1;
+
+            foreach (var cls in missing)
+            {
+                // Derive a grade number for fee scaling ("Class 1" → 1, "KG" → 0, etc.)
+                var gradeNum = 0;
+                var parts = cls.Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in parts)
+                    if (int.TryParse(p, out var n)) { gradeNum = n; break; }
+
+                // Simple tiered default fee: KG/1-5 = 25000, 6-8 = 35000, 9-10 = 45000, 11-12 = 55000
+                var tuitionFee = gradeNum <= 0 ? 20000m
+                    : gradeNum <= 5  ? 25000m
+                    : gradeNum <= 8  ? 35000m
+                    : gradeNum <= 10 ? 45000m
+                    : 55000m;
+                var examFee = 500m;
+                var devFee = 2000m;
+                var total = tuitionFee + examFee + devFee;
+
+                // Build a 3-term schedule (Indian academic year Apr–Mar)
+                var termSchedule = new[]
+                {
+                    new { termNumber = 1, name = "Term 1", fromDate = $"{startYear}-04-01", toDate = $"{startYear}-07-31", dueDate = $"{startYear}-04-30", amount = Math.Round(total * 0.40m) },
+                    new { termNumber = 2, name = "Term 2", fromDate = $"{startYear}-08-01", toDate = $"{startYear}-11-30", dueDate = $"{startYear}-08-31", amount = Math.Round(total * 0.35m) },
+                    new { termNumber = 3, name = "Term 3", fromDate = $"{startYear}-12-01", toDate = $"{endYear}-03-31",  dueDate = $"{startYear}-12-15", amount = total - Math.Round(total * 0.40m) - Math.Round(total * 0.35m) },
+                };
+
+                // Clean base class name (strip section suffixes for the structure name)
+                var baseName = cls.Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries).Take(2).Aggregate((a, b) => $"{a} {b}");
+
+                var structure = new FeeStructure
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    Name = $"Standard Fee {academicYear} – {cls}",
+                    Class = cls,
+                    AcademicYear = academicYear,
+                    TuitionFee = tuitionFee,
+                    ExamFee = examFee,
+                    DevelopmentFee = devFee,
+                    TotalAmount = total,
+                    InstallmentCount = 3,
+                    InstallmentDueDates = JsonSerializer.Serialize(termSchedule),
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                };
+                _context.FeeStructures.Add(structure);
+            }
+
+            if (missing.Count > 0)
+                await _context.SaveChangesAsync();
+
+            return (missing.Count, covered.Count);
         }
     }
 }

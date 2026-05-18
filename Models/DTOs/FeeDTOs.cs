@@ -18,8 +18,9 @@ namespace SmsApi.Models.DTOs
     // Fee Structure DTOs
     public class CreateFeeStructureRequest
     {
-        [Required]
-        public Guid SchoolId { get; set; }
+        // SchoolId is intentionally optional in the body — the controller always
+        // overwrites it from the authenticated user's tenant context.
+        public Guid? SchoolId { get; set; }
 
         [Required]
         [MaxLength(100)]
@@ -116,6 +117,9 @@ namespace SmsApi.Models.DTOs
         public string? Description { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+
+        /// <summary>Number of fee records (students) linked to this structure. 0 = not yet assigned.</summary>
+        public int AssignedStudentCount { get; set; }
     }
 
     // Fee Record DTOs
@@ -174,6 +178,7 @@ namespace SmsApi.Models.DTOs
         public Guid SchoolId { get; set; }
         public Guid StudentId { get; set; }
         public string StudentName { get; set; } = string.Empty;
+        public string AdmissionNumber { get; set; } = string.Empty;
         public string Class { get; set; } = string.Empty;
         public Guid? FeeStructureId { get; set; }
         public string? FeeStructureName { get; set; }
@@ -198,6 +203,12 @@ namespace SmsApi.Models.DTOs
         public decimal HostelFee { get; set; } = 0;           // pro-rata amount charged
         public decimal HostelMonthlyFee { get; set; } = 0;    // configured monthly rate
         public string? HostelRoom { get; set; }
+
+        /// <summary>
+        /// Per-student fee head overrides (JSON dict). Not a concession — reflects structural exemptions.
+        /// E.g. {"libraryFee":0} means this student's library fee was waived at the fee-head level.
+        /// </summary>
+        public string? FeeHeadOverrides { get; set; }
     }
 
     // Payment Transaction DTOs
@@ -253,6 +264,7 @@ namespace SmsApi.Models.DTOs
     public class PaymentTransactionDto
     {
         public Guid Id { get; set; }
+        public Guid FeeRecordId { get; set; }
         public decimal Amount { get; set; }
         public DateTime Date { get; set; }
         public string Method { get; set; } = string.Empty;
@@ -347,6 +359,54 @@ namespace SmsApi.Models.DTOs
         public int Total { get; set; }
         public int Page { get; set; }
         public int PageSize { get; set; }
+    }
+
+    // Recent payments (for Day Summary / today's collection)
+    public class RecentPaymentDto
+    {
+        public Guid Id { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string Class { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public DateTime Date { get; set; }
+        public string Method { get; set; } = string.Empty;
+        public string ReceiptNumber { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+    }
+
+    // Sibling info (for sibling discount panel in collect form)
+    public class SiblingInstallmentDto
+    {
+        public int Number { get; set; }
+        public string Label { get; set; } = string.Empty;   // "Term 1", "Q1", "Annual", etc.
+        /// <summary>Installment amount scaled to actual fee record total (not structure template)</summary>
+        public decimal Amount { get; set; }
+        /// <summary>How much of the student's paid amount covers this installment</summary>
+        public decimal PaidInInstallment { get; set; }
+        /// <summary>Amount still due for this installment (Amount - PaidInInstallment)</summary>
+        public decimal DueInInstallment { get; set; }
+        public DateTime? DueDate { get; set; }
+        /// <summary>paid | current | upcoming</summary>
+        public string Status { get; set; } = string.Empty;
+    }
+
+    public class SiblingFeeInfoDto
+    {
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string Class { get; set; } = string.Empty;
+        public string Section { get; set; } = string.Empty;
+        public bool IsAnchor { get; set; }
+        public decimal TotalFee { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal PendingAmount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? FeeRecordId { get; set; }
+        public string AcademicYear { get; set; } = string.Empty;
+        public string? StructureName { get; set; }
+        /// <summary>Installment plan type label: Annual / Half-Yearly / Term-wise / Quarterly / Monthly</summary>
+        public string InstallmentPlan { get; set; } = "Annual";
+        public List<SiblingInstallmentDto> Installments { get; set; } = new();
     }
 
     // Statistics

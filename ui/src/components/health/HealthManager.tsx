@@ -19,6 +19,8 @@ import {
   CreateHealthRecordDto, UpdateHealthRecordDto, CreateVaccinationDto, CreateHealthAlertDto,
 } from "@/services/api/healthApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { useAuth } from "@/contexts/AuthContext";
+import { academicApi } from "@/services/api/academicApi";
 
 const STATUS_COLOR: Record<string, string> = {
   normal: "bg-green-100 text-green-800",
@@ -36,7 +38,7 @@ const BMI_COLOR: Record<string, string> = {
 
 // ─── Health Record Form ───────────────────────────────────────────────────────
 
-function RecordFormDialog({ record, onClose, onSaved }: { record?: HealthRecordFull; onClose: () => void; onSaved: () => void }) {
+function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record?: HealthRecordFull; onClose: () => void; onSaved: () => void; allowedClasses?: string[] | null }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
   const isEdit = !!record;
@@ -68,8 +70,16 @@ function RecordFormDialog({ record, onClose, onSaved }: { record?: HealthRecordF
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!isEdit) studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {});
-  }, [isEdit]);
+    if (isEdit) return;
+    if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
+      Promise.all(allowedClasses.map(cn => studentApi.list({ classFilter: cn, pageSize: 200 })))
+        .then(results => setStudents(results.flatMap(r => r.students ?? [])))
+        .catch(() => {});
+    } else if (allowedClasses === null || allowedClasses === undefined) {
+      studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {});
+    }
+    // allowedClasses.length === 0 means no class teacher assignments — leave students empty
+  }, [isEdit, allowedClasses]);
 
   function set(k: keyof CreateHealthRecordDto, v: unknown) { setForm(p => ({ ...p, [k]: v })); }
   function setNum(k: keyof CreateHealthRecordDto, v: string) { set(k, v ? parseFloat(v) : undefined); }
@@ -285,7 +295,7 @@ function ViewRecordDialog({ recordId, onClose, onEdit }: { recordId: string; onC
 
 // ─── Add Vaccination Dialog ───────────────────────────────────────────────────
 
-function VaccinationDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () => void; onSaved: () => void; allowedClasses?: string[] | null }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateVaccinationDto>({
@@ -293,7 +303,15 @@ function VaccinationDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
+      Promise.all(allowedClasses.map(cn => studentApi.list({ classFilter: cn, pageSize: 200 })))
+        .then(results => setStudents(results.flatMap(r => r.students ?? [])))
+        .catch(() => {});
+    } else if (allowedClasses === null || allowedClasses === undefined) {
+      studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {});
+    }
+  }, [allowedClasses]);
 
   const filtered = students.filter(s => s.name?.toLowerCase().includes(search.toLowerCase()));
 
@@ -360,13 +378,21 @@ function VaccinationDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
 
 // ─── Create Alert Dialog ──────────────────────────────────────────────────────
 
-function AlertFormDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => void; onSaved: () => void; allowedClasses?: string[] | null }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateHealthAlertDto>({ studentId: "", alertType: "follow_up", severity: "medium", description: "" });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
+      Promise.all(allowedClasses.map(cn => studentApi.list({ classFilter: cn, pageSize: 200 })))
+        .then(results => setStudents(results.flatMap(r => r.students ?? [])))
+        .catch(() => {});
+    } else if (allowedClasses === null || allowedClasses === undefined) {
+      studentApi.list({ page: 1, pageSize: 200 }).then(r => setStudents(r.students ?? [])).catch(() => {});
+    }
+  }, [allowedClasses]);
   const filtered = students.filter(s => s.name?.toLowerCase().includes(search.toLowerCase()));
 
   async function handleSubmit(e: React.FormEvent) {
@@ -441,6 +467,25 @@ function AlertFormDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function HealthManager() {
+  const { user } = useAuth();
+  // null = no restriction (admin / counselor / hostel warden)
+  // string[] = only show records for these class names (class teacher staff)
+  const [classTeacherClasses, setClassTeacherClasses] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (user?.role === 'staff') {
+      academicApi.getMyClassAssignments()
+        .then(assignments => {
+          const ctClasses = assignments
+            .filter(a => a.isClassTeacher)
+            .map(a => a.className);
+          setClassTeacherClasses(ctClasses);
+        })
+        .catch(() => setClassTeacherClasses([]));
+    }
+    // Non-staff roles (admin, super_admin) keep null → no restriction
+  }, [user?.role]);
+
   const [records, setRecords] = useState<HealthRecordBasic[]>([]);
   const [alerts, setAlerts] = useState<HealthAlertDto[]>([]);
   const [stats, setStats] = useState<HealthStatsDto | null>(null);
@@ -463,12 +508,20 @@ export function HealthManager() {
     setRecordsLoading(true);
     try {
       const r = await healthApi.getRecords({ page: p, pageSize: PAGE_SIZE, searchQuery: search || undefined });
-      setRecords(r.items ?? []);
-      setTotal(r.totalCount ?? 0);
+      let items = r.items ?? [];
+      let count = r.totalCount ?? 0;
+      // For class teachers, filter records to only their assigned classes
+      if (classTeacherClasses !== null && classTeacherClasses.length > 0) {
+        const lower = classTeacherClasses.map(c => c.toLowerCase());
+        items = items.filter(rec => lower.some(c => rec.class.toLowerCase() === c));
+        count = items.length;
+      }
+      setRecords(items);
+      setTotal(count);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load records");
     } finally { setRecordsLoading(false); }
-  }, [search]);
+  }, [search, classTeacherClasses]);
 
   const loadAlerts = useCallback(async () => {
     setAlertsLoading(true);
@@ -773,13 +826,13 @@ export function HealthManager() {
 
       {/* Dialogs */}
       {(showAddRecord || editRecord) && (
-        <RecordFormDialog record={editRecord} onClose={() => { setShowAddRecord(false); setEditRecord(undefined); }} onSaved={() => { loadRecords(page); loadStats(); }} />
+        <RecordFormDialog record={editRecord} onClose={() => { setShowAddRecord(false); setEditRecord(undefined); }} onSaved={() => { loadRecords(page); loadStats(); }} allowedClasses={classTeacherClasses} />
       )}
       {viewRecordId && (
         <ViewRecordDialog recordId={viewRecordId} onClose={() => setViewRecordId(undefined)} onEdit={r => { setEditRecord(r); setViewRecordId(undefined); }} />
       )}
-      {showVaccination && <VaccinationDialog onClose={() => setShowVaccination(false)} onSaved={() => { loadRecords(page); }} />}
-      {showAlert && <AlertFormDialog onClose={() => setShowAlert(false)} onSaved={loadAlerts} />}
+      {showVaccination && <VaccinationDialog onClose={() => setShowVaccination(false)} onSaved={() => { loadRecords(page); }} allowedClasses={classTeacherClasses} />}
+      {showAlert && <AlertFormDialog onClose={() => setShowAlert(false)} onSaved={loadAlerts} allowedClasses={classTeacherClasses} />}
     </div>
   );
 }

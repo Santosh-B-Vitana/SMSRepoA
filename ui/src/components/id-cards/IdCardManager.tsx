@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IdCard, Printer, Search, Download, Plus, Users, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { mockApi, Student, Staff } from "../../services/mockApi";
+import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { staffApi, StaffBasic } from "@/services/api/staffApi";
 import { IdCardTemplate } from "./IdCardTemplate";
 import { IndividualIdCardGenerator } from "./IndividualIdCardGenerator";
 import { ErrorBoundary, LoadingState, EmptyState } from "@/components/common";
@@ -27,52 +28,54 @@ interface IdCardRecord {
 }
 
 export function IdCardManager() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
+  const [students, setStudents] = useState<StudentBasic[]>([]);
+  const [staff, setStaff] = useState<StaffBasic[]>([]);
   const [idCards, setIdCards] = useState<IdCardRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<"all" | "student" | "staff">("all");
-  const [selectedPerson, setSelectedPerson] = useState<Student | Staff | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<StudentBasic | StaffBasic | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [studentsData, staffData] = await Promise.all([
-          mockApi.getStudents(),
-          mockApi.getStaff()
+        const [studentsResp, staffResp] = await Promise.all([
+          studentApi.list({ pageSize: 2000 }),
+          staffApi.list({ pageSize: 2000 })
         ]);
+        const studentsData = studentsResp.students;
+        const staffData = staffResp.staff;
         setStudents(studentsData);
         setStaff(staffData);
-        
-        // Generate mock ID card records
-        const mockIdCards: IdCardRecord[] = [
+
+        // Build ID card record stubs from real student/staff data
+        const realIdCards: IdCardRecord[] = [
           ...studentsData.map((student, index) => ({
             id: `IDC${String(index + 1).padStart(3, '0')}`,
             personId: student.id,
-            personName: student.name,
+            personName: student.name ?? `${student.admissionNumber}`,
             personType: 'student' as const,
-            idNumber: `STU${student.rollNo}${new Date().getFullYear()}`,
-            issueDate: '2024-01-15',
-            expiryDate: '2025-01-15',
+            idNumber: `STU${student.rollNumber}${new Date().getFullYear()}`,
+            issueDate: new Date().toISOString().split('T')[0],
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             status: 'active' as const,
             template: 'student-default'
           })),
           ...staffData.map((staffMember, index) => ({
             id: `IDC${String(studentsData.length + index + 1).padStart(3, '0')}`,
             personId: staffMember.id,
-            personName: staffMember.name,
+            personName: staffMember.name ?? `${staffMember.firstName} ${staffMember.lastName}`.trim(),
             personType: 'staff' as const,
-            idNumber: `EMP${staffMember.id.slice(-3)}${new Date().getFullYear()}`,
-            issueDate: '2024-01-15',
-            expiryDate: '2025-12-31',
+            idNumber: `EMP${staffMember.employeeId}${new Date().getFullYear()}`,
+            issueDate: new Date().toISOString().split('T')[0],
+            expiryDate: new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             status: 'active' as const,
             template: 'staff-default'
           }))
         ];
-        setIdCards(mockIdCards);
+        setIdCards(realIdCards);
       } catch (error) {
         console.error("Failed to fetch data:", error);
         toast({
@@ -95,18 +98,19 @@ export function IdCardManager() {
     return matchesSearch && matchesType;
   });
 
-  const generateIdCard = async (person: Student | Staff, type: 'student' | 'staff') => {
+  const generateIdCard = async (person: StudentBasic | StaffBasic, type: 'student' | 'staff') => {
     try {
+      const name = (person as StudentBasic).name ?? `${(person as StaffBasic).firstName ?? ''} ${(person as StaffBasic).lastName ?? ''}`.trim();
       const newIdCard: IdCardRecord = {
         id: `IDC${String(idCards.length + 1).padStart(3, '0')}`,
         personId: person.id,
-        personName: person.name,
+        personName: name,
         personType: type,
-        idNumber: type === 'student' ? 
-          `STU${(person as Student).rollNo}${new Date().getFullYear()}` :
-          `EMP${person.id.slice(-3)}${new Date().getFullYear()}`,
+        idNumber: type === 'student' ?
+          `STU${(person as StudentBasic).rollNumber}${new Date().getFullYear()}` :
+          `EMP${(person as StaffBasic).employeeId}${new Date().getFullYear()}`,
         issueDate: new Date().toISOString().split('T')[0],
-        expiryDate: type === 'student' ? 
+        expiryDate: type === 'student' ?
           new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] :
           new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         status: 'active',
@@ -116,7 +120,7 @@ export function IdCardManager() {
       setIdCards(prev => [...prev, newIdCard]);
       toast({
         title: "Success",
-        description: `ID card generated for ${person.name}`
+        description: `ID card generated for ${name}`
       });
     } catch (error) {
       toast({
@@ -128,10 +132,10 @@ export function IdCardManager() {
   };
 
   const printIdCard = (card: IdCardRecord) => {
-    const person = card.personType === 'student' 
+    const person = card.personType === 'student'
       ? students.find(s => s.id === card.personId)
       : staff.find(s => s.id === card.personId);
-    
+
     if (person) {
       setSelectedPerson(person);
       setShowPreview(true);
@@ -277,9 +281,9 @@ export function IdCardManager() {
             </TabsContent>
 
             <TabsContent value="individual" className="space-y-4">
-              <IndividualIdCardGenerator 
-                students={students}
-                staff={staff}
+              <IndividualIdCardGenerator
+                students={students as any}
+                staff={staff as any}
               />
             </TabsContent>
           </Tabs>
@@ -293,9 +297,9 @@ export function IdCardManager() {
             <DialogTitle>ID Card Preview</DialogTitle>
           </DialogHeader>
           {selectedPerson && (
-            <IdCardTemplate 
-              person={selectedPerson}
-              type={'name' in selectedPerson && 'rollNo' in selectedPerson ? 'student' : 'staff'}
+            <IdCardTemplate
+              person={selectedPerson as any}
+              type={'rollNumber' in selectedPerson ? 'student' : 'staff'}
             />
           )}
           <div className="flex justify-end gap-2 mt-4">

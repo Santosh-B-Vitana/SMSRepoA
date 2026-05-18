@@ -5,8 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Student } from "../../services/mockApi";
-import { studentApi } from "@/services/api/studentApi";
+import { studentApi, type Student } from "@/services/api/studentApi";
 import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Users, Phone, Mail, MapPin, Heart, FileText, Shield } from "lucide-react";
@@ -26,7 +25,7 @@ function SiblingInfo({ siblingId }: { siblingId: string }) {
       <div className="flex-1">
         <div className="font-medium text-sm">{sibling.name}</div>
         <div className="text-xs text-muted-foreground">
-          Class {sibling.class}-{sibling.section} • Roll No: {sibling.rollNo}
+          Class {sibling.class}-{sibling.section} • Roll No: {sibling.rollNumber}
         </div>
       </div>
     </div>

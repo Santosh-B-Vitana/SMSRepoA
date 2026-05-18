@@ -22,7 +22,6 @@ import {
   X,
 } from 'lucide-react';
 import gradeDefinitionService from '@/services/gradeDefinitionService';
-import { examinationService } from '@/services/examinationService';
 import {
   GradeDefinitionResponse,
   ExamGradeConfigurationResponse,

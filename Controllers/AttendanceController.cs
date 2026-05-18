@@ -657,7 +657,7 @@ namespace SmsApi.Controllers
         /// Resolves staffId from JWT (LinkedEntityId or email fallback). View-only; no editing.
         /// </summary>
         [HttpGet("my-attendance")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager,Accountant,Librarian")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager,Accountant,Librarian,TransportManager,HostelWarden,Receptionist")]
         public async Task<ActionResult> GetMyAttendance(
             [FromQuery] DateTime? fromDate = null,
             [FromQuery] DateTime? toDate = null)

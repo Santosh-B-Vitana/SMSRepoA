@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +17,7 @@ import {
   Users, Key, LayoutGrid, Loader2, CheckCircle2, AlertCircle, X,
   ChevronLeft, ChevronRight, UserCog, Settings2, GraduationCap,
   BookOpen, Banknote, UserCheck, Building2, Car, Home, HeartPulse,
-  ClipboardList, Info,
+  ClipboardList, Info, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +25,8 @@ import roleApi, {
   RoleResponse, PermissionGroupResponse, UserWithRolesResponse,
   RoleStatsResponse, CreateRoleDto, UpdateRoleDto
 } from "@/services/api/roleApi";
+import { academicApi, type TeacherAssignmentResponse } from "@/services/api/academicApi";
+import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 
 // ─── Role configuration ───────────────────────────────────────────────────────
 
@@ -434,6 +436,180 @@ function RoleFormDialog({ role, onClose, onSaved }: { role?: RoleResponse; onClo
   );
 }
 
+// ─── Class Teacher Removal Confirmation Dialog ────────────────────────────────
+
+function ClassTeacherRemovalDialog({
+  user,
+  assignment,
+  onForceRemove,
+  onReplaceAndRemove,
+  onCancel,
+}: {
+  user: UserWithRolesResponse;
+  assignment: TeacherAssignmentResponse;
+  onForceRemove: () => Promise<void>;
+  onReplaceAndRemove: (newStaffId: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [staffList, setStaffList] = useState<StaffBasic[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(true);
+  const [replacementId, setReplacementId] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const [forceRemoving, setForceRemoving] = useState(false);
+  const acting = replacing || forceRemoving;
+
+  useEffect(() => {
+    setLoadingStaff(true);
+    staffApi.list({ status: "active", pageSize: 200 })
+      .then(r => {
+        const others = (r.staff ?? []).filter(s => s.id !== user.staffId);
+        setStaffList(others);
+      })
+      .catch(() => toast.error("Could not load staff list"))
+      .finally(() => setLoadingStaff(false));
+  }, [user.staffId]);
+
+  const classLabel = [assignment.className, assignment.sectionName].filter(Boolean).join(" – ");
+  const staffName = `${user.firstName} ${user.lastName}`;
+
+  async function handleReplace() {
+    if (!replacementId) { toast.error("Please select a replacement teacher"); return; }
+    setReplacing(true);
+    try {
+      await onReplaceAndRemove(replacementId);
+    } finally {
+      setReplacing(false);
+    }
+  }
+
+  async function handleForce() {
+    setForceRemoving(true);
+    try {
+      await onForceRemove();
+    } finally {
+      setForceRemoving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onCancel}>
+      <DialogContent className="max-w-[480px]">
+        <DialogHeader className="pb-1">
+          <DialogTitle className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            </span>
+            <span className="text-amber-700">Class Teacher Assignment Conflict</span>
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed pt-1">
+            <span className="font-medium text-foreground">{staffName}</span> is the class teacher
+            for <span className="font-semibold text-foreground">{classLabel}</span>. Choose how to
+            handle this before removing the role.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Current assignment info strip */}
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-3.5 py-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100/80">
+            <GraduationCap className="h-4 w-4 text-amber-600" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Current Class Teacher Assignment
+            </p>
+            <p className="text-sm font-semibold truncate">{classLabel}</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {/* ── Path A: Assign replacement (recommended) ── */}
+          <div className="rounded-lg border border-green-200 bg-green-50/60 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+              <p className="text-sm font-semibold text-green-800">Assign a replacement (recommended)</p>
+            </div>
+
+            {loadingStaff ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading staff list…
+              </div>
+            ) : (
+              <Select value={replacementId} onValueChange={setReplacementId} disabled={acting}>
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder="Select replacement teacher…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffList.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      No other active staff found
+                    </div>
+                  ) : (
+                    staffList.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span>{s.firstName} {s.lastName}</span>
+                        {s.designation && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">— {s.designation}</span>
+                        )}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              The selected teacher will be assigned to <strong>{classLabel}</strong> before the role is removed.
+            </p>
+
+            <Button
+              onClick={handleReplace}
+              disabled={!replacementId || acting}
+              className="w-full gap-2"
+            >
+              {replacing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Replace &amp; Remove Role
+            </Button>
+          </div>
+
+          {/* Divider */}
+          <div className="relative flex items-center gap-3">
+            <div className="flex-1 border-t" />
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">or</span>
+            <div className="flex-1 border-t" />
+          </div>
+
+          {/* ── Path B: Force remove (danger) ── */}
+          <div className="rounded-lg border border-red-200 bg-red-50/50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+              <p className="text-sm font-semibold text-red-800">Force remove without replacement</p>
+            </div>
+            <p className="text-xs text-red-700/80 leading-relaxed">
+              <strong>{classLabel}</strong> will have no class teacher until one is manually reassigned.
+            </p>
+            <Button
+              variant="destructive"
+              onClick={handleForce}
+              disabled={acting}
+              className="w-full gap-2"
+            >
+              {forceRemoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              Force Remove
+            </Button>
+          </div>
+        </div>
+
+        <DialogFooter className="pt-1">
+          <Button variant="ghost" onClick={onCancel} disabled={acting} className="w-full">
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Assign Role Dialog ───────────────────────────────────────────────────────
 
 function AssignRoleDialog({ user, roles, onClose, onSaved }: {
@@ -443,6 +619,12 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   // Keep local copy of assigned roles so optimistic removal updates the list immediately
   const [localRoles, setLocalRoles] = useState(user.assignedRoles);
+
+  // Class teacher removal flow
+  const [ctCheck, setCtCheck] = useState<{
+    roleId: string;
+    assignment: TeacherAssignmentResponse;
+  } | null>(null);
 
   const assignedIds = new Set(localRoles.map(r => r.id));
   const available = roles.filter(r => r.isActive && !assignedIds.has(r.id));
@@ -464,17 +646,92 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
   }
 
   async function handleRemove(rid: string) {
+    const role = localRoles.find(r => r.id === rid);
+    const isClassTeacherRole = role?.name?.toLowerCase() === "class teacher";
+
+    // If removing "Class Teacher" role and we have a staffId, check for existing assignment
+    if (isClassTeacherRole && user.staffId) {
+      setSaving(true);
+      try {
+        const result = await academicApi.getTeacherAssignmentsForStaff(user.staffId);
+        const ctAssignment = (result?.assignments ?? []).find((a: TeacherAssignmentResponse) => a.isClassTeacher);
+        if (ctAssignment) {
+          // Show the class teacher conflict dialog
+          setCtCheck({ roleId: rid, assignment: ctAssignment });
+          return;
+        }
+        // No active class teacher assignment — remove role directly
+      } catch {
+        toast.error("Failed to check class teacher assignment");
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    // Standard role removal
     setSaving(true);
     try {
       await roleApi.removeRoleFromUser(user.id, rid);
-      setLocalRoles(prev => prev.filter(r => r.id !== rid)); // optimistic update
+      setLocalRoles(prev => prev.filter(r => r.id !== rid));
       toast.success("Role removed");
       onSaved();
     } catch { toast.error("Failed to remove role"); }
     finally { setSaving(false); }
   }
 
+  async function handleClassTeacherForceRemove() {
+    if (!ctCheck) return;
+    setSaving(true);
+    try {
+      // Clear the class teacher assignment first (preserves subject assignments if any)
+      await academicApi.unsetClassTeacher(ctCheck.assignment.id);
+      // Then remove the role from the user
+      await roleApi.removeRoleFromUser(user.id, ctCheck.roleId);
+      setLocalRoles(prev => prev.filter(r => r.id !== ctCheck.roleId));
+      toast.success("Class Teacher role removed. No replacement assigned.");
+      onSaved();
+    } catch { toast.error("Failed to remove class teacher role"); }
+    finally { setSaving(false); setCtCheck(null); }
+  }
+
+  async function handleClassTeacherReplaceAndRemove(newStaffId: string) {
+    if (!ctCheck) return;
+    setSaving(true);
+    try {
+      const a = ctCheck.assignment;
+      // 1. Assign the replacement teacher as class teacher for the same class/section
+      await academicApi.assignTeacher({
+        schoolId: a.schoolId,
+        staffId: newStaffId,
+        classId: a.classId,
+        sectionId: a.sectionId,
+        isClassTeacher: true,
+        academicYear: a.academicYear ?? "",
+      });
+      // 2. Clear the class teacher flag on the old assignment
+      //    (deletes pure class-teacher records, preserves subject-teacher records)
+      await academicApi.unsetClassTeacher(a.id);
+      // 3. Remove the role from this user
+      await roleApi.removeRoleFromUser(user.id, ctCheck.roleId);
+      setLocalRoles(prev => prev.filter(r => r.id !== ctCheck.roleId));
+      toast.success("Class teacher replaced and role removed.");
+      onSaved();
+    } catch { toast.error("Failed to replace class teacher"); }
+    finally { setSaving(false); setCtCheck(null); }
+  }
+
   return (
+    <>
+    {ctCheck && (
+      <ClassTeacherRemovalDialog
+        user={user}
+        assignment={ctCheck.assignment}
+        onForceRemove={handleClassTeacherForceRemove}
+        onReplaceAndRemove={handleClassTeacherReplaceAndRemove}
+        onCancel={() => setCtCheck(null)}
+      />
+    )}
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -556,6 +813,7 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
         <DialogFooter><Button variant="outline" onClick={onClose}>Done</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 

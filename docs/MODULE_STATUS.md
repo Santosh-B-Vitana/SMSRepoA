@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 19, 2026 (Session 8) | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -24,7 +24,7 @@
 | **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export; Staff Parent tab (GuardianStaffId) added May 2026 |
 | **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix; **Two-step Deactivation Dialog (May 16 2026)** — step 1 shows pending assignment count, step 2 shows confirmation + downloadable Experience Certificate / Relieving Letter / No Dues Certificate; **UserLogin sync fix** — `DeactivateStaff` now reliably marks `UserLogin.Status = "inactive"` + clears refresh token via `LinkedEntityId` lookup |
 | **Admissions** | ✅ Production Ready | ✅ | 5-step wizard, RTE support, CSV export |
-| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId; Parent portal fee breakdown shows itemised components + non-itemised gap + module fees (transport/hostel pro-rata) with correct Grand Total; **Fee Heads** (normalised label catalogue); **Fee Terms** (installment schedule per structure); **Receipt Templates** (school branding); **Bulk Payment Upload** (CSV, 500 rows); **Promote Fee Structure** (clone to new year with % increment); **Deleted Transactions audit** — all added May 2026 |
+| **Fee Management** | ✅ Production Ready | ✅ | Cashfree PG, receipts, concessions; STAFF_CHILD concession type tracked via GuardianStaffId; Parent portal fee breakdown shows itemised components + non-itemised gap + module fees (transport/hostel pro-rata) with correct Grand Total; **Fee Heads** (normalised label catalogue); **Fee Terms** (installment schedule per structure); **Receipt Templates** (school branding); **Bulk Payment Upload** (CSV, 500 rows); **Promote Fee Structure** (clone to new year with % increment); **Deleted Transactions audit** — all added May 2026; **Fee Head Overrides (May 19 2026)** — per-student structural exemptions (e.g. Library Fee waived) stored as JSON in `FeeHeadOverrides` column, reduce `TotalAmount` directly without affecting `DiscountAmount`, saved via `PATCH /fees/records/{id}/fee-head-overrides`, restored on dialog reopen; **Remove Concession (May 19 2026)** — "Remove" button in concession panel zeroes `DiscountAmount` via `POST /fees/records/{id}/remove-discount`; **Fee dialog live display fix (May 19 2026)** — concession badge, Total Payable, Amount Paid now read from `activeRecord` (live-refreshed) instead of stale initial prop |
 | **Attendance** | ✅ Production Ready | 16/16 | Staff + student tracking |
 | **Academics** | ✅ Production Ready | 70/70 | Classes (school-wide, no year filter), subjects from live API, teacher search bar in assign dialog |
 | **Academic Year Management** | ✅ Production Ready | ✅ | Single active year enforced; status driven by IsCurrent flag; admin + principal header selector with historical indicator |

@@ -281,6 +281,7 @@ namespace SmsApi.Models.DTOs
 
     public class PayrollFiltersDto
     {
+        public Guid? StaffId { get; set; }
         public string? Month { get; set; }
         public int? Year { get; set; }
         public string? Status { get; set; }

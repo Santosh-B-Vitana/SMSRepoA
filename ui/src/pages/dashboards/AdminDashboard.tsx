@@ -364,10 +364,11 @@ export default function AdminDashboard() {
   const s = summary;
   const attendancePct = Math.round(s.todayAttendancePercentage ?? 0);
   const attendanceTrend = buildAttendanceTrend(attendanceData, attendancePct, attPeriod);
-  const collected = Math.max(0, (s.totalStudents ?? 0) * 8000 - (s.pendingFees ?? 0));
+  const pieCollected = feeAnalytics?.totalCollected ?? feeStats?.totalCollected ?? s.totalCollected ?? 0;
+  const piePending = feeAnalytics?.totalPending ?? feeStats?.totalPending ?? s.pendingFees ?? 0;
   const feePieData = [
-    { name: "Collected", value: collected, fill: "hsl(var(--chart-2))" },
-    { name: "Pending", value: s.pendingFees ?? 0, fill: "hsl(var(--chart-5))" },
+    { name: "Collected", value: pieCollected, fill: "hsl(var(--chart-2))" },
+    { name: "Pending", value: piePending, fill: "hsl(var(--chart-5))" },
   ];
 
   const alerts: { type: "warn" | "ok" | "info"; text: string }[] = [];

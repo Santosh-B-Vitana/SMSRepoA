@@ -432,6 +432,19 @@ namespace SmsApi.Models.Entities
         [MaxLength(50)]
         public string GradeScale { get; set; } = "A-E"; // A, B, C, D, E
 
+        /// <summary>
+        /// Grouping category for CBSE CCE framework.
+        /// Values: co_scholastic_activities | attitudes_values | life_skills | discipline
+        /// </summary>
+        [MaxLength(50)]
+        public string? Category { get; set; }
+
+        /// <summary>Applicable from this class/grade number, e.g. 1 = Class 1, 6 = Class 6. Null = all classes.</summary>
+        public int? ApplicableFromGrade { get; set; }
+
+        /// <summary>Applicable up to this class/grade number, e.g. 10 = Class 10. Null = all classes.</summary>
+        public int? ApplicableToGrade { get; set; }
+
         public int DisplayOrder { get; set; } = 0;
 
         public bool IsActive { get; set; } = true;

@@ -2,7 +2,28 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.5 | **Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA
+**Version:** 2.6 | **Last Updated:** May 19, 2026 (Session 8) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 19, 2026 (Session 8)
+
+| Area | Change |
+|------|--------|
+| **Fee Management — Fee Head Overrides** | Structural fee exemptions (e.g. "Library Fee waived for this student") are now handled as a **direct reduction to `TotalAmount`**, not as concessions. Admins click the ✎ pencil icon next to any fee head (Tuition, Library, Lab, etc.) in the fee dialog, enter a reduced amount, and click **Save Fee Head Changes**. The override is stored in a new `FeeHeadOverrides` JSON column on the fee record and survives dialog close/reopen. This is an architectural correction — fee head adjustments were previously (incorrectly) going into `DiscountAmount` which bloated the concession figure and made reports misleading. |
+| **Fee Management — Remove Concession** | Admins can now remove an active concession directly from the fee dialog. When a concession is applied (`DiscountAmount > 0`), a red **Remove** button appears in the concession panel. Clicking it zeroes out `DiscountAmount`, recalculates `PendingAmount = TotalAmount + LateFee − PaidAmount`, and logs the action to `FeeAuditLog`. Previously, the only way to remove a concession was a direct database edit. |
+| **Fee Dialog — Live Concession Display** | Fixed: the concession badge in the dialog header and the "Applied / Headroom" info line were reading from the initial prop (`record`) instead of the freshly-fetched live record (`activeRecord`). After applying or removing a concession, the displayed concession amount, the "Total Payable" row, and the "Amount Paid" row now all update immediately without requiring the dialog to be closed and reopened. |
+| **Fee Dialog — Total Payable recalculates after concession** | Fixed: the "Total Payable" and "Outstanding Balance" figures in the fee breakdown table now correctly reflect any concession change applied during the same dialog session. Previously they stayed frozen at the value when the dialog first opened. |
+
+### Fee Head Override vs. Concession — key distinction for support staff
+
+| | Fee Head Override | Concession / Waiver |
+|---|---|---|
+| **What it does** | Reduces the fee head amount for this student permanently | Applies a discount credited against the existing fee total |
+| **Affects** | `TotalAmount` (directly reduced) | `DiscountAmount` (additive, up to 75% cap) |
+| **Shows up as** | Amended fee structure for the student | Concession/discount on receipts and reports |
+| **Reversible?** | Must re-enter full gross amount via pencil edit | Yes — use the "Remove" button in the concession panel |
+| **Use case** | Student is genuinely exempt from a fee category (e.g. staff child, scholarship) | Partial waiver for financial hardship, merit award, sibling discount |
 
 ---
 

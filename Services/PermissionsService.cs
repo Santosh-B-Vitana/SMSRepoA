@@ -1137,6 +1137,8 @@ namespace SmsApi.Services
                     Status = staff.Status ?? "active",
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword("ChangeMe@123", workFactor: 12),
                     RequirePasswordChange = true,
+                    LinkedEntityId = staffId,
+                    LinkedEntityType = "staff",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                 };

@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Models.Entities;
-using Npgsql;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,6 +42,7 @@ namespace SmsApi.Services
         Task<TeacherAssignmentListResponse> GetTeacherAssignmentsAsync(Guid schoolId, Guid? classId = null, Guid? sectionId = null, Guid? staffId = null, int page = 1, int pageSize = 10);
         Task<TeacherAssignmentResponse> AssignTeacherAsync(AssignTeacherRequest request);
         Task<bool> RemoveTeacherAssignmentAsync(Guid id, Guid schoolId);
+        Task<bool> UnsetClassTeacherFlagAsync(Guid id, Guid schoolId);
         Task<List<MyClassAssignmentDto>> GetMyClassTeacherAssignmentsAsync(Guid staffId, Guid schoolId);
         Task<List<MyClassAssignmentDto>> GetMyClassTeacherAssignmentsByEmailAsync(string userEmail, Guid schoolId);
 
@@ -1209,6 +1209,33 @@ namespace SmsApi.Services
             return true;
         }
 
+        public async Task<bool> UnsetClassTeacherFlagAsync(Guid id, Guid schoolId)
+        {
+            var assignment = await _context.TeacherAssignments
+                .FirstOrDefaultAsync(ta => ta.Id == id && ta.SchoolId == schoolId);
+
+            if (assignment == null) return false;
+
+            if (!assignment.SubjectId.HasValue || assignment.SubjectId == Guid.Empty)
+            {
+                // Pure class-teacher-only record — remove it entirely
+                _context.TeacherAssignments.Remove(assignment);
+            }
+            else
+            {
+                // Combined record (class teacher + subject) — only clear the flag
+                assignment.IsClassTeacher = false;
+                assignment.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+
+            try { await _permissionsService.RevokeAcademicRoleIfUnassignedAsync(assignment.StaffId, schoolId); }
+            catch { /* best-effort */ }
+
+            return true;
+        }
+
         public async Task<List<MyClassAssignmentDto>> GetMyClassTeacherAssignmentsAsync(Guid staffId, Guid schoolId)
         {
             // Return ALL assignments for this staff (class teacher + subject teacher).
@@ -2303,55 +2330,40 @@ namespace SmsApi.Services
         {
             EnsureSchoolId(schoolId);
             NormalizePagination(ref page, ref pageSize, 200);
-            try
+
+            var query = _context.AcademicYears.Where(ay => ay.SchoolId == schoolId);
+
+            // Self-heal: first-run DBs can be empty; seed defaults automatically.
+            if (!await query.AnyAsync())
             {
-                var query = _context.AcademicYears.Where(ay => ay.SchoolId == schoolId);
-
-                // Self-heal: first-run DBs can be empty; seed defaults automatically.
-                if (!await query.AnyAsync())
-                {
-                    await SeedDefaultAcademicYearsAsync(schoolId);
-                    query = _context.AcademicYears.Where(ay => ay.SchoolId == schoolId);
-                }
-
-                var total = await query.CountAsync();
-                var items = await query
-                    .OrderByDescending(ay => ay.StartDate)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                return new AcademicYearListResponse
-                {
-                    AcademicYears = items.Select(ay => new AcademicYearResponse
-                    {
-                        Id = ay.Id,
-                        Name = ay.Name,
-                        StartDate = ay.StartDate,
-                        EndDate = ay.EndDate,
-                        IsCurrent = ay.IsCurrent,
-                        Status = ay.Status,
-                        CreatedAt = ay.CreatedAt,
-                        UpdatedAt = ay.UpdatedAt
-                    }).ToList(),
-                    Total = total,
-                    Page = page,
-                    PageSize = pageSize
-                };
+                await SeedDefaultAcademicYearsAsync(schoolId);
+                query = _context.AcademicYears.Where(ay => ay.SchoolId == schoolId);
             }
-            catch (PostgresException ex) when (ex.SqlState == "42P01")
+
+            var total = await query.CountAsync();
+            var items = await query
+                .OrderByDescending(ay => ay.StartDate)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new AcademicYearListResponse
             {
-                // If migrations haven't been applied yet, return a deterministic fallback
-                // so the UI still has a usable year selector instead of hard failure.
-                var fallback = BuildFallbackAcademicYears();
-                return new AcademicYearListResponse
+                AcademicYears = items.Select(ay => new AcademicYearResponse
                 {
-                    AcademicYears = fallback,
-                    Total = fallback.Count,
-                    Page = 1,
-                    PageSize = fallback.Count
-                };
-            }
+                    Id = ay.Id,
+                    Name = ay.Name,
+                    StartDate = ay.StartDate,
+                    EndDate = ay.EndDate,
+                    IsCurrent = ay.IsCurrent,
+                    Status = ay.Status,
+                    CreatedAt = ay.CreatedAt,
+                    UpdatedAt = ay.UpdatedAt
+                }).ToList(),
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            };
         }
 
         public async Task<AcademicYearResponse?> GetAcademicYearByIdAsync(Guid id, Guid schoolId)
@@ -2518,43 +2530,6 @@ namespace SmsApi.Services
 
             _context.AcademicYears.AddRange(previous, current);
             await _context.SaveChangesAsync();
-        }
-
-        private static List<AcademicYearResponse> BuildFallbackAcademicYears()
-        {
-            var now = DateTime.UtcNow;
-            var startYear = now.Month >= 4 ? now.Year : now.Year - 1;
-
-            var previousStart = new DateTime(startYear - 1, 4, 1, 0, 0, 0, DateTimeKind.Utc);
-            var previousEnd = new DateTime(startYear, 3, 31, 23, 59, 59, DateTimeKind.Utc);
-            var currentStart = new DateTime(startYear, 4, 1, 0, 0, 0, DateTimeKind.Utc);
-            var currentEnd = new DateTime(startYear + 1, 3, 31, 23, 59, 59, DateTimeKind.Utc);
-
-            return new List<AcademicYearResponse>
-            {
-                new AcademicYearResponse
-                {
-                    Id = Guid.NewGuid(),
-                    Name = $"{startYear}-{startYear + 1}",
-                    StartDate = currentStart,
-                    EndDate = currentEnd,
-                    IsCurrent = true,
-                    Status = "active",
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                },
-                new AcademicYearResponse
-                {
-                    Id = Guid.NewGuid(),
-                    Name = $"{startYear - 1}-{startYear}",
-                    StartDate = previousStart,
-                    EndDate = previousEnd,
-                    IsCurrent = false,
-                    Status = "active",
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                }
-            };
         }
 
         // ── ExamType ─────────────────────────────────────────────────────────

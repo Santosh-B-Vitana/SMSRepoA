@@ -14,6 +14,7 @@ import {
   Users, BookOpen, ChevronRight, Eye, Printer, Download, Search, RefreshCw,
 } from "lucide-react";
 import ExamAnalyticsInline from "@/components/examinations/ExamAnalyticsInline";
+import { CCETab } from "./CCEManagement";
 import { ExamsListTab } from "@/components/examinations/ExamsListTab";
 import { ExamResultsTab } from "@/components/examinations/ExamResultsTab";
 import examinationApi, { ExamBasic, ExamStats } from "@/services/api/examinationApi";
@@ -986,13 +987,14 @@ export default function Examinations() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 h-auto">
+        <TabsList className="grid w-full grid-cols-6 h-auto">
           {[
             { value: "overview",      icon: <LayoutDashboard className="h-4 w-4" />, label: "Overview" },
             { value: "exams",         icon: <ClipboardList className="h-4 w-4" />,   label: "All Exams" },
             { value: "results",       icon: <PenLine className="h-4 w-4" />,         label: "Results" },
             { value: "report-cards",  icon: <Trophy className="h-4 w-4" />,          label: "Report Cards" },
             { value: "analytics",     icon: <BarChart3 className="h-4 w-4" />,       label: "Analytics" },
+            { value: "cce",           icon: <BookOpen className="h-4 w-4" />,        label: "Co-Scholastic" },
           ].map(t => (
             <TabsTrigger key={t.value} value={t.value} className="flex-col py-2 gap-0.5 text-xs sm:text-sm sm:flex-row sm:gap-1.5">
               {t.icon}<span>{t.label}</span>
@@ -1022,6 +1024,10 @@ export default function Examinations() {
 
         <TabsContent value="report-cards" className="mt-4">
           <ReportCardTab academicYear={academicYear ?? ""} />
+        </TabsContent>
+
+        <TabsContent value="cce" className="mt-4">
+          <CCETab />
         </TabsContent>
       </Tabs>
     </div>

@@ -13,11 +13,11 @@ import { PrintableIdCard } from "./PrintableIdCard";
 interface Student {
   id: string;
   name: string;
-  rollNo: string;
+  rollNumber: string;
   class: string;
   section: string;
-  guardianName: string;
-  guardianPhone: string;
+  guardianName?: string;
+  guardianPhone?: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -96,7 +96,7 @@ export function IndividualIdCardGenerator({ students, staff }: IndividualIdCardG
       personName: person.name,
       personType,
       idNumber: personType === 'student' ? 
-        `STU${(person as Student).rollNo}${new Date().getFullYear()}` :
+        `STU${(person as Student).rollNumber}${new Date().getFullYear()}` :
         `EMP${person.id.slice(-3)}${new Date().getFullYear()}`,
       issueDate: new Date().toISOString().split('T')[0],
       expiryDate: personType === 'student' ? 

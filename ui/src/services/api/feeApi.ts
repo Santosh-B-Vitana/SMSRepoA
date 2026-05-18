@@ -12,6 +12,16 @@ export interface FeeStructureBasic {
   status: string;
 }
 
+/** Represents one term/installment window in a payment schedule */
+export interface TermSchedule {
+  termNumber: number;
+  name: string;
+  fromDate: string;  // YYYY-MM-DD
+  toDate: string;    // YYYY-MM-DD
+  dueDate: string;   // YYYY-MM-DD
+  amount: number;
+}
+
 export interface FeeStructure {
   id: string;
   schoolId: string;
@@ -33,14 +43,16 @@ export interface FeeStructure {
   totalAmount: number;
   installmentCount: number;
   installmentAmounts?: string;
-  installmentDueDates?: string;
+  installmentDueDates?: string;  // JSON: TermSchedule[] when rich, string[] when legacy
   description?: string;
   createdAt: string;
   updatedAt: string;
+  /** Number of student fee records linked to this structure. 0 = not yet assigned to any student. */
+  assignedStudentCount?: number;
 }
 
 export interface CreateFeeStructureDto {
-  schoolId: string;
+  schoolId?: string; // omitted: backend injects from tenant context
   name: string;
   class: string;
   academicYear: string;
@@ -58,7 +70,7 @@ export interface CreateFeeStructureDto {
   miscellaneous?: number;
   installmentCount?: number;
   installmentAmounts?: string;
-  installmentDueDates?: string;
+  installmentDueDates?: string;  // JSON: TermSchedule[] rich format
   description?: string;
 }
 
@@ -67,6 +79,7 @@ export interface FeeRecord {
   schoolId: string;
   studentId: string;
   studentName: string;
+  admissionNumber?: string;
   class: string;
   feeStructureId?: string;
   feeStructureName?: string;
@@ -90,6 +103,8 @@ export interface FeeRecord {
   hostelFee?: number;
   hostelMonthlyFee?: number;
   hostelRoom?: string;
+  /** Per-student fee head overrides (JSON dict). NOT a concession — structural exemptions only. */
+  feeHeadOverrides?: string | null;
 }
 
 export interface CreateFeeRecordDto {
@@ -107,6 +122,7 @@ export interface CreateFeeRecordDto {
 
 export interface PaymentTransaction {
   id: string;
+  feeRecordId?: string;
   amount: number;
   date: string;
   method: string;
@@ -219,18 +235,33 @@ export interface CreateRefundDto {
 }
 
 export interface ReminderResult {
-  totalSent: number;
-  emailsSent: number;
-  smsSent: number;
-  notificationsSent: number;
+  totalRecords: number;
+  sentSuccessfully: number;
+  failed: number;
   errors: string[];
 }
 
+/** Matches backend SendRemindersDto */
 export interface SendRemindersDto {
-  class?: string;
-  section?: string;
-  minOverdueDays?: number;
-  channels: string[];
+  /** 0 = all overdue; positive = due within X days */
+  daysBefore: number;
+  /** "sms" | "email" | "whatsapp" | "push_notification" | "all" */
+  channel?: string;
+  customMessage?: string;
+}
+
+export interface OverdueFeeRecord {
+  feeRecordId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  class: string;
+  amount: number;
+  dueDate: string;
+  daysOverdue: number;
+  calculatedLateFee: number;
+  guardianPhone?: string;
+  guardianEmail?: string;
 }
 
 export interface FeeStats {
@@ -261,9 +292,12 @@ const BASE_PATH = '/fees';
 /**
  * Get all fee structures with optional class filter
  */
-export const getFeeStructures = async (classFilter?: string): Promise<FeeStructure[]> => {
-  const params = classFilter ? `?class=${classFilter}` : '';
-  const response = await apiClient.get(`${BASE_PATH}/structures${params}`);
+export const getFeeStructures = async (classFilter?: string, academicYear?: string): Promise<FeeStructure[]> => {
+  const p = new URLSearchParams();
+  if (classFilter) p.append('class', classFilter);
+  if (academicYear) p.append('academicYear', academicYear);
+  const qs = p.toString();
+  const response = await apiClient.get(`${BASE_PATH}/structures${qs ? '?' + qs : ''}`);
   return response.data;
 };
 
@@ -276,11 +310,19 @@ export const getFeeStructureById = async (structureId: string): Promise<FeeStruc
 };
 
 /**
- * Create a new fee structure
+ * Create a new fee structure.
+ * The backend auto-assigns the structure to all active students in the class.
+ * The response is { structure, autoAssigned, autoSkipped }; we return the wrapped
+ * object so callers can surface the assignment count.
  */
-export const createFeeStructure = async (data: CreateFeeStructureDto): Promise<FeeStructure> => {
+export const createFeeStructure = async (data: CreateFeeStructureDto): Promise<FeeStructure & { autoAssigned?: number; autoSkipped?: number }> => {
   const response = await apiClient.post(`${BASE_PATH}/structures`, data);
-  return response.data;
+  // Backend returns { structure, autoAssigned, autoSkipped }
+  const body = response.data;
+  if (body && body.structure) {
+    return { ...body.structure, autoAssigned: body.autoAssigned, autoSkipped: body.autoSkipped };
+  }
+  return body;
 };
 
 /**
@@ -308,7 +350,8 @@ export const getFeeRecords = async (
   page: number = 1,
   pageSize: number = 10,
   studentId?: string,
-  status?: string
+  status?: string,
+  academicYear?: string
 ): Promise<PaginatedResponse<FeeRecord>> => {
   const params = new URLSearchParams({
     page: page.toString(),
@@ -317,6 +360,7 @@ export const getFeeRecords = async (
 
   if (studentId) params.append('studentId', studentId);
   if (status) params.append('status', status);
+  if (academicYear) params.append('academicYear', academicYear);
 
   const response = await apiClient.get(`${BASE_PATH}/records?${params.toString()}`);
   return response.data;
@@ -367,6 +411,32 @@ export const patchModuleFees = async (
  */
 export const deleteFeeRecord = async (recordId: string): Promise<void> => {
   await apiClient.delete(`${BASE_PATH}/records/${recordId}`);
+};
+
+/**
+ * Apply per-student fee head overrides (e.g. Library Fee → ₹0 because student didn't use it).
+ * Reduces TotalAmount directly; does NOT affect DiscountAmount/concessions.
+ */
+export const applyFeeHeadOverrides = async (
+  recordId: string,
+  overrides: Record<string, number>,
+  appliedBy?: string
+): Promise<{ newTotalAmount: number; newPendingAmount: number; feeHeadOverrides: string; status: string }> => {
+  const response = await apiClient.patch(`${BASE_PATH}/records/${recordId}/fee-head-overrides`, { overrides, appliedBy });
+  return response.data;
+};
+
+/**
+ * Remove the active concession (DiscountAmount) from a fee record.
+ * Restores PendingAmount to TotalAmount - PaidAmount.
+ */
+export const removeDiscount = async (
+  recordId: string,
+  reason?: string,
+  removedBy?: string
+): Promise<{ removedAmount: number; newPendingAmount: number; status: string }> => {
+  const response = await apiClient.post(`${BASE_PATH}/records/${recordId}/remove-discount`, { reason, removedBy });
+  return response.data;
 };
 
 /**
@@ -455,14 +525,14 @@ export const sendReceiptEmail = async (transactionId: string, email: string): Pr
  * Send fee reminders
  */
 export const sendFeeReminders = async (data: SendRemindersDto): Promise<ReminderResult> => {
-  const response = await apiClient.post(`${BASE_PATH}/reminders/send`, data);
+  const response = await apiClient.post(`${BASE_PATH}/send-reminders`, data);
   return response.data;
 };
 
 /**
  * Get overdue fee records
  */
-export const getOverdueFees = async (): Promise<FeeRecord[]> => {
+export const getOverdueFees = async (): Promise<OverdueFeeRecord[]> => {
   const response = await apiClient.get(`${BASE_PATH}/overdue`);
   return response.data;
 };
@@ -477,7 +547,16 @@ export const bulkAssignStructure = async (structureId: string): Promise<{ assign
 };
 
 /**
- * Add ad-hoc extra charges (hostel, library fine, misc) to an existing fee record.
+ * Seed default fee structures for every class that has no structure for the given academic year.
+ * Creates 3-term schedules with tiered tuition fees. Safe to call multiple times.
+ */
+export const seedFeeStructures = async (academicYear?: string): Promise<{ created: number; skipped: number; academicYear: string; message: string }> => {
+  const params = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : "";
+  const response = await apiClient.post(`${BASE_PATH}/structures/seed${params}`);
+  return response.data;
+};
+
+/**
  * Increases the outstanding balance so the admin can collect the full amount in one transaction.
  */
 export const addExtraCharges = async (
@@ -550,6 +629,23 @@ export const getFeeStats = async (academicYear?: string): Promise<FeeStats> => {
   };
 };
 
+export interface RecentPayment {
+  id: string;
+  studentName: string;
+  class: string;
+  amount: number;
+  date: string;
+  method: string;
+  receiptNumber: string;
+  status: string;
+}
+
+export const getRecentPayments = async (date?: string): Promise<RecentPayment[]> => {
+  const params = date ? `?date=${date}` : '';
+  const response = await apiClient.get(`${BASE_PATH}/payments/recent${params}`);
+  return response.data ?? [];
+};
+
 /**
  * Process refund for a transaction
  */
@@ -557,7 +653,7 @@ export const processRefund = async (
   transactionId: string,
   data: CreateRefundDto
 ): Promise<RefundResponse> => {
-  const response = await apiClient.post(`${BASE_PATH}/refunds/${transactionId}`, data);
+  const response = await apiClient.post(`${BASE_PATH}/transactions/${transactionId}/refund`, data);
   return response.data;
 };
 
@@ -565,7 +661,7 @@ export const processRefund = async (
  * Get refund status
  */
 export const getRefundStatus = async (refundId: string): Promise<RefundResponse> => {
-  const response = await apiClient.get(`${BASE_PATH}/refunds/${refundId}`);
+  const response = await apiClient.get(`${BASE_PATH}/refunds/${refundId}/status`);
   return response.data;
 };
 
@@ -704,6 +800,40 @@ export const getAuditTrail = async (params: {
 };
 
 // ========== SIBLING DISCOUNT ==========
+
+export interface SiblingInstallment {
+  number: number;
+  label: string;       // "Term 1", "Q2", "Annual", etc.
+  amount: number;
+  paidInInstallment: number;   // portion of student's total paid that covers this installment
+  dueInInstallment: number;    // amount still outstanding for this installment
+  dueDate?: string;
+  status: 'paid' | 'current' | 'upcoming';
+}
+
+export interface SiblingFeeInfo {
+  studentId: string;
+  studentName: string;
+  class: string;
+  section: string;
+  isAnchor: boolean;
+  totalFee: number;
+  paidAmount: number;
+  pendingAmount: number;
+  status: string;
+  feeRecordId?: string;
+  academicYear: string;
+  structureName?: string;
+  installmentPlan: string;  // "Annual" | "Half-Yearly" | "Term-wise (3)" | "Quarterly" | "Monthly"
+  installments: SiblingInstallment[];
+}
+
+export const getSiblingInfo = async (studentId: string, academicYear?: string): Promise<SiblingFeeInfo[]> => {
+  const params = new URLSearchParams({ studentId });
+  if (academicYear) params.append('academicYear', academicYear);
+  const response = await apiClient.get(`${BASE_PATH}/sibling-info?${params.toString()}`);
+  return response.data ?? [];
+};
 
 export interface SiblingDiscountRequest {
   studentId: string;
@@ -876,22 +1006,24 @@ export const promoteFeeStructure = async (feeStructureId: string, data: { target
 
 export interface BulkFeePaymentRow {
   admissionNumber: string;
-  amount: number;
-  paymentDate: string;
-  paymentMode: string;
-  transactionRef?: string;
+  studentName?: string;
+  amountPaid: number;
+  paymentDate: string;      // ISO date: YYYY-MM-DD
+  paymentMethod: string;    // cash | online | cheque | dd | neft | upi
+  receiptNumber?: string;
   remarks?: string;
 }
 
 export interface BulkPaymentResult {
   totalRows: number;
-  successCount: number;
-  failureCount: number;
-  failures: { admissionNumber: string; reason: string }[];
+  successful: number;
+  failed: number;
+  errors: string[];  // format: "ADM001: reason"
 }
 
 export const bulkUploadPayments = async (rows: BulkFeePaymentRow[]): Promise<BulkPaymentResult> => {
-  const response = await apiClient.post(`${BASE_PATH}/payments/bulk-upload`, { rows });
+  // Send array directly — backend expects List<BulkFeePaymentRow> (not wrapped)
+  const response = await apiClient.post(`${BASE_PATH}/payments/bulk-upload`, rows);
   return response.data;
 };
 
@@ -912,6 +1044,64 @@ export const getDeletedTransactions = async (from?: string, to?: string): Promis
   if (to) params.append('to', to);
   const response = await apiClient.get(`${BASE_PATH}/deleted-transactions?${params.toString()}`);
   return response.data;
+};
+
+// ─── Concession Types CRUD ───────────────────────────────
+export interface ConcessionType {
+  id: string;
+  schoolId: string;
+  name: string;
+  description?: string;
+  discountType: string; // "Percentage" | "Fixed"
+  discountValue: number;
+  maxDiscountAmount?: number;
+  applicableFor?: string;
+  requiresDocuments: boolean;
+  requiresApproval: boolean;
+  validFrom?: string;
+  validTo?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateConcessionTypeDto {
+  name: string;
+  description?: string;
+  discountType: string;
+  discountValue: number;
+  maxDiscountAmount?: number;
+  applicableFor?: string;
+  requiresDocuments?: boolean;
+  requiresApproval?: boolean;
+  validFrom?: string;
+  validTo?: string;
+}
+
+const CONCESSION_TYPES_PATH = '/FeeConcession/types';
+
+export const getConcessionTypes = async (): Promise<ConcessionType[]> => {
+  const response = await apiClient.get(CONCESSION_TYPES_PATH);
+  const data = response.data;
+  // Backend now returns a plain array; keep fallbacks for any legacy wrapper shape
+  if (Array.isArray(data)) return data as ConcessionType[];
+  if (Array.isArray(data?.concessionTypes) && (data.concessionTypes as unknown[]).length > 0) return data.concessionTypes as ConcessionType[];
+  if (Array.isArray(data?.items) && (data.items as unknown[]).length > 0) return data.items as ConcessionType[];
+  return [];
+};
+
+export const createConcessionType = async (dto: CreateConcessionTypeDto): Promise<ConcessionType> => {
+  const response = await apiClient.post(CONCESSION_TYPES_PATH, dto);
+  return response.data;
+};
+
+export const updateConcessionType = async (id: string, dto: Partial<CreateConcessionTypeDto> & { isActive?: boolean }): Promise<ConcessionType> => {
+  const response = await apiClient.put(`${CONCESSION_TYPES_PATH}/${id}`, dto);
+  return response.data;
+};
+
+export const deleteConcessionType = async (id: string): Promise<void> => {
+  await apiClient.delete(`${CONCESSION_TYPES_PATH}/${id}`);
 };
 
 // Export all functions as a single object for convenience
@@ -962,6 +1152,15 @@ export const feeApi = {
   promoteFeeStructure,
   bulkUploadPayments,
   getDeletedTransactions,
+  getRecentPayments,
+  getSiblingInfo,
+  getConcessionTypes,
+  createConcessionType,
+  updateConcessionType,
+  deleteConcessionType,
+  seedFeeStructures,
+  applyFeeHeadOverrides,
+  removeDiscount,
 };
 
 export default feeApi;

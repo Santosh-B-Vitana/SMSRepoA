@@ -33,6 +33,8 @@ namespace SmsApi.Models.Entities
         
         public bool RequiresApproval { get; set; } = true;
         
+        public bool IsActive { get; set; } = true;
+        
         public DateTime? ValidFrom { get; set; }
         
         public DateTime? ValidTo { get; set; }

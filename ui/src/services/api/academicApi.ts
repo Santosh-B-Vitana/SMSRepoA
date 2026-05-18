@@ -386,6 +386,9 @@ export const academicApi = {
   removeTeacherAssignment: (id: string) =>
     apiDelete<void>(`/academics/teacher-assignments/${id}`),
 
+  unsetClassTeacher: (id: string) =>
+    apiPatch<void>(`/academics/teacher-assignments/${id}/unset-class-teacher`, {}),
+
   // ========== My Class Assignments (for logged-in teacher) ==========
   getMyClassAssignments: () =>
     apiGet<MyClassAssignment[]>('/academics/my-class-assignments'),

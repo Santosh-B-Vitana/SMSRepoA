@@ -75,6 +75,9 @@ namespace SmsApi.Services
                     .AsNoTracking()
                     .Where(p => p.SchoolId == schoolId);
 
+                if (filters.StaffId.HasValue)
+                    query = query.Where(p => p.StaffId == filters.StaffId.Value);
+
                 if (filters.Month != null)
                 {
                     var monthNum = GetMonthNumber(filters.Month);

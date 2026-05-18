@@ -363,8 +363,7 @@ namespace SmsApi.Controllers
 
                 if (entry.DiaryType == "individual" && entry.StudentId.HasValue)
                 {
-                    // Individual entry: find guardian emails from legacy StudentGuardian table,
-                    // then match to parent portal UserLogin accounts by email.
+                    // Path 1 (legacy): StudentGuardians email → UserLogins
                     var guardianEmails = await _db.StudentGuardians
                         .Where(sg => sg.StudentId == entry.StudentId.Value &&
                                      sg.SchoolId == notifSchoolId &&
@@ -373,7 +372,7 @@ namespace SmsApi.Controllers
                         .Distinct()
                         .ToListAsync();
 
-                    parentUserIds = guardianEmails.Any()
+                    var legacyIds = guardianEmails.Any()
                         ? await _db.UserLogins
                             .Where(ul => ul.SchoolId == notifSchoolId &&
                                          guardianEmails.Contains(ul.Email.ToLower()))
@@ -381,6 +380,20 @@ namespace SmsApi.Controllers
                             .Distinct()
                             .ToListAsync()
                         : new List<Guid>();
+
+                    // Path 2 (new): GuardianStudents → Guardian.UserLoginId (direct portal link)
+                    var newGuardianIds = await _db.GuardianStudents
+                        .Where(gs => gs.StudentId == entry.StudentId.Value && gs.SchoolId == notifSchoolId)
+                        .Join(_db.Guardians,
+                              gs => gs.GuardianId,
+                              g => g.Id,
+                              (gs, g) => g.UserLoginId)
+                        .Where(uid => uid.HasValue)
+                        .Select(uid => uid!.Value)
+                        .Distinct()
+                        .ToListAsync();
+
+                    parentUserIds = legacyIds.Union(newGuardianIds).Distinct().ToList();
                 }
                 else if (entry.DiaryType == "class" && entry.ClassId.HasValue)
                 {
@@ -416,7 +429,7 @@ namespace SmsApi.Controllers
                         classStudentIds = classStudentIds.Union(legacyIds).Distinct().ToList();
                     }
 
-                    // Get guardian emails for all students, then match to parent UserLogins
+                    // Path 1 (legacy): StudentGuardians email → UserLogins
                     var classGuardianEmails = await _db.StudentGuardians
                         .Where(sg => classStudentIds.Contains(sg.StudentId) &&
                                      sg.SchoolId == notifSchoolId &&
@@ -425,7 +438,7 @@ namespace SmsApi.Controllers
                         .Distinct()
                         .ToListAsync();
 
-                    parentUserIds = classGuardianEmails.Any()
+                    var legacyClassIds = classGuardianEmails.Any()
                         ? await _db.UserLogins
                             .Where(ul => ul.SchoolId == notifSchoolId &&
                                          classGuardianEmails.Contains(ul.Email.ToLower()))
@@ -433,6 +446,20 @@ namespace SmsApi.Controllers
                             .Distinct()
                             .ToListAsync()
                         : new List<Guid>();
+
+                    // Path 2 (new): GuardianStudents → Guardian.UserLoginId (direct portal link)
+                    var newClassGuardianIds = await _db.GuardianStudents
+                        .Where(gs => classStudentIds.Contains(gs.StudentId) && gs.SchoolId == notifSchoolId)
+                        .Join(_db.Guardians,
+                              gs => gs.GuardianId,
+                              g => g.Id,
+                              (gs, g) => g.UserLoginId)
+                        .Where(uid => uid.HasValue)
+                        .Select(uid => uid!.Value)
+                        .Distinct()
+                        .ToListAsync();
+
+                    parentUserIds = legacyClassIds.Union(newClassGuardianIds).Distinct().ToList();
                 }
                 else
                 {

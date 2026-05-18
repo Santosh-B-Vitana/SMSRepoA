@@ -328,6 +328,10 @@ export const studentApi = {
   list: (filters?: StudentFilters) =>
     apiGet<StudentListResponse>('/students', filters as Record<string, unknown>),
 
+  /** Get the logged-in student's own record (Student role only — resolved via JWT email). */
+  getMe: () =>
+    apiGet<StudentResponse>('/students/me'),
+
   getById: (id: string) =>
     apiGet<Student>(`/students/${id}`),
 

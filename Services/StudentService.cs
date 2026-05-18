@@ -14,6 +14,7 @@ namespace SmsApi.Services
     {
         Task<StudentListResponse> GetStudentsAsync(Guid schoolId, int page, int pageSize, string? search, string? classFilter, string? sectionFilter, string? status, string? academicYear = null, string? sortBy = null, string? sortOrder = null);
         Task<StudentResponse?> GetStudentByIdAsync(Guid id, Guid schoolId);
+        Task<StudentResponse?> GetStudentByEmailAsync(string email, Guid schoolId);
         Task<StudentResponse> CreateStudentAsync(CreateStudentRequest request);
         Task<StudentResponse?> UpdateStudentAsync(Guid id, Guid schoolId, UpdateStudentRequest request);
         Task<bool> DeleteStudentAsync(Guid id, Guid schoolId);
@@ -215,6 +216,17 @@ namespace SmsApi.Services
                 Page = page,
                 PageSize = pageSize
             };
+        }
+
+        public async Task<StudentResponse?> GetStudentByEmailAsync(string email, Guid schoolId)
+        {
+            var student = await _context.Students
+                .Include(s => s.Guardians)
+                .Include(s => s.Documents)
+                .Include(s => s.Siblings!).ThenInclude(ss => ss.Sibling)
+                .Where(s => s.SchoolId == schoolId && s.Email != null && s.Email.ToLower() == email.ToLower())
+                .FirstOrDefaultAsync();
+            return student == null ? null : await GetStudentByIdAsync(student.Id, schoolId);
         }
 
         public async Task<StudentResponse?> GetStudentByIdAsync(Guid id, Guid schoolId)

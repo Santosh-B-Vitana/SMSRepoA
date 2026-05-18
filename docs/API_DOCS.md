@@ -1,6 +1,6 @@
 # API Documentation — SMS API
 
-**Last Updated:** May 8, 2026 | **Version:** 1.0.0 | **Project:** SMSRepoA  
+**Last Updated:** May 19, 2026 | **Version:** 1.1.0 | **Project:** SMSRepoA  
 **Base URL:** `http://localhost:5092` (dev) | `https://api.your-domain.com` (prod)  
 **Format:** JSON | **Authentication:** JWT Bearer Token
 
@@ -10,6 +10,7 @@
 
 - [Authentication](#authentication)
 - [Students](#students)
+- [Fees](#fees)
 - [Health & Status](#health--status)
 - [Error Responses](#error-responses)
 - [Rate Limiting](#rate-limiting)
@@ -207,6 +208,132 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 **Auth:** Required (Admin)  
 **Response:** `204 No Content`  
 **Note:** Soft delete — `IsDeleted` set to `true`. Data is retained.
+
+---
+
+## Fees
+
+### Apply Fee Head Overrides
+
+**Endpoint:** `PATCH /api/Fees/records/{id}/fee-head-overrides`  
+**Auth:** Required — roles: Admin, Principal, Finance, FinanceOfficer, Accountant  
+**Added:** May 19, 2026
+
+Sets per-student overrides for individual fee heads (e.g. Library Fee exemption). Reduces `TotalAmount` directly — does **not** add to `DiscountAmount`. Overrides are persisted as a JSON dictionary in the `FeeHeadOverrides` column and merged with any previous overrides.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `id` | `Guid` | Fee record ID (`FeeRecord.Id`) |
+
+**Request Body:**
+```json
+{
+  "overrides": {
+    "libraryFee": 0,
+    "labFee": 500
+  },
+  "appliedBy": "admin@school.edu"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `overrides` | `Dictionary<string, decimal>` | ✅ | Map of fee head key → override amount. Use the fee head key as stored on `FeeStructureComponent`. |
+| `appliedBy` | `string` | ❌ | Username/email of person applying the override (for audit log). |
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Fee head overrides applied successfully.",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "totalAmount": 42000.00,
+    "pendingAmount": 42000.00,
+    "discountAmount": 0.00,
+    "feeHeadOverrides": "{\"libraryFee\":0,\"labFee\":500}",
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Not authenticated |
+| 403 | Role not permitted |
+| 404 | Fee record not found |
+| 400 | `overrides` dict is empty or null |
+
+**Example:**
+```bash
+curl -X PATCH http://localhost:5092/api/Fees/records/550e8400-e29b-41d4-a716-446655440000/fee-head-overrides \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"overrides":{"libraryFee":0},"appliedBy":"admin@school.edu"}'
+```
+
+---
+
+### Remove Concession / Discount
+
+**Endpoint:** `POST /api/Fees/records/{id}/remove-discount`  
+**Auth:** Required — roles: Admin, Principal, Finance, FinanceOfficer, Accountant  
+**Added:** May 19, 2026
+
+Zeroes out the `DiscountAmount` on a fee record and recalculates `PendingAmount`. Used when a previously granted concession must be reversed. Action is audit-logged.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `id` | `Guid` | Fee record ID (`FeeRecord.Id`) |
+
+**Request Body:**
+```json
+{
+  "reason": "Student no longer eligible for merit concession",
+  "removedBy": "principal@school.edu"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | `string` | ❌ | Reason for removal (stored in audit log). |
+| `removedBy` | `string` | ❌ | Username/email of person removing the concession (for audit log). |
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Discount removed successfully.",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "discountAmount": 0.00,
+    "pendingAmount": 45000.00,
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Not authenticated |
+| 403 | Role not permitted (Teacher/Staff cannot remove discounts) |
+| 404 | Fee record not found |
+
+**Example:**
+```bash
+curl -X POST http://localhost:5092/api/Fees/records/550e8400-e29b-41d4-a716-446655440000/remove-discount \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"No longer eligible","removedBy":"principal@school.edu"}'
+```
 
 ---
 

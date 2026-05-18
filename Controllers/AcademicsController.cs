@@ -367,6 +367,21 @@ namespace SmsApi.Controllers
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
 
+        [HttpPatch("teacher-assignments/{id}/unset-class-teacher")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        public async Task<ActionResult> UnsetClassTeacher(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _academicsService.UnsetClassTeacherFlagAsync(id, schoolId);
+                if (!result) { return NotFound(); }
+                return NoContent();
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
         [HttpDelete("teacher-assignments/{id}")]
         [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
         public async Task<ActionResult> RemoveTeacherAssignment(Guid id)

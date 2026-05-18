@@ -448,41 +448,84 @@ export const promoteExamStructure = async (data: PromoteExamStructureDto): Promi
 
 // ========== CO-SCHOLASTIC ==========
 
+export type CoScholasticCategory = "co_scholastic_activities" | "attitudes_values" | "life_skills" | "discipline";
+
+export const CO_SCHOLASTIC_CATEGORY_LABELS: Record<string, string> = {
+  co_scholastic_activities: "Co-Scholastic Activities",
+  attitudes_values: "Attitudes & Values",
+  life_skills: "Life Skills",
+  discipline: "Discipline",
+};
+
 export interface CoScholasticArea {
   id: string;
   name: string;
   code: string;
   description?: string;
   gradeScale: string;
+  category?: CoScholasticCategory;
+  applicableFromGrade?: number;
+  applicableToGrade?: number;
   displayOrder: number;
   isActive: boolean;
 }
 
 export interface CreateCoScholasticAreaDto {
   name: string;
-  code: string;
+  code?: string;
   description?: string;
   gradeScale?: string;
+  category?: string;
+  applicableFromGrade?: number;
+  applicableToGrade?: number;
   displayOrder?: number;
+}
+
+export interface UpdateCoScholasticAreaDto {
+  name?: string;
+  code?: string;
+  description?: string;
+  gradeScale?: string;
+  category?: string;
+  applicableFromGrade?: number;
+  applicableToGrade?: number;
+  displayOrder?: number;
+  isActive?: boolean;
 }
 
 export interface CoScholasticAssessment {
   id: string;
   studentId: string;
   coScholasticAreaId: string;
-  areaName: string;
-  areaCode: string;
+  area: { id: string; name: string; code: string; gradeScale: string };
   academicYear: string;
-  term: string;
+  term: number;
   grade: string;
   remarks?: string;
 }
 
-export interface SaveCoScholasticAssessmentDto {
+/** Single row sent to POST /coscholastic/assessments (matches backend flat list format) */
+export interface SaveCoScholasticEntryDto {
   studentId: string;
+  coScholasticAreaId: string;
   academicYear: string;
-  term: string;
-  assessments: { coScholasticAreaId: string; grade: string; remarks?: string }[];
+  term: number;
+  grade: string;
+  remarks?: string;
+  examId?: string;
+}
+
+/** Class-level grid response from GET /coscholastic/class/{classId} */
+export interface ClassCoScholasticGrid {
+  academicYear: string;
+  term: number;
+  areas: CoScholasticArea[];
+  students: {
+    studentId: string;
+    name: string;
+    rollNumber?: string;
+    grades: Record<string, { grade: string; remarks?: string }>;
+  }[];
 }
 
 export const getCoScholasticAreas = async (): Promise<CoScholasticArea[]> => {
@@ -495,17 +538,40 @@ export const createCoScholasticArea = async (data: CreateCoScholasticAreaDto): P
   return response.data;
 };
 
-export const getStudentCoScholastic = async (studentId: string, academicYear?: string, term?: string): Promise<CoScholasticAssessment[]> => {
+export const updateCoScholasticArea = async (id: string, data: UpdateCoScholasticAreaDto): Promise<CoScholasticArea> => {
+  const response = await apiClient.put(`${BASE_PATH}/coscholastic/areas/${id}`, data);
+  return response.data;
+};
+
+export const deleteCoScholasticArea = async (id: string): Promise<void> => {
+  await apiClient.delete(`${BASE_PATH}/coscholastic/areas/${id}`);
+};
+
+export const seedCoScholasticAreas = async (): Promise<{ created: number; skipped: number; message: string }> => {
+  const response = await apiClient.post(`${BASE_PATH}/coscholastic/areas/seed`);
+  return response.data;
+};
+
+export const getStudentCoScholastic = async (studentId: string, academicYear?: string, term?: number): Promise<CoScholasticAssessment[]> => {
   const params = new URLSearchParams();
   if (academicYear) params.append('academicYear', academicYear);
-  if (term) params.append('term', term);
+  if (term !== undefined) params.append('term', term.toString());
   const response = await apiClient.get(`${BASE_PATH}/coscholastic/students/${studentId}?${params.toString()}`);
   return response.data;
 };
 
-export const saveCoScholasticAssessments = async (data: SaveCoScholasticAssessmentDto): Promise<CoScholasticAssessment[]> => {
-  const response = await apiClient.post(`${BASE_PATH}/coscholastic/assessments`, data);
+export const getClassCoScholastic = async (classId: string, academicYear?: string, term?: number, sectionId?: string): Promise<ClassCoScholasticGrid> => {
+  const params = new URLSearchParams();
+  if (academicYear) params.append('academicYear', academicYear);
+  if (term !== undefined) params.append('term', term.toString());
+  if (sectionId) params.append('sectionId', sectionId);
+  const response = await apiClient.get(`${BASE_PATH}/coscholastic/class/${classId}?${params.toString()}`);
   return response.data;
+};
+
+/** Save a flat list of co-scholastic entries (upsert). Used for class bulk entry. */
+export const saveCoScholasticAssessments = async (entries: SaveCoScholasticEntryDto[]): Promise<void> => {
+  await apiClient.post(`${BASE_PATH}/coscholastic/assessments`, entries);
 };
 
 // Export all functions as a single object for convenience
@@ -530,7 +596,11 @@ export const examinationApi = {
   promoteExamStructure,
   getCoScholasticAreas,
   createCoScholasticArea,
+  updateCoScholasticArea,
+  deleteCoScholasticArea,
+  seedCoScholasticAreas,
   getStudentCoScholastic,
+  getClassCoScholastic,
   saveCoScholasticAssessments,
 };
 
