@@ -14,10 +14,12 @@ import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route
 import { transportApi, TransportRoute, TransportStudent, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
 import { usePermissions } from "@/contexts/PermissionsContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── Route Form Dialog ────────────────────────────────────────────────────────
 
 function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<CreateRouteDto>({
     routeNumber: route?.routeNumber ?? "",
     routeName: route?.routeName ?? "",
@@ -55,52 +57,52 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{route ? "Edit Route" : "Add Bus Route"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{route ? t('transport.routeForm.titleEdit') : t('transport.routeForm.titleAdd')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Route Number *</Label>
+            <Label>{t('transport.routeForm.routeNumber')} *</Label>
             <Input value={form.routeNumber} onChange={e => set("routeNumber", e.target.value)} placeholder="R-001" />
           </div>
           <div className="space-y-1.5">
-            <Label>Route Name *</Label>
+            <Label>{t('transport.routeForm.routeName')} *</Label>
             <Input value={form.routeName} onChange={e => set("routeName", e.target.value)} placeholder="Banjara Hills Route" />
           </div>
           <div className="space-y-1.5">
-            <Label>Vehicle Number</Label>
+            <Label>{t('transport.routeForm.vehicleNumber')}</Label>
             <Input value={form.vehicleNumber ?? ""} onChange={e => set("vehicleNumber", e.target.value)} placeholder="TS 09 AB 1234" />
           </div>
           <div className="space-y-1.5">
-            <Label>Driver Name</Label>
+            <Label>{t('transport.routeForm.driverName')}</Label>
             <Input value={form.driverName ?? ""} onChange={e => set("driverName", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Driver Phone</Label>
+            <Label>{t('transport.routeForm.driverPhone')}</Label>
             <Input value={form.driverPhone ?? ""} onChange={e => set("driverPhone", e.target.value)} placeholder="+91 98765 43210" />
           </div>
           <div className="space-y-1.5">
-            <Label>Capacity</Label>
+            <Label>{t('transport.routeForm.capacity')}</Label>
             <Input type="number" value={form.capacity} onChange={e => set("capacity", parseInt(e.target.value) || 0)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Monthly Fee (₹)</Label>
+            <Label>{t('transport.routeForm.monthlyFee')}</Label>
             <Input type="number" value={form.monthlyFee ?? 0} onChange={e => set("monthlyFee", parseFloat(e.target.value) || 0)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Status</Label>
+            <Label>{t('transport.routeForm.status')}</Label>
             <Select value={form.status} onValueChange={v => set("status", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="active">{t('transport.routeForm.status.active')}</SelectItem>
+                <SelectItem value="inactive">{t('transport.routeForm.status.inactive')}</SelectItem>
+                <SelectItem value="maintenance">{t('transport.routeForm.status.maintenance')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <DialogFooter className="col-span-2 gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('transport.routeForm.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {route ? "Update" : "Create Route"}
+              {route ? t('transport.routeForm.update') : t('transport.routeForm.create')}
             </Button>
           </DialogFooter>
         </form>
@@ -112,6 +114,7 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
 // ─── Assign Student Dialog ────────────────────────────────────────────────────
 
 function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRoute[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [searchResults, setSearchResults] = useState<StudentBasic[]>([]);
   const [assignedStudentIds, setAssignedStudentIds] = useState<Set<string>>(new Set());
   const [loadingAssigned, setLoadingAssigned] = useState(true);
@@ -193,15 +196,15 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Assign Student to Route</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('transport.assignDialog.title')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Student *</Label>
+            <Label>{t('transport.assignDialog.studentLabel')} *</Label>
             <div ref={studentRef} className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 className="pl-9 pr-8"
-                placeholder={loadingAssigned ? "Loading..." : "Type name or admission number to search…"}
+                placeholder={loadingAssigned ? t('transport.assignDialog.searchLoading') : t('transport.assignDialog.searchPlaceholder')}
                 value={selectedStudent && !studentOpen
                   ? `${selectedStudent.name} — ${selectedStudent.class} ${selectedStudent.section} (${selectedStudent.admissionNumber})`
                   : studentQuery}
@@ -223,7 +226,7 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
                   {searching ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />Searching…
+                      <Loader2 className="h-4 w-4 animate-spin" />{t('transport.assignDialog.searching')}
                     </div>
                   ) : filteredResults.length > 0 ? (
                     filteredResults.map(s => (
@@ -235,7 +238,7 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
                       </button>
                     ))
                   ) : searchResults.length > 0 ? (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">All matching students are already assigned</div>
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">{t('transport.assignDialog.allAssigned')}</div>
                   ) : (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">No active students found for "{studentQuery}"</div>
                   )}
@@ -244,10 +247,10 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Route *</Label>
+            <Label>{t('transport.assignDialog.routeLabel')} *</Label>
             <Select value={form.routeId} onValueChange={v => setForm(p => ({ ...p, routeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
-              <SelectContent>
+              <SelectTrigger><SelectValue placeholder={t('transport.assignDialog.selectRoute')} /></SelectTrigger>              <SelectContent>
+                {routes.filter(r => r.status === "active" || r.id === assignment.routeId).map(r => (              <SelectContent>
                 {routes.filter(r => r.status === "active").map(r => (
                   <SelectItem key={r.id} value={r.id}>{r.routeNumber} — {r.routeName} ({r.studentsAssigned}/{r.capacity})</SelectItem>
                 ))}
@@ -256,18 +259,18 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Pickup Point</Label>
+              <Label>{t('transport.assignDialog.pickupPoint')}</Label>
               <Input value={form.pickupPoint ?? ""} onChange={e => setForm(p => ({ ...p, pickupPoint: e.target.value }))} placeholder="Main Gate" />
             </div>
             <div className="space-y-1.5">
-              <Label>Drop Point</Label>
+              <Label>{t('transport.assignDialog.dropPoint')}</Label>
               <Input value={form.dropPoint ?? ""} onChange={e => setForm(p => ({ ...p, dropPoint: e.target.value }))} placeholder="Bus Stand" />
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('transport.assignDialog.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Assign Student
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('transport.assignDialog.assign')}
             </Button>
           </DialogFooter>
         </form>
@@ -279,6 +282,7 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
 // ─── Edit Transport Student Dialog ───────────────────────────────────────────
 
 function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { assignment: TransportStudent; routes: TransportRoute[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<UpdateTransportStudentDto>({
     routeId: assignment.routeId,
     pickupPoint: assignment.pickupPoint ?? "",
@@ -307,9 +311,9 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
         <DialogHeader><DialogTitle>Edit Transport Assignment — {assignment.studentName}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Route *</Label>
+            <Label>{t('transport.editDialog.routeLabel')} *</Label>
             <Select value={form.routeId} onValueChange={v => setForm(p => ({ ...p, routeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('transport.editDialog.selectRoute')} /></SelectTrigger>
               <SelectContent>
                 {routes.filter(r => r.status === "active" || r.id === assignment.routeId).map(r => (
                   <SelectItem key={r.id} value={r.id}>{r.routeNumber} — {r.routeName} ({r.studentsAssigned}/{r.capacity})</SelectItem>
@@ -319,34 +323,34 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Pickup Point</Label>
+              <Label>{t('transport.editDialog.pickupPoint')}</Label>
               <Input value={form.pickupPoint ?? ""} onChange={e => setForm(p => ({ ...p, pickupPoint: e.target.value }))} placeholder="Main Gate" />
             </div>
             <div className="space-y-1.5">
-              <Label>Drop Point</Label>
+              <Label>{t('transport.editDialog.dropPoint')}</Label>
               <Input value={form.dropPoint ?? ""} onChange={e => setForm(p => ({ ...p, dropPoint: e.target.value }))} placeholder="Bus Stand" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Monthly Fee (₹)</Label>
+              <Label>{t('transport.editDialog.monthlyFee')}</Label>
               <Input type="number" value={form.monthlyFee ?? 0} onChange={e => setForm(p => ({ ...p, monthlyFee: parseFloat(e.target.value) || 0 }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>{t('transport.editDialog.status')}</Label>
               <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="active">{t('transport.editDialog.status.active')}</SelectItem>
+                  <SelectItem value="inactive">{t('transport.editDialog.status.inactive')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('transport.editDialog.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Update Assignment
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('transport.editDialog.update')}
             </Button>
           </DialogFooter>
         </form>
@@ -358,6 +362,7 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TransportManager() {
+  const { t } = useLanguage();
   const { hasUserPermission } = usePermissions();
   const canViewTransport   = hasUserPermission('Transport', 'View');
   const canManageRoutes    = hasUserPermission('Transport', 'Create');
@@ -446,9 +451,9 @@ export function TransportManager() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-6">
         <ShieldOff className="h-16 w-16 text-muted-foreground opacity-40" />
-        <h2 className="text-xl font-semibold">Access Restricted</h2>
+        <h2 className="text-xl font-semibold">{t('transport.accessRestricted')}</h2>
         <p className="text-muted-foreground max-w-sm">
-          You don't have permission to view Transport Management. Contact your administrator to request access.
+          {t('transport.accessDeniedMessage')}
         </p>
       </div>
     );
@@ -458,29 +463,29 @@ export function TransportManager() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Bus className="h-6 w-6 text-amber-600" />Transport Management</h1>
-          <p className="text-muted-foreground">{canManageRoutes ? "Manage bus routes and student transport assignments" : "View bus routes and transport assignments"}</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Bus className="h-6 w-6 text-amber-600" />{t('transport.title')}</h1>
+          <p className="text-muted-foreground">{canManageRoutes ? t('transport.subtitle.manage') : t('transport.subtitle.view')}</p>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Total Routes</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.totalRoutes')}</p>
           <p className="text-2xl font-bold">{routes.length}</p>
           <p className="text-xs text-green-600">{activeRoutes} active</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Students Using Transport</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.studentsUsingTransport')}</p>
           <p className="text-2xl font-bold">{totalStudents}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Total Capacity</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.totalCapacity')}</p>
           <p className="text-2xl font-bold">{totalCapacity}</p>
           <p className="text-xs text-muted-foreground">{totalCapacity > 0 ? Math.round((totalStudents / totalCapacity) * 100) : 0}% utilized</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Revenue/Month</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.revenuePerMonth')}</p>
           <p className="text-2xl font-bold">₹{routes.reduce((a, r) => a + (r.monthlyFee ?? 0) * r.studentsAssigned, 0).toLocaleString("en-IN")}</p>
         </CardContent></Card>
       </div>
@@ -488,16 +493,16 @@ export function TransportManager() {
       <Tabs value={tab} onValueChange={handleTabChange}>
         <div className="flex items-center justify-between gap-4">
           <TabsList>
-            <TabsTrigger value="routes" className="gap-1.5"><Route className="h-4 w-4" />Bus Routes</TabsTrigger>
-            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />Students</TabsTrigger>
+            <TabsTrigger value="routes" className="gap-1.5"><Route className="h-4 w-4" />{t('transport.tabs.busRoutes')}</TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />{t('transport.tabs.students')}</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9 w-64" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="pl-9 w-64" placeholder={t('transport.search.placeholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            {tab === "routes" && canManageRoutes && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />Add Route</Button>}
-            {tab === "students" && canManageRoutes && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
+            {tab === "routes" && canManageRoutes && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
+            {tab === "students" && canManageRoutes && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.assignStudent')}</Button>}
           </div>
         </div>
 
@@ -508,22 +513,22 @@ export function TransportManager() {
           ) : filteredRoutes.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <Bus className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No routes found</p>
-              <p className="text-sm">Create your first bus route to get started</p>
-              {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />Add Route</Button>}
+              <p className="font-medium">{t('transport.routes.emptyTitle')}</p>
+              <p className="text-sm">{t('transport.routes.emptySubtitle')}</p>
+              {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
             </CardContent></Card>
           ) : (
             <div className="border rounded-lg">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Route</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead className="text-center">Students</TableHead>
-                    <TableHead className="text-right">Fee/Month</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('transport.routes.col.route')}</TableHead>
+                    <TableHead>{t('transport.routes.col.vehicle')}</TableHead>
+                    <TableHead>{t('transport.routes.col.driver')}</TableHead>
+                    <TableHead className="text-center">{t('transport.routes.col.students')}</TableHead>
+                    <TableHead className="text-right">{t('transport.routes.col.feePerMonth')}</TableHead>
+                    <TableHead>{t('transport.routes.col.status')}</TableHead>
+                    <TableHead className="text-right">{t('transport.routes.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -577,9 +582,9 @@ export function TransportManager() {
                 </>
               ) : (
                 <>
-                  <p className="font-medium">No students assigned yet</p>
-                  <p className="text-sm">Assign students to bus routes</p>
-                  {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>}
+                  <p className="font-medium">{t('transport.students.emptyTitle')}</p>
+                  <p className="text-sm">{t('transport.students.emptySubtitle')}</p>
+                  {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />{t('transport.actions.assignStudent')}</Button>}
                 </>
               )}
             </CardContent></Card>
@@ -588,14 +593,14 @@ export function TransportManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Route</TableHead>
-                    <TableHead>Pickup Point</TableHead>
-                    <TableHead>Drop Point</TableHead>
-                    <TableHead>Fee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('transport.students.col.student')}</TableHead>
+                    <TableHead>{t('transport.students.col.class')}</TableHead>
+                    <TableHead>{t('transport.students.col.route')}</TableHead>
+                    <TableHead>{t('transport.students.col.pickupPoint')}</TableHead>
+                    <TableHead>{t('transport.students.col.dropPoint')}</TableHead>
+                    <TableHead>{t('transport.students.col.fee')}</TableHead>
+                    <TableHead>{t('transport.students.col.status')}</TableHead>
+                    <TableHead className="text-right">{t('transport.students.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

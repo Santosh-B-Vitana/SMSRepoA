@@ -127,10 +127,15 @@ export interface UpdateAdmissionData {
 // ==================== AUTH HELPERS ====================
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
+  let token: string | null = null;
+  try {
+    const raw = sessionStorage.getItem('auth_session');
+    if (raw) token = JSON.parse(raw)?.token ?? null;
+  } catch { /* ignore */ }
+  if (!token) token = localStorage.getItem('authToken') ?? localStorage.getItem('token');
   return {
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: token ? `Bearer ${token}` : '',
       'Content-Type': 'application/json'
     }
   };

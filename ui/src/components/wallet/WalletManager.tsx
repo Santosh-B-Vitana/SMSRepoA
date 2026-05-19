@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -102,16 +103,17 @@ function StatusBadge({ status }: { status: string }) {
 function Pagination({
   page, total, pageSize, onChange,
 }: { page: number; total: number; pageSize: number; onChange: (p: number) => void }) {
+  const { t } = useLanguage();
   const pages = Math.ceil(total / pageSize);
   if (pages <= 1) return null;
   return (
     <div className="flex items-center justify-between mt-4 text-sm">
       <span className="text-muted-foreground">
-        Showing {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total}
+        {t('wallet.showing')} {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} {t('wallet.of')} {total}
       </span>
       <div className="flex gap-2">
-        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>← Prev</Button>
-        <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>Next →</Button>
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>{t('wallet.prev')}</Button>
+        <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>{t('wallet.next')}</Button>
       </div>
     </div>
   );
@@ -121,6 +123,7 @@ function Pagination({
 
 export function WalletManager() {
   const visitedTabs = useRef(new Set(["dashboard"]));
+  const { t } = useLanguage();
 
   const [stats, setStats] = useState<FinanceStatsDto | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -530,35 +533,35 @@ export function WalletManager() {
     return (
       <Dialog open={!!approvePcId} onOpenChange={() => setApprovePcId(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Review Petty Cash Request</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('wallet.reviewPcRequest')}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-muted-foreground">Requested by</p>
+                <p className="text-muted-foreground">{t('wallet.requestedBy')}</p>
                 <p className="font-medium">{entry.requestedByName}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Amount</p>
+                <p className="text-muted-foreground">{t('wallet.colAmount')}</p>
                 <p className="font-medium text-lg">{fmt(entry.amount)}</p>
               </div>
               <div className="col-span-2">
-                <p className="text-muted-foreground">Purpose</p>
+                <p className="text-muted-foreground">{t('wallet.colPurpose')}</p>
                 <p className="font-medium">{entry.purpose}</p>
               </div>
             </div>
             <div>
-              <Label>Remarks (optional)</Label>
+              <Label>{t('wallet.remarksOptional')}</Label>
               <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} placeholder="Add remarks..." />
             </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="destructive" disabled={submitting}
               onClick={() => handleApprovePettyCash(entry.id, "REJECTED", remarks)}>
-              <XCircle className="h-4 w-4 mr-2" />Reject
+              <XCircle className="h-4 w-4 mr-2" />{t('wallet.reject')}
             </Button>
             <Button disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700"
               onClick={() => handleApprovePettyCash(entry.id, "APPROVED", remarks)}>
-              <CheckCircle className="h-4 w-4 mr-2" />Approve
+              <CheckCircle className="h-4 w-4 mr-2" />{t('wallet.approve')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -585,18 +588,18 @@ export function WalletManager() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {mode === "income"
-                ? <><TrendingUp className="h-5 w-5 text-emerald-500" />Record Income</>
-                : <><TrendingDown className="h-5 w-5 text-red-500" />Record Expense</>}
+                ? <><TrendingUp className="h-5 w-5 text-emerald-500" />{t('wallet.recordIncome')}</>
+                : <><TrendingDown className="h-5 w-5 text-red-500" />{t('wallet.recordExpense')}</>}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={onSubmit} className="space-y-4 py-2">
             <div>
-              <Label>Account *</Label>
+              <Label>{t('wallet.txFormAccount')}</Label>
               <Select name="accountId" required>
                 <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
                 <SelectContent>
                   {assetAccounts.length === 0
-                    ? <SelectItem value="__none" disabled>No accounts — create one first</SelectItem>
+                    ? <SelectItem value="__none" disabled>{t('wallet.noAccountsCreate')}</SelectItem>
                     : assetAccounts.map(a => (
                       <SelectItem key={a.id} value={a.id}>{a.name} ({fmt(a.balance)})</SelectItem>
                     ))}
@@ -604,18 +607,18 @@ export function WalletManager() {
               </Select>
             </div>
             <div>
-              <Label>Category *</Label>
+              <Label>{t('wallet.txFormCategory')}</Label>
               <Select name="categoryId" required>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
                   {cats.length === 0
-                    ? <SelectItem value="__none" disabled>No categories — create one first</SelectItem>
+                    ? <SelectItem value="__none" disabled>{t('wallet.noCategoriesCreate')}</SelectItem>
                     : cats.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Source *</Label>
+              <Label>{t('wallet.txFormSource')}</Label>
               <Select name="source" required>
                 <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
                 <SelectContent>
@@ -625,20 +628,20 @@ export function WalletManager() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Amount (₹) *</Label>
+                <Label>{t('wallet.amountLabel')}</Label>
                 <Input name="amount" type="number" min={1} step="0.01" required placeholder="0.00" />
               </div>
               <div>
-                <Label>Date *</Label>
+                <Label>{t('wallet.dateLabel')}</Label>
                 <Input name="date" type="date" defaultValue={todayStr()} required />
               </div>
             </div>
             <div>
-              <Label>Description *</Label>
+              <Label>{t('wallet.descriptionLabel')}</Label>
               <Textarea name="description" required placeholder="Brief description..." rows={2} />
             </div>
             <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Saving..." : mode === "income" ? "Record Income" : "Record Expense"}
+              {submitting ? t('wallet.saving') : mode === "income" ? t('wallet.recordIncome') : t('wallet.recordExpense')}
             </Button>
           </form>
         </DialogContent>
@@ -655,65 +658,65 @@ export function WalletManager() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Finance & Wallet</h1>
-          <p className="text-sm text-muted-foreground">Track income, expenses, petty cash and store revenue</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('wallet.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('wallet.desc')}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={() => setAddAccountOpen(true)}>
-            <Banknote className="h-4 w-4 mr-2" />Add Account
+            <Banknote className="h-4 w-4 mr-2" />{t('wallet.addAccount')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setAddCategoryOpen(true)}>
-            <PiggyBank className="h-4 w-4 mr-2" />Add Category
+            <PiggyBank className="h-4 w-4 mr-2" />{t('wallet.addCategory')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => { loadStats(); loadTransactions(txPage); }}>
-            <RefreshCw className="h-4 w-4 mr-2" />Refresh
+            <RefreshCw className="h-4 w-4 mr-2" />{t('common.refresh')}
           </Button>
           <Button size="sm">
-            <Download className="h-4 w-4 mr-2" />Export
+            <Download className="h-4 w-4 mr-2" />{t('wallet.export')}
           </Button>
         </div>
       </div>
 
       <Tabs defaultValue="dashboard" onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="income">Income</TabsTrigger>
-          <TabsTrigger value="expenses">Expenses</TabsTrigger>
+          <TabsTrigger value="dashboard">{t('wallet.tabDashboard')}</TabsTrigger>
+          <TabsTrigger value="transactions">{t('wallet.tabTransactions')}</TabsTrigger>
+          <TabsTrigger value="income">{t('wallet.tabIncome')}</TabsTrigger>
+          <TabsTrigger value="expenses">{t('wallet.tabExpenses')}</TabsTrigger>
           <TabsTrigger value="petty-cash">
-            Petty Cash
+            {t('wallet.tabPettyCash')}
             {stats && stats.pendingPettyCash > 0 && (
               <span className="ml-1.5 rounded-full bg-amber-500 text-white text-xs px-1.5 py-0.5 leading-none">
                 {stats.pendingPettyCash}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="store-income">Store Income</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+          <TabsTrigger value="store-income">{t('wallet.tabStoreIncome')}</TabsTrigger>
+          <TabsTrigger value="reports">{t('wallet.tabReports')}</TabsTrigger>
         </TabsList>
 
         {/* ═══════════ DASHBOARD ═══════════ */}
         <TabsContent value="dashboard" className="space-y-6 mt-4">
           {statsLoading ? (
-            <div className="text-center py-16 text-muted-foreground">Loading dashboard…</div>
+            <div className="text-center py-16 text-muted-foreground">{t('wallet.loadingDashboard')}</div>
           ) : !stats ? (
-            <div className="text-center py-16 text-muted-foreground">No data available</div>
+            <div className="text-center py-16 text-muted-foreground">{t('wallet.noData')}</div>
           ) : (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <KpiCard title="Cash on Hand" value={fmt(stats.cashOnHand)} sub="Cash + asset accounts" icon={Wallet} color="bg-blue-500" />
-                <KpiCard title="Total Income" value={fmt(stats.totalIncome)} sub="Fees + all sources" icon={TrendingUp} color="bg-emerald-500" trend="up" />
-                <KpiCard title="MTD Expenses" value={fmt(stats.totalExpenses)} sub="Month to date" icon={TrendingDown} color="bg-red-500" trend="down" />
-                <KpiCard title="Net Surplus" value={fmt(stats.netIncome)} sub={stats.netIncome >= 0 ? "Surplus" : "Deficit"} icon={DollarSign} color={stats.netIncome >= 0 ? "bg-teal-500" : "bg-orange-500"} />
+                <KpiCard title={t('wallet.cashOnHand')} value={fmt(stats.cashOnHand)} sub="Cash + asset accounts" icon={Wallet} color="bg-blue-500" />
+                <KpiCard title={t('wallet.totalIncome')} value={fmt(stats.totalIncome)} sub="Fees + all sources" icon={TrendingUp} color="bg-emerald-500" trend="up" />
+                <KpiCard title={t('wallet.mtdExpenses')} value={fmt(stats.totalExpenses)} sub="Month to date" icon={TrendingDown} color="bg-red-500" trend="down" />
+                <KpiCard title={t('wallet.netSurplus')} value={fmt(stats.netIncome)} sub={stats.netIncome >= 0 ? t('wallet.surplus') : t('wallet.deficit')} icon={DollarSign} color={stats.netIncome >= 0 ? "bg-teal-500" : "bg-orange-500"} />
               </div>
 
               {/* ── Fee Collection Summary ── */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card className="border-emerald-200 bg-emerald-50/40">
                   <CardContent className="pt-5">
-                    <p className="text-xs text-muted-foreground">Fees Collected</p>
+                    <p className="text-xs text-muted-foreground">{t('wallet.feesCollected')}</p>
                     <p className="text-xl font-bold text-emerald-700">{fmt(stats.collectedFees ?? 0)}</p>
-                    <p className="text-xs text-emerald-600 mt-1">Collection rate: {stats.feeCollectionRate ?? 0}%</p>
+                    <p className="text-xs text-emerald-600 mt-1">{t('wallet.collectionRate')} {stats.feeCollectionRate ?? 0}%</p>
                     <div className="w-full bg-emerald-100 rounded-full h-1.5 mt-2">
                       <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.min(stats.feeCollectionRate ?? 0, 100)}%` }} />
                     </div>
@@ -721,23 +724,23 @@ export function WalletManager() {
                 </Card>
                 <Card className="border-amber-200 bg-amber-50/40">
                   <CardContent className="pt-5">
-                    <p className="text-xs text-muted-foreground">Pending Fees</p>
+                    <p className="text-xs text-muted-foreground">{t('wallet.pendingFees')}</p>
                     <p className="text-xl font-bold text-amber-700">{fmt(stats.pendingFees ?? 0)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Due but unpaid</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('wallet.duePending')}</p>
                   </CardContent>
                 </Card>
                 <Card className="border-red-200 bg-red-50/40">
                   <CardContent className="pt-5">
-                    <p className="text-xs text-muted-foreground">Overdue Fees</p>
+                    <p className="text-xs text-muted-foreground">{t('wallet.overdueFees')}</p>
                     <p className="text-xl font-bold text-red-700">{fmt(stats.overdueFees ?? 0)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Past due date</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('wallet.pastDue')}</p>
                   </CardContent>
                 </Card>
                 <Card className="border-blue-200 bg-blue-50/40">
                   <CardContent className="pt-5">
-                    <p className="text-xs text-muted-foreground">Total Billed</p>
+                    <p className="text-xs text-muted-foreground">{t('wallet.totalBilled')}</p>
                     <p className="text-xl font-bold text-blue-700">{fmt(stats.totalFeesBilled ?? 0)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">All fee records</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('wallet.allFeeRecords')}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -747,7 +750,7 @@ export function WalletManager() {
                   <CardContent className="pt-5 flex items-center gap-4">
                     <div className="rounded-full bg-emerald-100 p-3"><ArrowUpRight className="h-5 w-5 text-emerald-600" /></div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Today's Income</p>
+                      <p className="text-xs text-muted-foreground">{t('wallet.todayIncome')}</p>
                       <p className="text-xl font-bold text-emerald-600">{fmt(stats.todayIncome)}</p>
                     </div>
                   </CardContent>
@@ -756,7 +759,7 @@ export function WalletManager() {
                   <CardContent className="pt-5 flex items-center gap-4">
                     <div className="rounded-full bg-red-100 p-3"><ArrowDownRight className="h-5 w-5 text-red-600" /></div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Today's Expenses</p>
+                      <p className="text-xs text-muted-foreground">{t('wallet.todayExpenses')}</p>
                       <p className="text-xl font-bold text-red-600">{fmt(stats.todayExpenses)}</p>
                     </div>
                   </CardContent>
@@ -765,8 +768,8 @@ export function WalletManager() {
                   <CardContent className="pt-5 flex items-center gap-4">
                     <div className="rounded-full bg-amber-100 p-3"><Clock className="h-5 w-5 text-amber-600" /></div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Pending Approvals</p>
-                      <p className="text-xl font-bold text-amber-600">{stats.pendingPettyCash} requests</p>
+                      <p className="text-xs text-muted-foreground">{t('wallet.pendingApprovals')}</p>
+                      <p className="text-xl font-bold text-amber-600">{stats.pendingPettyCash} {t('wallet.requests')}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -776,12 +779,12 @@ export function WalletManager() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-emerald-500" />Income by Category
+                      <TrendingUp className="h-4 w-4 text-emerald-500" />{t('wallet.incomeByCategory')}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {Object.entries(stats.incomeByCategory).length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No income recorded yet</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">{t('wallet.noIncomeYet')}</p>
                     ) : Object.entries(stats.incomeByCategory).map(([cat, amt]) => {
                       const total = Object.values(stats.incomeByCategory).reduce((s, v) => s + v, 0);
                       const pct = total > 0 ? Math.min((amt / total) * 100, 100) : 0;
@@ -803,12 +806,12 @@ export function WalletManager() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
-                      <TrendingDown className="h-4 w-4 text-red-500" />Expense by Category
+                      <TrendingDown className="h-4 w-4 text-red-500" />{t('wallet.expenseByCategory')}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {Object.entries(stats.expenseByCategory).length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No expenses recorded yet</p>
+                      <p className="text-sm text-muted-foreground text-center py-4">{t('wallet.noExpensesYet')}</p>
                     ) : Object.entries(stats.expenseByCategory).map(([cat, amt]) => {
                       const total = Object.values(stats.expenseByCategory).reduce((s, v) => s + v, 0);
                       const pct = total > 0 ? Math.min((amt / total) * 100, 100) : 0;
@@ -841,11 +844,11 @@ export function WalletManager() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Source</TableHead>
-                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>{t('wallet.colDate')}</TableHead>
+                          <TableHead>{t('wallet.colDescription')}</TableHead>
+                          <TableHead>{t('wallet.colCategory')}</TableHead>
+                          <TableHead>{t('wallet.colSource')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.colAmount')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -877,23 +880,23 @@ export function WalletManager() {
           <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-xs">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search transactions…"
+              <Input className="pl-9" placeholder={t('wallet.searchTx')}
                 value={txFilters.search}
                 onChange={e => setTxFilters(f => ({ ...f, search: e.target.value }))}
                 onKeyDown={e => { if (e.key === "Enter") loadTransactions(1); }} />
             </div>
             <Select value={txFilters.type ?? "all"} onValueChange={v => setTxFilters(f => ({ ...f, type: v === "all" ? "" : v }))}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="All types" /></SelectTrigger>
+              <SelectTrigger className="w-36"><SelectValue placeholder={t('wallet.allTypes')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                <SelectItem value="CREDIT">Income</SelectItem>
-                <SelectItem value="DEBIT">Expense</SelectItem>
+                <SelectItem value="all">{t('wallet.allTypes')}</SelectItem>
+                <SelectItem value="CREDIT">{t('wallet.incomeLabel')}</SelectItem>
+                <SelectItem value="DEBIT">{t('wallet.expenseLabel')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={txFilters.source ?? "all"} onValueChange={v => setTxFilters(f => ({ ...f, source: v === "all" ? "" : v }))}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="All sources" /></SelectTrigger>
+              <SelectTrigger className="w-36"><SelectValue placeholder={t('wallet.allSources')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="all">{t('wallet.allSources')}</SelectItem>
                 {Object.entries(SOURCE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -906,10 +909,10 @@ export function WalletManager() {
             </Button>
             <div className="flex gap-2 ml-auto">
               <Button onClick={() => setAddIncomeOpen(true)} className="bg-emerald-600 hover:bg-emerald-700">
-                <TrendingUp className="h-4 w-4 mr-2" />Income
+                <TrendingUp className="h-4 w-4 mr-2" />{t('wallet.incomeLabel')}
               </Button>
               <Button onClick={() => setAddExpenseOpen(true)} variant="destructive">
-                <TrendingDown className="h-4 w-4 mr-2" />Expense
+                <TrendingDown className="h-4 w-4 mr-2" />{t('wallet.expenseLabel')}
               </Button>
             </div>
           </div>
@@ -921,19 +924,19 @@ export function WalletManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Account</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>{t('wallet.colDate')}</TableHead>
+                    <TableHead>{t('wallet.colDescription')}</TableHead>
+                    <TableHead>{t('wallet.colAccount')}</TableHead>
+                    <TableHead>{t('wallet.colCategory')}</TableHead>
+                    <TableHead>{t('wallet.colSource')}</TableHead>
+                    <TableHead>{t('wallet.colType')}</TableHead>
+                    <TableHead className="text-right">{t('wallet.colAmount')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {transactions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No transactions found</TableCell>
+                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{t('wallet.noTxFound')}</TableCell>
                     </TableRow>
                   ) : transactions.map(tx => (
                     <TableRow key={tx.id}>
@@ -944,7 +947,7 @@ export function WalletManager() {
                       <TableCell><Badge variant="outline" className="text-xs">{SOURCE_LABELS[tx.source] ?? tx.source}</Badge></TableCell>
                       <TableCell>
                         <Badge className={cn("text-xs", tx.type === "CREDIT" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700")} variant="outline">
-                          {tx.type === "CREDIT" ? "Income" : "Expense"}
+                          {tx.type === "CREDIT" ? t('wallet.incomeLabel') : t('wallet.expenseLabel')}
                         </Badge>
                       </TableCell>
                       <TableCell className={cn("text-right font-semibold", tx.type === "CREDIT" ? "text-emerald-600" : "text-red-600")}>
@@ -963,10 +966,10 @@ export function WalletManager() {
         <TabsContent value="income" className="space-y-4 mt-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold text-lg flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-emerald-500" />Aggregated Income Sources
+              <TrendingUp className="h-5 w-5 text-emerald-500" />{t('wallet.aggregatedIncome')}
             </h2>
             <Button onClick={() => setAddIncomeOpen(true)} className="bg-emerald-600 hover:bg-emerald-700">
-              <Plus className="h-4 w-4 mr-2" />Record Income
+              <Plus className="h-4 w-4 mr-2" />{t('wallet.recordIncome')}
             </Button>
           </div>
 
@@ -979,25 +982,25 @@ export function WalletManager() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
                   <CardContent className="pt-5">
-                    <p className="text-sm text-muted-foreground">This Month</p>
+                    <p className="text-sm text-muted-foreground">{t('wallet.thisMonth')}</p>
                     <p className="text-2xl font-bold text-emerald-600">{fmt(aggregatedIncome.totalThisMonth)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-5">
-                    <p className="text-sm text-muted-foreground">Last Month</p>
+                    <p className="text-sm text-muted-foreground">{t('wallet.lastMonth')}</p>
                     <p className="text-2xl font-bold">{fmt(aggregatedIncome.totalLastMonth)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-5">
-                    <p className="text-sm text-muted-foreground">Year to Date</p>
+                    <p className="text-sm text-muted-foreground">{t('wallet.yearToDate')}</p>
                     <p className="text-2xl font-bold text-teal-600">{fmt(aggregatedIncome.totalYearToDate)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-5">
-                    <p className="text-sm text-muted-foreground">Pending</p>
+                    <p className="text-sm text-muted-foreground">{t('wallet.pending')}</p>
                     <p className="text-2xl font-bold text-amber-600">{fmt(aggregatedIncome.totalPending)}</p>
                   </CardContent>
                 </Card>
@@ -1013,18 +1016,18 @@ export function WalletManager() {
                   {aggregatedIncome.sources.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                      <p>No income sources recorded yet.</p>
+                      <p>{t('wallet.noIncomeSourcesYet')}</p>
                     </div>
                   ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Income Source</TableHead>
-                          <TableHead className="text-right">This Month</TableHead>
-                          <TableHead className="text-right">Last Month</TableHead>
-                          <TableHead className="text-right">Year to Date</TableHead>
-                          <TableHead className="text-right">Pending</TableHead>
-                          <TableHead className="text-center">Transactions</TableHead>
+                          <TableHead>{t('wallet.incomeSource')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.thisMonth')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.lastMonth')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.yearToDate')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.pending')}</TableHead>
+                          <TableHead className="text-center">{t('wallet.transactions')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1056,24 +1059,24 @@ export function WalletManager() {
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="text-base">Budget vs Actual — Income Categories</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{t('wallet.budgetVsActualIncome')}</CardTitle></CardHeader>
                 <CardContent>
                   {incCats.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <PiggyBank className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                      <p>No income categories yet.</p>
-                      <Button variant="link" onClick={() => setAddCategoryOpen(true)}>Create a category</Button>
+                      <p>{t('wallet.noIncomeCategories')}</p>
+                      <Button variant="link" onClick={() => setAddCategoryOpen(true)}>{t('wallet.createCategory')}</Button>
                     </div>
                   ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Category</TableHead>
-                          <TableHead className="text-right">Budget</TableHead>
-                          <TableHead className="text-right">Actual</TableHead>
-                          <TableHead className="text-right">Variance</TableHead>
-                          <TableHead>Progress</TableHead>
-                          <TableHead className="w-20">Actions</TableHead>
+                          <TableHead>{t('wallet.colCategory')}</TableHead>
+                          <TableHead>{t('wallet.colBudget')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.colActual')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.colVariance')}</TableHead>
+                          <TableHead>{t('wallet.colProgress')}</TableHead>
+                          <TableHead className="w-20">{t('wallet.colActions')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1096,7 +1099,7 @@ export function WalletManager() {
                                     </div>
                                     <span className="text-xs text-muted-foreground w-10">{pct.toFixed(0)}%</span>
                                   </div>
-                                ) : <span className="text-muted-foreground text-sm">No budget</span>}
+                                ) : <span className="text-muted-foreground text-sm">{t('wallet.noBudget')}</span>}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1">
@@ -1124,36 +1127,36 @@ export function WalletManager() {
         <TabsContent value="expenses" className="space-y-4 mt-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold text-lg flex items-center gap-2">
-              <TrendingDown className="h-5 w-5 text-red-500" />Expense Overview
+              <TrendingDown className="h-5 w-5 text-red-500" />{t('wallet.expenseOverview')}
             </h2>
             <Button onClick={() => setAddExpenseOpen(true)} variant="destructive">
-              <Plus className="h-4 w-4 mr-2" />Record Expense
+              <Plus className="h-4 w-4 mr-2" />{t('wallet.recordExpense')}
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Total Expenses</p><p className="text-2xl font-bold text-red-600">{fmt(stats?.totalExpenses ?? 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Today's Expenses</p><p className="text-2xl font-bold text-red-600">{fmt(stats?.todayExpenses ?? 0)}</p></CardContent></Card>
-            <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Expense Categories</p><p className="text-2xl font-bold">{expCats.length}</p></CardContent></Card>
+            <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{t('wallet.totalExpensesKpi')}</p><p className="text-2xl font-bold text-red-600">{fmt(stats?.totalExpenses ?? 0)}</p></CardContent></Card>
+            <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{t('wallet.todayExpensesKpi')}</p><p className="text-2xl font-bold text-red-600">{fmt(stats?.todayExpenses ?? 0)}</p></CardContent></Card>
+            <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{t('wallet.expenseCategoriesCount')}</p><p className="text-2xl font-bold">{expCats.length}</p></CardContent></Card>
           </div>
           <Card>
-            <CardHeader><CardTitle className="text-base">Budget vs Actual — Expense Categories</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">{t('wallet.budgetVsActualExpense')}</CardTitle></CardHeader>
             <CardContent>
               {expCats.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <PiggyBank className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                  <p>No expense categories yet.</p>
-                  <Button variant="link" onClick={() => setAddCategoryOpen(true)}>Create a category</Button>
+                  <p>{t('wallet.noExpenseCategories')}</p>
+                  <Button variant="link" onClick={() => setAddCategoryOpen(true)}>{t('wallet.createCategory')}</Button>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Category</TableHead>
-                      <TableHead className="text-right">Budget</TableHead>
-                      <TableHead className="text-right">Actual</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead>Utilisation</TableHead>
-                      <TableHead className="w-20">Actions</TableHead>
+                      <TableHead>{t('wallet.colCategory')}</TableHead>
+                      <TableHead className="text-right">{t('wallet.colBudget')}</TableHead>
+                      <TableHead className="text-right">{t('wallet.colActual')}</TableHead>
+                      <TableHead className="text-right">{t('wallet.colRemaining')}</TableHead>
+                      <TableHead>{t('wallet.colUtilisation')}</TableHead>
+                      <TableHead className="w-20">{t('wallet.colActions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1177,7 +1180,7 @@ export function WalletManager() {
                                 </div>
                                 <span className="text-xs text-muted-foreground w-10">{pct.toFixed(0)}%</span>
                               </div>
-                            ) : <span className="text-muted-foreground text-sm">No budget</span>}
+                            ) : <span className="text-muted-foreground text-sm">{t('wallet.noBudget')}</span>}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
@@ -1203,7 +1206,7 @@ export function WalletManager() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Users className="h-4 w-4 text-blue-600" />
-                Import Staff Salaries from Payroll
+                {t('wallet.importSalariesTitle')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1212,13 +1215,13 @@ export function WalletManager() {
               </p>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <Label className="text-xs text-muted-foreground">Month (optional)</Label>
+                  <Label className="text-xs text-muted-foreground">{t('wallet.monthOptional')}</Label>
                   <Select value={syncPayrollMonth} onValueChange={setSyncPayrollMonth}>
                     <SelectTrigger className="w-36">
                       <SelectValue placeholder="All months" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">All months</SelectItem>
+                      <SelectItem value="0">{t('wallet.allMonths')}</SelectItem>
                       {Array.from({ length: 12 }, (_, i) => (
                         <SelectItem key={i + 1} value={String(i + 1)}>
                           {new Date(2000, i, 1).toLocaleString("en-IN", { month: "long" })}
@@ -1228,7 +1231,7 @@ export function WalletManager() {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Year</Label>
+                  <Label className="text-xs text-muted-foreground">{t('wallet.year')}</Label>
                   <Input
                     type="number"
                     className="w-28"
@@ -1244,7 +1247,7 @@ export function WalletManager() {
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <RefreshCw className={cn("h-4 w-4 mr-2", syncingPayroll && "animate-spin")} />
-                  {syncingPayroll ? "Syncing…" : "Import Salaries"}
+                  {syncingPayroll ? t('wallet.importing') : t('wallet.importSalaries')}
                 </Button>
               </div>
               {lastSyncResult && (
@@ -1266,17 +1269,17 @@ export function WalletManager() {
         <TabsContent value="petty-cash" className="space-y-4 mt-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold text-lg flex items-center gap-2">
-              <Banknote className="h-5 w-5 text-amber-500" />Petty Cash Management
+              <Banknote className="h-5 w-5 text-amber-500" />{t('wallet.pettyCashMgmt')}
             </h2>
             <Button onClick={() => setAddPcOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />New Request
+              <Plus className="h-4 w-4 mr-2" />{t('wallet.newRequest')}
             </Button>
           </div>
           {stats && stats.pendingPettyCash > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4 flex items-center gap-3">
               <Clock className="h-5 w-5 text-amber-500 shrink-0" />
               <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                {stats.pendingPettyCash} petty cash request{stats.pendingPettyCash > 1 ? "s" : ""} awaiting approval
+                {stats.pendingPettyCash} {t('wallet.pcAwaitingApproval')}
               </p>
             </div>
           )}
@@ -1287,19 +1290,19 @@ export function WalletManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Purpose</TableHead>
-                    <TableHead>Requested By</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Approved By</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t('wallet.colDate')}</TableHead>
+                    <TableHead>{t('wallet.colPurpose')}</TableHead>
+                    <TableHead>{t('wallet.colRequestedBy')}</TableHead>
+                    <TableHead className="text-right">{t('wallet.colAmount')}</TableHead>
+                    <TableHead>{t('common.status')}</TableHead>
+                    <TableHead>{t('wallet.colApprovedBy')}</TableHead>
+                    <TableHead>{t('wallet.colActions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pettyCash.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No petty cash entries yet</TableCell>
+                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{t('wallet.noPettyCash')}</TableCell>
                     </TableRow>
                   ) : pettyCash.map(entry => (
                     <TableRow key={entry.id}>
@@ -1311,7 +1314,7 @@ export function WalletManager() {
                       <TableCell className="text-sm">{entry.approvedByName ?? "—"}</TableCell>
                       <TableCell>
                         {entry.status === "PENDING" && (
-                          <Button size="sm" variant="outline" onClick={() => setApprovePcId(entry.id)}>Review</Button>
+                          <Button size="sm" variant="outline" onClick={() => setApprovePcId(entry.id)}>{t('wallet.review')}</Button>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1327,10 +1330,10 @@ export function WalletManager() {
         <TabsContent value="store-income" className="space-y-4 mt-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold text-lg flex items-center gap-2">
-              <ShoppingBag className="h-5 w-5 text-violet-500" />Store Income
+              <ShoppingBag className="h-5 w-5 text-violet-500" />{t('wallet.storeIncomeTitle')}
             </h2>
             <Button onClick={() => setAddSaleOpen(true)} className="bg-violet-600 hover:bg-violet-700">
-              <Plus className="h-4 w-4 mr-2" />Record Sale
+              <Plus className="h-4 w-4 mr-2" />{t('wallet.recordSale')}
             </Button>
           </div>
           {storeSales.length > 0 && (
@@ -1342,7 +1345,7 @@ export function WalletManager() {
                     <CardContent className="pt-5 flex items-center gap-3">
                       <CreditCard className="h-8 w-8 text-violet-400" />
                       <div>
-                        <p className="text-xs text-muted-foreground">{method} Sales</p>
+                        <p className="text-xs text-muted-foreground">{method} {t('wallet.salesLabel')}</p>
                         <p className="text-xl font-bold">{fmt(total)}</p>
                       </div>
                     </CardContent>
@@ -1358,18 +1361,18 @@ export function WalletManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead className="text-right">Items</TableHead>
-                    <TableHead>Payment</TableHead>
-                    <TableHead>Processed By</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>{t('wallet.colDate')}</TableHead>
+                    <TableHead>{t('wallet.colInvoice')}</TableHead>
+                    <TableHead className="text-right">{t('wallet.colItems')}</TableHead>
+                    <TableHead>{t('wallet.colPayment')}</TableHead>
+                    <TableHead>{t('wallet.colProcessedBy')}</TableHead>
+                    <TableHead className="text-right">{t('wallet.colAmount')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {storeSales.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">No store sales recorded yet</TableCell>
+                      <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">{t('wallet.noStoreSales')}</TableCell>
                     </TableRow>
                   ) : storeSales.map(sale => (
                     <TableRow key={sale.id}>
@@ -1392,7 +1395,7 @@ export function WalletManager() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4 text-violet-600" />
-                Sync Store Orders from Order Management
+                {t('wallet.syncStoreTitle')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1406,7 +1409,7 @@ export function WalletManager() {
                   className="bg-violet-600 hover:bg-violet-700"
                 >
                   <RefreshCw className={cn("h-4 w-4 mr-2", syncingStore && "animate-spin")} />
-                  {syncingStore ? "Syncing…" : "Sync Orders"}
+                  {syncingStore ? t('wallet.syncingOrders') : t('wallet.syncOrders')}
                 </Button>
               </div>
               {lastStoreSyncResult && (
@@ -1428,33 +1431,33 @@ export function WalletManager() {
         <TabsContent value="reports" className="space-y-6 mt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <Label className="text-xs text-muted-foreground">From</Label>
+              <Label className="text-xs text-muted-foreground">{t('wallet.from')}</Label>
               <Input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className="w-40" />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">To</Label>
+              <Label className="text-xs text-muted-foreground">{t('wallet.to')}</Label>
               <Input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="w-40" />
             </div>
             <Button onClick={loadReport} disabled={reportLoading}>
-              <BarChart3 className="h-4 w-4 mr-2" />{reportLoading ? "Loading…" : "Generate Report"}
+              <BarChart3 className="h-4 w-4 mr-2" />{reportLoading ? t('common.loading') : t('wallet.generateReport')}
             </Button>
           </div>
 
           {!report ? (
             <div className="text-center py-16 text-muted-foreground">
               <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p>Select a date range and click Generate Report</p>
+              <p>{t('wallet.selectDateRange')}</p>
             </div>
           ) : (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
                 {[
-                  { label: "Total Income", value: report.totalIncome, color: "text-emerald-600" },
-                  { label: "Fee Collections", value: report.feeCollections ?? 0, color: "text-blue-600" },
-                  { label: "Total Expenses", value: report.totalExpenses, color: "text-red-600" },
-                  { label: "Net Surplus", value: report.netSurplus, color: report.netSurplus >= 0 ? "text-teal-600" : "text-orange-600" },
-                  { label: "Store Sales", value: report.storeSalesTotal, color: "text-violet-600" },
-                  { label: "Petty Cash Used", value: report.pettyCashTotal, color: "text-amber-600" },
+                  { label: t('wallet.totalIncome'), value: report.totalIncome, color: "text-emerald-600" },
+                  { label: t('wallet.feeCollections'), value: report.feeCollections ?? 0, color: "text-blue-600" },
+                  { label: t('wallet.totalExpenses'), value: report.totalExpenses, color: "text-red-600" },
+                  { label: t('wallet.netSurplus'), value: report.netSurplus, color: report.netSurplus >= 0 ? "text-teal-600" : "text-orange-600" },
+                  { label: t('wallet.storeSales'), value: report.storeSalesTotal, color: "text-violet-600" },
+                  { label: t('wallet.pettyCashUsed'), value: report.pettyCashTotal, color: "text-amber-600" },
                 ].map(item => (
                   <Card key={item.label}>
                     <CardContent className="pt-5">
@@ -1467,7 +1470,7 @@ export function WalletManager() {
 
               {report.monthlyTrend.length > 0 && (
                 <Card>
-                  <CardHeader><CardTitle className="text-base">Monthly Income vs Expenses</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-base">{t('wallet.monthlyTrend')}</CardTitle></CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={280}>
                       <BarChart data={report.monthlyTrend} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -1486,7 +1489,7 @@ export function WalletManager() {
 
               {report.monthlyTrend.length > 1 && (
                 <Card>
-                  <CardHeader><CardTitle className="text-base">Monthly Net Surplus / Deficit</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-base">{t('wallet.netSurplusMonthly')}</CardTitle></CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={220}>
                       <LineChart data={report.monthlyTrend} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -1503,17 +1506,17 @@ export function WalletManager() {
 
               {report.budgetSummary.length > 0 && (
                 <Card>
-                  <CardHeader><CardTitle className="text-base">Budget Utilisation Summary</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-base">{t('wallet.budgetUtilisation')}</CardTitle></CardHeader>
                   <CardContent>
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead className="text-right">Budget</TableHead>
-                          <TableHead className="text-right">Actual</TableHead>
-                          <TableHead className="text-right">Variance</TableHead>
-                          <TableHead>Utilisation</TableHead>
+                          <TableHead>{t('wallet.colCategory')}</TableHead>
+                          <TableHead>{t('wallet.colType')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.colBudget')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.colActual')}</TableHead>
+                          <TableHead className="text-right">{t('wallet.colVariance')}</TableHead>
+                          <TableHead>{t('wallet.colUtilisation')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1563,25 +1566,25 @@ export function WalletManager() {
       <Dialog open={addPcOpen} onOpenChange={setAddPcOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5 text-amber-500" />New Petty Cash Request</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5 text-amber-500" />{t('wallet.newPcRequest')}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAddPettyCash} className="space-y-4 py-2">
             <div>
-              <Label>Purpose *</Label>
+              <Label>{t('wallet.purposeLabel')}</Label>
               <Textarea name="purpose" required placeholder="What is this cash needed for?" rows={3} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Amount (₹) *</Label>
+                <Label>{t('wallet.amountLabel')}</Label>
                 <Input name="amount" type="number" min={1} max={50000} step="0.01" required />
               </div>
               <div>
-                <Label>Date *</Label>
+                <Label>{t('wallet.dateLabel')}</Label>
                 <Input name="date" type="date" defaultValue={todayStr()} required />
               </div>
             </div>
             <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Submitting…" : "Submit Request"}
+              {submitting ? t('wallet.submitting') : t('wallet.submitRequest')}
             </Button>
           </form>
         </DialogContent>
@@ -1591,20 +1594,20 @@ export function WalletManager() {
       <Dialog open={addSaleOpen} onOpenChange={setAddSaleOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ShoppingBag className="h-5 w-5 text-violet-500" />Record Store Sale</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><ShoppingBag className="h-5 w-5 text-violet-500" />{t('wallet.recordStoreSale')}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAddStoreSale} className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Amount (₹) *</Label>
+                <Label>{t('wallet.amountLabel')}</Label>
                 <Input name="amount" type="number" min={1} step="0.01" required />
               </div>
               <div>
-                <Label>Items Count *</Label>
+                <Label>{t('wallet.itemsCount')}</Label>
                 <Input name="itemsCount" type="number" min={1} required />
               </div>
               <div>
-                <Label>Payment Method *</Label>
+                <Label>{t('wallet.paymentMethod')}</Label>
                 <Select name="paymentMethod" required>
                   <SelectTrigger><SelectValue placeholder="Select method" /></SelectTrigger>
                   <SelectContent>
@@ -1613,16 +1616,16 @@ export function WalletManager() {
                 </Select>
               </div>
               <div>
-                <Label>Date *</Label>
+                <Label>{t('wallet.dateLabel')}</Label>
                 <Input name="date" type="date" defaultValue={todayStr()} required />
               </div>
             </div>
             <div>
-              <Label>Notes</Label>
+              <Label>{t('wallet.notesLabel')}</Label>
               <Input name="notes" placeholder="Optional notes…" />
             </div>
             <Button type="submit" disabled={submitting} className="w-full bg-violet-600 hover:bg-violet-700">
-              {submitting ? "Saving…" : "Record Sale"}
+              {submitting ? t('wallet.saving') : t('wallet.recordSaleBtn')}
             </Button>
           </form>
         </DialogContent>
@@ -1632,15 +1635,15 @@ export function WalletManager() {
       <Dialog open={addAccountOpen} onOpenChange={setAddAccountOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5" />Create Finance Account</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5" />{t('wallet.createAccount')}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateAccount} className="space-y-4 py-2">
             <div>
-              <Label>Account Name *</Label>
+              <Label>{t('wallet.accountName')}</Label>
               <Input name="name" required placeholder="e.g. Main Bank Account" />
             </div>
             <div>
-              <Label>Type *</Label>
+              <Label>{t('wallet.accountType')}</Label>
               <Select name="type" required>
                 <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                 <SelectContent>
@@ -1651,11 +1654,11 @@ export function WalletManager() {
               </Select>
             </div>
             <div>
-              <Label>Description</Label>
+              <Label>{t('wallet.accountDesc')}</Label>
               <Input name="description" placeholder="Optional description" />
             </div>
             <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Creating…" : "Create Account"}
+              {submitting ? t('wallet.creating') : t('wallet.createAccountBtn')}
             </Button>
           </form>
         </DialogContent>
@@ -1665,29 +1668,29 @@ export function WalletManager() {
       <Dialog open={addCategoryOpen} onOpenChange={setAddCategoryOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><PiggyBank className="h-5 w-5" />Create Finance Category</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><PiggyBank className="h-5 w-5" />{t('wallet.createFinanceCategory')}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateCategory} className="space-y-4 py-2">
             <div>
-              <Label>Category Name *</Label>
+              <Label>{t('wallet.categoryName')}</Label>
               <Input name="name" required placeholder="e.g. Staff Salaries" />
             </div>
             <div>
-              <Label>Type *</Label>
+              <Label>{t('wallet.categoryTypeLabel')}</Label>
               <Select name="type" required>
                 <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="INCOME">Income</SelectItem>
-                  <SelectItem value="EXPENSE">Expense</SelectItem>
+                  <SelectItem value="INCOME">{t('wallet.incomeLabel')}</SelectItem>
+                  <SelectItem value="EXPENSE">{t('wallet.expenseLabel')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Monthly Budget (₹)</Label>
+              <Label>{t('wallet.monthlyBudget')}</Label>
               <Input name="budget" type="number" min={0} step="0.01" placeholder="Optional budget cap" />
             </div>
             <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Creating…" : "Create Category"}
+              {submitting ? t('wallet.creating') : t('wallet.createCategoryBtn')}
             </Button>
           </form>
         </DialogContent>
@@ -1701,17 +1704,17 @@ export function WalletManager() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-5 w-5" />Edit Category
+              <Pencil className="h-5 w-5" />{t('wallet.editCategory')}
             </DialogTitle>
           </DialogHeader>
           {editCategoryTarget && (
             <form onSubmit={handleUpdateCategory} className="space-y-4 py-2">
               <div>
-                <Label>Category Name</Label>
+                <Label>{t('wallet.categoryNameLabel')}</Label>
                 <Input name="editName" defaultValue={editCategoryTarget.name} placeholder="Category name" />
               </div>
               <div>
-                <Label>Monthly Budget (₹)</Label>
+                <Label>{t('wallet.monthlyBudget')}</Label>
                 <Input
                   name="editBudget"
                   type="number"
@@ -1725,7 +1728,7 @@ export function WalletManager() {
                 Type: <strong>{editCategoryTarget.type}</strong> · Leave fields blank to keep current values.
               </p>
               <Button type="submit" disabled={submitting} className="w-full">
-                {submitting ? "Saving…" : "Save Changes"}
+                {submitting ? t('wallet.saving') : t('wallet.saveChanges')}
               </Button>
             </form>
           )}

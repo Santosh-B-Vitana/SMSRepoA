@@ -259,6 +259,12 @@ namespace SmsApi.Models.DTOs
         public string? AcademicYear { get; set; }
 
         public string? Remarks { get; set; }
+
+        /// <summary>
+        /// When true, the backend creates an in-app notification for the student's
+        /// guardians (those with CanViewFees = true and a portal UserLoginId).
+        /// </summary>
+        public bool NotifyParent { get; set; } = true;
     }
 
     public class PaymentTransactionDto

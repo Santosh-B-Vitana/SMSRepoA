@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useMemo, useCallback } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -686,6 +687,7 @@ function AssignmentGradingSheet({
 // ─── main component ───────────────────────────────────────────────────────────
 export function AssignmentManager() {
   const { hasUserPermission, permissionsLoaded } = usePermissions();
+  const { t } = useLanguage();
   const canCreateAssignment = hasUserPermission('Assignments', 'Create');
   const canViewAssignments = hasUserPermission('Assignments', 'View');
   const accessDenied = permissionsLoaded && !canViewAssignments && !canCreateAssignment;
@@ -851,13 +853,13 @@ export function AssignmentManager() {
           <ShieldOff className="h-10 w-10 text-destructive" />
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold">Access Restricted</h2>
+          <h2 className="text-2xl font-bold">{t('grades.accessRestricted')}</h2>
           <p className="text-muted-foreground max-w-sm">
-            You don't have permission to view or create assignments. Contact your administrator to get the Subject Teacher role.
+            {t('assignments.accessDeniedDesc')}
           </p>
         </div>
         <Button variant="outline" onClick={() => toast.info("Ask your admin to assign you a Subject Teacher or Class Teacher role.")}>
-          How to get access?
+          {t('assignments.howToGetAccess')}
         </Button>
       </div>
     );
@@ -869,11 +871,11 @@ export function AssignmentManager() {
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">My Assignments</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">All assignments across your classes at a glance</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('assignments.title')}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('assignments.manageDesc')}</p>
         </div>
         <Button onClick={() => setShowCreate(true)} className="shrink-0" disabled={!canCreateAssignment} title={!canCreateAssignment ? 'No permission to create assignments' : undefined}>
-          <Plus className="h-4 w-4 mr-1.5" />New Assignment
+          <Plus className="h-4 w-4 mr-1.5" />{t('assignments.newAssignment')}
         </Button>
       </div>
 
@@ -884,10 +886,10 @@ export function AssignmentManager() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<FileText className="h-5 w-5" />}   value={assignments.length}   label="Total Created"    sub={`across ${classesByName.length} class${classesByName.length !== 1 ? "es" : ""}`}  colorCls="text-blue-600"   />
-          <StatCard icon={<Timer className="h-5 w-5" />}      value={dueThisWeek}          label="Due This Week"    sub={overdue > 0 ? `${overdue} overdue` : "On track"}                                    colorCls={overdue > 0 ? "text-red-600" : "text-amber-600"} />
-          <StatCard icon={<TrendingUp className="h-5 w-5" />} value={active}               label="Active"           sub="Awaiting submission"                                                                 colorCls="text-green-600"  />
-          <StatCard icon={<Users className="h-5 w-5" />}      value={totalStudents || "—"} label="Students Reached" sub="Across assigned classes"                                                            colorCls="text-violet-600" />
+          <StatCard icon={<FileText className="h-5 w-5" />}   value={assignments.length}   label={t('assignments.totalCreated')}    sub={`across ${classesByName.length} class${classesByName.length !== 1 ? "es" : ""}`}  colorCls="text-blue-600"   />
+          <StatCard icon={<Timer className="h-5 w-5" />}      value={dueThisWeek}          label={t('assignments.dueThisWeek')}    sub={overdue > 0 ? `${overdue} overdue` : "On track"}                                    colorCls={overdue > 0 ? "text-red-600" : "text-amber-600"} />
+          <StatCard icon={<TrendingUp className="h-5 w-5" />} value={active}               label={t('assignments.active')}           sub={t('assignments.awaitingSubmission')}                                                                 colorCls="text-green-600"  />
+          <StatCard icon={<Users className="h-5 w-5" />}      value={totalStudents || "—"} label={t('assignments.studentsReached')} sub="Across assigned classes"                                                            colorCls="text-violet-600" />
         </div>
       )}
 
@@ -900,7 +902,7 @@ export function AssignmentManager() {
             activeClassName === "all" ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"
           }`}
         >
-          All Classes
+          {t('assignments.allClasses')}
           <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeClassName === "all" ? "bg-white/20" : "bg-gray-100"}`}>
             {assignments.length}
           </span>
@@ -945,11 +947,11 @@ export function AssignmentManager() {
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="h-8 text-xs w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All status</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="overdue">Overdue</SelectItem>
+            <SelectItem value="all">{t('assignments.allStatus')}</SelectItem>
+            <SelectItem value="active">{t('common.active')}</SelectItem>
+            <SelectItem value="draft">{t('common.draft')}</SelectItem>
+            <SelectItem value="completed">{t('assignments.completed')}</SelectItem>
+            <SelectItem value="overdue">{t('assignments.overdue')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -961,12 +963,12 @@ export function AssignmentManager() {
         const c = pal(entry.colorIdx);
         return (
           <div className={`flex flex-wrap items-center gap-2 px-3 py-2.5 rounded-xl ${c.bg} border ${c.border}`}>
-            <span className={`text-xs font-semibold ${c.text} mr-1`}>Section:</span>
+            <span className={`text-xs font-semibold ${c.text} mr-1`}>{t('assignments.sectionLabel')}</span>
             <button
               onClick={() => setActiveSectionId("all")}
               className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${activeSectionId === "all" ? c.activePill : `${c.inactivePill} hover:bg-white/50`}`}
             >
-              All sections
+              {t('assignments.allSections')}
             </button>
             {entry.sections.map(sec => (
               <button
@@ -997,13 +999,13 @@ export function AssignmentManager() {
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
           <BookOpen className="h-12 w-12 mb-4 opacity-30" />
-          <p className="text-base font-medium">No assignments found</p>
+          <p className="text-base font-medium">{t('assignments.noAssignmentsFound')}</p>
           <p className="text-sm mt-1">
-            {assignments.length === 0 ? "Create your first assignment to get started." : "Try adjusting your filters or search."}
+            {assignments.length === 0 ? t('assignments.noAssignmentsCreate') : t('assignments.noAssignmentsFilter')}
           </p>
           {assignments.length === 0 && (
             <Button size="sm" className="mt-4" onClick={() => setShowCreate(true)} disabled={!canCreateAssignment} title={!canCreateAssignment ? 'No permission to create assignments' : undefined}>
-              <Plus className="h-3.5 w-3.5 mr-1.5" />Create First Assignment
+              <Plus className="h-3.5 w-3.5 mr-1.5" />{t('assignments.createFirstAssignment')}
             </Button>
           )}
         </div>
@@ -1120,20 +1122,20 @@ export function AssignmentManager() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-4 w-4 text-primary" />
-              New Assignment
+              {t('assignments.newAssignment')}
             </DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="text-sm font-medium">Title <span className="text-destructive">*</span></label>
+                <label className="text-sm font-medium">{t('assignments.formTitle')} <span className="text-destructive">*</span></label>
                 <Input {...register("title")} placeholder="e.g. Chapter 5 Homework" className="mt-1" />
                 {errors.title && <p className="text-xs text-destructive mt-1">{errors.title.message}</p>}
               </div>
 
               <div>
-                <label className="text-sm font-medium">Class <span className="text-destructive">*</span></label>
+                <label className="text-sm font-medium">{t('assignments.classLabel')} <span className="text-destructive">*</span></label>
                 <Controller name="classId" control={control} render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value ?? ""}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Select class" /></SelectTrigger>
@@ -1164,7 +1166,7 @@ export function AssignmentManager() {
               </div>
 
               <div>
-                <label className="text-sm font-medium">Subject <span className="text-destructive">*</span></label>
+                <label className="text-sm font-medium">{t('assignments.subjectLabel')} <span className="text-destructive">*</span></label>
                 <Controller name="subjectId" control={control} render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value ?? ""} disabled={!watchedClassId || subjectsForForm.length === 0}>
                     <SelectTrigger className="mt-1">
@@ -1179,28 +1181,28 @@ export function AssignmentManager() {
               </div>
 
               <div>
-                <label className="text-sm font-medium">Assigned Date <span className="text-destructive">*</span></label>
+                <label className="text-sm font-medium">{t('assignments.assignedDate')} <span className="text-destructive">*</span></label>
                 <Input type="date" {...register("assignedDate")} className="mt-1" />
                 {errors.assignedDate && <p className="text-xs text-destructive mt-1">{errors.assignedDate.message}</p>}
               </div>
               <div>
-                <label className="text-sm font-medium">Due Date <span className="text-destructive">*</span></label>
+                <label className="text-sm font-medium">{t('assignments.dueDate')} <span className="text-destructive">*</span></label>
                 <Input type="date" {...register("dueDate")} className="mt-1" />
                 {errors.dueDate && <p className="text-xs text-destructive mt-1">{errors.dueDate.message}</p>}
               </div>
 
               <div>
-                <label className="text-sm font-medium">Max Marks</label>
+                <label className="text-sm font-medium">{t('assignments.maxMarks')}</label>
                 <Input type="number" min={0} max={1000} {...register("maxMarks")} placeholder="100" className="mt-1" />
               </div>
               <div>
-                <label className="text-sm font-medium">Visibility</label>
+                <label className="text-sm font-medium">{t('assignments.visibility')}</label>
                 <Controller name="status" control={control} render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value}>
                     <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="active">Publish now (visible to students)</SelectItem>
-                      <SelectItem value="draft">Save as draft</SelectItem>
+                      <SelectItem value="active">{t('assignments.publishNow')}</SelectItem>
+                      <SelectItem value="draft">{t('assignments.saveAsDraft')}</SelectItem>
                     </SelectContent>
                   </Select>
                 )} />
@@ -1208,13 +1210,13 @@ export function AssignmentManager() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">Description &amp; Instructions</label>
+              <label className="text-sm font-medium">{t('assignments.descriptionInstructions')}</label>
               <Textarea {...register("description")} placeholder="Describe the assignment and any instructions…" rows={4} className="mt-1" />
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => { setShowCreate(false); resetForm(); }}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating…" : "Create Assignment"}</Button>
+              <Button type="button" variant="outline" onClick={() => { setShowCreate(false); resetForm(); }}>{t('common.cancel')}</Button>
+              <Button type="submit" disabled={isSubmitting}>{isSubmitting ? t('assignments.creating') : t('assignments.createAssignment')}</Button>
             </div>
           </form>
         </DialogContent>

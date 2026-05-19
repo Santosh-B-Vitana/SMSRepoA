@@ -1,5 +1,6 @@
 ﻿
 import { useState, useEffect } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { cn } from "@/lib/utils";
@@ -188,6 +189,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const isEditMode = !!staff;
+  const { t } = useLanguage();
 
   // Children management (edit mode only)
   const [linkedChildren, setLinkedChildren] = useState<StudentBasic[]>([]);
@@ -272,7 +274,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
     staffApi.getChildren(staff.id)
       .then(children => setLinkedChildren(children.map(c => ({
         id: c.id,
-        name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim(),
+        name: c.name || "",
         class: c.class || "",
         section: c.section || "",
         admissionNumber: c.admissionNumber || "",
@@ -395,10 +397,10 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-lg font-bold">
-                {isEditMode ? "Edit Staff Member" : "Add New Staff Member"}
+                {isEditMode ? t('staffForm.editTitle') : t('staffForm.addTitle')}
               </h2>
               <p className="text-primary-foreground/70 text-sm mt-0.5">
-                Step {currentStep + 1} of {STAFF_STEPS_COUNT} — {STAFF_STEP_LABELS[currentStep]}
+                {t('staffForm.stepOf')} {currentStep + 1} {t('staffForm.of')} {STAFF_STEPS_COUNT} — {STAFF_STEP_LABELS[currentStep]}
               </p>
             </div>
             <button
@@ -425,7 +427,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Fix {stepErrorCount()} error{stepErrorCount() > 1 ? "s" : ""} before continuing.
+                    Fix {stepErrorCount()} {t('staffForm.errorsBefore')}
                   </AlertDescription>
                 </Alert>
               )}
@@ -433,25 +435,25 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {/* â”€â”€ STEP 0: Basic Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {currentStep === 0 && (
                 <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">Core employment details</p>
+                  <p className="text-sm text-muted-foreground">{t('staffForm.coreDetails')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="firstName" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.firstName')} <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input placeholder="Ramesh" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="lastName" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.lastName')} <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input placeholder="Kumar" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="designation" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Designation / Role <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.designation')} <span className="text-destructive">*</span></FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
@@ -468,7 +470,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="department" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Department <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.department')} <span className="text-destructive">*</span></FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
@@ -484,14 +486,14 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="email" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.email')} <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input type="email" placeholder="ramesh@school.edu" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="phone" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Mobile <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.mobile')} <span className="text-destructive">*</span></FormLabel>
                         <FormControl>
                           <Input placeholder="9876543210" maxLength={10} inputMode="numeric" {...field} />
                         </FormControl>
@@ -501,23 +503,23 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="joiningDate" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Joining Date <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>{t('staffForm.joiningDate')} <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input type="date" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="status" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Status</FormLabel>
+                        <FormLabel>{t('common.status')}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                            <SelectItem value="on_leave">On Leave</SelectItem>
-                            <SelectItem value="probation">Probation</SelectItem>
+                            <SelectItem value="active">{t('staffForm.active')}</SelectItem>
+                            <SelectItem value="inactive">{t('staffForm.inactive')}</SelectItem>
+                            <SelectItem value="on_leave">{t('staffForm.onLeave')}</SelectItem>
+                            <SelectItem value="probation">{t('staffForm.probation')}</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -526,7 +528,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                   </div>
                   <FormField control={form.control} name="address" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Current Address</FormLabel>
+                      <FormLabel>{t('staffForm.currentAddress')}</FormLabel>
                       <FormControl>
                         <Textarea placeholder="House No, Street, Colony, City" rows={2} {...field} />
                       </FormControl>
@@ -539,27 +541,27 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {/* â”€â”€ STEP 1: Personal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {currentStep === 1 && (
                 <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">Personal and demographic details</p>
+                  <p className="text-sm text-muted-foreground">{t('staffForm.personalDetails')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="dob" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date of Birth</FormLabel>
+                        <FormLabel>{t('staffForm.dateOfBirth')}</FormLabel>
                         <FormControl><Input type="date" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="gender" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Gender</FormLabel>
+                        <FormLabel>{t('staffForm.gender')}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="Male">Male</SelectItem>
-                            <SelectItem value="Female">Female</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                            <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                            <SelectItem value="Male">{t('staffForm.male')}</SelectItem>
+                            <SelectItem value="Female">{t('staffForm.female')}</SelectItem>
+                            <SelectItem value="Other">{t('staffForm.other')}</SelectItem>
+                            <SelectItem value="Prefer not to say">{t('staffForm.preferNotToSay')}</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -567,30 +569,30 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="nationality" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Nationality</FormLabel>
+                        <FormLabel>{t('staffForm.nationality')}</FormLabel>
                         <FormControl><Input placeholder="Indian" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="religion" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Religion</FormLabel>
+                        <FormLabel>{t('staffForm.religion')}</FormLabel>
                         <FormControl><Input placeholder="Optional" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="maritalStatus" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Marital Status</FormLabel>
+                        <FormLabel>{t('staffForm.maritalStatus')}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="Single">Single</SelectItem>
-                            <SelectItem value="Married">Married</SelectItem>
-                            <SelectItem value="Divorced">Divorced</SelectItem>
-                            <SelectItem value="Widowed">Widowed</SelectItem>
+                            <SelectItem value="Single">{t('staffForm.single')}</SelectItem>
+                            <SelectItem value="Married">{t('staffForm.married')}</SelectItem>
+                            <SelectItem value="Divorced">{t('staffForm.divorced')}</SelectItem>
+                            <SelectItem value="Widowed">{t('staffForm.widowed')}</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -603,20 +605,20 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {/* â”€â”€ STEP 2: Professional â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {currentStep === 2 && (
                 <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">Employment and work details</p>
+                  <p className="text-sm text-muted-foreground">{t('staffForm.employmentDetails')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="employmentType" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Employment Type</FormLabel>
+                        <FormLabel>{t('staffForm.employmentType')}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="permanent">Permanent</SelectItem>
-                            <SelectItem value="contract">Contract</SelectItem>
-                            <SelectItem value="temporary">Temporary</SelectItem>
-                            <SelectItem value="probation">Probation</SelectItem>
+                            <SelectItem value="permanent">{t('staffForm.permanent')}</SelectItem>
+                            <SelectItem value="contract">{t('staffForm.contract')}</SelectItem>
+                            <SelectItem value="temporary">{t('staffForm.temporary')}</SelectItem>
+                            <SelectItem value="probation">{t('staffForm.probation')}</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -624,7 +626,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="experience" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Total Experience (years)</FormLabel>
+                        <FormLabel>{t('staffForm.experience')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -639,7 +641,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="confirmationDate" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Confirmation Date</FormLabel>
+                        <FormLabel>{t('staffForm.confirmationDate')}</FormLabel>
                         <FormControl><Input type="date" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
@@ -661,7 +663,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="leaveEntitlement" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Annual Leave Days</FormLabel>
+                        <FormLabel>{t('staffForm.annualLeaveDays')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -676,14 +678,14 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="workingDays" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Working Days</FormLabel>
+                        <FormLabel>{t('staffForm.workingDays')}</FormLabel>
                         <FormControl><Input placeholder="Monâ€“Sat" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="specialization" render={({ field }) => (
                       <FormItem className="sm:col-span-2">
-                        <FormLabel>Subjects / Specialization</FormLabel>
+                        <FormLabel>{t('staffForm.specialization')}</FormLabel>
                         <FormControl>
                           <Input placeholder="Physics, Chemistry (comma separated)" {...field} />
                         </FormControl>
@@ -698,15 +700,15 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {/* â”€â”€ STEP 3: ID & Banking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {currentStep === 3 && (
                 <div className="space-y-5">
-                  <p className="text-sm text-muted-foreground">Government IDs and bank account details</p>
+                  <p className="text-sm text-muted-foreground">{t('staffForm.idBankDetails')}</p>
                   <div>
                     <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <Badge variant="outline">Government IDs</Badge>
+                      <Badge variant="outline">{t('staffForm.govtIds')}</Badge>
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="aadharNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Aadhar Number</FormLabel>
+                          <FormLabel>{t('staffForm.aadharNumber')}</FormLabel>
                           <FormControl>
                             <Input placeholder="12 digits" maxLength={12} inputMode="numeric" {...field} />
                           </FormControl>
@@ -715,7 +717,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                       )} />
                       <FormField control={form.control} name="panNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>PAN Number</FormLabel>
+                          <FormLabel>{t('staffForm.panNumber')}</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="ABCDE1234F"
@@ -731,7 +733,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                       )} />
                       <FormField control={form.control} name="passportNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Passport Number</FormLabel>
+                          <FormLabel>{t('staffForm.passportNumber')}</FormLabel>
                           <FormControl><Input placeholder="Optional" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
@@ -741,26 +743,26 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                   <Separator />
                   <div>
                     <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <Badge variant="outline">Bank Details</Badge>
+                      <Badge variant="outline">{t('staffForm.bankDetails')}</Badge>
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="bankName" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Bank Name</FormLabel>
+                          <FormLabel>{t('staffForm.bankName')}</FormLabel>
                           <FormControl><Input placeholder="State Bank of India" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="bankAccountNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Account Number</FormLabel>
+                          <FormLabel>{t('staffForm.accountNumber')}</FormLabel>
                           <FormControl><Input inputMode="numeric" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="ifscCode" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>IFSC Code</FormLabel>
+                          <FormLabel>{t('staffForm.ifscCode')}</FormLabel>
                           <FormControl>
                             <Input placeholder="SBIN0001234" maxLength={11} {...field} style={{ textTransform: "uppercase" }} />
                           </FormControl>
@@ -772,26 +774,26 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                   <Separator />
                   <div>
                     <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <Badge variant="outline">PF / ESI / UAN</Badge>
+                      <Badge variant="outline">{t('staffForm.pfEsiUan')}</Badge>
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="pfNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>PF Number</FormLabel>
+                          <FormLabel>{t('staffForm.pfNumber')}</FormLabel>
                           <FormControl><Input placeholder="TN/CHE/0123456/001/00001" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="esiNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>ESI Number</FormLabel>
+                          <FormLabel>{t('staffForm.esiNumber')}</FormLabel>
                           <FormControl><Input inputMode="numeric" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="uanNumber" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>UAN Number</FormLabel>
+                          <FormLabel>{t('staffForm.uanNumber')}</FormLabel>
                           <FormControl><Input inputMode="numeric" maxLength={12} {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
@@ -804,11 +806,11 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {/* â”€â”€ STEP 4: Medical â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {currentStep === 4 && (
                 <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">Health details and emergency contact</p>
+                  <p className="text-sm text-muted-foreground">{t('staffForm.healthEmergency')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="bloodGroup" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Blood Group</FormLabel>
+                        <FormLabel>{t('staffForm.bloodGroup')}</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
                             <SelectTrigger><SelectValue placeholder="Select blood group" /></SelectTrigger>
@@ -824,14 +826,14 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     )} />
                     <FormField control={form.control} name="allergies" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Known Allergies</FormLabel>
+                        <FormLabel>{t('staffForm.knownAllergies')}</FormLabel>
                         <FormControl><Input placeholder="Dust, pollen, etc. (if any)" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="chronicConditions" render={({ field }) => (
                       <FormItem className="sm:col-span-2">
-                        <FormLabel>Chronic Conditions</FormLabel>
+                        <FormLabel>{t('staffForm.chronicConditions')}</FormLabel>
                         <FormControl>
                           <Textarea placeholder="Diabetes, hypertension, etc. (if any)" rows={2} {...field} />
                         </FormControl>
@@ -842,19 +844,19 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                   <Separator />
                   <div>
                     <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <Badge variant="outline">Emergency Contact</Badge>
+                      <Badge variant="outline">{t('staffForm.emergencyContact')}</Badge>
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="emergencyContactName" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Contact Name</FormLabel>
+                          <FormLabel>{t('staffForm.contactName')}</FormLabel>
                           <FormControl><Input placeholder="Spouse / Parent name" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="emergencyContactPhone" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Contact Mobile</FormLabel>
+                          <FormLabel>{t('staffForm.contactMobile')}</FormLabel>
                           <FormControl>
                             <Input placeholder="9876543210" maxLength={10} inputMode="numeric" {...field} />
                           </FormControl>
@@ -863,7 +865,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                       )} />
                       <FormField control={form.control} name="emergencyContactRelationship" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Relationship</FormLabel>
+                          <FormLabel>{t('staffForm.relationship')}</FormLabel>
                           <FormControl><Input placeholder="Spouse, Parent, etc." {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
@@ -876,25 +878,25 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {/* â”€â”€ STEP 5: Compliance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               {currentStep === 5 && (
                 <div className="space-y-5">
-                  <p className="text-sm text-muted-foreground">Qualifications and compliance verification</p>
+                  <p className="text-sm text-muted-foreground">{t('staffForm.qualifications')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="highestQualification" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Highest Qualification</FormLabel>
+                        <FormLabel>{t('staffForm.highestQualification')}</FormLabel>
                         <FormControl><Input placeholder="B.Ed., M.Sc., etc." {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="university" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>University / Institution</FormLabel>
+                        <FormLabel>{t('staffForm.university')}</FormLabel>
                         <FormControl><Input placeholder="Osmania University" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="passingYear" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Year of Passing</FormLabel>
+                        <FormLabel>{t('staffForm.yearOfPassing')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -913,12 +915,12 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                   <Separator />
 
                   <div className="space-y-3">
-                    <h4 className="text-sm font-semibold">Verification Checklist</h4>
+                    <h4 className="text-sm font-semibold">{t('staffForm.verificationChecklist')}</h4>
                     {([
-                      { name: "backgroundVerified", label: "Background verification completed" },
-                      { name: "policeClearance",    label: "Police clearance certificate obtained" },
-                      { name: "medicalCheckup",     label: "Pre-employment medical checkup done" },
-                      { name: "documentConsent",    label: "Document usage consent obtained" },
+                      { name: "backgroundVerified", label: t('staffForm.bgVerified') },
+                      { name: "policeClearance",    label: t('staffForm.policeClearance') },
+                      { name: "medicalCheckup",     label: t('staffForm.medicalCheckup') },
+                      { name: "documentConsent",    label: t('staffForm.documentConsent') },
                     ] as const).map(({ name, label }) => (
                       <FormField key={name} control={form.control} name={name} render={({ field }) => (
                         <FormItem className="flex items-start space-x-3 space-y-0 rounded-md border p-3">
@@ -935,17 +937,17 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
 
                   {/* Summary */}
                   <div className="rounded-lg bg-muted/50 p-4 space-y-2 text-sm">
-                    <p className="font-semibold">Staff Summary</p>
+                    <p className="font-semibold">{t('staffForm.staffSummary')}</p>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-                      <span>Name:</span>
+                      <span>{t('staffForm.nameSummary')}</span>
                       <span className="text-foreground font-medium">
                         {form.watch("firstName")} {form.watch("lastName")}
                       </span>
-                      <span>Designation:</span>
+                      <span>{t('staffForm.designationSummary')}</span>
                       <span className="text-foreground font-medium">{form.watch("designation") || "â€”"}</span>
-                      <span>Department:</span>
+                      <span>{t('staffForm.departmentSummary')}</span>
                       <span className="text-foreground font-medium">{form.watch("department") || "â€”"}</span>
-                      <span>Email:</span>
+                      <span>{t('staffForm.emailSummary')}</span>
                       <span className="text-foreground font-medium">{form.watch("email") || "â€”"}</span>
 
                   {/* Children â€” edit mode only */}
@@ -953,7 +955,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                     <div className="space-y-3">
                       <Separator />
                       <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <Badge variant="outline">Staff's Children (Students)</Badge>
+                        <Badge variant="outline">{t('staffForm.staffChildren')}</Badge>
                       </h4>
                       <p className="text-xs text-muted-foreground">
                         Link enrolled students who are children of this staff member. This enables staff-child fee concessions.
@@ -978,7 +980,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                                 disabled={linkingChildId === child.id}
                                 onClick={() => handleUnlinkChild(child)}
                               >
-                                {linkingChildId === child.id ? "…" : "Unlink"}
+                                {linkingChildId === child.id ? "…" : t('staffForm.unlink')}
                               </Button>
                             </div>
                           ))}
@@ -986,7 +988,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                       )}
 
                       <div className="space-y-1">
-                        <label className="text-xs font-medium">Search Student to Link</label>
+                        <label className="text-xs font-medium">{t('staffForm.searchStudent')}</label>
                         <Input
                           placeholder="Type student name…"
                           value={childSearch}
@@ -1015,7 +1017,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                                     disabled={linkingChildId === s.id}
                                     onClick={() => { handleLinkChild(s); setChildSearch(""); setChildResults([]); }}
                                   >
-                                    {linkingChildId === s.id ? "Linking…" : "Link as Child"}
+                                    {linkingChildId === s.id ? "Linking…" : t('staffForm.linkAsChild')}
                                   </Button>
                                 </div>
                               ))}
@@ -1041,7 +1043,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                 className="gap-2"
               >
                 <ChevronLeft className="h-4 w-4" />
-                {currentStep === 0 ? "Cancel" : "Back"}
+                {currentStep === 0 ? t('common.cancel') : t('common.back')}
               </Button>
 
               <div className="flex items-center gap-1.5">
@@ -1066,9 +1068,9 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                         </svg>
-                        Saving…
+                        {t('staffForm.saving')}
                       </span>
-                    ) : isEditMode ? "Update Staff Member" : "Add Staff Member"}
+                    ) : isEditMode ? t('staffForm.updateStaff') : t('staffForm.addStaff')}
                   </Button>
                 )}
               </div>
@@ -1088,7 +1090,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
               </div>
-              Success!
+              {t('staffForm.successTitle')}
             </DialogTitle>
             <DialogDescription className="text-base pt-2 text-foreground">
               {successMessage}
@@ -1102,7 +1104,7 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
                 onSuccess();
               }}
             >
-              Done
+              {t('staffForm.done')}
             </Button>
           </div>
         </DialogContent>

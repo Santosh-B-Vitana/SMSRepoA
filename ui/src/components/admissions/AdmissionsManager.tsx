@@ -1,6 +1,7 @@
 
 import { useState } from "react";
-import { Plus, Search, Users, Calendar, CheckCircle, Loader2 } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { Plus, Search, Users, Calendar, CheckCircle, Loader2, Pencil, Trash2, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,7 @@ const CLASSES = ["Nursery","LKG","UKG","1","2","3","4","5","6","7","8","9","10",
 
 export function AdmissionsManager() {
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [searchTerm, setSearchTerm]     = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -41,7 +43,7 @@ export function AdmissionsManager() {
   const [isAddDialogOpen, setIsAddDialogOpen]   = useState(false);
   const [editAdmission, setEditAdmission]         = useState<Admission | null>(null);
 
-  const { items, totalCount, totalPages, isLoading, error, updateStatus, refetch } = useAdmissions({
+  const { items, totalCount, totalPages, isLoading, error, updateStatus, enrollApplication, deleteAdmission, refetch } = useAdmissions({
     filters: {
       searchTerm: searchTerm || undefined,
       status: statusFilter !== "all" ? statusFilter : undefined,
@@ -74,6 +76,35 @@ export function AdmissionsManager() {
     }
   };
 
+  const handleEnroll = async (id: string) => {
+    const admissionNumber = window.prompt("Enter admission number for this student:");
+    if (!admissionNumber || admissionNumber.trim().length === 0) return;
+    try {
+      await enrollApplication({ id, admissionNumber: admissionNumber.trim() });
+      toast({ title: "Student Enrolled", description: `Assigned admission number ${admissionNumber.trim()}.` });
+    } catch (err: any) {
+      toast({
+        title: "Enrollment Failed",
+        description: err?.response?.data?.message ?? err?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Delete application for "${name}"? This cannot be undone.`)) return;
+    try {
+      await deleteAdmission(id);
+      toast({ title: "Application Deleted" });
+    } catch (err: any) {
+      toast({
+        title: "Delete Failed",
+        description: err?.response?.data?.message ?? err?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleFormSuccess = () => {
     setIsAddDialogOpen(false);
     setEditAdmission(null);
@@ -95,14 +126,14 @@ export function AdmissionsManager() {
         <AnimatedWrapper variant="fadeInUp" delay={0.05}>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h1 className="text-display gradient-text">Admissions</h1>
-              <p className="text-muted-foreground mt-2">Manage student admission applications</p>
+              <h1 className="text-display gradient-text">{t('admissions.title')}</h1>
+              <p className="text-muted-foreground mt-2">{t('admissions.manageDesc')}</p>
             </div>
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-2" />
-                  New Application
+                  {t('admissions.newApplication')}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto p-0">
@@ -120,13 +151,13 @@ export function AdmissionsManager() {
         <AnimatedWrapper variant="fadeInUp" delay={0.1}>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             {[
-              { label: "Total", value: stats?.total ?? 0, color: "blue" },
-              { label: "Pending", value: stats?.pending ?? 0, color: "yellow" },
-              { label: "Interviewed", value: stats?.interviewed ?? 0, color: "orange" },
-              { label: "Approved", value: stats?.approved ?? 0, color: "green" },
-              { label: "Enrolled", value: stats?.enrolled ?? 0, color: "purple" },
-              { label: "Waitlisted", value: stats?.waitlisted ?? 0, color: "blue" },
-              { label: "Rejected", value: stats?.rejected ?? 0, color: "red" },
+              { label: t('common.total'), value: stats?.total ?? 0, color: "blue" },
+              { label: t('admissions.pending'), value: stats?.pending ?? 0, color: "yellow" },
+              { label: t('admissions.interviewed'), value: stats?.interviewed ?? 0, color: "orange" },
+              { label: t('admissions.approved'), value: stats?.approved ?? 0, color: "green" },
+              { label: t('admissions.enrolled'), value: stats?.enrolled ?? 0, color: "purple" },
+              { label: t('admissions.waitlisted'), value: stats?.waitlisted ?? 0, color: "blue" },
+              { label: t('admissions.rejected'), value: stats?.rejected ?? 0, color: "red" },
             ].map(({ label, value, color }) => (
               <ModernCard key={label} variant="glass">
                 <CardContent className="p-4">
@@ -153,7 +184,7 @@ export function AdmissionsManager() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
-                    placeholder="Search by student name, guardian, application number..."
+                    placeholder={t('admissions.searchPlaceholder')}
                     value={searchTerm}
                     onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
                     className="pl-10"
@@ -161,24 +192,24 @@ export function AdmissionsManager() {
                 </div>
                 <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
                   <SelectTrigger className="w-full sm:w-44">
-                    <SelectValue placeholder="Filter by status" />
+                    <SelectValue placeholder={t('admissions.filterStatus')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="interviewed">Interviewed</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="enrolled">Enrolled</SelectItem>
-                    <SelectItem value="waitlisted">Waitlisted</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
+                    <SelectItem value="all">{t('admissions.allStatuses')}</SelectItem>
+                    <SelectItem value="pending">{t('admissions.pending')}</SelectItem>
+                    <SelectItem value="interviewed">{t('admissions.interviewed')}</SelectItem>
+                    <SelectItem value="approved">{t('admissions.approved')}</SelectItem>
+                    <SelectItem value="enrolled">{t('admissions.enrolled')}</SelectItem>
+                    <SelectItem value="waitlisted">{t('admissions.waitlisted')}</SelectItem>
+                    <SelectItem value="rejected">{t('admissions.rejected')}</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={classFilter} onValueChange={v => { setClassFilter(v); setPage(1); }}>
                   <SelectTrigger className="w-full sm:w-40">
-                    <SelectValue placeholder="Filter by class" />
+                    <SelectValue placeholder={t('attendance.selectClass')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Classes</SelectItem>
+                    <SelectItem value="all">{t('attendance.allClasses')}</SelectItem>
                     {CLASSES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -201,7 +232,7 @@ export function AdmissionsManager() {
             <TabsContent value="applications">
               <ModernCard variant="glass">
                 <CardHeader>
-                  <CardTitle>Admission Applications</CardTitle>
+                  <CardTitle>{t('admissions.applicationList')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {isLoading ? (
@@ -211,20 +242,20 @@ export function AdmissionsManager() {
                   ) : error ? (
                     <div className="text-center py-12 text-red-500">{error}</div>
                   ) : items.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">No applications found.</div>
+                    <div className="text-center py-12 text-muted-foreground">{t('admissions.noApplications')}</div>
                   ) : (
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Application #</TableHead>
-                            <TableHead>Student</TableHead>
+                            <TableHead>{t('admissions.applicantName')}</TableHead>
                             <TableHead>Guardian</TableHead>
-                            <TableHead>Class</TableHead>
+                            <TableHead>{t('admissions.appliedClass')}</TableHead>
                             <TableHead>Academic Year</TableHead>
-                            <TableHead>Applied On</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Actions</TableHead>
+                            <TableHead>{t('admissions.applicationDate')}</TableHead>
+                            <TableHead>{t('admissions.applicationStatus')}</TableHead>
+                            <TableHead>{t('common.actions')}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -254,22 +285,54 @@ export function AdmissionsManager() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <Select
-                                  value={admission.status}
-                                  onValueChange={v => handleStatusChange(admission.id, v)}
-                                  disabled={admission.status === "enrolled"}
-                                >
-                                  <SelectTrigger className="w-32">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="pending">Pending</SelectItem>
-                                    <SelectItem value="interviewed">Interviewed</SelectItem>
-                                    <SelectItem value="approved">Approved</SelectItem>
-                                    <SelectItem value="waitlisted">Waitlisted</SelectItem>
-                                    <SelectItem value="rejected">Rejected</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                <div className="flex items-center gap-1">
+                                  <Select
+                                    value={admission.status}
+                                    onValueChange={v => handleStatusChange(admission.id, v)}
+                                    disabled={admission.status === "enrolled"}
+                                  >
+                                    <SelectTrigger className="w-32">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pending</SelectItem>
+                                      <SelectItem value="interviewed">Interviewed</SelectItem>
+                                      <SelectItem value="approved">Approved</SelectItem>
+                                      <SelectItem value="waitlisted">Waitlisted</SelectItem>
+                                      <SelectItem value="rejected">Rejected</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {admission.status === "approved" && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                                      title="Enroll student"
+                                      onClick={() => handleEnroll(admission.id)}
+                                    >
+                                      <UserCheck className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Edit application"
+                                    disabled={admission.status === "enrolled"}
+                                    onClick={() => { setEditAdmission(admission); setIsAddDialogOpen(true); }}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    title="Delete application"
+                                    disabled={admission.status === "enrolled"}
+                                    onClick={() => handleDelete(admission.id, admission.studentName)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -286,10 +349,10 @@ export function AdmissionsManager() {
                       </p>
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                          Previous
+                          {t('dashboard.prevPage')}
                         </Button>
                         <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                          Next
+                          {t('dashboard.nextPage')}
                         </Button>
                       </div>
                     </div>

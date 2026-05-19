@@ -35,6 +35,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   financeApi,
   type AddIncomeDto,
@@ -89,6 +90,7 @@ function StatCard({
   title: string; value: string; sub?: string;
   icon: React.ElementType; trend?: number; variant?: "default" | "income" | "expense" | "neutral";
 }) {
+  const { t } = useLanguage();
   const variantStyles = {
     default:  "border-border",
     income:   "border-l-4 border-l-green-500",
@@ -106,7 +108,7 @@ function StatCard({
             {trend !== undefined && (
               <div className={`flex items-center gap-1 text-xs font-medium ${trend >= 0 ? "text-green-600" : "text-red-600"}`}>
                 {trend >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {Math.abs(trend).toFixed(1)}% vs last month
+                {Math.abs(trend).toFixed(1)}{t('finance.kpi.vsLastMonth')}
               </div>
             )}
           </div>
@@ -391,6 +393,7 @@ function AddPettyCashDialog({
 
 export default function Finance() {
   const qc = useQueryClient();
+  const { t } = useLanguage();
   const [tab, setTab] = useState("overview");
   const [txFilter, setTxFilter] = useState({ type: "", search: "" });
   const [showIncome, setShowIncome]     = useState(false);
@@ -487,21 +490,21 @@ export default function Finance() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Finance Management</h1>
-          <p className="text-sm text-muted-foreground">Track income, expenses, petty cash and budgets</p>
+          <h1 className="text-2xl font-bold">{t('finance.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('finance.subtitle')}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={() => refetchStats()}>
-            <RefreshCw className="h-4 w-4 mr-1.5" /> Refresh
+            <RefreshCw className="h-4 w-4 mr-1.5" /> {t('finance.button.refresh')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowPettyCash(true)}>
-            <Wallet className="h-4 w-4 mr-1.5" /> Petty Cash
+            <Wallet className="h-4 w-4 mr-1.5" /> {t('finance.button.pettyCash')}
           </Button>
           <Button variant="outline" size="sm" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => setShowExpense(true)}>
-            <ArrowDownCircle className="h-4 w-4 mr-1.5" /> Expense
+            <ArrowDownCircle className="h-4 w-4 mr-1.5" /> {t('finance.button.expense')}
           </Button>
           <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => setShowIncome(true)}>
-            <ArrowUpCircle className="h-4 w-4 mr-1.5" /> Income
+            <ArrowUpCircle className="h-4 w-4 mr-1.5" /> {t('finance.button.income')}
           </Button>
         </div>
       </div>
@@ -509,29 +512,29 @@ export default function Finance() {
       {/* KPI Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total Income"
+          title={t('finance.kpi.totalIncome')}
           value={fmt(stats?.totalIncome)}
-          sub={`Today: ${fmt(stats?.todayIncome)}`}
+          sub={`${t('finance.kpi.today')} ${fmt(stats?.todayIncome)}`}
           icon={TrendingUp}
           variant="income"
         />
         <StatCard
-          title="Total Expenses"
+          title={t('finance.kpi.totalExpenses')}
           value={fmt(stats?.totalExpenses)}
-          sub={`Today: ${fmt(stats?.todayExpenses)}`}
+          sub={`${t('finance.kpi.today')} ${fmt(stats?.todayExpenses)}`}
           icon={TrendingDown}
           variant="expense"
         />
         <StatCard
-          title="Net Surplus"
+          title={t('finance.kpi.netSurplus')}
           value={fmt(stats?.netIncome)}
           icon={BarChart3}
           variant="neutral"
         />
         <StatCard
-          title="Cash On Hand"
+          title={t('finance.kpi.cashOnHand')}
           value={fmt(stats?.cashOnHand)}
-          sub={`${stats?.pendingPettyCash ?? 0} petty cash pending`}
+          sub={`${stats?.pendingPettyCash ?? 0} ${t('finance.kpi.pettyCashPending')}`}
           icon={PiggyBank}
         />
       </div>
@@ -539,11 +542,11 @@ export default function Finance() {
       {/* Main Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="pettycash">Petty Cash</TabsTrigger>
-          <TabsTrigger value="budget">Budget</TabsTrigger>
-          <TabsTrigger value="sources">Income Sources</TabsTrigger>
+          <TabsTrigger value="overview">{t('finance.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="transactions">{t('finance.tabs.transactions')}</TabsTrigger>
+          <TabsTrigger value="pettycash">{t('finance.tabs.pettyCash')}</TabsTrigger>
+          <TabsTrigger value="budget">{t('finance.tabs.budget')}</TabsTrigger>
+          <TabsTrigger value="sources">{t('finance.tabs.incomeSources')}</TabsTrigger>
         </TabsList>
 
         {/* ─── OVERVIEW ──────────────────────────────────────────────── */}
@@ -551,13 +554,13 @@ export default function Finance() {
           {/* Monthly Trend */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Monthly Income vs Expenses (Last 6 months)</CardTitle>
+              <CardTitle className="text-base">{t('finance.overview.monthlyTrendTitle')}</CardTitle>
             </CardHeader>
             <CardContent>
               {reportLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : trendData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8 text-sm">No trend data available</p>
+                <p className="text-center text-muted-foreground py-8 text-sm">{t('finance.overview.noTrendData')}</p>
               ) : (
                 <ResponsiveContainer width="100%" height={260}>
                   <AreaChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
@@ -576,8 +579,8 @@ export default function Finance() {
                     <YAxis tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(v: number) => fmt(v)} />
                     <Legend />
-                    <Area type="monotone" dataKey="income"   name="Income"   stroke="#22c55e" fill="url(#inc)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" fill="url(#exp)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="income"   name={t('finance.chart.income')}   stroke="#22c55e" fill="url(#inc)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="expenses" name={t('finance.chart.expenses')} stroke="#ef4444" fill="url(#exp)" strokeWidth={2} />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
@@ -587,10 +590,10 @@ export default function Finance() {
           {/* Pie charts row */}
           <div className="grid md:grid-cols-2 gap-5">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Income by Category</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">{t('finance.overview.incomeByCategory')}</CardTitle></CardHeader>
               <CardContent>
                 {incomeSourcePieData.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8 text-sm">No data</p>
+                  <p className="text-center text-muted-foreground py-8 text-sm">{t('finance.overview.noData')}</p>
                 ) : (
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
@@ -609,10 +612,10 @@ export default function Finance() {
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle className="text-sm">Expenses by Category</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">{t('finance.overview.expensesByCategory')}</CardTitle></CardHeader>
               <CardContent>
                 {expensePieData.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8 text-sm">No data</p>
+                  <p className="text-center text-muted-foreground py-8 text-sm">{t('finance.overview.noData')}</p>
                 ) : (
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
@@ -637,7 +640,7 @@ export default function Finance() {
         <TabsContent value="transactions" className="space-y-4 mt-5">
           <div className="flex flex-col sm:flex-row gap-3">
             <Input
-              placeholder="Search transactions…"
+              placeholder={t('finance.transactions.searchPlaceholder')}
               value={txFilter.search}
               onChange={(e) => setTxFilter((f) => ({ ...f, search: e.target.value }))}
               className="max-w-xs"
@@ -651,9 +654,9 @@ export default function Finance() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="CREDIT">Income</SelectItem>
-                <SelectItem value="DEBIT">Expense</SelectItem>
+                <SelectItem value="all">{t('finance.transactions.filterAll')}</SelectItem>
+                <SelectItem value="CREDIT">{t('finance.transactions.filterIncome')}</SelectItem>
+                <SelectItem value="DEBIT">{t('finance.transactions.filterExpense')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -664,19 +667,19 @@ export default function Finance() {
               ) : !txData?.items?.length ? (
                 <div className="text-center py-10 text-muted-foreground">
                   <Receipt className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No transactions found</p>
+                  <p className="text-sm">{t('finance.transactions.noTransactions')}</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>{t('finance.transactions.col.date')}</TableHead>
+                      <TableHead>{t('finance.transactions.col.description')}</TableHead>
+                      <TableHead>{t('finance.transactions.col.account')}</TableHead>
+                      <TableHead>{t('finance.transactions.col.category')}</TableHead>
+                      <TableHead>{t('finance.transactions.col.source')}</TableHead>
+                      <TableHead className="text-right">{t('finance.transactions.col.amount')}</TableHead>
+                      <TableHead>{t('finance.transactions.col.type')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -694,7 +697,7 @@ export default function Finance() {
                         </TableCell>
                         <TableCell>
                           <Badge variant={tx.type === "CREDIT" ? "default" : "destructive"} className="text-xs">
-                            {tx.type === "CREDIT" ? "Income" : "Expense"}
+                            {tx.type === "CREDIT" ? t('finance.transactions.typeIncome') : t('finance.transactions.typeExpense')}
                           </Badge>
                         </TableCell>
                       </TableRow>
@@ -714,9 +717,9 @@ export default function Finance() {
         {/* ─── PETTY CASH ────────────────────────────────────────────── */}
         <TabsContent value="pettycash" className="space-y-4 mt-5">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Petty Cash Entries</h3>
+            <h3 className="font-semibold">{t('finance.pettyCash.heading')}</h3>
             <Button size="sm" onClick={() => setShowPettyCash(true)}>
-              <Plus className="h-4 w-4 mr-1.5" /> New Request
+              <Plus className="h-4 w-4 mr-1.5" /> {t('finance.pettyCash.newRequest')}
             </Button>
           </div>
           <Card>
@@ -726,18 +729,18 @@ export default function Finance() {
               ) : !pettyCashData?.items?.length ? (
                 <div className="text-center py-10 text-muted-foreground">
                   <Wallet className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No petty cash entries found</p>
+                  <p className="text-sm">{t('finance.pettyCash.noEntries')}</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Purpose</TableHead>
-                      <TableHead>Requested By</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead>{t('finance.pettyCash.col.date')}</TableHead>
+                      <TableHead>{t('finance.pettyCash.col.purpose')}</TableHead>
+                      <TableHead>{t('finance.pettyCash.col.requestedBy')}</TableHead>
+                      <TableHead className="text-right">{t('finance.pettyCash.col.amount')}</TableHead>
+                      <TableHead>{t('finance.pettyCash.col.status')}</TableHead>
+                      <TableHead>{t('finance.pettyCash.col.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -749,13 +752,13 @@ export default function Finance() {
                         <TableCell className="text-right font-semibold text-sm">{fmt(pc.amount)}</TableCell>
                         <TableCell>
                           {pc.status === "APPROVED" && (
-                            <Badge className="bg-green-100 text-green-800 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />Approved</Badge>
+                            <Badge className="bg-green-100 text-green-800 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />{t('finance.pettyCash.status.approved')}</Badge>
                           )}
                           {pc.status === "REJECTED" && (
-                            <Badge variant="destructive" className="text-xs"><XCircle className="h-3 w-3 mr-1" />Rejected</Badge>
+                            <Badge variant="destructive" className="text-xs"><XCircle className="h-3 w-3 mr-1" />{t('finance.pettyCash.status.rejected')}</Badge>
                           )}
                           {pc.status === "PENDING" && (
-                            <Badge variant="secondary" className="text-xs"><Clock className="h-3 w-3 mr-1" />Pending</Badge>
+                            <Badge variant="secondary" className="text-xs"><Clock className="h-3 w-3 mr-1" />{t('finance.pettyCash.status.pending')}</Badge>
                           )}
                         </TableCell>
                         <TableCell>
@@ -767,7 +770,7 @@ export default function Finance() {
                                 disabled={approvePcMut.isPending}
                                 onClick={() => approvePcMut.mutate({ id: pc.id, dto: { status: "APPROVED" } })}
                               >
-                                Approve
+                                {t('finance.pettyCash.button.approve')}
                               </Button>
                               <Button
                                 size="sm" variant="ghost"
@@ -775,7 +778,7 @@ export default function Finance() {
                                 disabled={approvePcMut.isPending}
                                 onClick={() => approvePcMut.mutate({ id: pc.id, dto: { status: "REJECTED" } })}
                               >
-                                Reject
+                                {t('finance.pettyCash.button.reject')}
                               </Button>
                             </div>
                           )}
@@ -793,14 +796,14 @@ export default function Finance() {
         <TabsContent value="budget" className="space-y-4 mt-5">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Budget Utilization</CardTitle>
-              <CardDescription>Actual spend vs. allocated budget per category</CardDescription>
+              <CardTitle className="text-base">{t('finance.budget.title')}</CardTitle>
+              <CardDescription>{t('finance.budget.description')}</CardDescription>
             </CardHeader>
             <CardContent>
               {reportLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : budgetData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8 text-sm">No budget data available</p>
+                <p className="text-center text-muted-foreground py-8 text-sm">{t('finance.budget.noData')}</p>
               ) : (
                 <>
                   <ResponsiveContainer width="100%" height={280}>
@@ -810,8 +813,8 @@ export default function Finance() {
                       <YAxis tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
                       <Tooltip formatter={(v: number) => fmt(v)} />
                       <Legend />
-                      <Bar dataKey="budget" name="Budget" fill="#6366f1" opacity={0.6} radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="actual" name="Actual" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="budget" name={t('finance.budget.legend.budget')} fill="#6366f1" opacity={0.6} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="actual" name={t('finance.budget.legend.actual')} fill="#f59e0b" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                   <Separator className="my-4" />
@@ -821,13 +824,13 @@ export default function Finance() {
                         <div className="flex justify-between text-sm">
                           <span className="font-medium">{b.categoryName}</span>
                           <span className={b.utilizationPct > 90 ? "text-red-600 font-semibold" : "text-muted-foreground"}>
-                            {b.utilizationPct.toFixed(0)}% used
+                            {b.utilizationPct.toFixed(0)}{t('finance.budget.used')}
                           </span>
                         </div>
                         <Progress value={Math.min(b.utilizationPct, 100)} className={`h-1.5 ${b.utilizationPct > 90 ? "[&>div]:bg-red-500" : ""}`} />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Actual: {fmt(b.actual)}</span>
-                          <span>Budget: {fmt(b.budget)}</span>
+                          <span>{t('finance.budget.actual')} {fmt(b.actual)}</span>
+                          <span>{t('finance.budget.budget')} {fmt(b.budget)}</span>
                         </div>
                       </div>
                     ))}
@@ -842,7 +845,7 @@ export default function Finance() {
         <TabsContent value="sources" className="space-y-4 mt-5">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Aggregated Income Sources</CardTitle>
+              <CardTitle className="text-base">{t('finance.incomeSources.title')}</CardTitle>
               <CardDescription>Month-over-month comparison for all income streams</CardDescription>
             </CardHeader>
             <CardContent className="p-0">

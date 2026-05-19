@@ -29,6 +29,7 @@ namespace SmsApi.Controllers
         private readonly ITenantContext _tenant;
         private readonly ILogger<FeesController> _logger;
         private readonly IParentAuthorizationService _parentAuth;
+        private readonly INotificationService _notificationService;
 
         public FeesController(
             IFeeService feeService, 
@@ -39,7 +40,8 @@ namespace SmsApi.Controllers
             AppDbContext context, 
             ITenantContext tenant,
             ILogger<FeesController> logger,
-            IParentAuthorizationService parentAuth)
+            IParentAuthorizationService parentAuth,
+            INotificationService notificationService)
         {
             _feeService = feeService;
             _paymentGatewayService = paymentGatewayService;
@@ -50,6 +52,7 @@ namespace SmsApi.Controllers
             _tenant = tenant;
             _logger = logger;
             _parentAuth = parentAuth;
+            _notificationService = notificationService;
         }
 
         /// <summary>
@@ -1607,6 +1610,17 @@ namespace SmsApi.Controllers
 
                 await _context.SaveChangesAsync();
 
+                if (request.NotifyParent)
+                {
+                    var studentName = (await _context.Students.FindAsync(rec.StudentId))?.FirstName ?? "your child";
+                    await NotifyFeeParentsAsync(
+                        schoolId, rec.StudentId,
+                        $"Fee concession applied for {studentName}",
+                        $"A concession of \u20B9{discountAmt:F0} has been applied to {studentName}'s fee account. " +
+                        $"Outstanding balance is now \u20B9{rec.PendingAmount:F0}.",
+                        rec.Id);
+                }
+
                 return Ok(new
                 {
                     message = $"Discount of ₹{discountAmt} applied successfully.",
@@ -1709,6 +1723,21 @@ namespace SmsApi.Controllers
                 });
 
                 await _context.SaveChangesAsync();
+
+                if (request.NotifyParent)
+                {
+                    var studentName = (await _context.Students.FindAsync(rec.StudentId))?.FirstName ?? "your child";
+                    var saving = oldTotal - rec.TotalAmount;
+                    await NotifyFeeParentsAsync(
+                        schoolId, rec.StudentId,
+                        $"Fee structure updated for {studentName}",
+                        saving > 0
+                            ? $"Fee adjustments have been made for {studentName}'s account, saving \u20B9{saving:F0}. " +
+                              $"Revised outstanding balance: \u20B9{rec.PendingAmount:F0}."
+                            : $"Fee heads have been updated for {studentName}'s account. " +
+                              $"Outstanding balance: \u20B9{rec.PendingAmount:F0}.",
+                        rec.Id);
+                }
 
                 return Ok(new
                 {
@@ -2273,6 +2302,51 @@ namespace SmsApi.Controllers
             }
             catch (Exception) { return StatusCode(500, new { message = "Failed to fetch deleted transactions." }); }
         }
+
+        // ─── Private helper — push fee notification to all eligible guardians ────
+        private async Task NotifyFeeParentsAsync(
+            Guid schoolId, Guid studentId,
+            string title, string content,
+            Guid? referenceId = null)
+        {
+            try
+            {
+                var parentUserIds = await _context.GuardianStudents
+                    .Include(gs => gs.Guardian)
+                    .Where(gs => gs.StudentId == studentId && gs.SchoolId == schoolId && gs.CanViewFees
+                                 && gs.Guardian != null && gs.Guardian.UserLoginId != null)
+                    .Select(gs => gs.Guardian!.UserLoginId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+                foreach (var userId in parentUserIds)
+                {
+                    _context.Notifications.Add(new SmsApi.Models.Entities.Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        RecipientId = userId,
+                        RecipientType = "Parent",
+                        Type = "Fee",
+                        Title = title,
+                        Content = content,
+                        Priority = "Normal",
+                        ReferenceId = referenceId,
+                        ReferenceType = "FeeRecord",
+                        ActionUrl = "/parent-fees",
+                        IsRead = false,
+                        SenderName = "School Fee Office",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send fee notification to parents for student {StudentId}", studentId);
+            }
+        }
     }
 
     public class SiblingDiscountRequest
@@ -2320,6 +2394,8 @@ public class InlineDiscountRequest
     public decimal DiscountValue { get; set; }
     public string? Reason { get; set; }
     public string? AppliedBy { get; set; }
+    /// <summary>If true, an in-app notification is sent to all guardians with portal access.</summary>
+    public bool NotifyParent { get; set; } = false;
 }
 
 public class FeeHeadOverridesRequest
@@ -2328,6 +2404,8 @@ public class FeeHeadOverridesRequest
     [Required]
     public Dictionary<string, decimal> Overrides { get; set; } = new();
     public string? AppliedBy { get; set; }
+    /// <summary>If true, an in-app notification is sent to all guardians with portal access.</summary>
+    public bool NotifyParent { get; set; } = false;
 }
 
 public class RemoveDiscountRequest

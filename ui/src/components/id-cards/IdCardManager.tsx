@@ -14,6 +14,7 @@ import { staffApi, StaffBasic } from "@/services/api/staffApi";
 import { IdCardTemplate } from "./IdCardTemplate";
 import { IndividualIdCardGenerator } from "./IndividualIdCardGenerator";
 import { ErrorBoundary, LoadingState, EmptyState } from "@/components/common";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface IdCardRecord {
   id: string;
@@ -28,6 +29,7 @@ interface IdCardRecord {
 }
 
 export function IdCardManager() {
+  const { t } = useLanguage();
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [staff, setStaff] = useState<StaffBasic[]>([]);
   const [idCards, setIdCards] = useState<IdCardRecord[]>([]);
@@ -119,13 +121,13 @@ export function IdCardManager() {
 
       setIdCards(prev => [...prev, newIdCard]);
       toast({
-        title: "Success",
-        description: `ID card generated for ${name}`
+        title: t('common.analytics'),
+        description: `${t('idCard.generateSuccess').replace('{name}', name)}`
       });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to generate ID card",
+        title: t('common.retry'),
+        description: t('idCard.generateError'),
         variant: "destructive"
       });
     }
@@ -143,7 +145,7 @@ export function IdCardManager() {
   };
 
   if (loading) {
-    return <LoadingState variant="cards" rows={3} message="Loading ID card data..." />;
+    return <LoadingState variant="cards" rows={3} message={t('idCard.loading')} />;
   }
 
   return (
@@ -151,8 +153,8 @@ export function IdCardManager() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-display">ID Card Management</h1>
-          <p className="text-muted-foreground">Generate and manage student and staff ID cards</p>
+          <h1 className="text-display">{t('idCard.title')}</h1>
+          <p className="text-muted-foreground">{t('idCard.subtitle')}</p>
         </div>
       </div>
 
@@ -162,7 +164,7 @@ export function IdCardManager() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total ID Cards</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('idCard.statTotal')}</p>
                 <p className="text-2xl font-bold">{idCards.length}</p>
               </div>
               <IdCard className="h-8 w-8 text-primary" />
@@ -174,7 +176,7 @@ export function IdCardManager() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Student Cards</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('idCard.statStudent')}</p>
                 <p className="text-2xl font-bold">{idCards.filter(c => c.personType === 'student').length}</p>
               </div>
               <Users className="h-8 w-8 text-blue-500" />
@@ -186,7 +188,7 @@ export function IdCardManager() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Staff Cards</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('idCard.statStaff')}</p>
                 <p className="text-2xl font-bold">{idCards.filter(c => c.personType === 'staff').length}</p>
               </div>
               <UserCheck className="h-8 w-8 text-green-500" />
@@ -197,13 +199,13 @@ export function IdCardManager() {
 
       <Card>
         <CardHeader>
-          <CardTitle>ID Card Records</CardTitle>
+          <CardTitle>{t('idCard.recordsTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="existing" className="space-y-4">
             <TabsList>
-              <TabsTrigger value="existing">Existing Cards</TabsTrigger>
-              <TabsTrigger value="individual">Generate New</TabsTrigger>
+              <TabsTrigger value="existing">{t('idCard.tabExisting')}</TabsTrigger>
+              <TabsTrigger value="individual">{t('idCard.tabGenerate')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="existing" className="space-y-4">
@@ -212,7 +214,7 @@ export function IdCardManager() {
                   <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search by name or ID number..."
+                      placeholder={t('idCard.searchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-8"
@@ -221,12 +223,12 @@ export function IdCardManager() {
                 </div>
                 <Select value={filterType} onValueChange={(value: any) => setFilterType(value)}>
                   <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filter by type" />
+                    <SelectValue placeholder={t('idCard.filterPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="student">Students</SelectItem>
-                    <SelectItem value="staff">Staff</SelectItem>
+                    <SelectItem value="all">{t('idCard.allTypes')}</SelectItem>
+                    <SelectItem value="student">{t('idCard.filterStudents')}</SelectItem>
+                    <SelectItem value="staff">{t('idCard.filterStaff')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -234,11 +236,11 @@ export function IdCardManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>ID Number</TableHead>
-                    <TableHead>Issue Date</TableHead>
-                    <TableHead>Expiry Date</TableHead>
+                    <TableHead>{t('idCard.colName')}</TableHead>
+                    <TableHead>{t('idCard.colType')}</TableHead>
+                    <TableHead>{t('idCard.colIdNumber')}</TableHead>
+                    <TableHead>{t('idCard.colIssueDate')}</TableHead>
+                    <TableHead>{t('idCard.colExpiryDate')}</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -294,7 +296,7 @@ export function IdCardManager() {
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>ID Card Preview</DialogTitle>
+            <DialogTitle>{t('idCard.previewTitle')}</DialogTitle>
           </DialogHeader>
           {selectedPerson && (
             <IdCardTemplate

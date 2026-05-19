@@ -574,6 +574,122 @@ export const saveCoScholasticAssessments = async (entries: SaveCoScholasticEntry
   await apiClient.post(`${BASE_PATH}/coscholastic/assessments`, entries);
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CCE REPORT CARD — types + API calls
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CceExamSetupOption {
+  id: string;
+  name: string;
+  term: number;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+  examType?: string;
+}
+
+export interface CceAssessmentDetail {
+  marks: number;
+  maxMarks: number;
+  percentage: number;
+  isAbsent: boolean;
+}
+
+export interface CceSubjectReport {
+  subjectId: string;
+  subjectName: string;
+  assessments: Partial<Record<'FA1' | 'FA2' | 'SA1' | 'FA3' | 'FA4' | 'SA2', CceAssessmentDetail>>;
+  term1WeightedScore: number;
+  term2WeightedScore: number;
+  annualPercentage: number;
+  grade: string;
+  gradePoint: number;
+  isPass: boolean;
+}
+
+export interface CceCoScholasticReport {
+  areaId: string;
+  areaName: string;
+  category?: string;
+  gradeScale: string;
+  term1Grade?: string;
+  term2Grade?: string;
+  term1Remarks?: string;
+  term2Remarks?: string;
+}
+
+export interface CceStudentReport {
+  studentId: string;
+  studentName: string;
+  admissionNumber?: string;
+  rollNumber?: string;
+  subjects: CceSubjectReport[];
+  coScholastic: CceCoScholasticReport[];
+  overallGrade: string;
+  cgpa: number;
+  result: 'Pass' | 'Fail';
+}
+
+export interface CceClassReportDto {
+  classId: string;
+  className?: string;
+  sectionId?: string;
+  sectionName?: string;
+  academicYear: string;
+  generatedAt: string;
+  examMappings: Partial<Record<'FA1' | 'FA2' | 'SA1' | 'FA3' | 'FA4' | 'SA2', { id: string; name: string } | null>>;
+  students: CceStudentReport[];
+  passCount: number;
+  failCount: number;
+  avgCgpa: number;
+}
+
+// CBSE 9-point grading scale
+export interface CbseGradeInfo { label: string; grade: string; gradePoint: number; color: string; }
+export const CBSE_GRADE_SCALE: CbseGradeInfo[] = [
+  { label: '91–100', grade: 'A1', gradePoint: 10.0, color: 'text-green-700 bg-green-50' },
+  { label: '81–90',  grade: 'A2', gradePoint: 9.0,  color: 'text-green-700 bg-green-50' },
+  { label: '71–80',  grade: 'B1', gradePoint: 8.0,  color: 'text-blue-700 bg-blue-50' },
+  { label: '61–70',  grade: 'B2', gradePoint: 7.0,  color: 'text-blue-700 bg-blue-50' },
+  { label: '51–60',  grade: 'C1', gradePoint: 6.0,  color: 'text-yellow-700 bg-yellow-50' },
+  { label: '41–50',  grade: 'C2', gradePoint: 5.0,  color: 'text-yellow-700 bg-yellow-50' },
+  { label: '33–40',  grade: 'D',  gradePoint: 4.0,  color: 'text-orange-700 bg-orange-50' },
+  { label: '21–32',  grade: 'E1', gradePoint: 0,    color: 'text-red-700 bg-red-50' },
+  { label: '0–20',   grade: 'E2', gradePoint: 0,    color: 'text-red-700 bg-red-50' },
+];
+export const getCbseGradeColor = (grade: string) =>
+  CBSE_GRADE_SCALE.find(g => g.grade === grade)?.color ?? '';
+
+export const getCceExamSetups = async (
+  classId: string,
+  academicYear?: string,
+  sectionId?: string,
+): Promise<CceExamSetupOption[]> => {
+  const res = await apiClient.get('/examinations/cce/exam-setups', {
+    params: {
+      classId,
+      ...(academicYear ? { academicYear } : {}),
+      ...(sectionId    ? { sectionId }    : {}),
+    },
+  });
+  return res.data;
+};
+
+export const getCceClassReport = async (params: {
+  classId: string;
+  academicYear?: string;
+  sectionId?: string;
+  fa1ExamId?: string;
+  fa2ExamId?: string;
+  sa1ExamId?: string;
+  fa3ExamId?: string;
+  fa4ExamId?: string;
+  sa2ExamId?: string;
+}): Promise<CceClassReportDto> => {
+  const res = await apiClient.get('/examinations/cce/class-report', { params });
+  return res.data;
+};
+
 // Export all functions as a single object for convenience
 export const examinationApi = {
   getExams,
@@ -602,6 +718,9 @@ export const examinationApi = {
   getStudentCoScholastic,
   getClassCoScholastic,
   saveCoScholasticAssessments,
+  // CCE Report Cards
+  getCceExamSetups,
+  getCceClassReport,
 };
 
 export default examinationApi;

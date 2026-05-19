@@ -2,19 +2,20 @@
 import { useNavigate } from "react-router-dom";
 import {
   BadgeIndianRupee, Loader2, AlertCircle, Users, ChevronRight,
-  CheckCircle, Clock, CreditCard, GraduationCap
+  CheckCircle, Clock, CreditCard, GraduationCap, CalendarClock
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/services/api/studentApi";
-import { getFeeRecords, type FeeRecord } from "@/services/api/feeApi";
+import { getFeeRecords, getFeeStructureById, type FeeRecord, type FeeStructure, type TermSchedule } from "@/services/api/feeApi";
 import { toast } from "sonner";
 
 interface ChildFeeData {
   child: StudentBasic;
   feeRecords: FeeRecord[];
+  feeStructures: Record<string, FeeStructure>;
   totalAmount: number;
   paidAmount: number;
   pendingAmount: number;
@@ -42,16 +43,27 @@ export default function ParentFees() {
           const records = res.feeRecords || res.items || [];
           const totalAmount = records.reduce((s: number, r: FeeRecord) => s + r.totalAmount, 0);
           const paidAmount = records.reduce((s: number, r: FeeRecord) => s + r.paidAmount, 0);
+
+          // Fetch fee structures for term schedule display
+          const structureIds = [...new Set(records.map((r: FeeRecord) => r.feeStructureId).filter(Boolean))] as string[];
+          const structureMap: Record<string, FeeStructure> = {};
+          await Promise.all(
+            structureIds.map(async (sid) => {
+              try { structureMap[sid] = await getFeeStructureById(sid); } catch { /* skip */ }
+            })
+          );
+
           return {
             child,
             feeRecords: records,
+            feeStructures: structureMap,
             totalAmount,
             paidAmount,
             pendingAmount: totalAmount - paidAmount,
             loading: false,
           };
         } catch {
-          return { child, feeRecords: [], totalAmount: 0, paidAmount: 0, pendingAmount: 0, loading: false };
+          return { child, feeRecords: [], feeStructures: {}, totalAmount: 0, paidAmount: 0, pendingAmount: 0, loading: false };
         }
       });
 
@@ -211,28 +223,38 @@ export default function ParentFees() {
                   {/* Fee records summary */}
                   {cf.feeRecords.length > 0 && (
                     <div className="space-y-2">
-                      {cf.feeRecords.map(record => (
-                        <div key={record.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50">
-                          <div>
-                            <p className="text-sm font-medium">{record.feeStructureName || "Fee"}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Due: {new Date(record.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                            </p>
-                          </div>
-                          <div className="text-right flex items-center gap-3">
+                      {cf.feeRecords.map(record => {
+                        const structure = record.feeStructureId ? cf.feeStructures[record.feeStructureId] : null;
+                        const terms = parseTermSchedule(structure);
+                        return (
+                        <div key={record.id} className="flex flex-col py-2 px-3 rounded-lg bg-muted/50 gap-2">
+                          <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm font-medium">{"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")}</p>
-                              <p className="text-xs text-muted-foreground">of {"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</p>
+                              <p className="text-sm font-medium">{record.feeStructureName || "Fee"}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Due: {new Date(record.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                              </p>
                             </div>
-                            <Badge
-                              variant={record.status === "Paid" ? "default" : record.status === "Overdue" ? "destructive" : "secondary"}
-                              className="text-xs"
-                            >
-                              {record.status}
-                            </Badge>
+                            <div className="text-right flex items-center gap-3">
+                              <div>
+                                <p className="text-sm font-medium">{"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")}</p>
+                                <p className="text-xs text-muted-foreground">of {"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</p>
+                              </div>
+                              <Badge
+                                variant={record.status === "Paid" ? "default" : record.status === "Overdue" ? "destructive" : "secondary"}
+                                className="text-xs"
+                              >
+                                {record.status}
+                              </Badge>
+                            </div>
                           </div>
+                          {/* Term timeline */}
+                          {terms.length > 0 && (
+                            <TermTimeline terms={terms} paidAmount={record.paidAmount} />
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -254,6 +276,84 @@ export default function ParentFees() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function parseTermSchedule(structure: FeeStructure | null | undefined): TermSchedule[] {
+  if (!structure?.installmentDueDates) return [];
+  try {
+    const parsed = JSON.parse(structure.installmentDueDates);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object") {
+      return parsed as TermSchedule[];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+type TermStatus = "paid" | "prepay" | "partial" | "due" | "upcoming";
+
+function getTermStatuses(terms: TermSchedule[], paidAmount: number): TermStatus[] {
+  let cumulative = 0;
+  return terms.map(term => {
+    const prev = cumulative;
+    cumulative += term.amount;
+    if (paidAmount >= cumulative) return "paid";
+    if (paidAmount > prev) {
+      // prev > 0 means previous term(s) were fully covered — overpayment spilled here = prepay
+      // prev === 0 means this is the first term, genuinely partially paid
+      return prev > 0 ? "prepay" : "partial";
+    }
+    const now = new Date();
+    const due = new Date(term.dueDate);
+    return due <= now ? "due" : "upcoming";
+  });
+}
+
+function TermTimeline({ terms, paidAmount }: { terms: TermSchedule[]; paidAmount: number }) {
+  const statuses = getTermStatuses(terms, paidAmount);
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-1">
+      {terms.map((term, i) => {
+        const status = statuses[i];
+        const label = term.name || `Term ${term.termNumber}`;
+        const dueFormatted = new Date(term.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+        if (status === "paid") {
+          return (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
+              <CheckCircle className="h-3 w-3" /> {label} Paid
+            </span>
+          );
+        }
+        if (status === "prepay") {
+          return (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+              <CalendarClock className="h-3 w-3" /> {label} Prepaid · due {dueFormatted}
+            </span>
+          );
+        }
+        if (status === "partial") {
+          return (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+              <Clock className="h-3 w-3" /> {label} Partial · due {dueFormatted}
+            </span>
+          );
+        }
+        if (status === "due") {
+          return (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+              <CalendarClock className="h-3 w-3" /> {label} Due {dueFormatted}
+            </span>
+          );
+        }
+        return (
+          <span key={i} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border">
+            <CalendarClock className="h-3 w-3" /> {label} · {dueFormatted}
+          </span>
+        );
+      })}
     </div>
   );
 }

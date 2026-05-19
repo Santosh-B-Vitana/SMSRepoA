@@ -30,6 +30,8 @@ namespace SmsApi.Services
         Task ResetUserPasswordAsync(Guid userId, string newPassword);
         // Stats
         Task<PlatformStatsDto> GetPlatformStatsAsync();
+        // Onboarding
+        Task<SchoolOnboardingResult> OnboardSchoolAsync(SchoolOnboardingRequest request);
     }
 
     public class SchoolFeaturePermissionService : ISchoolFeaturePermissionService
@@ -62,7 +64,9 @@ namespace SmsApi.Services
                     IsActive = s.IsActive,
                     EnabledModulesCount = _context.SchoolFeaturePermissions
                         .Count(p => p.SchoolId == s.Id && p.IsEnabled),
-                    TotalModulesCount = _defaultModules.Length
+                    TotalModulesCount = _defaultModules.Length,
+                    IsOnboarded = _context.UserLogins
+                        .Any(u => u.SchoolId == s.Id && u.Role == "Admin")
                 })
                 .OrderBy(s => s.Name)
                 .ToListAsync();
@@ -459,6 +463,78 @@ namespace SmsApi.Services
                 ActiveUsers = activeUsers,
                 TotalStudents = totalStudents,
                 TotalStaff = totalStaff
+            };
+        }
+
+        // ─── Onboarding ───────────────────────────────────────────────────────────
+
+        public async Task<SchoolOnboardingResult> OnboardSchoolAsync(SchoolOnboardingRequest request)
+        {
+            // Step 1: Create school + auto-initialize default module permissions
+            var school = await CreateSchoolAsync(new CreateSchoolRequest
+            {
+                Name = request.Name,
+                SchoolCode = request.SchoolCode,
+                Address = request.Address,
+                Phone = request.Phone,
+                Email = request.Email,
+                Logo = request.Logo,
+            });
+
+            var schoolId = school.Id;
+
+            // Step 2: Apply module overrides (disable/enable specific modules)
+            if (request.ModuleOverrides != null && request.ModuleOverrides.Count > 0)
+            {
+                foreach (var (moduleName, isEnabled) in request.ModuleOverrides)
+                {
+                    var perm = await _context.SchoolFeaturePermissions
+                        .FirstOrDefaultAsync(p => p.SchoolId == schoolId && p.ModuleName == moduleName);
+                    if (perm != null)
+                    {
+                        perm.IsEnabled = isEnabled;
+                        perm.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            // Step 3: Create the first academic year for this school
+            var academicYear = new AcademicYear
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                Name = request.AcademicYearName,
+                StartDate = request.AcademicYearStart,
+                EndDate = request.AcademicYearEnd,
+                IsCurrent = request.AcademicYearIsCurrent,
+                Status = "active",
+            };
+            _context.AcademicYears.Add(academicYear);
+            await _context.SaveChangesAsync();
+
+            // Step 4: Create the school's first admin user
+            var adminUser = await CreatePlatformUserAsync(new CreatePlatformUserRequest
+            {
+                Username = request.AdminUsername,
+                Email = request.AdminEmail,
+                Password = request.AdminPassword,
+                Role = StatusConstants.Roles.Admin,
+                SchoolId = schoolId,
+            });
+
+            var enabledModules = await GetEnabledModulesAsync(schoolId);
+
+            return new SchoolOnboardingResult
+            {
+                SchoolId = schoolId,
+                SchoolName = school.Name,
+                SchoolCode = school.SchoolCode,
+                AdminUserId = adminUser.Id,
+                AdminEmail = adminUser.Email,
+                AcademicYearId = academicYear.Id,
+                AcademicYearName = academicYear.Name,
+                EnabledModules = enabledModules,
             };
         }
     }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Shield, BarChart3, Building2, Users, GraduationCap, UserCheck, RefreshCw, ToggleLeft, ToggleRight, ChevronRight } from "lucide-react";
+import { Shield, BarChart3, Building2, Users, GraduationCap, UserCheck, RefreshCw, ToggleLeft, ToggleRight, ChevronRight, Rocket } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -144,6 +144,25 @@ export default function SuperAdminDashboard() {
             ))}
           </div>
 
+          {/* Onboard CTA */}
+          <div
+            className="rounded-xl border-2 border-dashed border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 p-5 flex items-center justify-between gap-4 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all"
+            onClick={() => navigate("/superadmin/onboard")}
+          >
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+                <Rocket className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-indigo-900">Onboard a New School</p>
+                <p className="text-sm text-indigo-600">Step-by-step wizard — profile, year, admin &amp; modules in one go</p>
+              </div>
+            </div>
+            <Button className="bg-indigo-600 hover:bg-indigo-700 shrink-0" onClick={() => navigate("/superadmin/onboard")}>
+              Start Wizard <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+
           {/* Schools summary */}
           <Card>
             <CardHeader>
@@ -248,6 +267,7 @@ export default function SuperAdminDashboard() {
         <TabsContent value="quicklinks" className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
+              { title: "Onboard New School", desc: "Wizard: profile, year, admin & modules", path: "/superadmin/onboard", icon: Rocket, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" },
               { title: "School Management", desc: "Add, edit, and manage schools", path: "/superadmin/schools", icon: Building2, color: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
               { title: "User Management", desc: "Manage platform users across schools", path: "/superadmin/users", icon: Users, color: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" },
               { title: "Feature Toggles", desc: "Enable or disable modules per school", path: "#", icon: Shield, color: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300", tab: "features" },

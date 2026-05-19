@@ -24,6 +24,7 @@ import { studentApi } from "@/services/api/studentApi";
 import type { ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { useSchool } from "@/contexts/SchoolContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { generateProfessionalReportCard } from "@/utils/professionalPdfGenerator";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -122,13 +123,20 @@ function fmtRange(from: string, to: string) {
 function ExamEventCard({ event, onEnterMarks, onViewSchedule }: {
   event: ExamEvent; onEnterMarks: () => void; onViewSchedule: () => void;
 }) {
+  const { t } = useLanguage();
   const sc = STATUS_CFG[event.status] ?? STATUS_CFG.draft;
   const tm = EXAM_TYPE_META[event.examType];
   const isMarksEntered = event.status === "completed" || event.status === "ongoing";
+  const statusLabels: Record<string, string> = {
+    scheduled: t('exams.status.scheduled'),
+    ongoing: t('exams.status.inProgress'),
+    completed: t('exams.status.resultsIn'),
+    draft: t('exams.status.draft'),
+  };
   const steps = [
-    { label: "Scheduled",     done: true },
-    { label: "Marks Entered", done: isMarksEntered },
-    { label: "Published",     done: event.status === "completed" },
+    { label: t('exams.card.stepper.scheduled'),     done: true },
+    { label: t('exams.card.stepper.marksEntered'), done: isMarksEntered },
+    { label: t('exams.card.stepper.published'),     done: event.status === "completed" },
   ];
   return (
     <Card className="hover:shadow-md transition-all border hover:border-primary/30">
@@ -142,7 +150,7 @@ function ExamEventCard({ event, onEnterMarks, onViewSchedule }: {
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
               <span className="flex items-center gap-1"><Users className="h-3 w-3" />Class {event.classGroup}{event.section ? ` – ${event.section}` : ""}</span>
               <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{fmtRange(event.dateFrom, event.dateTo)}</span>
-              <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{event.subjects.length} subj.</span>
+              <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{event.subjects.length} {t('exams.card.subjectsAbbrev')}</span>
             </div>
             <div className="flex flex-wrap gap-1 mt-1.5">
               {event.subjects.slice(0, 4).map(s => (
@@ -151,7 +159,7 @@ function ExamEventCard({ event, onEnterMarks, onViewSchedule }: {
               {event.subjects.length > 4 && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">+{event.subjects.length - 4}</span>}
             </div>
           </div>
-          <span className={`flex-shrink-0 text-[11px] font-medium px-2 py-1 rounded-full border ${sc.color}`}>{sc.label}</span>
+          <span className={`flex-shrink-0 text-[11px] font-medium px-2 py-1 rounded-full border ${sc.color}`}>{statusLabels[event.status] ?? t('exams.status.draft')}</span>
         </div>
         {/* Stepper */}
         <div className="flex items-center gap-1 mt-3">
@@ -168,10 +176,10 @@ function ExamEventCard({ event, onEnterMarks, onViewSchedule }: {
         {/* Actions */}
         <div className="flex gap-2 mt-3 pt-3 border-t">
           <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={onViewSchedule}>
-            <Eye className="h-3 w-3 mr-1" /> Schedule
+            <Eye className="h-3 w-3 mr-1" /> {t('exams.card.btn.schedule')}
           </Button>
           <Button size="sm" className="h-7 text-xs flex-1" onClick={onEnterMarks}>
-            <PenLine className="h-3 w-3 mr-1" /> Enter Marks
+            <PenLine className="h-3 w-3 mr-1" /> {t('exams.card.btn.enterMarks')}
           </Button>
         </div>
       </CardContent>
@@ -188,6 +196,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
   academicYear: string;
   onNavigate: (tab: string, event?: ExamEvent) => void;
 }) {
+  const { t } = useLanguage();
   const today = new Date();
   const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -207,22 +216,22 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
   , [events]);
 
   const termProgress = useMemo(() => [
-    { type: "unit-test",   label: "Unit Tests"  },
-    { type: "quarterly",   label: "Quarterly"   },
-    { type: "half-yearly", label: "Half-Yearly" },
-    { type: "annual",      label: "Annual"      },
-  ].map(t => {
-    const all = events.filter(e => e.examType === t.type);
+    { type: "unit-test",   label: t('exams.overview.termCycle.unitTests') },
+    { type: "quarterly",   label: t('exams.overview.termCycle.quarterly') },
+    { type: "half-yearly", label: t('exams.overview.termCycle.halfYearly') },
+    { type: "annual",      label: t('exams.overview.termCycle.annual') },
+  ].map(item => {
+    const all = events.filter(e => e.examType === item.type);
     const done = all.filter(e => e.status === "completed").length;
-    return { ...t, total: all.length, done };
+    return { ...item, total: all.length, done };
   }), [events]);
 
   const kpis = [
-    { label: "Total Exams",  value: stats.totalExams ?? 0,     icon: <Award className="h-5 w-5 text-blue-500" />,    bg: "bg-blue-50",   ring: "ring-blue-100" },
-    { label: "Upcoming",     value: stats.scheduledExams ?? 0, icon: <Calendar className="h-5 w-5 text-violet-500" />, bg: "bg-violet-50", ring: "ring-violet-100" },
-    { label: "Live Now",     value: stats.ongoingExams ?? 0,   icon: <Zap className="h-5 w-5 text-amber-500" />,      bg: "bg-amber-50",  ring: "ring-amber-100" },
-    { label: "Completed",    value: stats.completedExams ?? 0, icon: <CheckCircle2 className="h-5 w-5 text-green-500" />, bg: "bg-green-50", ring: "ring-green-100" },
-    { label: "Pass Rate",    value: `${Math.round(stats.passPercentage ?? 0)}%`, icon: <TrendingUp className="h-5 w-5 text-rose-500" />, bg: "bg-rose-50", ring: "ring-rose-100" },
+    { label: t('exams.overview.kpi.totalExams'),  value: stats.totalExams ?? 0,     icon: <Award className="h-5 w-5 text-blue-500" />,    bg: "bg-blue-50",   ring: "ring-blue-100" },
+    { label: t('exams.overview.kpi.upcoming'),     value: stats.scheduledExams ?? 0, icon: <Calendar className="h-5 w-5 text-violet-500" />, bg: "bg-violet-50", ring: "ring-violet-100" },
+    { label: t('exams.overview.kpi.liveNow'),     value: stats.ongoingExams ?? 0,   icon: <Zap className="h-5 w-5 text-amber-500" />,      bg: "bg-amber-50",  ring: "ring-amber-100" },
+    { label: t('exams.overview.kpi.completed'),    value: stats.completedExams ?? 0, icon: <CheckCircle2 className="h-5 w-5 text-green-500" />, bg: "bg-green-50", ring: "ring-green-100" },
+    { label: t('exams.overview.kpi.passRate'),    value: `${Math.round(stats.passPercentage ?? 0)}%`, icon: <TrendingUp className="h-5 w-5 text-rose-500" />, bg: "bg-rose-50", ring: "ring-rose-100" },
   ];
 
   return (
@@ -250,7 +259,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <Zap className="h-4 w-4 text-amber-500" /> Action Required
+                <Zap className="h-4 w-4 text-amber-500" /> {t('exams.overview.actionRequired.title')}
                 {pendingMarks.length > 0 && (
                   <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{pendingMarks.length} pending</span>
                 )}
@@ -258,13 +267,13 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
             </CardHeader>
             <CardContent>
               {eventsLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> {t('exams.overview.actionRequired.loading')}</div>
               ) : pendingMarks.length === 0 ? (
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
                   <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-green-800">All caught up!</p>
-                    <p className="text-xs text-green-700">No mark entries overdue.</p>
+                    <p className="text-sm font-medium text-green-800">{t('exams.overview.actionRequired.allCaughtUp')}</p>
+                    <p className="text-xs text-green-700">{t('exams.overview.actionRequired.noOverdue')}</p>
                   </div>
                 </div>
               ) : (
@@ -278,7 +287,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
                           <p className="text-xs text-muted-foreground">Class {ev.classGroup}{ev.section ? ` – ${ev.section}` : ""} · Due {new Date(ev.dateTo).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
                         </div>
                       </div>
-                      <Button size="sm" className="h-7 text-xs shrink-0 ml-3" onClick={() => onNavigate("marks", ev)}>Enter Marks</Button>
+                      <Button size="sm" className="h-7 text-xs shrink-0 ml-3" onClick={() => onNavigate("marks", ev)}>{t('exams.overview.actionRequired.btn.enterMarks')}</Button>
                     </div>
                   ))}
                   {pendingMarks.length > 6 && (
@@ -295,8 +304,8 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-blue-500" /> Upcoming Exams
-                  <span className="ml-auto text-xs text-muted-foreground">Next 30 days</span>
+                  <Calendar className="h-4 w-4 text-blue-500" /> {t('exams.overview.upcoming.title')}
+                  <span className="ml-auto text-xs text-muted-foreground">{t('exams.overview.upcoming.next30Days')}</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -329,9 +338,9 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Recent Results
+                  <CheckCircle2 className="h-4 w-4 text-green-500" /> {t('exams.overview.recentResults.title')}
                   <button className="ml-auto text-xs text-primary hover:underline" onClick={() => onNavigate("results")}>
-                    View in Results tab →
+                    {t('exams.overview.recentResults.viewLink')}
                   </button>
                 </CardTitle>
               </CardHeader>
@@ -356,7 +365,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
                         <div className="flex items-center gap-2 shrink-0 ml-2">
                           {tm && <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tm.color}`}>{ev.examType.replace(/-/g, " ")}</span>}
                           <Button size="sm" variant="ghost" className="h-7 text-xs opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onNavigate("results")}>
-                            <Eye className="h-3 w-3 mr-1" /> Results
+                            <Eye className="h-3 w-3 mr-1" /> {t('exams.overview.recentResults.btn.results')}
                           </Button>
                         </div>
                       </div>
@@ -373,21 +382,21 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-violet-500" /> Term Cycle
+                <BarChart3 className="h-4 w-4 text-violet-500" /> {t('exams.overview.termCycle.title')}
                 <span className="ml-auto text-xs text-muted-foreground">{academicYear}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {termProgress.map(t => (
-                <div key={t.type}>
+              {termProgress.map(item => (
+                <div key={item.type}>
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="font-medium">{t.label}</span>
-                    <span className="text-muted-foreground">{t.total === 0 ? "Not started" : `${t.done}/${t.total}`}</span>
+                    <span className="font-medium">{item.label}</span>
+                    <span className="text-muted-foreground">{item.total === 0 ? t('exams.overview.termCycle.notStarted') : `${item.done}/${item.total}`}</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-700 ${t.total === 0 ? "" : t.done === t.total ? "bg-green-500" : t.done > 0 ? "bg-amber-400" : "bg-blue-300"}`}
-                      style={{ width: `${t.total ? (t.done / t.total) * 100 : 0}%` }}
+                      className={`h-full rounded-full transition-all duration-700 ${item.total === 0 ? "" : item.done === item.total ? "bg-green-500" : item.done > 0 ? "bg-amber-400" : "bg-blue-300"}`}
+                      style={{ width: `${item.total ? (item.done / item.total) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
@@ -399,7 +408,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <Award className="h-4 w-4 text-amber-500" /> Top Performers
+                <Award className="h-4 w-4 text-amber-500" /> {t('exams.overview.topPerformers.title')}
                 <span className="ml-auto text-xs text-muted-foreground">{academicYear}</span>
               </CardTitle>
             </CardHeader>
@@ -424,8 +433,8 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
               ) : (
                 <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
                   <Trophy className="h-8 w-8 opacity-25" />
-                  <p className="text-xs text-center">Publish exam results to<br />see top performers here.</p>
-                  <button className="text-xs text-primary hover:underline" onClick={() => onNavigate("results")}>Go to Results →</button>
+                  <p className="text-xs text-center">{t('exams.overview.topPerformers.empty')}</p>
+                  <button className="text-xs text-primary hover:underline" onClick={() => onNavigate("results")}>{t('exams.overview.topPerformers.goToResults')}</button>
                 </div>
               )}
             </CardContent>
@@ -438,6 +447,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
 
 // ─── Printable Report Card ────────────────────────────────────
 function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBack: () => void }) {
+  const { t } = useLanguage();
   return (
     <div>
       <div className="flex items-center justify-between mb-4 print:hidden">
@@ -451,16 +461,16 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
           <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
             <GraduationCap className="h-8 w-8 text-primary" />
           </div>
-          <h2 className="text-lg font-bold uppercase tracking-wide">Academic Report Card</h2>
+          <h2 className="text-lg font-bold uppercase tracking-wide">{t('exams.reportCard.title')}</h2>
           <p className="text-sm text-muted-foreground">{card.academicYear} · {card.examType.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-5 pb-5 border-b">
           {[
-            { label: "Student Name",   value: card.studentName },
-            { label: "Class / Section", value: `${card.class}${card.section ? ` – ${card.section}` : ""}` },
-            { label: "Roll Number",    value: card.rollNumber || "—" },
-            { label: "Generated",      value: new Date(card.generatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
+            { label: t('exams.reportCard.field.studentName'),   value: card.studentName },
+            { label: t('exams.reportCard.field.classSection'), value: `${card.class}${card.section ? ` – ${card.section}` : ""}` },
+            { label: t('exams.reportCard.field.rollNumber'),    value: card.rollNumber || "—" },
+            { label: t('exams.reportCard.field.generated'),      value: new Date(card.generatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) },
           ].map(f => (
             <div key={f.label}>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">{f.label}</p>
@@ -472,7 +482,7 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
         <table className="w-full text-sm mb-5">
           <thead>
             <tr className="border-b">
-              {["Subject", "Marks", "Max", "%", "Grade"].map(h => (
+              {[t('exams.reportCard.table.subject'), t('exams.reportCard.table.marks'), t('exams.reportCard.table.max'), t('exams.reportCard.table.pct'), t('exams.reportCard.table.grade')].map(h => (
                 <th key={h} className="text-center py-2 font-semibold text-xs text-muted-foreground uppercase first:text-left">{h}</th>
               ))}
             </tr>
@@ -497,7 +507,7 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
           </tbody>
           <tfoot>
             <tr className="border-t-2 font-bold">
-              <td className="py-2">Total</td>
+              <td className="py-2">{t('exams.reportCard.table.total')}</td>
               <td className="py-2 text-center">{card.totalMarks}</td>
               <td className="py-2 text-center text-muted-foreground">{card.maxTotalMarks}</td>
               <td className="py-2 text-center">{(card.percentage ?? 0).toFixed(1)}%</td>
@@ -510,9 +520,9 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
 
         <div className="flex justify-around items-center p-4 bg-muted/40 rounded-xl border mb-5">
           {[
-            { label: "Overall %", value: `${(card.percentage ?? 0).toFixed(1)}%`, cls: "" },
-            { label: "Grade",     value: card.grade,    cls: "text-primary" },
-            { label: "Result",    value: (card.percentage ?? 0) >= 33 ? "PASS" : "FAIL", cls: (card.percentage ?? 0) >= 33 ? "text-green-600" : "text-red-600" },
+            { label: t('exams.reportCard.summary.overallPct'), value: `${(card.percentage ?? 0).toFixed(1)}%`, cls: "" },
+            { label: t('exams.reportCard.summary.grade'),     value: card.grade,    cls: "text-primary" },
+            { label: t('exams.reportCard.summary.result'),    value: (card.percentage ?? 0) >= 33 ? t('exams.reportCard.result.pass') : t('exams.reportCard.result.fail'), cls: (card.percentage ?? 0) >= 33 ? "text-green-600" : "text-red-600" },
           ].map(f => (
             <div key={f.label} className="text-center">
               <p className="text-xs text-muted-foreground">{f.label}</p>
@@ -522,7 +532,7 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
         </div>
 
         <div className="flex justify-between pt-6 border-t">
-          {["Class Teacher", "Principal"].map(sig => (
+          {[t('exams.reportCard.signature.classTeacher'), "Principal"].map(sig => (
             <div key={sig} className="text-center">
               <div className="h-10 border-b border-gray-400 w-36 mb-1" />
               <p className="text-xs text-muted-foreground">{sig}</p>
@@ -834,6 +844,18 @@ function AllExamsTab({ events, loading, onEnterMarks, onViewSchedule, onRefresh 
   onEnterMarks: (ev: ExamEvent) => void; onViewSchedule: (ev: ExamEvent) => void;
   onRefresh: () => void;
 }) {
+  const { t } = useLanguage();
+  const examTypeLabel = (typeKey: string) => {
+    const map: Record<string, string> = {
+      "unit-test":   t('exams.type.unitTest'),
+      "quarterly":   t('exams.type.quarterly'),
+      "half-yearly": t('exams.type.halfYearly'),
+      "pre-board":   t('exams.type.preBoard'),
+      "annual":      t('exams.type.annual'),
+      "practical":   t('exams.type.practicals'),
+    };
+    return map[typeKey] ?? (typeKey.replace(/-/g, " ") || "Other");
+  };
   const [search, setSearch] = useState("");
   const [filterClass, setFilterClass] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -911,7 +933,7 @@ function AllExamsTab({ events, loading, onEnterMarks, onViewSchedule, onRefresh 
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${tm?.color ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
                       {typeKey.replace(/-/g, " ") || "Other"}
                     </span>
-                    <span className="text-sm font-semibold">{tm?.label ?? "Other"}</span>
+                    <span className="text-sm font-semibold">{examTypeLabel(typeKey)}</span>
                     <span className="text-xs text-muted-foreground">({typeEvs.length})</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
@@ -950,6 +972,7 @@ function AllExamsTab({ events, loading, onEnterMarks, onViewSchedule, onRefresh 
 // ─── Main Page ────────────────────────────────────────────────
 export default function Examinations() {
   const { academicYear } = useAcademicYear();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState("overview");
   const [resultsSetupId, setResultsSetupId] = useState<string | undefined>(undefined);
   const [stats, setStats] = useState<Partial<ExamStats>>({});
@@ -980,24 +1003,24 @@ export default function Examinations() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Award className="h-7 w-7 text-primary" /> Examinations
+            <Award className="h-7 w-7 text-primary" /> {t('exams.title')}
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Plan · Timetable · Enter Marks · Results — full exam lifecycle</p>
+          <p className="text-muted-foreground text-sm mt-0.5">{t('exams.subtitle')}</p>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-6 h-auto">
           {[
-            { value: "overview",      icon: <LayoutDashboard className="h-4 w-4" />, label: "Overview" },
-            { value: "exams",         icon: <ClipboardList className="h-4 w-4" />,   label: "All Exams" },
-            { value: "results",       icon: <PenLine className="h-4 w-4" />,         label: "Results" },
-            { value: "report-cards",  icon: <Trophy className="h-4 w-4" />,          label: "Report Cards" },
-            { value: "analytics",     icon: <BarChart3 className="h-4 w-4" />,       label: "Analytics" },
-            { value: "cce",           icon: <BookOpen className="h-4 w-4" />,        label: "Co-Scholastic" },
-          ].map(t => (
-            <TabsTrigger key={t.value} value={t.value} className="flex-col py-2 gap-0.5 text-xs sm:text-sm sm:flex-row sm:gap-1.5">
-              {t.icon}<span>{t.label}</span>
+            { value: "overview",      icon: <LayoutDashboard className="h-4 w-4" />, label: t('exams.tabs.overview') },
+            { value: "exams",         icon: <ClipboardList className="h-4 w-4" />,   label: t('exams.tabs.allExams') },
+            { value: "results",       icon: <PenLine className="h-4 w-4" />,         label: t('exams.tabs.results') },
+            { value: "report-cards",  icon: <Trophy className="h-4 w-4" />,          label: t('exams.tabs.reportCards') },
+            { value: "analytics",     icon: <BarChart3 className="h-4 w-4" />,       label: t('exams.tabs.analytics') },
+            { value: "cce",           icon: <BookOpen className="h-4 w-4" />,        label: t('exams.tabs.cce') },
+          ].map(tab => (
+            <TabsTrigger key={tab.value} value={tab.value} className="flex-col py-2 gap-0.5 text-xs sm:text-sm sm:flex-row sm:gap-1.5">
+              {tab.icon}<span>{tab.label}</span>
             </TabsTrigger>
           ))}
         </TabsList>

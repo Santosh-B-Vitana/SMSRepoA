@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, Download, FileText, TrendingUp } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface PFRecord {
   id: string;
@@ -36,6 +37,7 @@ interface ESIRecord {
 }
 
 export function PFESIManager() {
+  const { t } = useLanguage();
   const [pfRecords] = useState<PFRecord[]>([
     {
       id: '1',
@@ -82,48 +84,48 @@ export function PFESIManager() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">PF & ESI Management</h2>
-          <p className="text-muted-foreground">Track Provident Fund and Employee State Insurance contributions</p>
+          <h2 className="text-2xl font-bold text-foreground">{t('pfesi.title')}</h2>
+          <p className="text-muted-foreground">{t('pfesi.subtitle')}</p>
         </div>
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
-              Add Record
+              {t('pfesi.addRecord')}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Add PF/ESI Record</DialogTitle>
-              <DialogDescription>Create a new contribution record</DialogDescription>
+              <DialogTitle>{t('pfesi.dialogTitle')}</DialogTitle>
+              <DialogDescription>{t('pfesi.dialogDesc')}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Record Type</Label>
+                <Label>{t('pfesi.recordTypeLabel')}</Label>
                 <Select>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue placeholder={t('pfesi.selectTypePlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pf">Provident Fund (PF)</SelectItem>
-                    <SelectItem value="esi">Employee State Insurance (ESI)</SelectItem>
+                    <SelectItem value="pf">{t('pfesi.optionPF')}</SelectItem>
+                    <SelectItem value="esi">{t('pfesi.optionESI')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Staff Name</Label>
-                  <Input placeholder="Select staff" />
+                  <Label>{t('pfesi.staffNameLabel')}</Label>
+                  <Input placeholder={t('pfesi.staffPlaceholder')} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Month & Year</Label>
+                  <Label>{t('pfesi.monthYearLabel')}</Label>
                   <Input type="month" />
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-              <Button onClick={() => { toast.success('Record added'); setIsOpen(false); }}>Add Record</Button>
+              <Button variant="outline" onClick={() => setIsOpen(false)}>{t('common.cancel')}</Button>
+              <Button onClick={() => { toast.success(t('pfesi.addSuccess')); setIsOpen(false); }}>{t('pfesi.addRecord')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -132,38 +134,38 @@ export function PFESIManager() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total PF</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('pfesi.statTotalPF')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">₹{calculateTotalPF().toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">This month</p>
+            <p className="text-xs text-muted-foreground mt-1">{t('pfesi.statThisMonth')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total ESI</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('pfesi.statTotalESI')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">₹{calculateTotalESI().toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground mt-1">This month</p>
+            <p className="text-xs text-muted-foreground mt-1">{t('pfesi.statThisMonth')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">PF Employees</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('pfesi.statPFEmployees')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{pfRecords.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Active</p>
+            <p className="text-xs text-muted-foreground mt-1">{t('pfesi.statActive')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">ESI Employees</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('pfesi.statESIEmployees')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{esiRecords.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Active</p>
+            <p className="text-xs text-muted-foreground mt-1">{t('pfesi.statActive')}</p>
           </CardContent>
         </Card>
       </div>
@@ -172,17 +174,17 @@ export function PFESIManager() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle>Contribution Records</CardTitle>
-              <CardDescription>View and manage PF & ESI contributions</CardDescription>
+              <CardTitle>{t('pfesi.contributionTitle')}</CardTitle>
+              <CardDescription>{t('pfesi.contributionDesc')}</CardDescription>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="gap-2">
                 <Download className="h-4 w-4" />
-                Export Challan
+                {t('pfesi.exportChallan')}
               </Button>
               <Button variant="outline" size="sm" className="gap-2">
                 <FileText className="h-4 w-4" />
-                Generate Report
+                {t('pfesi.generateReport')}
               </Button>
             </div>
           </div>
@@ -190,21 +192,21 @@ export function PFESIManager() {
         <CardContent>
           <Tabs defaultValue="pf" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="pf">Provident Fund (PF)</TabsTrigger>
-              <TabsTrigger value="esi">Employee State Insurance (ESI)</TabsTrigger>
+              <TabsTrigger value="pf">{t('pfesi.tabPF')}</TabsTrigger>
+              <TabsTrigger value="esi">{t('pfesi.tabESI')}</TabsTrigger>
             </TabsList>
             
             <TabsContent value="pf">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Staff Details</TableHead>
-                    <TableHead>PF Number</TableHead>
-                    <TableHead>Basic Salary</TableHead>
-                    <TableHead>Employee (12%)</TableHead>
-                    <TableHead>Employer (12%)</TableHead>
-                    <TableHead>Period</TableHead>
-                    <TableHead>Total</TableHead>
+                    <TableHead>{t('pfesi.colStaffDetails')}</TableHead>
+                    <TableHead>{t('pfesi.colPFNumber')}</TableHead>
+                    <TableHead>{t('pfesi.colBasicSalary')}</TableHead>
+                    <TableHead>{t('pfesi.colEmployee12')}</TableHead>
+                    <TableHead>{t('pfesi.colEmployer12')}</TableHead>
+                    <TableHead>{t('common.period')}</TableHead>
+                    <TableHead>{t('common.total')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -236,13 +238,13 @@ export function PFESIManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Staff Details</TableHead>
-                    <TableHead>ESI Number</TableHead>
-                    <TableHead>Gross Salary</TableHead>
-                    <TableHead>Employee (0.75%)</TableHead>
-                    <TableHead>Employer (3.25%)</TableHead>
-                    <TableHead>Period</TableHead>
-                    <TableHead>Total</TableHead>
+                    <TableHead>{t('pfesi.colStaffDetails')}</TableHead>
+                    <TableHead>{t('pfesi.colESINumber')}</TableHead>
+                    <TableHead>{t('pfesi.colGrossSalary')}</TableHead>
+                    <TableHead>{t('pfesi.colEmployee075')}</TableHead>
+                    <TableHead>{t('pfesi.colEmployer325')}</TableHead>
+                    <TableHead>{t('common.period')}</TableHead>
+                    <TableHead>{t('common.total')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

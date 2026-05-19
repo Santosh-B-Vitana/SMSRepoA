@@ -107,6 +107,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<ICashfreeClient, CashfreeClient>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayService>();
 
+
         // ── India-specific compliance ──────────────────────────────────────
         services.AddScoped<IPFESIManagementService, PFESIManagementService>();
         services.AddScoped<IOfflineAttendanceService, OfflineAttendanceService>();

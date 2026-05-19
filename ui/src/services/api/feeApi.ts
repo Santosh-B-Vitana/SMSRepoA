@@ -9,7 +9,7 @@ export interface FeeStructureBasic {
   academicYear: string;
   totalAmount: number;
   installmentCount: number;
-  status: string;
+  status?: string;
 }
 
 /** Represents one term/installment window in a payment schedule */
@@ -153,6 +153,8 @@ export interface CreatePaymentDto {
   remarks?: string;
   academicYear?: string;
   gatewayRef?: string;
+  /** When true, the backend sends an in-app notification to the student's parents. Defaults true. */
+  notifyParent?: boolean;
 }
 
 export interface PaymentResponse {
@@ -420,9 +422,10 @@ export const deleteFeeRecord = async (recordId: string): Promise<void> => {
 export const applyFeeHeadOverrides = async (
   recordId: string,
   overrides: Record<string, number>,
-  appliedBy?: string
+  appliedBy?: string,
+  notifyParent?: boolean
 ): Promise<{ newTotalAmount: number; newPendingAmount: number; feeHeadOverrides: string; status: string }> => {
-  const response = await apiClient.patch(`${BASE_PATH}/records/${recordId}/fee-head-overrides`, { overrides, appliedBy });
+  const response = await apiClient.patch(`${BASE_PATH}/records/${recordId}/fee-head-overrides`, { overrides, appliedBy, notifyParent: notifyParent ?? false });
   return response.data;
 };
 

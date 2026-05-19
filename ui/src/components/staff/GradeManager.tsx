@@ -1,4 +1,5 @@
 ﻿import { useState, useCallback, useMemo } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Award, BarChart3, BookOpen, ClipboardList, Plus,
@@ -85,6 +86,7 @@ function StatusBadge({ status }: { status: string }) {
 // --- STATS BAR ---
 
 function StatsBar() {
+  const { t } = useLanguage();
   const { data: stats, isLoading } = useQuery({
     queryKey: ["exam", "my-stats"],
     queryFn: getMyExamStats,
@@ -93,33 +95,33 @@ function StatsBar() {
 
   const cards = [
     {
-      label: "Exam Setups",
+      label: t('grades.examSetups'),
       value: stats?.totalExams,
-      sub: stats ? `${stats.publishedExams} published` : undefined,
+      sub: stats ? `${stats.publishedExams} ${t('common.active').toLowerCase()}` : undefined,
       icon: FileCheck,
       color: "text-blue-600",
       bg: "bg-blue-50",
     },
     {
-      label: "Total Grades",
+      label: t('grades.totalGrades'),
       value: stats?.totalMarksEntries,
-      sub: "published entries",
+      sub: t('grades.publishedEntries'),
       icon: ClipboardList,
       color: "text-green-600",
       bg: "bg-green-50",
     },
     {
-      label: "Average Score",
+      label: t('grades.averageScore'),
       value: stats ? `${stats.averagePercentage}%` : undefined,
-      sub: "across all subjects",
+      sub: t('grades.acrossAllSubjects'),
       icon: TrendingUp,
       color: "text-purple-600",
       bg: "bg-purple-50",
     },
     {
-      label: "Pass Rate",
+      label: t('grades.passRate'),
       value: stats ? `${stats.passRate}%` : undefined,
-      sub: "of published marks",
+      sub: t('grades.ofPublishedMarks'),
       icon: Award,
       color: "text-orange-600",
       bg: "bg-orange-50",
@@ -156,6 +158,7 @@ function StatsBar() {
 
 function GradeItemsTab() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { hasUserPermission } = usePermissions();
   const canCreateGrade = hasUserPermission('Grades', 'Create');
   const canEditGrade = hasUserPermission('Grades', 'Edit');
@@ -242,26 +245,26 @@ function GradeItemsTab() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
           <Select value={filterClassId} onValueChange={v => setFilterClassId(v === "_all" ? "" : v)}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="All classes" /></SelectTrigger>
+            <SelectTrigger className="w-44"><SelectValue placeholder={t('grades.allClasses')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all">All classes</SelectItem>
+              <SelectItem value="_all">{t('grades.allClasses')}</SelectItem>
               {availableClasses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filterSubjectId} onValueChange={v => setFilterSubjectId(v === "_all" ? "" : v)}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="All subjects" /></SelectTrigger>
+            <SelectTrigger className="w-44"><SelectValue placeholder={t('grades.allSubjects')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all">All subjects</SelectItem>
+              <SelectItem value="_all">{t('grades.allSubjects')}</SelectItem>
               {availableSubjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button size="sm" variant="outline" onClick={() => { setFilterClassId(""); setFilterSubjectId(""); }}>
-            <Filter className="h-4 w-4 mr-1" /> Clear
+            <Filter className="h-4 w-4 mr-1" /> {t('common.clear')}
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-            <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }} disabled={!canCreateGrade} title={!canCreateGrade ? 'No permission to create grade items' : undefined}><Plus className="h-4 w-4 mr-1" /> New Item</Button>
+          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}</Button>
+            <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }} disabled={!canCreateGrade} title={!canCreateGrade ? 'No permission to create grade items' : undefined}><Plus className="h-4 w-4 mr-1" /> {t('grades.newItem')}</Button>
         </div>
       </div>
       <Card>
@@ -269,14 +272,14 @@ function GradeItemsTab() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead><TableHead>Category</TableHead><TableHead>Class</TableHead>
-                <TableHead>Subject</TableHead><TableHead>Max Marks</TableHead><TableHead>Date</TableHead>
-                <TableHead>Status</TableHead><TableHead className="w-12" />
+                <TableHead>{t('common.name')}</TableHead><TableHead>{t('grades.category')}</TableHead><TableHead>{t('common.class')}</TableHead>
+                <TableHead>{t('common.subject')}</TableHead><TableHead>{t('grades.maxMarks')}</TableHead><TableHead>{t('common.date')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead><TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? Array.from({ length: 4 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 8 }).map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}</TableRow>)
-                : items.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No grade items found.</TableCell></TableRow>
+                : items.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">{t('grades.noItemsFound')}</TableCell></TableRow>
                 : items.map(item => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
@@ -295,48 +298,48 @@ function GradeItemsTab() {
       </Card>
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Create Grade Item</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('grades.createGradeItem')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             {formError && <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-2 rounded"><AlertCircle className="h-4 w-4 flex-shrink-0" />{formError}</div>}
-            <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Unit Test 1" /></div>
+            <div><Label>{t('common.name')} *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Unit Test 1" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Class *</Label>
+                <Label>{t('common.class')} *</Label>
                 <Select value={form.classId} onValueChange={v => setForm(f => ({ ...f, classId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
                   <SelectContent>{availableClasses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Subject *</Label>
+                <Label>{t('common.subject')} *</Label>
                 <Select value={form.subjectId} onValueChange={v => setForm(f => ({ ...f, subjectId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select subject" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('grades.allSubjects')} /></SelectTrigger>
                   <SelectContent>{availableSubjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
             <div>
-              <Label>Category *</Label>
+              <Label>{t('grades.category')} *</Label>
               <Select value={form.categoryId} onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('grades.category')} /></SelectTrigger>
                 <SelectContent>{(cats?.categories ?? []).map((c: GradeCategoryResponse) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Max Marks *</Label><Input type="number" min={1} max={1000} value={form.maxMarks} onChange={e => setForm(f => ({ ...f, maxMarks: e.target.value }))} /></div>
-              <div><Label>Date *</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
+              <div><Label>{t('grades.maxMarks')} *</Label><Input type="number" min={1} max={1000} value={form.maxMarks} onChange={e => setForm(f => ({ ...f, maxMarks: e.target.value }))} /></div>
+              <div><Label>{t('common.date')} *</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
             </div>
             <div>
-              <Label>Status</Label>
+              <Label>{t('common.status')}</Label>
               <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent>
+                <SelectContent><SelectItem value="active">{t('common.active')}</SelectItem><SelectItem value="inactive">{t('common.inactive')}</SelectItem><SelectItem value="draft">{t('common.draft')}</SelectItem></SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={createMut.isPending}>{createMut.isPending ? "Creating..." : "Create"}</Button>
+            <Button variant="outline" onClick={() => setShowCreate(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleCreate} disabled={createMut.isPending}>{createMut.isPending ? t('common.creating') : t('common.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -348,6 +351,7 @@ function GradeItemsTab() {
 
 function StudentGradesTab() {
   const { hasUserPermission } = usePermissions();
+  const { t } = useLanguage();
   const canCreateGrade = hasUserPermission('Grades', 'Create');
   const canEditGrade = hasUserPermission('Grades', 'Edit');
   const qc = useQueryClient();
@@ -422,17 +426,17 @@ function StudentGradesTab() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
           <Select value={filterItemId} onValueChange={v => setFilterItemId(v === "_all" ? "" : v)}>
-            <SelectTrigger className="w-64"><SelectValue placeholder="All grade items" /></SelectTrigger>
+            <SelectTrigger className="w-64"><SelectValue placeholder={t('grades.allItems')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all">All grade items</SelectItem>
+              <SelectItem value="_all">{t('grades.allItems')}</SelectItem>
               {allItems.map(item => <SelectItem key={item.id} value={item.id}>{item.name} — {item.className ?? ""}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={() => setFilterItemId("")}><Filter className="h-4 w-4 mr-1" /> Clear</Button>
+          <Button size="sm" variant="outline" onClick={() => setFilterItemId("")}><Filter className="h-4 w-4 mr-1" /> {t('common.clear')}</Button>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-            <Button size="sm" onClick={() => { setBulkError(null); setBulkResult(null); setBulkItemId(""); setStudentMarks({}); setShowBulk(true); }} disabled={!canCreateGrade} title={!canCreateGrade ? 'No permission to enter grades' : undefined}><Plus className="h-4 w-4 mr-1" /> Enter Grades</Button>
+          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}</Button>
+            <Button size="sm" onClick={() => { setBulkError(null); setBulkResult(null); setBulkItemId(""); setStudentMarks({}); setShowBulk(true); }} disabled={!canCreateGrade} title={!canCreateGrade ? 'No permission to enter grades' : undefined}><Plus className="h-4 w-4 mr-1" /> {t('grades.enterGrades')}</Button>
         </div>
       </div>
       <Card>
@@ -440,14 +444,14 @@ function StudentGradesTab() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Student</TableHead><TableHead>Roll No</TableHead><TableHead>Grade Item</TableHead>
-                <TableHead>Marks</TableHead><TableHead>Grade</TableHead><TableHead>Remarks</TableHead>
-                <TableHead>Status</TableHead><TableHead className="w-12" />
+                <TableHead>{t('grades.studentCol')}</TableHead><TableHead>{t('grades.rollNo')}</TableHead><TableHead>{t('grades.gradeItem')}</TableHead>
+                <TableHead>{t('grades.marksCol')}</TableHead><TableHead>{t('grades.gradeCol')}</TableHead><TableHead>{t('common.remarks')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead><TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? Array.from({ length: 5 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 8 }).map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}</TableRow>)
-                : grades.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No grades recorded yet. Use Enter Grades to record student marks.</TableCell></TableRow>
+                : grades.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">{t('grades.noGradesRecorded')}</TableCell></TableRow>
                 : grades.map(g => (
                   <TableRow key={g.id}>
                     <TableCell className="font-medium">{g.studentName ?? g.studentId.slice(0, 8)}</TableCell>
@@ -466,12 +470,12 @@ function StudentGradesTab() {
       </Card>
       <Dialog open={showBulk} onOpenChange={open => { setShowBulk(open); if (!open) { setBulkItemId(""); setStudentMarks({}); setBulkResult(null); } }}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Enter Student Grades</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('grades.enterStudentGrades')}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             {bulkError && <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-2 rounded"><AlertCircle className="h-4 w-4 flex-shrink-0" />{bulkError}</div>}
             {bulkResult && <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 p-2 rounded"><CheckCircle2 className="h-4 w-4 flex-shrink-0" />Saved: {bulkResult.created} grades{bulkResult.skipped > 0 ? ` | Skipped (duplicate): ${bulkResult.skipped}` : ""}{bulkResult.errors.length > 0 && <span className="text-orange-600 ml-2">({bulkResult.errors.length} errors)</span>}</div>}
             <div>
-              <Label>Grade Item *</Label>
+              <Label>{t('grades.gradeItem')} *</Label>
               <Select value={bulkItemId} onValueChange={v => { setBulkItemId(v); setStudentMarks({}); setBulkResult(null); }}>
                 <SelectTrigger><SelectValue placeholder="Select a grade item..." /></SelectTrigger>
                 <SelectContent>
@@ -538,8 +542,8 @@ function StudentGradesTab() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBulk(false)}>Close</Button>
-              <Button onClick={handleBulkSubmit} disabled={bulkMut.isPending || !selectedGradeItem || !canEditGrade} title={!canEditGrade ? 'No permission to save grades' : undefined}>{bulkMut.isPending ? "Saving..." : "Save Grades"}</Button>
+            <Button variant="outline" onClick={() => setShowBulk(false)}>{t('common.close')}</Button>
+              <Button onClick={handleBulkSubmit} disabled={bulkMut.isPending || !selectedGradeItem || !canEditGrade} title={!canEditGrade ? 'No permission to save grades' : undefined}>{bulkMut.isPending ? t('common.saving') : t('grades.saveGrades')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -551,6 +555,7 @@ function StudentGradesTab() {
 
 function CategoriesTab() {
   const qc = useQueryClient();
+  const { t } = useLanguage();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", code: "", weightage: "0", status: "active", description: "" });
   const [formError, setFormError] = useState<string | null>(null);
@@ -586,21 +591,21 @@ function CategoriesTab() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-        <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }}><Plus className="h-4 w-4 mr-1" /> New Category</Button>
+        <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}</Button>
+        <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }}><Plus className="h-4 w-4 mr-1" /> {t('grades.newCategory')}</Button>
       </div>
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead><TableHead>Code</TableHead><TableHead>Weightage</TableHead>
-                <TableHead>Status</TableHead><TableHead>Description</TableHead><TableHead className="w-12" />
+                <TableHead>{t('common.name')}</TableHead><TableHead>{t('common.code')}</TableHead><TableHead>{t('common.weightage')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead><TableHead>{t('common.description')}</TableHead><TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? Array.from({ length: 3 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 6 }).map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}</TableRow>)
-                : cats.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No categories yet.</TableCell></TableRow>
+                : cats.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">{t('grades.noCategories')}</TableCell></TableRow>
                 : cats.map(c => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.name}</TableCell>
@@ -617,25 +622,25 @@ function CategoriesTab() {
       </Card>
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Create Category</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('grades.createCategory')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             {formError && <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-2 rounded"><AlertCircle className="h-4 w-4 flex-shrink-0" />{formError}</div>}
-            <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div><Label>{t('common.name')} *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Code</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. UT" /></div>
-              <div><Label>Weightage (%)</Label><Input type="number" min={0} max={100} value={form.weightage} onChange={e => setForm(f => ({ ...f, weightage: e.target.value }))} /></div>
+              <div><Label>{t('common.code')}</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. UT" /></div>
+              <div><Label>{t('common.weightage')} (%)</Label><Input type="number" min={0} max={100} value={form.weightage} onChange={e => setForm(f => ({ ...f, weightage: e.target.value }))} /></div>
             </div>
             <div>
-              <Label>Status</Label>
+              <Label>{t('common.status')}</Label>
               <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="draft">Draft</SelectItem></SelectContent>
+                <SelectContent><SelectItem value="active">{t('common.active')}</SelectItem><SelectItem value="inactive">{t('common.inactive')}</SelectItem><SelectItem value="draft">{t('common.draft')}</SelectItem></SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={createMut.isPending}>{createMut.isPending ? "Creating..." : "Create"}</Button>
+            <Button variant="outline" onClick={() => setShowCreate(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleCreate} disabled={createMut.isPending}>{createMut.isPending ? t('common.creating') : t('common.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -647,6 +652,7 @@ function CategoriesTab() {
 
 function CCETab() {
   const qc = useQueryClient();
+  const { t } = useLanguage();
   const [filterYear, setFilterYear] = useState("");
   const [filterStudentId, setFilterStudentId] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -705,11 +711,11 @@ function CCETab() {
         <div className="flex gap-2">
           <Input placeholder="Search student name" value={filterStudentId} onChange={e => setFilterStudentId(e.target.value)} className="w-44" />
           <Input placeholder="Academic Year (e.g. 2025-26)" value={filterYear} onChange={e => setFilterYear(e.target.value)} className="w-48" />
-          <Button size="sm" variant="outline" onClick={() => { setFilterStudentId(""); setFilterYear(""); }}><Filter className="h-4 w-4 mr-1" /> Clear</Button>
+          <Button size="sm" variant="outline" onClick={() => { setFilterStudentId(""); setFilterYear(""); }}><Filter className="h-4 w-4 mr-1" /> {t('common.clear')}</Button>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-          <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }}><Plus className="h-4 w-4 mr-1" /> New Assessment</Button>
+          <Button size="sm" variant="outline" onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}</Button>
+          <Button size="sm" onClick={() => { setFormError(null); setShowCreate(true); }}><Plus className="h-4 w-4 mr-1" /> {t('grades.newAssessment')}</Button>
         </div>
       </div>
       <Card>
@@ -717,13 +723,13 @@ function CCETab() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Student</TableHead><TableHead>Year</TableHead><TableHead>Term</TableHead>
-                <TableHead>Skill Area</TableHead><TableHead>Grade</TableHead><TableHead>Remarks</TableHead><TableHead className="w-12" />
+                <TableHead>{t('grades.studentCol')}</TableHead><TableHead>{t('grades.academicYear')}</TableHead><TableHead>{t('grades.term')}</TableHead>
+                <TableHead>{t('grades.skillArea')}</TableHead><TableHead>{t('grades.gradeCol')}</TableHead><TableHead>{t('common.remarks')}</TableHead><TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? Array.from({ length: 4 }).map((_, i) => <TableRow key={i}>{Array.from({ length: 7 }).map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}</TableRow>)
-                : assessments.length === 0 ? <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No CCE assessments found.</TableCell></TableRow>
+                : assessments.length === 0 ? <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">{t('grades.noCCEAssessments')}</TableCell></TableRow>
                 : assessments.map(a => (
                   <TableRow key={a.id}>
                     <TableCell className="font-medium">{a.studentName ?? a.studentId.slice(0, 8)}</TableCell>
@@ -741,12 +747,12 @@ function CCETab() {
       </Card>
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>New CCE Assessment</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('grades.newCCEAssessment')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             {formError && <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-2 rounded"><AlertCircle className="h-4 w-4 flex-shrink-0" />{formError}</div>}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Student *</Label>
+                <Label>{t('grades.studentCol')} *</Label>
                 <Select value={form.studentId} onValueChange={v => setForm(f => ({ ...f, studentId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
                   <SelectContent className="max-h-48">
@@ -755,7 +761,7 @@ function CCETab() {
                 </Select>
               </div>
               <div>
-                <Label>Class *</Label>
+                <Label>{t('common.class')} *</Label>
                 <Select value={form.classId} onValueChange={v => setForm(f => ({ ...f, classId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
                   <SelectContent>{availableClasses.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
@@ -763,28 +769,28 @@ function CCETab() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Academic Year *</Label><Input value={form.academicYear} onChange={e => setForm(f => ({ ...f, academicYear: e.target.value }))} placeholder="2025-26" /></div>
+              <div><Label>{t('grades.academicYear')} *</Label><Input value={form.academicYear} onChange={e => setForm(f => ({ ...f, academicYear: e.target.value }))} placeholder="2025-26" /></div>
               <div>
-                <Label>Term *</Label>
+                <Label>{t('grades.term')} *</Label>
                 <Select value={form.term} onValueChange={v => setForm(f => ({ ...f, term: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{["T1","T2","T3","1","2","3"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
-            <div><Label>Skill Area *</Label><Input value={form.skillArea} onChange={e => setForm(f => ({ ...f, skillArea: e.target.value }))} placeholder="e.g. Communication, Creativity" /></div>
+            <div><Label>{t('grades.skillArea')} *</Label><Input value={form.skillArea} onChange={e => setForm(f => ({ ...f, skillArea: e.target.value }))} placeholder="e.g. Communication, Creativity" /></div>
             <div>
-              <Label>CCE Grade *</Label>
+              <Label>{t('grades.cceGrade')} *</Label>
               <Select value={form.grade} onValueChange={v => setForm(f => ({ ...f, grade: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{["A+","A","B+","B","C","D","E"].map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div><Label>Remarks</Label><Input value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} maxLength={1000} /></div>
+            <div><Label>{t('common.remarks')}</Label><Input value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} maxLength={1000} /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={createMut.isPending}>{createMut.isPending ? "Creating..." : "Create"}</Button>
+            <Button variant="outline" onClick={() => setShowCreate(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleCreate} disabled={createMut.isPending}>{createMut.isPending ? t('common.creating') : t('common.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -913,6 +919,7 @@ interface ExamGroupEntry {
 /** One collapsible card per exam (class + section), rows per student with subject chips */
 function ExamMarksSection({ group }: { group: ExamGroupEntry }) {
   const [expanded, setExpanded] = useState(true);
+  const { t } = useLanguage();
   const passCount = group.students.filter(s => s.subjects.every(sub => sub.isAbsent || sub.isPass)).length;
   return (
     <Card>
@@ -943,10 +950,10 @@ function ExamMarksSection({ group }: { group: ExamGroupEntry }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[180px]">Student</TableHead>
-                <TableHead className="w-[80px]">Roll No</TableHead>
-                <TableHead>Subjects</TableHead>
-                <TableHead className="text-right w-[80px]">Avg %</TableHead>
+                <TableHead className="w-[180px]">{t('grades.studentCol')}</TableHead>
+                <TableHead className="w-[80px]">{t('grades.rollNo')}</TableHead>
+                <TableHead>{t('common.subject')}</TableHead>
+                <TableHead className="text-right w-[80px]">{t('grades.avgPct')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -978,6 +985,7 @@ function ExamMarksSection({ group }: { group: ExamGroupEntry }) {
 function StudentGradesHistoryTab() {
   const [filterClassId, setFilterClassId] = useState<string>("");
   const [filterSectionId, setFilterSectionId] = useState<string>("");
+  const { t } = useLanguage();
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["exam", "my-student-marks", filterClassId, filterSectionId],
@@ -1068,10 +1076,10 @@ function StudentGradesHistoryTab() {
         <div className="flex gap-2 flex-wrap">
           <Select value={filterClassId || "_all"} onValueChange={handleClassChange}>
             <SelectTrigger className="w-44">
-              <SelectValue placeholder="All classes" />
+              <SelectValue placeholder={t('grades.allClasses')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all">All classes</SelectItem>
+              <SelectItem value="_all">{t('grades.allClasses')}</SelectItem>
               {uniqueClassOptions.map(o => (
                 <SelectItem key={o.classId} value={o.classId}>
                   {o.className}
@@ -1086,10 +1094,10 @@ function StudentGradesHistoryTab() {
               onValueChange={v => setFilterSectionId(v === "_all" ? "" : v)}
             >
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="All sections" />
+                <SelectValue placeholder={t('grades.allSections')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">All sections</SelectItem>
+                <SelectItem value="_all">{t('grades.allSections')}</SelectItem>
                 {sectionOptions.map(o => (
                   <SelectItem key={o.sectionId!} value={o.sectionId!}>
                     Section {o.sectionName}
@@ -1105,7 +1113,7 @@ function StudentGradesHistoryTab() {
               variant="outline"
               onClick={() => { setFilterClassId(""); setFilterSectionId(""); }}
             >
-              <Filter className="h-4 w-4 mr-1" /> Clear
+              <Filter className="h-4 w-4 mr-1" /> {t('common.clear')}
             </Button>
           )}
         </div>
@@ -1117,7 +1125,7 @@ function StudentGradesHistoryTab() {
             </p>
           )}
           <Button size="sm" variant="outline" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+            <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh')}
           </Button>
         </div>
       </div>
@@ -1140,8 +1148,8 @@ function StudentGradesHistoryTab() {
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             {filterClassId || filterSectionId
-              ? "No published marks found for the selected filters."
-              : "No published exam marks yet. Marks appear here once an exam is published."}
+              ? t('grades.noPublishedMarks')
+              : t('grades.noExamMarksYet')}
           </CardContent>
         </Card>
       ) : (
@@ -1157,6 +1165,7 @@ function StudentGradesHistoryTab() {
 
 export function GradeManager() {
   const { hasUserPermission, permissionsLoaded } = usePermissions();
+  const { t } = useLanguage();
   const canViewGrades = hasUserPermission('Grades', 'View');
   const canEditGrades = hasUserPermission('Grades', 'Edit') || hasUserPermission('Grades', 'Create');
   const accessDenied = permissionsLoaded && !canViewGrades && !canEditGrades;
@@ -1168,13 +1177,13 @@ export function GradeManager() {
           <ShieldOff className="h-10 w-10 text-destructive" />
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold">Access Restricted</h2>
+          <h2 className="text-2xl font-bold">{t('grades.accessRestricted')}</h2>
           <p className="text-muted-foreground max-w-sm">
-            You don't have permission to view or edit grades. Contact your administrator to get the Subject Teacher role.
+            {t('grades.accessDeniedDesc')}
           </p>
         </div>
         <Button variant="outline" onClick={() => toast.info("Ask your admin to assign you a Subject Teacher or Class Teacher role.")}>
-          How to get access?
+          {t('grades.howToGetAccess')}
         </Button>
       </div>
     );
@@ -1183,16 +1192,16 @@ export function GradeManager() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Grade Management</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('grades.title')}</h1>
         <p className="text-muted-foreground mt-1">
-          Enter exam marks and view student grade history by class
+          {t('grades.manageDesc')}
         </p>
       </div>
       <StatsBar />
       <Tabs defaultValue="exam-marks">
         <TabsList className="grid grid-cols-2 w-full max-w-sm">
-          <TabsTrigger value="exam-marks">Exam Marks</TabsTrigger>
-          <TabsTrigger value="student-grades">Student Grades</TabsTrigger>
+          <TabsTrigger value="exam-marks">{t('grades.examMarks')}</TabsTrigger>
+          <TabsTrigger value="student-grades">{t('grades.studentGrades')}</TabsTrigger>
         </TabsList>
         <TabsContent value="exam-marks" className="mt-4"><StaffExamMarksTab /></TabsContent>
         <TabsContent value="student-grades" className="mt-4"><StudentGradesHistoryTab /></TabsContent>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 import {
   BookOpen, GraduationCap, FileText, Settings, ClipboardList,
   Plus, Pencil, Trash2, Loader2, Wand2, Save, Info, ChevronDown, ChevronRight,
+  Printer, RefreshCw, CheckCircle2, XCircle, Award,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -20,9 +22,16 @@ import {
   UpdateCoScholasticAreaDto,
   CO_SCHOLASTIC_CATEGORY_LABELS,
   ClassCoScholasticGrid,
+  getCceExamSetups,
+  getCceClassReport,
+  type CceExamSetupOption,
+  type CceClassReportDto,
+  type CceStudentReport,
+  getCbseGradeColor,
+  CBSE_GRADE_SCALE,
 } from "@/services/api/examinationApi";
 import { academicApi } from "@/services/api/academicApi";
-import type { ClassResponse } from "@/services/api/academicApi";
+import type { ClassResponse, SectionResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 // ── CBSE grade scale A-E helper ──────────────────────────────────────────────
@@ -315,7 +324,12 @@ function ClassEntryTab() {
 
   useEffect(() => {
     academicApi.listClasses(1, 200).then(r => {
-      setClasses(r.classes.map((c: ClassResponse) => ({ id: c.id, name: c.name || `Grade ${c.standard}`, standard: c.standard })));
+      const seen = new Set<string>();
+      setClasses(
+        r.classes
+          .filter((c: ClassResponse) => { if (seen.has(c.id)) return false; seen.add(c.id); return true; })
+          .map((c: ClassResponse) => ({ id: c.id, name: c.name || c.standard || `Class ${c.standard}`, standard: c.standard }))
+      );
     }).catch(() => toast.error("Failed to load classes."));
   }, []);
 
@@ -324,11 +338,11 @@ function ClassEntryTab() {
     setLoading(true);
     setEdits({});
     try {
-      const g = await examinationApi.getClassCoScholastic(classId, academicYear?.name, term);
+      const g = await examinationApi.getClassCoScholastic(classId, academicYear || undefined, term);
       setGrid(g);
     } catch { toast.error("Failed to load class data."); }
     finally { setLoading(false); }
-  }, [classId, term, academicYear?.name]);
+  }, [classId, term, academicYear]);
 
   useEffect(() => { fetchGrid(); }, [fetchGrid]);
 
@@ -493,16 +507,485 @@ function ClassEntryTab() {
   );
 }
 
+// ── CCE Report Cards tab ─────────────────────────────────────────────────────
+
+const CCE_ASSESSMENTS = ["FA1", "FA2", "SA1", "FA3", "FA4", "SA2"] as const;
+type AssessmentKey = (typeof CCE_ASSESSMENTS)[number];
+
+const GRADE_BADGE: Record<string, string> = {
+  A1: "bg-green-100 text-green-800", A2: "bg-green-100 text-green-800",
+  B1: "bg-blue-100 text-blue-800",   B2: "bg-blue-100 text-blue-800",
+  C1: "bg-yellow-100 text-yellow-800", C2: "bg-yellow-100 text-yellow-800",
+  D: "bg-orange-100 text-orange-800",
+  E1: "bg-red-100 text-red-800", E2: "bg-red-100 text-red-800",
+};
+
+// ── Print-quality CBSE CCE report card ───────────────────────────────────────
+function CCEReportCardPreview({
+  student,
+  report,
+  schoolName = "School Name",
+}: {
+  student: CceStudentReport;
+  report: CceClassReportDto;
+  schoolName?: string;
+}) {
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = () => {
+    const content = printRef.current?.innerHTML;
+    if (!content) return;
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html><html><head>
+      <title>CCE Report Card – ${student.studentName}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #000; }
+        h1 { text-align: center; font-size: 16px; margin: 0 0 4px; }
+        h2 { text-align: center; font-size: 13px; margin: 0 0 2px; }
+        .subtitle { text-align: center; font-size: 11px; margin: 0 0 10px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        th, td { border: 1px solid #000; padding: 4px 6px; }
+        th { background: #e0e0e0; font-weight: bold; text-align: center; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .section-title { font-weight: bold; background: #d0d8e8; padding: 4px 6px; margin-top: 10px; }
+        .pass { color: green; font-weight: bold; }
+        .fail { color: red; font-weight: bold; }
+        .footer-row { display: flex; justify-content: space-between; margin-top: 30px; }
+        @media print { body { margin: 10mm; } }
+      </style>
+      </head><body>${content}</body></html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
+  };
+
+  const mappedKeys = Object.keys(report.examMappings) as AssessmentKey[];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Button size="sm" variant="outline" onClick={handlePrint} className="self-end">
+        <Printer className="h-4 w-4 mr-1.5" /> Print Report Card
+      </Button>
+
+      <div ref={printRef} className="text-xs">
+        {/* Header */}
+        <div className="text-center mb-4 border-b pb-3">
+          <div className="text-lg font-bold uppercase tracking-wide">{schoolName}</div>
+          <div className="text-sm font-semibold mt-1">CBSE Continuous &amp; Comprehensive Evaluation (CCE)</div>
+          <div className="text-sm">Report Card – Academic Year: {report.academicYear}</div>
+        </div>
+
+        {/* Student Info */}
+        <div className="grid grid-cols-2 gap-2 mb-4 border rounded p-3 bg-slate-50 text-xs">
+          <div><span className="font-semibold">Student Name: </span>{student.studentName}</div>
+          <div><span className="font-semibold">Class: </span>{report.className}{report.sectionName ? ` – ${report.sectionName}` : ""}</div>
+          <div><span className="font-semibold">Admission No.: </span>{student.admissionNumber ?? "–"}</div>
+          <div><span className="font-semibold">Roll No.: </span>{student.rollNumber ?? "–"}</div>
+        </div>
+
+        {/* Part A: Scholastic */}
+        <div className="mb-4">
+          <div className="font-bold text-sm mb-1 bg-blue-100 px-2 py-1 rounded">
+            PART A: Scholastic Assessment
+          </div>
+          <p className="text-xs text-muted-foreground mb-2 italic">
+            T1 (50) = FA1(10) + FA2(10) + SA1(30) &nbsp;|&nbsp; T2 (50) = FA3(10) + FA4(10) + SA2(30) &nbsp;|&nbsp; Annual = T1 + T2 (100)
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border px-2 py-1 text-left">Subject</th>
+                  {mappedKeys.map(k => <th key={k} className="border px-2 py-1">{k}</th>)}
+                  <th className="border px-2 py-1">T1 (/50)</th>
+                  <th className="border px-2 py-1">T2 (/50)</th>
+                  <th className="border px-2 py-1">Annual (%)</th>
+                  <th className="border px-2 py-1">Grade</th>
+                  <th className="border px-2 py-1">GP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {student.subjects.map(subj => (
+                  <tr key={subj.subjectId} className="even:bg-slate-50">
+                    <td className="border px-2 py-1 font-medium">{subj.subjectName}</td>
+                    {mappedKeys.map(k => {
+                      const a = subj.assessments[k];
+                      return (
+                        <td key={k} className="border px-2 py-1 text-center">
+                          {a ? (a.isAbsent ? <span className="text-red-600">AB</span> : `${a.marks}/${a.maxMarks}`) : "–"}
+                        </td>
+                      );
+                    })}
+                    <td className="border px-2 py-1 text-center">{subj.term1WeightedScore}</td>
+                    <td className="border px-2 py-1 text-center">{subj.term2WeightedScore}</td>
+                    <td className="border px-2 py-1 text-center font-medium">{subj.annualPercentage}%</td>
+                    <td className={`border px-2 py-1 text-center font-bold ${GRADE_BADGE[subj.grade] ?? ""}`}>{subj.grade}</td>
+                    <td className="border px-2 py-1 text-center">{subj.gradePoint > 0 ? subj.gradePoint : "–"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Summary row */}
+          <div className="flex gap-4 mt-2 text-sm font-semibold">
+            <span>CGPA: <span className="text-blue-700">{student.cgpa}</span></span>
+            <span>Overall Grade: <span className={`px-2 py-0.5 rounded text-xs font-bold ${GRADE_BADGE[student.overallGrade] ?? ""}`}>{student.overallGrade}</span></span>
+            <span>Result: <span className={student.result === "Pass" ? "text-green-600" : "text-red-600"}>{student.result}</span></span>
+          </div>
+        </div>
+
+        {/* Part B: Co-Scholastic */}
+        {student.coScholastic.length > 0 && (
+          <div className="mb-4">
+            <div className="font-bold text-sm mb-1 bg-green-100 px-2 py-1 rounded">
+              PART B: Co-Scholastic Assessment (Grade Scale: A–E)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border px-2 py-1 text-left">Area</th>
+                    <th className="border px-2 py-1">Category</th>
+                    <th className="border px-2 py-1">Term 1 Grade</th>
+                    <th className="border px-2 py-1">Term 2 Grade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {student.coScholastic.map(cs => (
+                    <tr key={cs.areaId} className="even:bg-slate-50">
+                      <td className="border px-2 py-1 font-medium">{cs.areaName}</td>
+                      <td className="border px-2 py-1 text-muted-foreground capitalize">
+                        {cs.category?.replace(/_/g, " ") ?? "–"}
+                      </td>
+                      <td className="border px-2 py-1 text-center font-bold">{cs.term1Grade ?? "–"}</td>
+                      <td className="border px-2 py-1 text-center font-bold">{cs.term2Grade ?? "–"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* CBSE grade scale reference */}
+        <div className="mb-4">
+          <div className="font-bold text-sm mb-1 bg-slate-100 px-2 py-1 rounded">Grade Scale Reference</div>
+          <div className="flex flex-wrap gap-2 text-xs mt-1">
+            {CBSE_GRADE_SCALE.map(g => (
+              <span key={g.grade} className={`px-2 py-0.5 rounded border font-medium ${g.color}`}>
+                {g.grade} ({g.label}) {g.gradePoint > 0 ? `GP:${g.gradePoint}` : "FAIL"}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between mt-8 pt-4 border-t text-xs">
+          <div className="text-center"><div className="border-t border-black w-32 mt-8 mb-1" /><div>Class Teacher's Signature</div></div>
+          <div className="text-center"><div className="border-t border-black w-32 mt-8 mb-1" /><div>Principal's Signature</div></div>
+          <div className="text-center"><div className="border-t border-black w-32 mt-8 mb-1" /><div>Parent's Signature</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Report Cards tab ─────────────────────────────────────────────────────
+function CCEReportCardsTab() {
+  const { academicYear } = useAcademicYear();
+
+  const [classes, setClasses] = useState<ClassResponse[]>([]);
+  const [classId, setClassId] = useState<string>("");
+  const [sections, setSections] = useState<SectionResponse[]>([]);
+  const [sectionId, setSectionId] = useState<string>("");
+
+  const [examSetups, setExamSetups] = useState<CceExamSetupOption[]>([]);
+  const [mapping, setMapping] = useState<Partial<Record<AssessmentKey, string>>>({});
+
+  const [loading, setLoading] = useState(false);
+  const [report, setReport] = useState<CceClassReportDto | null>(null);
+  const [previewStudent, setPreviewStudent] = useState<CceStudentReport | null>(null);
+
+  // Load classes on mount — de-duplicate by id (API returns one entry per section)
+  useEffect(() => {
+    academicApi.listClasses(1, 200).then(r => {
+      const seen = new Set<string>();
+      setClasses(
+        (r.classes ?? []).filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; })
+      );
+    }).catch(() => {});
+  }, []);
+
+  // Load sections when class changes
+  useEffect(() => {
+    setSectionId("");
+    setSections([]);
+    setExamSetups([]);
+    setMapping({});
+    setReport(null);
+    if (!classId) return;
+    academicApi.listSections(classId, 1, 50).then(r => setSections(r.sections ?? [])).catch(() => {});
+  }, [classId]);
+
+  // Load exam setups when class or year changes
+  useEffect(() => {
+    setMapping({});
+    setReport(null);
+    if (!classId) return;
+    getCceExamSetups(classId, academicYear || undefined, sectionId || undefined)
+      .then(data => {
+        setExamSetups(data);
+        // Auto-detect mapping by exam name containing FA1, FA2, SA1, FA3, FA4, SA2
+        const autoMap: Partial<Record<AssessmentKey, string>> = {};
+        for (const key of CCE_ASSESSMENTS) {
+          const match = data.find(e => e.name.toUpperCase().includes(key));
+          if (match) autoMap[key] = match.id;
+        }
+        setMapping(autoMap);
+      })
+      .catch(() => toast.error("Failed to load exam setups for this class."));
+  }, [classId, sectionId, academicYear]);
+
+  const handleGenerate = async () => {
+    if (!classId) { toast.error("Please select a class."); return; }
+    setLoading(true);
+    setReport(null);
+    try {
+      const data = await getCceClassReport({
+        classId,
+        academicYear: academicYear || undefined,
+        sectionId: sectionId || undefined,
+        fa1ExamId: mapping.FA1,
+        fa2ExamId: mapping.FA2,
+        sa1ExamId: mapping.SA1,
+        fa3ExamId: mapping.FA3,
+        fa4ExamId: mapping.FA4,
+        sa2ExamId: mapping.SA2,
+      });
+      setReport(data);
+      if (data.students.length === 0) toast.info("No students found for this class.");
+    } catch {
+      toast.error("Failed to generate report cards.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Selectors */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Generate CCE Report Cards</CardTitle>
+          <CardDescription>
+            Select the class, map FA1/FA2/SA1/FA3/FA4/SA2 to your existing exam setups, then click Generate.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Class / Section row */}
+          <div className="flex flex-wrap gap-4">
+            <div className="flex flex-col gap-1.5 min-w-[200px]">
+              <Label>Class</Label>
+              <Select value={classId} onValueChange={setClassId}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Select class…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name || c.standard}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {sections.length > 0 && (
+              <div className="flex flex-col gap-1.5 min-w-[160px]">
+                <Label>Section (optional)</Label>
+                <Select value={sectionId || "__all__"} onValueChange={v => setSectionId(v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="All sections" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All sections</SelectItem>
+                    {sections.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5 min-w-[160px]">
+              <Label>Academic Year</Label>
+              <Input value={academicYear || "–"} readOnly className="w-[160px] bg-muted" />
+            </div>
+          </div>
+
+          {/* Exam mapping */}
+          {classId && examSetups.length > 0 && (
+            <>
+              <Separator />
+              <div>
+                <p className="text-sm font-semibold mb-2">Map Exam Setups to CCE Assessments</p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  CBSE CCE formula: T1 = FA1(10%) + FA2(10%) + SA1(30%) &nbsp;|&nbsp; T2 = FA3(10%) + FA4(10%) + SA2(30%)
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {CCE_ASSESSMENTS.map(key => (
+                    <div key={key} className="flex flex-col gap-1">
+                      <Label className="text-xs font-semibold">{key}</Label>
+                      <Select
+                        value={mapping[key] ?? "__none__"}
+                        onValueChange={v => setMapping(prev => ({ ...prev, [key]: v === "__none__" ? undefined : v }))}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Not mapped" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Not mapped</SelectItem>
+                          {examSetups.map(e => (
+                            <SelectItem key={e.id} value={e.id} className="text-xs">
+                              {e.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {classId && examSetups.length === 0 && (
+            <p className="text-sm text-muted-foreground italic">
+              No exam setups found for this class and year. Create exam setups in the Exam Setup section first.
+            </p>
+          )}
+
+          <div className="flex justify-end">
+            <Button onClick={handleGenerate} disabled={loading || !classId} className="min-w-[140px]">
+              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              {loading ? "Generating…" : "Generate Report Cards"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stats bar */}
+      {report && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Total Students", value: report.students.length, icon: GraduationCap, color: "text-blue-600" },
+            { label: "Pass", value: report.passCount, icon: CheckCircle2, color: "text-green-600" },
+            { label: "Fail", value: report.failCount, icon: XCircle, color: "text-red-600" },
+            { label: "Avg CGPA", value: report.avgCgpa.toFixed(2), icon: Award, color: "text-purple-600" },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <Card key={label} className="text-center py-3">
+              <Icon className={`h-6 w-6 mx-auto mb-1 ${color}`} />
+              <div className="text-xl font-bold">{value}</div>
+              <div className="text-xs text-muted-foreground">{label}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Student list */}
+      {report && report.students.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">
+              {report.className}{report.sectionName ? ` – ${report.sectionName}` : ""} — {report.academicYear}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">#</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Adm. No.</TableHead>
+                  {report.students[0]?.subjects.map(s => (
+                    <TableHead key={s.subjectId} className="text-center text-xs">{s.subjectName}</TableHead>
+                  ))}
+                  <TableHead className="text-center">CGPA</TableHead>
+                  <TableHead className="text-center">Overall</TableHead>
+                  <TableHead className="text-center">Result</TableHead>
+                  <TableHead className="text-center">Report Card</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.students.map((s, idx) => (
+                  <TableRow key={s.studentId} className={idx % 2 === 0 ? "" : "bg-muted/30"}>
+                    <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
+                    <TableCell className="font-medium text-sm">{s.studentName}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{s.admissionNumber ?? "–"}</TableCell>
+                    {s.subjects.map(subj => (
+                      <TableCell key={subj.subjectId} className="text-center">
+                        <span className={`inline-block text-xs font-bold px-1.5 py-0.5 rounded ${GRADE_BADGE[subj.grade] ?? "bg-muted"}`}>
+                          {subj.grade}
+                        </span>
+                        <div className="text-xs text-muted-foreground">{subj.annualPercentage}%</div>
+                      </TableCell>
+                    ))}
+                    <TableCell className="text-center font-bold text-blue-700">{s.cgpa}</TableCell>
+                    <TableCell className="text-center">
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${GRADE_BADGE[s.overallGrade] ?? ""}`}>
+                        {s.overallGrade}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className={`text-xs font-bold ${s.result === "Pass" ? "text-green-600" : "text-red-600"}`}>
+                        {s.result}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setPreviewStudent(s)}>
+                        <FileText className="h-3.5 w-3.5 mr-1" /> View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Report card preview dialog */}
+      {previewStudent && report && (
+        <Dialog open onOpenChange={() => setPreviewStudent(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>CCE Report Card — {previewStudent.studentName}</DialogTitle>
+            </DialogHeader>
+            <CCEReportCardPreview
+              student={previewStudent}
+              report={report}
+              schoolName="Your School Name"
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPreviewStudent(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
 // ── CCE tab (embedded inside Examinations page) ──────────────────────────────
 export function CCETab() {
   return (
     <Tabs defaultValue="areas" className="w-full">
-      <TabsList className="grid w-full grid-cols-2">
+      <TabsList className="grid w-full grid-cols-3">
         <TabsTrigger value="areas">
           <Settings className="h-4 w-4 mr-1.5" /> Area Setup
         </TabsTrigger>
         <TabsTrigger value="entry">
           <ClipboardList className="h-4 w-4 mr-1.5" /> Class Grade Entry
+        </TabsTrigger>
+        <TabsTrigger value="reportcards">
+          <FileText className="h-4 w-4 mr-1.5" /> CCE Report Cards
         </TabsTrigger>
       </TabsList>
 
@@ -512,6 +995,10 @@ export function CCETab() {
 
       <TabsContent value="entry" className="pt-4">
         <ClassEntryTab />
+      </TabsContent>
+
+      <TabsContent value="reportcards" className="pt-4">
+        <CCEReportCardsTab />
       </TabsContent>
     </Tabs>
   );

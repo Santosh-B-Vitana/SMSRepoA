@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -60,14 +61,15 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 function StatsBar({ stats }: { stats: NotificationStats | undefined }) {
+  const { t } = useLanguage();
   if (!stats) return null;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
       {[
-        { label: "Total Sent", value: stats.total, icon: Bell, color: "text-blue-600" },
-        { label: "Unread", value: stats.unread, icon: AlertCircle, color: "text-orange-500" },
-        { label: "Read Rate", value: `${stats.readRate.toFixed(1)}%`, icon: TrendingUp, color: "text-green-600" },
-        { label: "Last 24h", value: stats.sentLast24Hours, icon: Clock, color: "text-purple-600" },
+        { label: t('notifications.statTotalSent'), value: stats.total, icon: Bell, color: "text-blue-600" },
+        { label: t('notifications.statUnread'), value: stats.unread, icon: AlertCircle, color: "text-orange-500" },
+        { label: t('notifications.statReadRate'), value: `${stats.readRate.toFixed(1)}%`, icon: TrendingUp, color: "text-green-600" },
+        { label: t('notifications.statLast24h'), value: stats.sentLast24Hours, icon: Clock, color: "text-purple-600" },
       ].map(({ label, value, icon: Icon, color }) => (
         <Card key={label} className="border shadow-sm">
           <CardContent className="pt-4 pb-3 px-4">
@@ -93,6 +95,7 @@ interface SendDialogProps {
 }
 
 function SendDialog({ open, onOpenChange }: SendDialogProps) {
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const [form, setForm] = useState<SendNotificationRequest>({
     recipientId: "", recipientType: "Staff", type: "General",
@@ -103,22 +106,22 @@ function SendDialog({ open, onOpenChange }: SendDialogProps) {
   const sendMutation = useMutation({
     mutationFn: sendNotification,
     onSuccess: () => {
-      toast.success("Notification sent successfully.");
+      toast.success(t('notifications.sendSuccess'));
       qc.invalidateQueries({ queryKey: ["school-notifications"] });
       qc.invalidateQueries({ queryKey: ["notification-stats"] });
       onOpenChange(false);
       setForm({ recipientId: "", recipientType: "Staff", type: "General", title: "", content: "", priority: "Normal" });
       setErrors({});
     },
-    onError: (e: Error) => toast.error(e.message ?? "Failed to send notification"),
+    onError: (e: Error) => toast.error(e.message ?? t('notifications.sendError')),
   });
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.recipientId.trim()) e.recipientId = "Recipient ID is required";
-    if (!form.title.trim() || form.title.length < 2) e.title = "Title must be at least 2 characters";
-    if (form.title.length > 200) e.title = "Title cannot exceed 200 characters";
-    if (!form.content.trim()) e.content = "Content is required";
+    if (!form.recipientId.trim()) e.recipientId = t('notifications.validRecipientRequired');
+    if (!form.title.trim() || form.title.length < 2) e.title = t('notifications.validTitleMin');
+    if (form.title.length > 200) e.title = t('notifications.validTitleMax');
+    if (!form.content.trim()) e.content = t('notifications.validContentRequired');
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -128,11 +131,11 @@ function SendDialog({ open, onOpenChange }: SendDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Send Notification</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('notifications.sendTitle')}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label>Recipient ID *</Label>
-            <Input value={form.recipientId} onChange={e => setForm(f => ({ ...f, recipientId: e.target.value }))} placeholder="Enter user ID (GUID)" />
+            <Label>{t('notifications.recipientIdLabel')}</Label>
+            <Input value={form.recipientId} onChange={e => setForm(f => ({ ...f, recipientId: e.target.value }))} placeholder={t('notifications.recipientIdPlaceholder')} />
             {errors.recipientId && <p className="text-xs text-red-500 mt-1">{errors.recipientId}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -144,36 +147,36 @@ function SendDialog({ open, onOpenChange }: SendDialogProps) {
               </Select>
             </div>
             <div>
-              <Label>Type</Label>
+              <Label>{t('common.type')}</Label>
               <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{NOTIFICATION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                <SelectContent>{NOTIFICATION_TYPES.map(typ => <SelectItem key={typ} value={typ}>{typ}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
           <div>
-            <Label>Priority</Label>
+            <Label>{t('common.priority')}</Label>
             <Select value={form.priority ?? "Normal"} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Title *</Label>
-            <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Notification title" />
+              <Label>{t('notifications.titleLabel')}</Label>
+            <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder={t('notifications.titlePlaceholder')} />
             {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title}</p>}
           </div>
           <div>
-            <Label>Content *</Label>
-            <Textarea value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={4} placeholder="Notification content" />
+            <Label>{t('notifications.contentLabel')}</Label>
+            <Textarea value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={4} placeholder={t('notifications.contentPlaceholder')} />
             {errors.content && <p className="text-xs text-red-500 mt-1">{errors.content}</p>}
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button onClick={handleSubmit} disabled={sendMutation.isPending}>
             {sendMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Send Notification
+            {t('notifications.sendBtn')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -189,6 +192,7 @@ interface BroadcastDialogProps {
 }
 
 function BroadcastDialog({ open, onOpenChange }: BroadcastDialogProps) {
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const [form, setForm] = useState<BroadcastNotificationRequest & { mode: "role" | "ids" }>({
     mode: "role", recipientRole: "Staff", recipientType: "Staff",
@@ -200,19 +204,19 @@ function BroadcastDialog({ open, onOpenChange }: BroadcastDialogProps) {
   const broadcastMutation = useMutation({
     mutationFn: broadcastNotification,
     onSuccess: (data) => {
-      toast.success(`Broadcast sent to ${data.sent} recipient(s).`);
+      toast.success(t('notifications.broadcastSuccess').replace('{n}', String(data.sent)));
       qc.invalidateQueries({ queryKey: ["school-notifications"] });
       qc.invalidateQueries({ queryKey: ["notification-stats"] });
       onOpenChange(false);
     },
-    onError: (e: Error) => toast.error(e.message ?? "Broadcast failed"),
+    onError: (e: Error) => toast.error(e.message ?? t('notifications.broadcastError')),
   });
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.title.trim() || form.title.length < 2) e.title = "Title must be at least 2 characters";
-    if (!form.content.trim()) e.content = "Content is required";
-    if (form.mode === "ids" && !idsText.trim()) e.ids = "Enter at least one recipient ID";
+    if (!form.title.trim() || form.title.length < 2) e.title = t('notifications.validTitleMin');
+    if (!form.content.trim()) e.content = t('notifications.validContentRequired');
+    if (form.mode === "ids" && !idsText.trim()) e.ids = t('notifications.validAtLeastOneId');
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -237,72 +241,72 @@ function BroadcastDialog({ open, onOpenChange }: BroadcastDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Broadcast Notification</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('notifications.broadcastTitle')}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="flex gap-2">
             {(["role", "ids"] as const).map(m => (
               <Button key={m} size="sm" variant={form.mode === m ? "default" : "outline"}
                 onClick={() => setForm(f => ({ ...f, mode: m }))}>
-                {m === "role" ? "By Role" : "By IDs"}
+                {m === "role" ? t('notifications.byRole') : t('notifications.byIds')}
               </Button>
             ))}
           </div>
           {form.mode === "role" ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Role</Label>
+                <Label>{t('common.role')}</Label>
                 <Select value={form.recipientRole ?? "Staff"} onValueChange={v => setForm(f => ({ ...f, recipientRole: v, recipientType: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{RECIPIENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  <SelectContent>{RECIPIENT_TYPES.map(rtyp => <SelectItem key={rtyp} value={rtyp}>{rtyp}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Type</Label>
+                <Label>{t('common.type')}</Label>
                 <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{NOTIFICATION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  <SelectContent>{NOTIFICATION_TYPES.map(typ => <SelectItem key={typ} value={typ}>{typ}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
           ) : (
             <div>
-              <Label>Recipient IDs (one per line)</Label>
-              <Textarea value={idsText} onChange={e => setIdsText(e.target.value)} rows={3} placeholder="Paste GUIDs, one per line" />
+              <Label>{t('notifications.recipientIdsLabel')}</Label>
+              <Textarea value={idsText} onChange={e => setIdsText(e.target.value)} rows={3} placeholder={t('notifications.recipientIdsPlaceholder')} />
               {errors.ids && <p className="text-xs text-red-500 mt-1">{errors.ids}</p>}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Priority</Label>
+              <Label>{t('common.priority')}</Label>
               <Select value={form.priority ?? "Normal"} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Recipient Type</Label>
+              <Label>{t('notifications.recipientTypeLabel')}</Label>
               <Select value={form.recipientType} onValueChange={v => setForm(f => ({ ...f, recipientType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{RECIPIENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                <SelectContent>{RECIPIENT_TYPES.map(rtyp => <SelectItem key={rtyp} value={rtyp}>{rtyp}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
           <div>
-            <Label>Title *</Label>
-            <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Notification title" />
+            <Label>{t('notifications.titleLabel')}</Label>
+            <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder={t('notifications.titlePlaceholder')} />
             {errors.title && <p className="text-xs text-red-500 mt-1">{errors.title}</p>}
           </div>
           <div>
-            <Label>Content *</Label>
-            <Textarea value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={3} placeholder="Notification message" />
+              <Label>{t('notifications.contentLabel')}</Label>
+            <Textarea value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={3} placeholder={t('notifications.messagePlaceholder')} />
             {errors.content && <p className="text-xs text-red-500 mt-1">{errors.content}</p>}
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button onClick={handleSubmit} disabled={broadcastMutation.isPending}>
             {broadcastMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Broadcast
+            {t('notifications.broadcastBtn')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -313,6 +317,7 @@ function BroadcastDialog({ open, onOpenChange }: BroadcastDialogProps) {
 // ─── Notification Row ─────────────────────────────────────────────────────────
 
 function NotificationRow({ n, onDelete }: { n: NotificationItem; onDelete: (id: string) => void }) {
+  const { t } = useLanguage();
   return (
     <div className="flex items-start justify-between gap-3 p-4 border rounded-lg hover:bg-muted/30 transition-colors">
       <div className="flex-1 min-w-0">
@@ -324,8 +329,8 @@ function NotificationRow({ n, onDelete }: { n: NotificationItem; onDelete: (id: 
         </div>
         <p className="text-sm text-muted-foreground line-clamp-2">{n.content}</p>
         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-          <span>To: {n.recipientType}</span>
-          {n.senderName && <span>From: {n.senderName}</span>}
+          <span>{t('notifications.to')} {n.recipientType}</span>
+          {n.senderName && <span>{t('notifications.from')} {n.senderName}</span>}
           <span>{new Date(n.createdAt).toLocaleString()}</span>
         </div>
       </div>
@@ -360,6 +365,7 @@ function TypeBreakdown({ stats }: { stats: NotificationStats }) {
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Notifications() {
+  const { t } = useLanguage();
   const [page, setPage] = useState(1);
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
@@ -385,11 +391,11 @@ export default function Notifications() {
   const deleteMutation = useMutation({
     mutationFn: adminDeleteNotification,
     onSuccess: () => {
-      toast.success("Notification deleted.");
+      toast.success(t('notifications.deleteSuccess'));
       qc.invalidateQueries({ queryKey: ["school-notifications"] });
       qc.invalidateQueries({ queryKey: ["notification-stats"] });
     },
-    onError: () => toast.error("Failed to delete notification"),
+    onError: () => toast.error(t('notifications.deleteError')),
   });
 
   const clearFilters = () => { setTypeFilter(""); setPriorityFilter(""); setPage(1); };
@@ -400,16 +406,16 @@ export default function Notifications() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Bell className="h-6 w-6" /> Notifications
+            <Bell className="h-6 w-6" /> {t('nav.notifications')}
           </h1>
-          <p className="text-muted-foreground text-sm">Manage and broadcast school notifications</p>
+          <p className="text-muted-foreground text-sm">{t('notifications.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setSendOpen(true)} variant="outline" size="sm">
-            <Send className="h-4 w-4 mr-2" /> Send
+            <Send className="h-4 w-4 mr-2" /> {t('common.send')}
           </Button>
           <Button onClick={() => setBroadcastOpen(true)} size="sm">
-            <Megaphone className="h-4 w-4 mr-2" /> Broadcast
+            <Megaphone className="h-4 w-4 mr-2" /> {t('common.broadcast')}
           </Button>
         </div>
       </div>
@@ -419,8 +425,8 @@ export default function Notifications() {
 
       <Tabs defaultValue="list">
         <TabsList>
-          <TabsTrigger value="list">All Notifications</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="list">{t('notifications.tabAll')}</TabsTrigger>
+          <TabsTrigger value="analytics">{t('notifications.tabAnalytics')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="list" className="mt-4 space-y-4">
@@ -428,16 +434,16 @@ export default function Notifications() {
           <div className="flex flex-wrap gap-3 items-center">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={typeFilter} onValueChange={v => { setTypeFilter(v === "all" ? "" : v); setPage(1); }}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="All Types" /></SelectTrigger>
+              <SelectTrigger className="w-40"><SelectValue placeholder={t('common.allTypes')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {NOTIFICATION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                <SelectItem value="all">{t('common.allTypes')}</SelectItem>
+                {NOTIFICATION_TYPES.map(typ => <SelectItem key={typ} value={typ}>{typ}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={priorityFilter} onValueChange={v => { setPriorityFilter(v === "all" ? "" : v); setPage(1); }}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="All Priorities" /></SelectTrigger>
+              <SelectTrigger className="w-36"><SelectValue placeholder={t('common.allPriorities')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Priorities</SelectItem>
+                <SelectItem value="all">{t('common.allPriorities')}</SelectItem>
                 {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -459,12 +465,12 @@ export default function Notifications() {
           ) : error ? (
             <div className="flex items-center gap-2 text-red-500 p-4 border border-red-200 rounded-lg bg-red-50">
               <AlertCircle className="h-5 w-5" />
-              <p className="text-sm">Failed to load notifications. Please try again.</p>
+              <p className="text-sm">{t('notifications.loadError')}</p>
             </div>
           ) : !listData?.notifications?.length ? (
             <div className="text-center py-12 text-muted-foreground">
               <Bell className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p>No notifications found.</p>
+              <p>{t('notifications.empty')}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -481,8 +487,8 @@ export default function Notifications() {
                 Page {listData.page} of {listData.totalPages} &bull; {listData.total} total
               </p>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-                <Button size="sm" variant="outline" disabled={page >= listData.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+                <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t('common.previous')}</Button>
+                <Button size="sm" variant="outline" disabled={page >= listData.totalPages} onClick={() => setPage(p => p + 1)}>{t('common.next')}</Button>
               </div>
             </div>
           )}
@@ -492,11 +498,11 @@ export default function Notifications() {
           {stats ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
-                <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart2 className="h-4 w-4" /> By Type</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart2 className="h-4 w-4" /> {t('notifications.byType')}</CardTitle></CardHeader>
                 <CardContent><TypeBreakdown stats={stats} /></CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart2 className="h-4 w-4" /> By Priority</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart2 className="h-4 w-4" /> {t('notifications.byPriority')}</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     {Object.entries(stats.byPriority).map(([p, count]) => (
@@ -509,23 +515,23 @@ export default function Notifications() {
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCheck className="h-4 w-4 text-green-500" /> Read Engagement</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCheck className="h-4 w-4 text-green-500" /> {t('notifications.readEngagement')}</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Total Sent</span>
+                      <span className="text-muted-foreground">{t('common.total')}</span>
                       <span className="font-semibold">{stats.total}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Read</span>
+                      <span className="text-muted-foreground">{t('notifications.read')}</span>
                       <span className="font-semibold text-green-600">{stats.read}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Unread</span>
+                      <span className="text-muted-foreground">{t('notifications.unread')}</span>
                       <span className="font-semibold text-orange-500">{stats.unread}</span>
                     </div>
                     <div className="flex justify-between text-sm border-t pt-2">
-                      <span className="text-muted-foreground">Read Rate</span>
+                      <span className="text-muted-foreground">{t('notifications.statReadRate')}</span>
                       <span className="font-bold">{stats.readRate.toFixed(1)}%</span>
                     </div>
                   </div>
@@ -536,11 +542,11 @@ export default function Notifications() {
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Last 24 Hours</span>
+                      <span className="text-muted-foreground">{t('notifications.last24h')}</span>
                       <span className="font-semibold">{stats.sentLast24Hours}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Last 7 Days</span>
+                      <span className="text-muted-foreground">{t('notifications.last7Days')}</span>
                       <span className="font-semibold">{stats.sentLast7Days}</span>
                     </div>
                   </div>
@@ -549,7 +555,7 @@ export default function Notifications() {
             </div>
           ) : (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading analytics...
+              <Loader2 className="h-6 w-6 animate-spin mr-2" /> {t('notifications.loadingAnalytics')}
             </div>
           )}
         </TabsContent>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,6 +30,7 @@ interface StudentRow {
 }
 
 export function AttendanceManager() {
+  const { t } = useLanguage();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedClass, setSelectedClass] = useState<string>("");
   const dateRange = useDateRange();
@@ -155,8 +157,8 @@ export function AttendanceManager() {
         <AnimatedWrapper variant="fadeInUp" delay={0.1}>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-display gradient-text">Attendance Management</h2>
-            <p className="text-muted-foreground mt-2">Track and manage student attendance across all classes</p>
+            <h2 className="text-display gradient-text">{t('attendance.title')}</h2>
+            <p className="text-muted-foreground mt-2">{t('attendance.manageDesc')}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <ExportButton
@@ -172,11 +174,11 @@ export function AttendanceManager() {
             />
             <Button onClick={syncBiometricData} variant="outline">
               <Fingerprint className="h-4 w-4 mr-2" />
-              Sync Biometric
+              {t('attendance.syncBiometric')}
             </Button>
             <Button onClick={generateReport}>
               <Download className="h-4 w-4 mr-2" />
-              Generate Report
+              {t('attendance.generateReport')}
             </Button>
           </div>
         </div>
@@ -187,7 +189,7 @@ export function AttendanceManager() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <ModernCard variant="glass">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Students</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('dashboard.totalStudents')}</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -197,7 +199,7 @@ export function AttendanceManager() {
         
         <ModernCard variant="glass">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Present</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('attendance.presentCount')}</CardTitle>
             <UserCheck className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
@@ -207,7 +209,7 @@ export function AttendanceManager() {
         
         <ModernCard variant="glass">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Absent</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('attendance.absentCount')}</CardTitle>
             <UserX className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
@@ -217,7 +219,7 @@ export function AttendanceManager() {
         
         <ModernCard variant="glass">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Late</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('attendance.late')}</CardTitle>
             <Clock className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
@@ -227,7 +229,7 @@ export function AttendanceManager() {
         
         <ModernCard variant="glass">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Attendance %</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('attendance.attendancePct')}</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -240,16 +242,16 @@ export function AttendanceManager() {
       <AnimatedWrapper variant="fadeInUp" delay={0.3}>
       <Tabs defaultValue="daily">
         <TabsList className="w-full flex">
-          <TabsTrigger value="daily">Daily Attendance</TabsTrigger>
-          <TabsTrigger value="overview">Class Overview</TabsTrigger>
-          <TabsTrigger value="biometric">Biometric System</TabsTrigger>
+          <TabsTrigger value="daily">{t('attendance.dailyTab')}</TabsTrigger>
+          <TabsTrigger value="overview">{t('attendance.overviewTab')}</TabsTrigger>
+          <TabsTrigger value="biometric">{t('attendance.biometricTab')}</TabsTrigger>
           <TabsTrigger value="reports">
             <FileText className="h-4 w-4 mr-2" />
-            Reports
+            {t('attendance.reportsTab')}
           </TabsTrigger>
           <TabsTrigger value="leave">
             <CalendarDays className="h-4 w-4 mr-2" />
-            Leave Management
+            {t('attendance.leaveTab')}
           </TabsTrigger>
         </TabsList>
 
@@ -261,14 +263,14 @@ export function AttendanceManager() {
                 <div className="flex items-center gap-4 flex-wrap">
                   <Select value={selectedClass} onValueChange={setSelectedClass}>
                     <SelectTrigger className="w-44">
-                      <SelectValue placeholder="Select class" />
+                      <SelectValue placeholder={t('attendance.selectClass')} />
                     </SelectTrigger>
                     <SelectContent>
                       {classes.length > 0
                         ? classes.map(c => (
                             <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                           ))
-                        : <SelectItem value="" disabled>No classes found</SelectItem>
+                        : <SelectItem value="" disabled>{t('attendance.noClassesFound')}</SelectItem>
                       }
                     </SelectContent>
                   </Select>
@@ -296,11 +298,11 @@ export function AttendanceManager() {
               {loadingStudents ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-muted-foreground">Loading students…</span>
+                  <span className="ml-2 text-muted-foreground">{t('attendance.loadingStudents')}</span>
                 </div>
               ) : students.length === 0 ? (
                 <div className="py-12 text-center text-muted-foreground">
-                  {selectedClass ? 'No students found in this class' : 'Select a class to view students'}
+                  {selectedClass ? t('attendance.noStudentsInClass') : t('attendance.selectClassToView')}
                 </div>
               ) : (
                 <>
@@ -310,16 +312,16 @@ export function AttendanceManager() {
                     </span>
                     <Button size="sm" variant="outline" onClick={handleBulkMarkAbsent} disabled={bulkSaving}>
                       {bulkSaving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
-                      Mark Remaining Absent
+                      {t('attendance.markRemainingAbsent')}
                     </Button>
                   </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>#</TableHead>
-                        <TableHead>Student Name</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead>{t('attendance.studentName')}</TableHead>
+                        <TableHead>{t('common.status')}</TableHead>
+                        <TableHead>{t('common.actions')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -339,7 +341,7 @@ export function AttendanceManager() {
                                   {status}
                                 </Badge>
                               ) : (
-                                <span className="text-xs text-muted-foreground italic">Not marked</span>
+                                <span className="text-xs text-muted-foreground italic">{t('attendance.notMarked')}</span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -378,26 +380,26 @@ export function AttendanceManager() {
         <TabsContent value="overview" className="space-y-4">
           <ModernCard variant="glass">
             <CardHeader>
-              <CardTitle>Class-wise Attendance Overview</CardTitle>
+              <CardTitle>{t('attendance.classwiseOverview')}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t('common.class')}</TableHead>
+                  <TableHead>{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {classes.length === 0 ? (
-                    <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground py-8">No classes found</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground py-8">{t('attendance.noClassesFound')}</TableCell></TableRow>
                   ) : classes.map(cls => (
                     <TableRow key={cls.id}>
                       <TableCell className="font-medium">{cls.name}</TableCell>
                       <TableCell>
                         <Button variant="outline" size="sm"
                           onClick={() => { setSelectedClass(cls.name); }}
-                        >View &amp; Mark</Button>
+                        >{t('attendance.viewAndMark')}</Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -416,21 +418,21 @@ export function AttendanceManager() {
           
           <ModernCard variant="glass">
             <CardHeader>
-              <CardTitle>Quick Report Actions</CardTitle>
+              <CardTitle>{t('attendance.quickReports')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Button variant="outline" className="h-20 flex-col">
                   <Download className="h-6 w-6 mb-2" />
-                  Daily Report
+                  {t('attendance.dailyReport')}
                 </Button>
                 <Button variant="outline" className="h-20 flex-col">
                   <Download className="h-6 w-6 mb-2" />
-                  Weekly Summary
+                  {t('attendance.weeklySummary')}
                 </Button>
                 <Button variant="outline" className="h-20 flex-col">
                   <Download className="h-6 w-6 mb-2" />
-                  Monthly Analysis
+                  {t('attendance.monthlyAnalysis')}
                 </Button>
               </div>
             </CardContent>
@@ -443,21 +445,21 @@ export function AttendanceManager() {
           </div>
           <ModernCard variant="glass">
             <CardHeader>
-              <CardTitle>Leave Requests Summary</CardTitle>
+              <CardTitle>{t('attendance.leaveRequestsSummary')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
                   <p className="text-2xl font-bold text-yellow-600">5</p>
-                  <p className="text-sm text-muted-foreground">Pending</p>
+                  <p className="text-sm text-muted-foreground">{t('admissions.pending')}</p>
                 </div>
                 <div className="text-center p-4 bg-green-50 rounded-lg">
                   <p className="text-2xl font-bold text-green-600">12</p>
-                  <p className="text-sm text-muted-foreground">Approved</p>
+                  <p className="text-sm text-muted-foreground">{t('admissions.approved')}</p>
                 </div>
                 <div className="text-center p-4 bg-red-50 rounded-lg">
                   <p className="text-2xl font-bold text-red-600">2</p>
-                  <p className="text-sm text-muted-foreground">Rejected</p>
+                  <p className="text-sm text-muted-foreground">{t('admissions.rejected')}</p>
                 </div>
               </div>
             </CardContent>

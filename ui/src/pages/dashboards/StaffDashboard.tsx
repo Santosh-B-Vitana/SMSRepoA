@@ -1,5 +1,6 @@
 ﻿
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   Calendar, Users, BookOpen, CheckCircle, Clock,
   AlertCircle, Bell, TrendingUp, ArrowRight, RefreshCw, Loader2,
@@ -107,44 +108,44 @@ interface RoleStatConfig {
   subtitle: (d: DashboardData) => string;
 }
 
-function getRoleStats(group: DesignationGroup): RoleStatConfig[] {
+function getRoleStats(group: DesignationGroup, t: (key: string) => string): RoleStatConfig[] {
   switch (group) {
     case "leadership":
       return [
-        { title: "Total Students", iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Users,       path: "/students",     value: d => d.schoolStats?.totalStudents ?? "—", subtitle: d => `${d.schoolStats?.todayAbsentStudents ?? 0} absent today` },
-        { title: "Total Staff",    iconBg: "bg-blue-500/10",   borderColor: "border-l-blue-500",   icon: UserCheck,   path: "/staff",        value: d => d.schoolStats?.totalStaff ?? "—",    subtitle: d => `${d.schoolStats?.todayAbsentStaff ?? 0} absent today` },
-        { title: "Attendance",     iconBg: "bg-green-500/10",  borderColor: "border-l-green-500",  icon: Activity,    value: d => d.schoolStats ? `${Math.round(d.schoolStats.todayAttendancePercentage)}%` : "—", subtitle: () => "Today's rate" },
-        { title: "Staff Leaves",   iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,    path: "/leave-management", value: d => d.pendingStaffLeaves ?? 0, subtitle: () => "Pending approval" },
+        { title: t('staffDash.totalStudents'), iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Users,       path: "/students",     value: d => d.schoolStats?.totalStudents ?? "—", subtitle: d => `${d.schoolStats?.todayAbsentStudents ?? 0} ${t('staffDash.absentToday')}` },
+        { title: t('staffDash.totalStaff'),    iconBg: "bg-blue-500/10",   borderColor: "border-l-blue-500",   icon: UserCheck,   path: "/staff",        value: d => d.schoolStats?.totalStaff ?? "—",    subtitle: d => `${d.schoolStats?.todayAbsentStaff ?? 0} ${t('staffDash.absentToday')}` },
+        { title: t('staffDash.attendance'),     iconBg: "bg-green-500/10",  borderColor: "border-l-green-500",  icon: Activity,    value: d => d.schoolStats ? `${Math.round(d.schoolStats.todayAttendancePercentage)}%` : "—", subtitle: () => "Today's rate" },
+        { title: t('staffDash.staffLeaves'),   iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,    path: "/leave-management", value: d => d.pendingStaffLeaves ?? 0, subtitle: () => t('staffDash.pendingApproval') },
       ];
     case "academic_head":
     case "class_teacher":
     case "teacher":
       return [
-        { title: "My Classes",     iconBg: "bg-primary/10",    borderColor: "border-l-primary",    icon: BookOpen,     path: "/my-classes",       value: d => d.classAssignments.length || "—",      subtitle: () => "Assigned sections" },
-        { title: "My Students",    iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Users,        path: "/my-classes",       value: d => d.studentCount,                        subtitle: d => `across ${d.classAssignments.length} class${d.classAssignments.length !== 1 ? "es" : ""}` },
-        { title: "Diary Entries",  iconBg: "bg-sky-500/10",    borderColor: "border-l-sky-500",    icon: NotebookPen,  path: "/staff-diary",      value: d => d.recentDiaryEntries.length,           subtitle: () => "Recent entries" },
-        { title: "My Leaves",      iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,     path: "/leave-management", value: d => d.pendingLeaves,                       subtitle: d => `${d.approvedLeaves} approved` },
+        { title: t('staffDash.myClasses'),     iconBg: "bg-primary/10",    borderColor: "border-l-primary",    icon: BookOpen,     path: "/my-classes",       value: d => d.classAssignments.length || "—",      subtitle: () => t('staffDash.assignedSections') },
+        { title: t('staffDash.myStudents'),    iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Users,        path: "/my-classes",       value: d => d.studentCount,                        subtitle: d => `across ${d.classAssignments.length} class${d.classAssignments.length !== 1 ? "es" : ""}` },
+        { title: t('staffDash.diaryEntries'),  iconBg: "bg-sky-500/10",    borderColor: "border-l-sky-500",    icon: NotebookPen,  path: "/staff-diary",      value: d => d.recentDiaryEntries.length,           subtitle: () => t('staffDash.recentEntries') },
+        { title: t('staffDash.myLeaves'),      iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,     path: "/leave-management", value: d => d.pendingLeaves,                       subtitle: d => `${d.approvedLeaves} ${t('staffDash.approved')}` },
       ];
     case "finance":
       return [
-        { title: "Pending Fees",   iconBg: "bg-red-500/10",    borderColor: "border-l-red-500",    icon: DollarSign,  path: "/fees",     value: d => d.schoolStats ? `₹${(d.schoolStats.pendingFees / 1000).toFixed(0)}K` : "—", subtitle: () => "Outstanding" },
-        { title: "Total Students", iconBg: "bg-emerald-500/10",borderColor: "border-l-emerald-500",icon: Users,       path: "/students", value: d => d.schoolStats?.totalStudents ?? "—", subtitle: () => "Active enrollment" },
-        { title: "Pending Leaves", iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,    path: "/leave-management", value: d => d.pendingLeaves, subtitle: d => `${d.approvedLeaves} approved` },
-        { title: "Announcements",  iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Megaphone,   value: d => d.announcements.length, subtitle: () => "From management" },
+        { title: t('staffDash.pendingFees'),   iconBg: "bg-red-500/10",    borderColor: "border-l-red-500",    icon: DollarSign,  path: "/fees",     value: d => d.schoolStats ? `₹${(d.schoolStats.pendingFees / 1000).toFixed(0)}K` : "—", subtitle: () => t('staffDash.outstanding') },
+        { title: t('staffDash.totalStudents'), iconBg: "bg-emerald-500/10",borderColor: "border-l-emerald-500",icon: Users,       path: "/students", value: d => d.schoolStats?.totalStudents ?? "—", subtitle: () => t('staffDash.activeEnrollment') },
+        { title: t('staffDash.pendingLeaves'), iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,    path: "/leave-management", value: d => d.pendingLeaves, subtitle: d => `${d.approvedLeaves} ${t('staffDash.approved')}` },
+        { title: t('staffDash.announcements'), iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Megaphone,   value: d => d.announcements.length, subtitle: () => t('staffDash.fromManagement') },
       ];
     case "hr":
       return [
-        { title: "Total Staff",    iconBg: "bg-teal-500/10",   borderColor: "border-l-teal-500",   icon: UserCheck,   path: "/staff", value: d => d.schoolStats?.totalStaff ?? "—", subtitle: d => `${d.schoolStats?.todayAbsentStaff ?? 0} absent today` },
-        { title: "Staff Leaves",   iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,    path: "/leave-management", value: d => d.pendingStaffLeaves ?? d.pendingLeaves, subtitle: () => "Pending approval" },
-        { title: "My Leaves",      iconBg: "bg-green-500/10",  borderColor: "border-l-green-500",  icon: CheckCircle, path: "/leave-management", value: d => d.approvedLeaves, subtitle: () => "Approved this year" },
-        { title: "Announcements",  iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Megaphone,   value: d => d.announcements.length, subtitle: () => "From management" },
+        { title: t('staffDash.totalStaff'),    iconBg: "bg-teal-500/10",   borderColor: "border-l-teal-500",   icon: UserCheck,   path: "/staff", value: d => d.schoolStats?.totalStaff ?? "—", subtitle: d => `${d.schoolStats?.todayAbsentStaff ?? 0} ${t('staffDash.absentToday')}` },
+        { title: t('staffDash.staffLeaves'),   iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Calendar,    path: "/leave-management", value: d => d.pendingStaffLeaves ?? d.pendingLeaves, subtitle: () => t('staffDash.pendingApproval') },
+        { title: t('staffDash.myLeaves'),      iconBg: "bg-green-500/10",  borderColor: "border-l-green-500",  icon: CheckCircle, path: "/leave-management", value: d => d.approvedLeaves, subtitle: () => t('staffDash.approvedThisYear') },
+        { title: t('staffDash.announcements'), iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Megaphone,   value: d => d.announcements.length, subtitle: () => t('staffDash.fromManagement') },
       ];
     default: // teacher, librarian, transport, hostel, admissions, counselor, other
       return [
-        { title: "My Classes",     iconBg: "bg-primary/10",    borderColor: "border-l-primary",    icon: BookOpen,    path: "/my-classes",       value: d => d.classAssignments.length || "—", subtitle: () => "Assigned" },
-        { title: "Pending Leaves", iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Clock,       path: "/leave-management", value: d => d.pendingLeaves, subtitle: d => `${d.approvedLeaves} approved` },
-        { title: "Announcements",  iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Megaphone,                              value: d => d.announcements.length, subtitle: () => "From management" },
-        { title: "Leave Approved", iconBg: "bg-green-500/10",  borderColor: "border-l-green-500",  icon: CheckCircle, path: "/leave-management", value: d => d.approvedLeaves, subtitle: () => "This year" },
+        { title: t('staffDash.myClasses'),     iconBg: "bg-primary/10",    borderColor: "border-l-primary",    icon: BookOpen,    path: "/my-classes",       value: d => d.classAssignments.length || "—", subtitle: () => t('staffDash.assigned') },
+        { title: t('staffDash.pendingLeaves'), iconBg: "bg-amber-500/10",  borderColor: "border-l-amber-500",  icon: Clock,       path: "/leave-management", value: d => d.pendingLeaves, subtitle: d => `${d.approvedLeaves} ${t('staffDash.approved')}` },
+        { title: t('staffDash.announcements'), iconBg: "bg-purple-500/10", borderColor: "border-l-purple-500", icon: Megaphone,                              value: d => d.announcements.length, subtitle: () => t('staffDash.fromManagement') },
+        { title: t('staffDash.leaveApproved'), iconBg: "bg-green-500/10",  borderColor: "border-l-green-500",  icon: CheckCircle, path: "/leave-management", value: d => d.approvedLeaves, subtitle: () => t('staffDash.thisYear') },
       ];
   }
 }
@@ -273,6 +274,7 @@ function AttendanceTrendChart({ data }: { data: AttendanceAnalyticsResponse }) {
 
 // ── Personal Attendance Card (non-leadership – this month) ────────────────────
 function PersonalAttendanceCard({ records, onNavigate }: { records: StaffAttendanceResponse[]; onNavigate: () => void }) {
+  const { t } = useLanguage();
   const presentCount = records.filter(r => r.status === "present").length;
   const absentCount  = records.filter(r => r.status === "absent").length;
   const lateCount    = records.filter(r => r.status === "late").length;
@@ -289,15 +291,15 @@ function PersonalAttendanceCard({ records, onNavigate }: { records: StaffAttenda
         </div>
       )}
       {records.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-4">No records this month yet</p>
+        <p className="text-sm text-muted-foreground text-center py-4">{t('staffDash.noRecordsThisMonth')}</p>
       ) : (
         <>
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label: "Present", count: presentCount, color: "text-green-600" },
-              { label: "Absent",  count: absentCount,  color: "text-red-600" },
-              { label: "Late",    count: lateCount,    color: "text-amber-600" },
-              { label: "Leave",   count: leaveCount,   color: "text-blue-600" },
+              { label: t('staffDash.present'), count: presentCount, color: "text-green-600" },
+              { label: t('staffDash.absent'),  count: absentCount,  color: "text-red-600" },
+              { label: t('staffDash.late'),    count: lateCount,    color: "text-amber-600" },
+              { label: t('staffDash.leave'),   count: leaveCount,   color: "text-blue-600" },
             ].map(({ label, count, color }) => (
               <div key={label} className="text-center p-2 rounded-lg bg-muted/40">
                 <p className={`text-xl font-bold ${color}`}>{count}</p>
@@ -309,7 +311,7 @@ function PersonalAttendanceCard({ records, onNavigate }: { records: StaffAttenda
         </>
       )}
       <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground hover:text-primary" onClick={onNavigate}>
-        Full attendance history <ArrowRight className="h-3 w-3 ml-1" />
+        {t('staffDash.fullAttendanceHistory')} <ArrowRight className="h-3 w-3 ml-1" />
       </Button>
     </div>
   );
@@ -317,13 +319,14 @@ function PersonalAttendanceCard({ records, onNavigate }: { records: StaffAttenda
 
 // ── Birthday Widget ────────────────────────────────────────────────────────────
 function BirthdayWidget({ students, onNavigate }: { students: BirthdayStudent[]; onNavigate: () => void }) {
+  const { t } = useLanguage();
   const todayBdays    = students.filter(s => s.isToday);
   const upcomingBdays = students.filter(s => !s.isToday);
   if (students.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
         <Cake className="h-8 w-8 text-muted-foreground/30" />
-        <p className="text-sm text-muted-foreground">No birthdays in the next 7 days</p>
+        <p className="text-sm text-muted-foreground">{t('staffDash.noBirthdaysNext7')}</p>
       </div>
     );
   }
@@ -331,7 +334,7 @@ function BirthdayWidget({ students, onNavigate }: { students: BirthdayStudent[];
     <div className="space-y-3">
       {todayBdays.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">🎉 Today</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('staffDash.todayBirthdays')}</p>
           <div className="space-y-2">
             {todayBdays.map(s => (
               <div key={s.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/60">
@@ -345,7 +348,7 @@ function BirthdayWidget({ students, onNavigate }: { students: BirthdayStudent[];
       )}
       {upcomingBdays.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Upcoming</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('staffDash.upcoming')}</p>
           <div className="space-y-1.5">
             {upcomingBdays.slice(0, 5).map(s => (
               <div key={s.id} className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-muted/40 transition-colors">
@@ -358,7 +361,7 @@ function BirthdayWidget({ students, onNavigate }: { students: BirthdayStudent[];
         </div>
       )}
       <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground hover:text-primary" onClick={onNavigate}>
-        View all students <ArrowRight className="h-3 w-3 ml-1" />
+        {t('staffDash.viewAllStudents')} <ArrowRight className="h-3 w-3 ml-1" />
       </Button>
     </div>
   );
@@ -371,12 +374,13 @@ const CATEGORY_DOTS: Record<string, string> = {
   feedback: "bg-pink-500", behavior: "bg-orange-500",
 };
 function DiaryActivityWidget({ entries, onNavigate }: { entries: DiaryEntry[]; onNavigate: () => void }) {
+  const { t } = useLanguage();
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
         <NotebookPen className="h-8 w-8 text-muted-foreground/30" />
-        <p className="text-sm text-muted-foreground">No diary entries yet</p>
-        <Button variant="outline" size="sm" onClick={onNavigate} className="mt-1">Open Diary</Button>
+        <p className="text-sm text-muted-foreground">{t('staffDash.noDiaryEntries')}</p>
+        <Button variant="outline" size="sm" onClick={onNavigate} className="mt-1">{t('staffDash.openDiary')}</Button>
       </div>
     );
   }
@@ -398,7 +402,7 @@ function DiaryActivityWidget({ entries, onNavigate }: { entries: DiaryEntry[]; o
         </div>
       ))}
       <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground hover:text-primary" onClick={onNavigate}>
-        Open Diary <ArrowRight className="h-3 w-3 ml-1" />
+        {t('staffDash.openDiary')} <ArrowRight className="h-3 w-3 ml-1" />
       </Button>
     </div>
   );
@@ -415,6 +419,7 @@ function PendingStaffLeaveCard({
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; leave: LeaveRequest | null; remarks: string }>({
     open: false, leave: null, remarks: "",
@@ -458,14 +463,14 @@ function PendingStaffLeaveCard({
         <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="h-4 w-4 text-amber-600" />
-            Staff Leave Approvals
+            {t('staffDash.staffLeaveApprovals')}
             <Badge variant="secondary" className="text-xs">0 pending</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <CheckCircle className="h-8 w-8 text-green-500/60 mb-2" />
-            <p className="text-sm text-muted-foreground">All caught up! No pending leave requests.</p>
+            <p className="text-sm text-muted-foreground">{t('staffDash.allCaughtUp')}</p>
           </div>
         </CardContent>
       </Card>
@@ -478,7 +483,7 @@ function PendingStaffLeaveCard({
         <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="h-4 w-4 text-amber-600" />
-            Staff Leave Approvals
+            {t('staffDash.staffLeaveApprovals')}
             {totalCount > 0 && (
               <Badge className="text-xs bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-100">
                 {totalCount} pending
@@ -486,7 +491,7 @@ function PendingStaffLeaveCard({
             )}
           </CardTitle>
           <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-primary" onClick={() => navigate("/leave-management")}>
-            View all <ArrowRight className="h-3 w-3 ml-1" />
+            {t('staffDash.viewAll2')} <ArrowRight className="h-3 w-3 ml-1" />
           </Button>
         </CardHeader>
         <CardContent className="p-0">
@@ -525,7 +530,7 @@ function PendingStaffLeaveCard({
                       ? <Loader2 className="h-3 w-3 animate-spin" />
                       : <CheckCircle className="h-3 w-3" />
                     }
-                    Approve
+                    {t('staffDash.approveBtn')}
                   </Button>
                   <Button
                     size="sm" variant="outline"
@@ -534,7 +539,7 @@ function PendingStaffLeaveCard({
                     onClick={() => setRejectDialog({ open: true, leave, remarks: "" })}
                   >
                     <AlertCircle className="h-3 w-3" />
-                    Reject
+                    {t('staffDash.rejectBtn')}
                   </Button>
                 </div>
               </div>
@@ -543,7 +548,7 @@ function PendingStaffLeaveCard({
           {totalCount > leaves.length && (
             <div className="px-6 py-3 border-t bg-muted/20">
               <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => navigate("/leave-management")}>
-                +{totalCount - leaves.length} more pending requests — View all
+                +{totalCount - leaves.length} {t('staffDash.morePending')}
               </Button>
             </div>
           )}
@@ -555,13 +560,13 @@ function PendingStaffLeaveCard({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
             <div>
-              <h3 className="font-semibold text-base">Reject Leave Request</h3>
+              <h3 className="font-semibold text-base">{t('staffDash.rejectLeaveTitle')}</h3>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {rejectDialog.leave.applicantName} · {rejectDialog.leave.leaveTypeName}
               </p>
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Reason for rejection <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium">{t('staffDash.reasonForRejection')} <span className="text-destructive">*</span></label>
               <textarea
                 className="w-full rounded-lg border bg-background px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="State reason clearly..."
@@ -571,7 +576,7 @@ function PendingStaffLeaveCard({
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" size="sm" onClick={() => setRejectDialog({ open: false, leave: null, remarks: "" })}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 variant="destructive" size="sm"
@@ -580,7 +585,7 @@ function PendingStaffLeaveCard({
                 className="gap-1"
               >
                 {processingId === rejectDialog.leave.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                Confirm Reject
+                {t('staffDash.confirmReject')}
               </Button>
             </div>
           </div>
@@ -596,6 +601,7 @@ export default function StaffDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -604,7 +610,7 @@ export default function StaffDashboard() {
   const designation = user?.designation ?? "Teacher";
   const group = getDesignationGroup(designation);
   const meta = GROUP_META[group];
-  const statConfigs = getRoleStats(group);
+  const statConfigs = getRoleStats(group, t);
   const isTeachingRole = group === "teacher" || group === "class_teacher" || group === "academic_head";
   const isSchoolWide   = group === "leadership" || group === "finance" || group === "hr";
 
@@ -620,7 +626,7 @@ export default function StaffDashboard() {
   const today = new Date();
   const dateStr  = today.toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const hour     = today.getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = hour < 12 ? t('staffDash.goodMorning') : hour < 17 ? t('staffDash.goodAfternoon') : t('staffDash.goodEvening');
   const firstName = user?.name?.split(" ")[0] ?? "Staff";
 
   const monthStart = useMemo(() => new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split("T")[0], []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -769,13 +775,13 @@ export default function StaffDashboard() {
           <div className="flex gap-2 flex-wrap shrink-0">
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="shrink-0">
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              <span className="ml-2 hidden sm:inline">Refresh</span>
+              <span className="ml-2 hidden sm:inline">{t('staffDash.refresh')}</span>
             </Button>
             <Button variant="outline" size="sm" onClick={() => setChangePasswordOpen(true)} className="shrink-0">
-              <KeyRound className="h-4 w-4 mr-2" />Change Password
+              <KeyRound className="h-4 w-4 mr-2" />{t('staffDash.changePassword')}
             </Button>
             <Button size="sm" onClick={() => navigate("/leave-management")} className="shrink-0">
-              <Calendar className="h-4 w-4 mr-2" />Apply Leave
+              <Calendar className="h-4 w-4 mr-2" />{t('staffDash.applyLeave')}
             </Button>
           </div>
         </div>
@@ -803,25 +809,25 @@ export default function StaffDashboard() {
           {/* 7-day Attendance Trend */}
           <Card className="lg:col-span-2">
             <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" />7-Day Attendance Trend</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" />{t('staffDash.attendance')}</CardTitle>
               {data.attendanceTrend && <Badge variant="secondary" className="text-xs">Avg {Math.round(data.attendanceTrend.averageAttendancePercentage)}%</Badge>}
             </CardHeader>
             <CardContent>
-              {data.attendanceTrend ? <AttendanceTrendChart data={data.attendanceTrend} /> : <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">No attendance data</div>}
+              {data.attendanceTrend ? <AttendanceTrendChart data={data.attendanceTrend} /> : <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">{t('staffDash.noAttendanceData')}</div>}
             </CardContent>
           </Card>
           {/* School at a Glance */}
           <Card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" />School At a Glance</CardTitle>
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/reports")}>Report <ArrowRight className="h-3 w-3 ml-1" /></Button>
+              <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" />{t('staffDash.schoolAtGlance')}</CardTitle>
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/reports")}>{t('staffDash.report')} <ArrowRight className="h-3 w-3 ml-1" /></Button>
             </CardHeader>
             <CardContent className="space-y-3">
               {data.schoolStats ? [
-                { label: "Students",       value: data.schoolStats.totalStudents,      color: "text-purple-600", icon: Users },
-                { label: "Staff",          value: data.schoolStats.totalStaff,          color: "text-blue-600",   icon: UserCheck },
-                { label: "Absent Today",   value: data.schoolStats.todayAbsentStudents, color: "text-red-600",    icon: AlertCircle },
-                { label: "Upcoming Exams", value: data.schoolStats.upcomingExams,       color: "text-violet-600", icon: CheckCircle },
+                { label: t('staffDash.students2'),       value: data.schoolStats.totalStudents,      color: "text-purple-600", icon: Users },
+                { label: t('staffDash.staff'),          value: data.schoolStats.totalStaff,          color: "text-blue-600",   icon: UserCheck },
+                { label: t('staffDash.absentTodayLabel'),   value: data.schoolStats.todayAbsentStudents, color: "text-red-600",    icon: AlertCircle },
+                { label: t('staffDash.upcomingExams'), value: data.schoolStats.upcomingExams,       color: "text-violet-600", icon: CheckCircle },
               ].map(({ label, value, color, icon: Icon }) => (
                 <div key={label} className="flex items-center justify-between py-1 border-b last:border-0">
                   <div className="flex items-center gap-2"><Icon className={`h-3.5 w-3.5 ${color}`} /><span className="text-sm text-muted-foreground">{label}</span></div>
@@ -837,7 +843,7 @@ export default function StaffDashboard() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="h-4 w-4 text-primary" />My Attendance
+                <Activity className="h-4 w-4 text-primary" />{t('staffDash.myAttendance')}
                 <Badge variant="secondary" className="text-xs">{today.toLocaleDateString("en-IN", { month: "short" })}</Badge>
               </CardTitle>
             </CardHeader>
@@ -850,7 +856,7 @@ export default function StaffDashboard() {
             <Card>
               <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Cake className="h-4 w-4 text-amber-500" />Student Birthdays
+                  <Cake className="h-4 w-4 text-amber-500" />{t('staffDash.title')}
                   {data.birthdayStudents.filter(s => s.isToday).length > 0 && (
                     <Badge className="text-xs bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-100">{data.birthdayStudents.filter(s => s.isToday).length} today!</Badge>
                   )}
@@ -862,12 +868,12 @@ export default function StaffDashboard() {
             </Card>
           ) : (
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" />My Overview</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" />{t('staffDash.myOverview')}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 {[
-                  { label: "Pending Leaves",  value: data.pendingLeaves,            color: "text-amber-600", path: "/leave-management" },
-                  { label: "Approved Leaves", value: data.approvedLeaves,           color: "text-green-600", path: "/leave-management" },
-                  { label: "Announcements",   value: data.announcements.length,     color: "text-purple-600", path: "/announcements" },
+                  { label: t('staffDash.pendingLeaves'),  value: data.pendingLeaves,            color: "text-amber-600", path: "/leave-management" },
+                  { label: t('staffDash.approvedLeaves'), value: data.approvedLeaves,           color: "text-green-600", path: "/leave-management" },
+                  { label: t('staffDash.announcementsLabel'),   value: data.announcements.length,     color: "text-purple-600", path: "/announcements" },
                 ].map(({ label, value, color, path }) => (
                   <div key={label} className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-muted/30 -mx-1 px-1 rounded" onClick={() => navigate(path)}>
                     <span className="text-sm text-muted-foreground">{label}</span>
@@ -881,8 +887,8 @@ export default function StaffDashboard() {
           {isTeachingRole ? (
             <Card>
               <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-base flex items-center gap-2"><NotebookPen className="h-4 w-4 text-primary" />Recent Diary</CardTitle>
-                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/staff-diary")}>Write <ArrowRight className="h-3 w-3 ml-1" /></Button>
+                <CardTitle className="text-base flex items-center gap-2"><NotebookPen className="h-4 w-4 text-primary" />{t('staffDash.recentDiary')}</CardTitle>
+                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/staff-diary")}>{t('staffDash.write')} <ArrowRight className="h-3 w-3 ml-1" /></Button>
               </CardHeader>
               <CardContent>
                 <DiaryActivityWidget entries={data.recentDiaryEntries} onNavigate={() => navigate("/staff-diary")} />
@@ -890,12 +896,12 @@ export default function StaffDashboard() {
             </Card>
           ) : (
             <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><School className="h-4 w-4 text-primary" />Quick Access</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><School className="h-4 w-4 text-primary" />{t('staffDash.quickAccess')}</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {[
-                  { label: "School Connect", icon: School,   path: "/school-connect" },
-                  { label: "Announcements",  icon: Bell,     path: "/announcements" },
-                  { label: "Timetable",      icon: Clock,    path: "/timetable" },
+                  { label: t('staffDash.schoolConnect'), icon: School,   path: "/school-connect" },
+                  { label: t('staffDash.announcementsLabel'),  icon: Bell,     path: "/announcements" },
+                  { label: t('staffDash.timetable'),      icon: Clock,    path: "/timetable" },
                 ].map(({ label, icon: Icon, path }) => (
                   <button key={path} onClick={() => navigate(path)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border bg-background hover:bg-muted/50 hover:border-primary/30 transition-all text-left group">
@@ -914,8 +920,8 @@ export default function StaffDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-primary" />My Leave Requests</CardTitle>
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/leave-management")}>View all <ArrowRight className="h-3 w-3 ml-1" /></Button>
+              <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4 text-primary" />{t('staffDash.leaveBalance')}</CardTitle>
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/leave-management")}>{t('staffDash.viewAll')} <ArrowRight className="h-3 w-3 ml-1" /></Button>
           </CardHeader>
           <CardContent>
             {data.recentLeaves.length === 0 ? (
@@ -945,8 +951,8 @@ export default function StaffDashboard() {
 
         <Card>
           <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base flex items-center gap-2"><Megaphone className="h-4 w-4 text-primary" />School Announcements</CardTitle>
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/announcements")}>View all <ArrowRight className="h-3 w-3 ml-1" /></Button>
+              <CardTitle className="text-base flex items-center gap-2"><Megaphone className="h-4 w-4 text-primary" />{t('staffDash.announcements')}</CardTitle>
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/announcements")}>{t('staffDash.viewAll')} <ArrowRight className="h-3 w-3 ml-1" /></Button>
           </CardHeader>
           <CardContent>
             {data.announcements.length === 0 ? (
@@ -977,8 +983,8 @@ export default function StaffDashboard() {
       {isTeachingRole && data.classAssignments.length > 0 && (
         <Card>
           <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base flex items-center gap-2"><BookOpen className="h-4 w-4 text-primary" />My Classes</CardTitle>
-            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/my-classes")}>View all <ArrowRight className="h-3 w-3 ml-1" /></Button>
+              <CardTitle className="text-base flex items-center gap-2"><BookOpen className="h-4 w-4 text-primary" />{t('staffDash.myClasses')}</CardTitle>
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => navigate("/my-classes")}>{t('staffDash.viewAll')} <ArrowRight className="h-3 w-3 ml-1" /></Button>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">

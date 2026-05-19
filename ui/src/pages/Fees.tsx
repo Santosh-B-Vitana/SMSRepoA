@@ -33,6 +33,7 @@ import { FeeHeadsManager } from "@/components/fees/FeeHeadsManager";
 import { ReceiptTemplateManager } from "@/components/fees/ReceiptTemplateManager";
 import { BulkFeePaymentUpload } from "@/components/fees/BulkFeePaymentUpload";
 import { PromoteFeesDialog } from "@/components/fees/PromoteFeesDialog";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── India‑specific constants ─────────────────────────────
 const PAYMENT_METHODS = [
@@ -111,6 +112,46 @@ function normalizeTermName(name: string, idx: number): string {
   return name;
 }
 
+/**
+ * Scale installment schedule amounts to reflect an applied concession/discount.
+ * Already-paid terms are kept at their gross (historical) amounts — a payment receipt was already
+ * issued at that price, so we must not retroactively change those figures.
+ * Only the remaining (partial or future) terms are scaled proportionally by the net fee still owed.
+ */
+function scaleSchedule(
+  sched: TermSchedule[],
+  totalAmount: number,
+  discountAmount: number,
+  paidAmount: number,
+): TermSchedule[] {
+  if (!discountAmount || !sched.length) return sched;
+  const netTotal = Math.max(0, totalAmount - discountAmount);
+  const netRemaining = Math.max(0, netTotal - paidAmount);
+
+  // First pass: determine what portion of each term has already been paid (gross basis)
+  let cumulativeGross = 0;
+  const grossInfo = sched.map(term => {
+    const prev = cumulativeGross;
+    cumulativeGross += term.amount;
+    const grossPaid = Math.max(0, Math.min(term.amount, paidAmount - prev));
+    const grossRemaining = term.amount - grossPaid;
+    return { grossPaid, grossRemaining, isPaid: grossRemaining <= 0 };
+  });
+
+  const grossRemainingTotal = grossInfo.reduce((s, g) => s + g.grossRemaining, 0);
+  if (grossRemainingTotal <= 0) return sched; // nothing left to scale
+
+  const scaleFactor = netRemaining / grossRemainingTotal;
+
+  return sched.map((term, i) => {
+    const g = grossInfo[i];
+    if (g.isPaid) return term; // preserve gross amount — receipt already issued at this price
+    // Net term = gross-paid portion (unchanged) + scaled net-remaining portion
+    const scaledRemaining = Math.round(g.grossRemaining * scaleFactor);
+    return { ...term, amount: g.grossPaid + scaledRemaining };
+  });
+}
+
 /** For each term in the schedule, compute its status given how much has been paid so far. */
 function computeTermStatuses(
   schedule: TermSchedule[],
@@ -170,6 +211,7 @@ function CollectPaymentDialog({
   onSuccess: () => void;
   structures: FeeStructure[];
 }) {
+  const { t } = useLanguage();
   const today = new Date().toISOString().split("T")[0];
   const { hasUserPermission } = usePermissions();
   const canManageFees = hasUserPermission('Fees', 'Create');
@@ -209,6 +251,8 @@ function CollectPaymentDialog({
   const [applyingConcession, setApplyingConcession] = useState(false);
   const [apiConcessionTypes, setApiConcessionTypes] = useState<ConcessionType[]>([]);
   const [customConcessionLabel, setCustomConcessionLabel] = useState("");
+  // Notify parent toggle — shared for concessions, overrides, and payment collection
+  const [notifyParent, setNotifyParent] = useState(true);
 
   // ── Payment reversal ──
   const [voidTarget, setVoidTarget] = useState<{ id: string; amount: number; receiptNumber?: string } | null>(null);
@@ -351,9 +395,10 @@ function CollectPaymentDialog({
           const effectiveOutstanding = Math.round(((fresh.pendingAmount ?? 0) + (fresh.transportFee ?? 0) + (fresh.hostelFee ?? 0)) * 100) / 100;
           const linkedStructure = structures.find(s => s.id === fresh.feeStructureId);
           const sched = parseSchedule(linkedStructure?.installmentDueDates);
-          const dueTerm = sched.length > 1 ? getCurrentDueTerm(sched, fresh.paidAmount ?? 0) : null;
-          const defaultAmt = dueTerm
-            ? Math.round(Math.min(dueTerm.remaining, effectiveOutstanding) * 100) / 100
+          const scaledSched = scaleSchedule(sched, fresh.totalAmount ?? 0, fresh.discountAmount ?? 0, fresh.paidAmount ?? 0);
+          const freshDueTerm = scaledSched.length > 1 ? getCurrentDueTerm(scaledSched, fresh.paidAmount ?? 0) : null;
+          const defaultAmt = freshDueTerm
+            ? Math.round(Math.min(freshDueTerm.remaining, effectiveOutstanding) * 100) / 100
             : effectiveOutstanding;
           setAmount(String(defaultAmt));
           // If the freshly-fetched record still has no structure linked, try to auto-link
@@ -402,8 +447,10 @@ function CollectPaymentDialog({
 
   // ── Term schedule ──
   const termSched = parseSchedule(structure?.installmentDueDates);
-  const termStatuses = termSched.length > 1 ? computeTermStatuses(termSched, activeRecord.paidAmount ?? 0) : [];
-  const dueTerm = termStatuses.length > 0 ? getCurrentDueTerm(termSched, activeRecord.paidAmount ?? 0) : null;
+  // Scale term amounts to reflect applied concession so "Amount to Collect" shows net (post-discount) amounts
+  const scaledTermSched = scaleSchedule(termSched, activeRecord.totalAmount ?? 0, activeRecord.discountAmount ?? 0, activeRecord.paidAmount ?? 0);
+  const termStatuses = scaledTermSched.length > 1 ? computeTermStatuses(scaledTermSched, activeRecord.paidAmount ?? 0) : [];
+  const dueTerm = termStatuses.length > 0 ? getCurrentDueTerm(scaledTermSched, activeRecord.paidAmount ?? 0) : null;
 
   // Compute adjustment delta from headOverrides.
   // Use confirmedOverrides as the base (not gross) so that re-editing a saved head
@@ -484,6 +531,7 @@ function CollectPaymentDialog({
         remarks: remarks || undefined,
         processedBy: processedBy || "Staff",
         academicYear: record.academicYear,
+        notifyParent,
       });
       toast.success(`${inr(amt)} collected successfully. Opening receipt…`);
       onSuccess();
@@ -532,6 +580,7 @@ function CollectPaymentDialog({
         discountValue: concessionCalcAmt,
         reason: `Concession applied at collection by ${processedBy || "Staff"}`,
         appliedBy: processedBy || "Staff",
+        notifyParent,
       });
       toast.success(`Concession of ${inr(concessionCalcAmt)} applied`);
       // Refresh live record so outstanding & amount field reflect the new concession
@@ -539,7 +588,8 @@ function CollectPaymentDialog({
       setLiveRecord(freshAfterConcession);
       const effOutAfterConcession = Math.round(((freshAfterConcession.pendingAmount ?? 0) + (freshAfterConcession.transportFee ?? 0) + (freshAfterConcession.hostelFee ?? 0)) * 100) / 100;
       const concSched = parseSchedule(structures.find(s => s.id === freshAfterConcession.feeStructureId)?.installmentDueDates);
-      const concDueTerm = concSched.length > 1 ? getCurrentDueTerm(concSched, freshAfterConcession.paidAmount ?? 0) : null;
+      const concScaledSched = scaleSchedule(concSched, freshAfterConcession.totalAmount ?? 0, freshAfterConcession.discountAmount ?? 0, freshAfterConcession.paidAmount ?? 0);
+      const concDueTerm = concScaledSched.length > 1 ? getCurrentDueTerm(concScaledSched, freshAfterConcession.paidAmount ?? 0) : null;
       setAmount(String(concDueTerm ? Math.round(Math.min(concDueTerm.remaining, effOutAfterConcession) * 100) / 100 : effOutAfterConcession));
       onSuccess();
       setConcessionOpen(false); setConcessionValue("");
@@ -557,6 +607,7 @@ function CollectPaymentDialog({
         record.id,
         headOverrides,
         processedBy || "Staff",
+        notifyParent,
       );
       toast.success(`Fee head adjustments saved (new outstanding: ${inr(res.newPendingAmount)})`);
       // Parse and merge the persisted overrides into confirmedOverrides
@@ -570,7 +621,8 @@ function CollectPaymentDialog({
       setLiveRecord(freshAfterOverride);
       const newOutstanding = Math.max(0, (freshAfterOverride.pendingAmount ?? 0) + (freshAfterOverride.transportFee ?? 0) + (freshAfterOverride.hostelFee ?? 0));
       const concSched = parseSchedule(structure?.installmentDueDates);
-      const concDueTerm = concSched.length > 1 ? getCurrentDueTerm(concSched, freshAfterOverride.paidAmount ?? 0) : null;
+      const concScaledSched = scaleSchedule(concSched, freshAfterOverride.totalAmount ?? 0, freshAfterOverride.discountAmount ?? 0, freshAfterOverride.paidAmount ?? 0);
+      const concDueTerm = concScaledSched.length > 1 ? getCurrentDueTerm(concScaledSched, freshAfterOverride.paidAmount ?? 0) : null;
       const newAmt = concDueTerm ? Math.round(Math.min(concDueTerm.remaining, newOutstanding) * 100) / 100 : newOutstanding;
       setAmount(String(newAmt));
       onSuccess();
@@ -590,7 +642,9 @@ function CollectPaymentDialog({
       setLiveRecord(freshAfterRemove);
       const newOut = Math.max(0, (freshAfterRemove.pendingAmount ?? 0) + (freshAfterRemove.transportFee ?? 0) + (freshAfterRemove.hostelFee ?? 0));
       const sched = parseSchedule(structures.find(s => s.id === freshAfterRemove.feeStructureId)?.installmentDueDates);
-      const dt = sched.length > 1 ? getCurrentDueTerm(sched, freshAfterRemove.paidAmount ?? 0) : null;
+      // discountAmount is 0 after removal so scaleSchedule returns the unscaled schedule (correct)
+      const scaledSchedAfterRemove = scaleSchedule(sched, freshAfterRemove.totalAmount ?? 0, freshAfterRemove.discountAmount ?? 0, freshAfterRemove.paidAmount ?? 0);
+      const dt = scaledSchedAfterRemove.length > 1 ? getCurrentDueTerm(scaledSchedAfterRemove, freshAfterRemove.paidAmount ?? 0) : null;
       setAmount(String(dt ? Math.round(Math.min(dt.remaining, newOut) * 100) / 100 : newOut));
       onSuccess();
       setConcessionOpen(false); setConcessionValue("");
@@ -733,7 +787,7 @@ function CollectPaymentDialog({
                   if (linkingStructure || fetchingRecord) {
                     return (
                       <span className="flex items-center gap-1 text-amber-600 font-medium">
-                        <Loader2 className="h-3 w-3 animate-spin" />Linking structure…
+                        <Loader2 className="h-3 w-3 animate-spin" />{t('fees.linkingStructure')}
                       </span>
                     );
                   }
@@ -741,7 +795,7 @@ function CollectPaymentDialog({
                   if (linkedStructureName === "") {
                     return (
                       <span className="flex items-center gap-1 text-red-500 font-medium" title="No fee structure found for this student's class. Create one in the Fee Structure tab first.">
-                        <Link2 className="h-3 w-3" />No structure linked
+                        <Link2 className="h-3 w-3" />{t('fees.noStructureLinked')}
                       </span>
                     );
                   }
@@ -763,10 +817,10 @@ function CollectPaymentDialog({
           {/* ─────────── LEFT: Fee Account Ledger ─────────── */}
           <div className="w-[52%] border-r flex flex-col min-h-0">
             <div className="px-5 py-2.5 border-b bg-muted/30 shrink-0 flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Fee Account Ledger</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('fees.feeAccountLedger')}</span>
               {hasAdjustments && (
                 <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                  Adjustments pending save
+                  {t('fees.adjustmentsPendingSave')}
                 </span>
               )}
             </div>
@@ -775,8 +829,8 @@ function CollectPaymentDialog({
               {/* ── Fee Head Breakdown (editable) ── */}
               <div>
                 <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2.5 flex items-center gap-2">
-                  Fee Head Breakdown
-                  <span className="font-normal text-muted-foreground/60 normal-case">— click ✎ to adjust any head</span>
+                  {t('fees.feeHeadBreakdown')}
+                  <span className="font-normal text-muted-foreground/60 normal-case">{t('fees.clickToAdjust')}</span>
                 </div>
                 {structure && feeHeads.length > 0 ? (
                   <>
@@ -853,27 +907,27 @@ function CollectPaymentDialog({
                       </tbody>
                       <tfoot className="border-t-2 border-border">
                         <tr className="font-semibold">
-                          <td className="pt-2 text-sm">Sub-total</td>
+                          <td className="pt-2 text-sm">{t('fees.subTotal')}</td>
                           <td className="pt-2 text-right tabular-nums text-sm">{inr((activeRecord.totalAmount ?? 0) - adjustmentDelta - (activeRecord.discountAmount ?? 0))}</td>
                           <td />
                         </tr>
                         {(activeRecord.discountAmount ?? 0) > 0 && (
                           <tr className="text-green-700 text-xs">
-                            <td className="py-0.5 text-muted-foreground">incl. Applied Concession</td>
+                            <td className="py-0.5 text-muted-foreground">{t('fees.appliedConcession')}</td>
                             <td className="py-0.5 text-right">−{inr(activeRecord.discountAmount)}</td>
                             <td />
                           </tr>
                         )}
                         {(record.lateFeeAmount ?? 0) > 0 && (
                           <tr className="text-amber-700 text-xs">
-                            <td className="py-1">Late Fee Charged</td>
+                            <td className="py-1">{t('fees.lateFeeCharged')}</td>
                             <td className="py-1 text-right">+ {inr(record.lateFeeAmount)}</td>
                             <td />
                           </tr>
                         )}
                         {totalExtraCharges > 0 && (
                           <tr className="text-orange-700 text-xs">
-                            <td className="py-1">Additional Charges</td>
+                            <td className="py-1">{t('fees.additionalCharges')}</td>
                             <td className="py-1 text-right">+ {inr(totalExtraCharges)}</td>
                             <td />
                           </tr>
@@ -892,19 +946,19 @@ function CollectPaymentDialog({
                           </tr>
                         )}
                         <tr className="bg-muted/50">
-                          <td className="py-2 px-1.5 rounded-l font-bold text-sm">Total Payable</td>
+                          <td className="py-2 px-1.5 rounded-l font-bold text-sm">{t('fees.totalPayable')}</td>
                           <td className="py-2 px-1.5 rounded-r font-bold text-sm text-right tabular-nums">
                             {inr((activeRecord.totalAmount ?? 0) - (activeRecord.discountAmount ?? 0) + (activeRecord.lateFeeAmount ?? 0) - adjustmentDelta + totalExtraCharges)}
                           </td>
                           <td />
                         </tr>
                         <tr className="text-green-700 text-sm">
-                          <td className="py-1.5">Amount Paid</td>
+                          <td className="py-1.5">{t('fees.amountPaid')}</td>
                           <td className="py-1.5 text-right tabular-nums">(−{inr(activeRecord.paidAmount)})</td>
                           <td />
                         </tr>
                         <tr className="border-t-2 border-red-300 font-bold text-red-700">
-                          <td className="py-2 text-base">Outstanding Balance</td>
+                          <td className="py-2 text-base">{t('fees.outstandingBalance')}</td>
                           <td className="py-2 text-right tabular-nums text-lg">{inr(adjustedOutstanding)}</td>
                           <td />
                         </tr>
@@ -915,18 +969,25 @@ function CollectPaymentDialog({
                     {hasAdjustments && (
                       <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
                         <p className="text-xs text-amber-800 font-medium">
-                          Fee head edits pending. These will directly reduce the student's fee total — not counted as a concession.
+                          {t('fees.adjustmentsPending')}
                         </p>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <Switch checked={notifyParent} onCheckedChange={setNotifyParent} className="scale-90" />
+                          <span className="text-xs text-amber-800 flex items-center gap-1">
+                            <BellRing className="h-3.5 w-3.5" />
+                            {t('fees.notifyParentAdjustment')}
+                          </span>
+                        </label>
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" className="h-7 text-xs"
                             onClick={() => { setHeadOverrides({}); }}>
-                            Cancel Edits
+                            {t('fees.cancelEdits')}
                           </Button>
                           <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
                             disabled={applyingAdjustments}
                             onClick={handleApplyAdjustments}>
                             {applyingAdjustments ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                            Save Fee Head Changes
+                            {t('fees.saveFeeHeadChanges')}
                           </Button>
                         </div>
                       </div>
@@ -935,10 +996,10 @@ function CollectPaymentDialog({
                 ) : (
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     {[
-                      { label: "Total Fee", val: activeRecord.totalAmount, cls: "" },
-                      { label: "Discount Applied", val: activeRecord.discountAmount, cls: "text-green-700" },
-                      { label: "Late Fee", val: activeRecord.lateFeeAmount, cls: "text-amber-700" },
-                      { label: "Amount Paid", val: activeRecord.paidAmount, cls: "text-green-700" },
+                      { label: t('fees.totalAmount'), val: activeRecord.totalAmount, cls: "" },
+                      { label: t('fees.discount'), val: activeRecord.discountAmount, cls: "text-green-700" },
+                      { label: t('fees.lateFee'), val: activeRecord.lateFeeAmount, cls: "text-amber-700" },
+                      { label: t('fees.amountPaid'), val: activeRecord.paidAmount, cls: "text-green-700" },
                     ].map(row => (
                       <div key={row.label} className="flex justify-between pr-2 border-b border-dashed py-1.5">
                         <span className="text-muted-foreground">{row.label}</span>
@@ -946,7 +1007,7 @@ function CollectPaymentDialog({
                       </div>
                     ))}
                     <div className="col-span-2 flex justify-between py-2 font-bold text-red-700 border-t-2 border-red-200">
-                      <span>Outstanding Balance</span>
+                      <span>{t('fees.outstandingBalance')}</span>
                       <span className="text-lg tabular-nums">{inr(outstanding)}</span>
                     </div>
                   </div>
@@ -956,15 +1017,15 @@ function CollectPaymentDialog({
               {((activeRecord.transportMonthlyFee ?? 0) > 0 || (activeRecord.hostelMonthlyFee ?? 0) > 0) && (
                 <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
                   <div className="text-xs font-bold uppercase tracking-wider text-blue-700 mb-2.5 flex items-center gap-1.5">
-                    <span>Transport &amp; Hostel Module Fees</span>
-                    <span className="font-normal text-blue-500 normal-case">— charged for remaining months of academic year</span>
+                    <span>{t('fees.transportModule')}</span>
+                    <span className="font-normal text-blue-500 normal-case">— {t('fees.charged')}</span>
                   </div>
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-blue-200">
-                        <th className="text-left pb-1.5 font-semibold text-blue-600">Module</th>
-                        <th className="text-right pb-1.5 font-semibold text-blue-600">Monthly Rate</th>
-                        <th className="text-right pb-1.5 font-semibold text-blue-600">Months × Rate</th>
+                        <th className="text-left pb-1.5 font-semibold text-blue-600">{t('fees.feeStructure')}</th>
+                        <th className="text-right pb-1.5 font-semibold text-blue-600">{t('fees.monthlyRate')}</th>
+                        <th className="text-right pb-1.5 font-semibold text-blue-600">{t('fees.months')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1022,7 +1083,7 @@ function CollectPaymentDialog({
                       {(activeRecord.hostelMonthlyFee ?? 0) > 0 && (
                         <tr className="border-b border-blue-100">
                           <td className="py-1.5 text-blue-800">
-                            <div className="font-semibold">Hostel Fee</div>
+                            <div className="font-semibold">{t('fees.hostelFee')}</div>
                             {activeRecord.hostelRoom && (
                               <div className="text-[10px] text-blue-500 mt-0.5">Room: {activeRecord.hostelRoom}</div>
                             )}
@@ -1070,7 +1131,7 @@ function CollectPaymentDialog({
                     </tbody>
                     <tfoot className="border-t border-blue-200">
                       <tr>
-                        <td className="pt-1.5 text-blue-700 font-semibold">Total Module Additions</td>
+                        <td className="pt-1.5 text-blue-700 font-semibold">{t('fees.totalModuleAdditions')}</td>
                         <td />
                         <td className="pt-1.5 text-right tabular-nums font-bold text-blue-900">
                           {inr((activeRecord.transportFee ?? 0) + (activeRecord.hostelFee ?? 0))}
@@ -1084,8 +1145,8 @@ function CollectPaymentDialog({
                 {/* Collection progress bar */}
                 <div className="mt-4">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                    <span>Collection progress</span>
-                    <span className="font-semibold">{collectedPct}% collected</span>
+                    <span>{t('fees.collectionProgress')}</span>
+                    <span className="font-semibold">{collectedPct}% {t('fees.collectionRate')}</span>
                   </div>
                   <div className="h-2 rounded-full bg-muted overflow-hidden">
                     <div className="h-full bg-green-500 rounded-full transition-all duration-500"
@@ -1098,7 +1159,7 @@ function CollectPaymentDialog({
               {termStatuses.length > 1 && (
                 <div className="mt-4">
                   <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                    Term Schedule
+                    {t('fees.termSchedule')}
                   </div>
                   <div className="space-y-1.5">
                     {termStatuses.map(({ term, status, remaining }, idx) => {
@@ -1114,10 +1175,10 @@ function CollectPaymentDialog({
                         status === "due"      ? "text-red-700 bg-red-100 border-red-200" :
                                                 "text-muted-foreground bg-muted border-border";
                       const badgeLabel =
-                        status === "paid"     ? "Paid" :
-                        status === "partial"  ? "Partial" :
-                        status === "due"      ? "Overdue" :
-                                                "Upcoming";
+                        status === "paid"     ? t('fees.paid') :
+                        status === "partial"  ? t('fees.partial') :
+                        status === "due"      ? t('fees.overdue') :
+                                                t('fees.advancePayment');
                       return (
                         <div key={term.termNumber} className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs ${bgCls}`}>
                           <div className="flex items-center gap-2">
@@ -1145,7 +1206,7 @@ function CollectPaymentDialog({
               {/* ── Payment History with Reverse ── */}
               <div>
                 <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2.5">
-                  Payment History &nbsp;<span className="font-normal">({payments.length} transactions)</span>
+                  {t('fees.paymentHistory')} &nbsp;<span className="font-normal">({payments.length} transactions)</span>
                 </div>
                 {payments.length === 0 ? (
                   <p className="text-xs text-muted-foreground italic">No payments recorded yet.</p>
@@ -1171,7 +1232,7 @@ function CollectPaymentDialog({
                             </span>
                             <span className="text-xs text-muted-foreground truncate">{p.receiptNumber ?? ""}</span>
                             {(p.status === "voided" || p.status === "refunded") && (
-                              <span className="text-xs text-red-500 font-medium">REVERSED</span>
+                              <span className="text-xs text-red-500 font-medium">{t('fees.reversed')}</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -1202,7 +1263,7 @@ function CollectPaymentDialog({
                                   <button
                                     onClick={() => setVoidTarget(voidTarget?.id === p.id ? null : { id: p.id, amount: p.amount, receiptNumber: p.receiptNumber })}
                                     className="text-[11px] font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 transition-colors">
-                                    Reverse
+                                    {t('fees.reverse')}
                                   </button>
                                 )}
                               </>
@@ -1532,7 +1593,7 @@ function CollectPaymentDialog({
                       onClick={() => setConcessionOpen(!concessionOpen)}>
                       <span className="flex items-center gap-2 font-semibold">
                         <Tag className="h-4 w-4 text-blue-600" />
-                        Apply Concession / Waiver
+                        {t('fees.applyWaiver')}
                         {(activeRecord.discountAmount ?? 0) > 0 && (
                           <span className="text-xs bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-medium">
                             {inr(activeRecord.discountAmount)} active
@@ -1628,6 +1689,14 @@ function CollectPaymentDialog({
                             </Button>
                           </div>
                         )}
+                        {/* Notify parent toggle */}
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <Switch checked={notifyParent} onCheckedChange={setNotifyParent} className="scale-90" />
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <BellRing className="h-3.5 w-3.5" />
+                            Notify parent about this concession via parent portal
+                          </span>
+                        </label>
                       </div>
                     )}
                   </div>
@@ -1638,7 +1707,7 @@ function CollectPaymentDialog({
                       onClick={() => setExtraChargesOpen(!extraChargesOpen)}>
                       <span className="flex items-center gap-2 font-semibold">
                         <PackagePlus className="h-4 w-4 text-orange-500" />
-                        Add Extra Charges
+                        {t('fees.addExtraCharges')}
                         {extraItems.length > 0 && (
                           <span className="text-xs bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full font-medium">
                             {inr(totalExtraCharges)} added
@@ -1736,7 +1805,7 @@ function CollectPaymentDialog({
                       }}>
                       <span className="flex items-center gap-2 font-semibold text-pink-700">
                         <Users className="h-4 w-4 text-pink-500" />
-                        Sibling Discount
+                        {t('fees.siblingDiscount')}
                         {siblingDiscApplied && (
                           <span className="text-xs bg-pink-100 text-pink-700 border border-pink-200 px-2 py-0.5 rounded-full font-medium">
                             {inr(siblingDiscApplied.totalSaved)} applied
@@ -1944,7 +2013,7 @@ function CollectPaymentDialog({
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                        Amount to Collect *
+                        {t('fees.amountToCollect')} *
                         {totalExtraCharges > 0 && (
                           <span className="ml-2 text-orange-600 font-bold normal-case">incl. {inr(totalExtraCharges)} extra</span>
                         )}
@@ -1964,10 +2033,10 @@ function CollectPaymentDialog({
                         )}
                         <button onClick={() => setAmount(String(adjustedOutstanding))}
                           className={(structure?.installmentCount ?? 1) > 1 ? "text-muted-foreground hover:text-foreground hover:underline" : "font-semibold text-primary hover:underline"}>
-                          Full
+                          {t('fees.fullAmount')}
                         </button>
                         <button onClick={() => setAmount("")}
-                          className="text-muted-foreground hover:text-foreground hover:underline">Custom</button>
+                          className="text-muted-foreground hover:text-foreground hover:underline">{t('fees.customAmount')}</button>
                       </div>
                     </div>
                     <div className="relative">
@@ -1982,29 +2051,25 @@ function CollectPaymentDialog({
                     </div>
                     {amt > 0 && amt < adjustedOutstanding - 0.01 && (
                       <p className="text-xs text-amber-600 mt-1 font-medium">
-                        Partial payment — {inr(afterPayment)} will remain outstanding
+                        {t('fees.partialPayment')} — {inr(afterPayment)} {t('fees.willRemainOutstanding')}
                       </p>
                     )}
                     {amt > adjustedOutstanding + 0.01 && (
-                      <p className="text-xs text-red-600 mt-1 font-semibold">⚠ Amount exceeds outstanding balance</p>
+                      <p className="text-xs text-red-600 mt-1 font-semibold">{t('fees.exceedsBalance')}</p>
                     )}
                   </div>
 
                   {/* Payment Date + Received By */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5 block">Payment Date</Label>
-                      <Input className="h-9 text-sm" type="date" max={today} value={payDate} onChange={e => setPayDate(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5 block">Received By</Label>
+                      <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5 block">{t('fees.paymentDate')}</Label>
                       <Input className="h-9 text-sm" placeholder="Staff name / counter" value={processedBy} onChange={e => setProcessedBy(e.target.value)} />
                     </div>
                   </div>
 
                   {/* Payment Method */}
                   <div>
-                    <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2 block">Payment Method *</Label>
+                    <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2 block">{t('fees.paymentMethod')} *</Label>
                     <div className="grid grid-cols-2 gap-1.5">
                       {PAYMENT_METHODS.map(m => (
                         <button key={m.value} onClick={() => { setMethod(m.value); setGwStep("form"); }}
@@ -2048,14 +2113,14 @@ function CollectPaymentDialog({
 
                   {/* Narration */}
                   <div>
-                    <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5 block">Narration</Label>
+                    <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-1.5 block">{t('fees.narration')}</Label>
                     <Input className="h-9 text-sm" placeholder="Optional note" value={narration} onChange={e => setNarration(e.target.value)} />
                   </div>
                     </div>
 
                     {/* Sticky footer */}
                     <div className="shrink-0 px-5 py-4 border-t bg-muted/20 flex gap-3">
-                  <Button variant="outline" onClick={onClose} className="w-28">Cancel</Button>
+                  <Button variant="outline" onClick={onClose} className="w-28">{t('fees.cancelButton')}</Button>
                   {canManageFees ? (
                     isDigital ? (
                       <Button
@@ -2064,19 +2129,28 @@ function CollectPaymentDialog({
                         onClick={handleInitiateCashfree}
                       >
                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Pay {amt > 0 ? inr(amt) : ""} via Cashfree →
+                        {amt > 0 ? `${t('fees.payNow')} ${inr(amt)} via Cashfree →` : `${t('fees.payNow')} via Cashfree →`}
                       </Button>
                     ) : (
-                      <Button
-                        className="flex-1 h-11 font-bold gap-2 text-base"
-                        disabled={saving || !amt || amt <= 0 || amt > adjustedOutstanding + 0.01}
-                        onClick={handleCollect}
-                      >
-                        {saving
-                          ? <><Loader2 className="h-4 w-4 animate-spin" />Processing…</>
-                          : <><Receipt className="h-4 w-4" />Collect {amt > 0 ? inr(amt) : ""} &amp; Print Receipt</>
-                        }
-                      </Button>
+                      <div className="flex-1 flex flex-col gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none px-1">
+                          <Switch checked={notifyParent} onCheckedChange={setNotifyParent} className="scale-90" />
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <BellRing className="h-3.5 w-3.5" />
+                            {t('fees.sendConfirmation')}
+                          </span>
+                        </label>
+                        <Button
+                          className="w-full h-11 font-bold gap-2 text-base"
+                          disabled={saving || !amt || amt <= 0 || amt > adjustedOutstanding + 0.01}
+                          onClick={handleCollect}
+                        >
+                          {saving
+                            ? <><Loader2 className="h-4 w-4 animate-spin" />{t('fees.processing')}</>
+                            : <><Receipt className="h-4 w-4" />{amt > 0 ? `${t('fees.collect')} ${inr(amt)} & ${t('fees.collectAndPrint').replace('Collect & ', '')}` : t('fees.collectAndPrint')}</>
+                          }
+                        </Button>
+                      </div>
                     )
                   ) : null}
                     </div>
@@ -2186,6 +2260,7 @@ function MonthYearPicker({ value, onChange, label }: { value: string; onChange: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FeeStructureTab({ academicYear }: { academicYear: string }) {
+  const { t } = useLanguage();
   const { availableYears } = useAcademicYear();
   const [tabYear, setTabYear] = useState(academicYear || "");
   const [structures, setStructures] = useState<FeeStructure[]>([]);
@@ -2339,14 +2414,14 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       {/* Header row: title + year dropdown + new button */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="font-semibold">Fee Structures</h3>
-          <p className="text-sm text-muted-foreground">Define fee heads and payment schedules per class</p>
+          <h3 className="font-semibold">{t('fees.struct.title')}</h3>
+          <p className="text-sm text-muted-foreground">{t('fees.struct.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Academic year picker scoped to this tab */}
           <Select value={tabYear} onValueChange={setTabYear}>
             <SelectTrigger className="h-9 text-sm w-[140px]">
-              <SelectValue placeholder="Select year" />
+              <SelectValue placeholder={t('fees.struct.selectYear')} />
             </SelectTrigger>
             <SelectContent>
               {availableYears.length > 0
@@ -2363,9 +2438,9 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
             title="Create default fee structures for all classes that don't have one yet"
           >
             {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-            Seed All Classes
+            {t('fees.struct.seedAllClasses')}
           </Button>
-          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />New Structure</Button>
+          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />{t('fees.struct.newStructure')}</Button>
         </div>
       </div>
 
@@ -2373,11 +2448,8 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       <div className="flex items-start gap-3 p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-800">
         <Building2 className="h-4 w-4 mt-0.5 shrink-0 text-indigo-600" />
         <div>
-          <span className="font-semibold">How auto-assignment works: </span>
-          Create a structure for a class (e.g. "Annual Fee 2025-26 — Class 1"), then click
-          <strong> "Assign to Class"</strong> to automatically create fee records for every active student in that class.
-          Students already having a record for the same structure are skipped. After assigning, students appear in the
-          <em> Collect Fees</em> tab with their outstanding balance.
+          <span className="font-semibold">{t('fees.struct.howAutoAssign')}</span>
+          {t('fees.struct.howAutoAssignBody')}
         </div>
       </div>
 
@@ -2386,9 +2458,9 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       ) : structures.length === 0 ? (
         <div className="text-center p-12 border-2 border-dashed rounded-xl">
           <IndianRupee className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
-          <h3 className="font-semibold text-muted-foreground mb-2">No fee structures yet</h3>
-          <p className="text-sm text-muted-foreground mb-4">Set up fee heads for each class to start collecting fees</p>
-          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />Create First Structure</Button>
+          <h3 className="font-semibold text-muted-foreground mb-2">{t('fees.struct.noStructures')}</h3>
+          <p className="text-sm text-muted-foreground mb-4">{t('fees.struct.noStructuresDesc')}</p>
+          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />{t('fees.struct.createFirst')}</Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2447,7 +2519,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                 })()}
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => openEdit(s)} disabled={!fsCanEdit}>
-                    <Pencil className="h-3 w-3 mr-1" />Edit
+                    <Pencil className="h-3 w-3 mr-1" />{t('fees.struct.editBtn')}
                   </Button>
                   <Button size="sm"
                     className={`h-7 text-xs flex-1 gap-1 text-white ${
@@ -2465,7 +2537,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                       : isAssigned
                         ? <Check className="h-3 w-3" />
                         : <Users className="h-3 w-3" />}
-                    {isAssigned ? "Re-assign" : "Assign to Class"}
+                    {isAssigned ? t('fees.struct.assignToClass') : t('fees.struct.assignToClass')}
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600"
                     disabled={!fsCanDelete}
@@ -2484,18 +2556,18 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       <Dialog open={showDialog} onOpenChange={v => !v && setShowDialog(false)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Fee Structure" : "New Fee Structure"}</DialogTitle>
+            <DialogTitle>{editing ? t('fees.struct.dialogEditTitle') : t('fees.struct.dialogCreateTitle')}</DialogTitle>
             <DialogDescription>Define fee heads for a class. Leave blank for fee heads not applicable.</DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 grid grid-cols-3 gap-3">
               <div className="col-span-1">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Structure Name *</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.structureName')} *</Label>
                 <Input className="h-9 text-sm" placeholder="e.g. Annual Fee 2025-26" value={form.name ?? ""} onChange={e => setForm({ ...form, name: e.target.value })} />
               </div>
               <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Academic Year</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.academicYear')}</Label>
                 <Select value={form.academicYear || tabYear} onValueChange={v => setForm({ ...form, academicYear: v })}>
                   <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select year" /></SelectTrigger>
                   <SelectContent>
@@ -2507,7 +2579,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                 </Select>
               </div>
               <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Class *</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.forClass')} *</Label>
                 <Select value={form.class ?? ""} onValueChange={v => setForm({ ...form, class: v })}>
                   <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select class" /></SelectTrigger>
                   <SelectContent>
@@ -2549,7 +2621,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
 
             {/* Installment Plan selector */}
             <div className="col-span-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Installment Plan</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.installmentPlan')}</Label>
               <Select value={String(form.installmentCount ?? 1)} onValueChange={v => setForm({ ...form, installmentCount: parseInt(v) })}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -2633,10 +2705,10 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
           </div>
 
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={() => setShowDialog(false)} className="flex-1">Cancel</Button>
+            <Button variant="outline" onClick={() => setShowDialog(false)} className="flex-1">{t('fees.struct.cancelBtn')}</Button>
             <Button onClick={handleSave} disabled={saving} className="flex-1 gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {saving ? "Saving…" : editing ? "Update Structure" : "Save Structure"}
+              {saving ? t('fees.struct.savingBtn') : editing ? t('fees.struct.updateBtn') : t('fees.struct.saveBtn')}
             </Button>
           </div>
         </DialogContent>
@@ -2661,6 +2733,7 @@ function agingBucket(days: number): "0-30" | "31-60" | "61-90" | "90+" {
 }
 
 function DefaultersTab({ canManage }: { canManage: boolean }) {
+  const { t } = useLanguage();
   const [overdue, setOverdue] = useState<import("@/services/api/feeApi").OverdueFeeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -2702,12 +2775,12 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold flex items-center gap-2 text-base">
-            <AlertTriangle className="h-4 w-4 text-red-500" />Fee Defaulters &amp; Arrears
+            <AlertTriangle className="h-4 w-4 text-red-500" />{t('fees.def.title')}
           </h3>
-          <p className="text-sm text-muted-foreground mt-0.5">Overdue fee aging analysis — identify and act on payment arrears</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('fees.def.subtitle')}</p>
         </div>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />Refresh
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{t('fees.def.refresh')}
         </Button>
       </div>
 
@@ -2719,9 +2792,9 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
             onClick={() => setBucket(bucket === b.key ? "all" : b.key)}
             className={`rounded-xl border p-3 text-left transition-all ${b.cls} ${bucket === b.key ? "ring-2 ring-primary ring-offset-1" : "hover:shadow-sm"}`}
           >
-            <div className="text-xs font-medium opacity-80">{b.label} overdue</div>
+            <div className="text-xs font-medium opacity-80">{b.label} {t('fees.def.overdue')}</div>
             <div className="text-2xl font-bold mt-1">{bucketCount(b.key)}</div>
-            <div className="text-xs opacity-70 mt-0.5">{inr(bucketAmt(b.key))} outstanding</div>
+            <div className="text-xs opacity-70 mt-0.5">{inr(bucketAmt(b.key))} {t('fees.def.outstanding')}</div>
           </button>
         ))}
       </div>
@@ -2730,12 +2803,12 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9 h-9 text-sm" placeholder="Search by name, admission no. or class…" value={search} onChange={e => setSearch(e.target.value)} />
+          <Input className="pl-9 h-9 text-sm" placeholder={t('fees.def.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Select value={bucket} onValueChange={setBucket}>
-          <SelectTrigger className="w-44 h-9 text-sm"><SelectValue placeholder="All buckets" /></SelectTrigger>
+          <SelectTrigger className="w-44 h-9 text-sm"><SelectValue placeholder={t('fees.def.allBuckets')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Defaulters ({overdue.length})</SelectItem>
+            <SelectItem value="all">{t('fees.def.allBuckets')} ({overdue.length})</SelectItem>
             {AGING_BUCKETS.map(b => <SelectItem key={b.key} value={b.key}>{b.label} ({bucketCount(b.key)})</SelectItem>)}
           </SelectContent>
         </Select>
@@ -2748,7 +2821,7 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
         <div className="text-center p-16 border-2 border-dashed rounded-xl">
           <CheckCircle2 className="h-12 w-12 mx-auto text-green-400 mb-3" />
           <p className="font-semibold text-muted-foreground">
-            {overdue.length === 0 ? "No overdue fees — great job!" : "No students match the current filters"}
+            {overdue.length === 0 ? t('fees.def.noOverdue') : t('fees.def.noMatch')}
           </p>
         </div>
       ) : (
@@ -2756,15 +2829,15 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Student</TableHead>
-                <TableHead>Adm. No.</TableHead>
-                <TableHead>Class</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="text-center">Days Overdue</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Late Fee</TableHead>
-                <TableHead>Contact</TableHead>
-                {canManage && <TableHead className="text-center">Action</TableHead>}
+                <TableHead>{t('fees.def.colStudent')}</TableHead>
+                <TableHead>{t('fees.def.colAdmNo')}</TableHead>
+                <TableHead>{t('fees.def.colClass')}</TableHead>
+                <TableHead>{t('fees.def.colDueDate')}</TableHead>
+                <TableHead className="text-center">{t('fees.def.colDaysOverdue')}</TableHead>
+                <TableHead className="text-right">{t('fees.def.colAmount')}</TableHead>
+                <TableHead className="text-right">{t('fees.def.colLateFee')}</TableHead>
+                <TableHead>{t('fees.def.colContact')}</TableHead>
+                {canManage && <TableHead className="text-center">{t('fees.def.colAction')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -2793,7 +2866,7 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
                           onClick={() => handleSendReminder(r)}
                         >
                           {sending === r.feeRecordId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                          Remind
+                          {t('fees.def.remind')}
                         </Button>
                       </TableCell>
                     )}
@@ -2807,8 +2880,8 @@ function DefaultersTab({ canManage }: { canManage: boolean }) {
 
       {!loading && filtered.length > 0 && (
         <div className="flex items-center justify-between px-3 py-2 bg-muted/40 rounded-lg text-sm">
-          <span className="text-muted-foreground">{filtered.length} of {overdue.length} student(s)</span>
-          <span className="font-semibold text-red-600">{inr(filtered.reduce((s, r) => s + r.amount, 0))} total outstanding</span>
+          <span className="text-muted-foreground">{filtered.length} {t('common.of')} {overdue.length} {t('fees.def.students')}</span>
+          <span className="font-semibold text-red-600">{inr(filtered.reduce((s, r) => s + r.amount, 0))} {t('fees.def.totalOutstanding')}</span>
         </div>
       )}
     </div>
@@ -2845,6 +2918,7 @@ const CHANNELS = [
 ];
 
 function RemindersTab({ canManage }: { canManage: boolean }) {
+  const { t } = useLanguage();
   const [template, setTemplate] = useState<string>("gentle");
   const [channel, setChannel] = useState("push_notification");
   const [customMsg, setCustomMsg] = useState("");
@@ -2852,7 +2926,13 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ sent: number; failed: number } | null>(null);
 
-  const selected = REMINDER_TEMPLATES.find(t => t.key === template);
+  const tmplLabel = (key: string): string => ({
+    gentle: t('fees.rem.gentleReminder'),
+    due_notice: t('fees.rem.paymentDueNotice'),
+    final_notice: t('fees.rem.finalNotice'),
+  } as Record<string, string>)[key] ?? key;
+
+  const selected = REMINDER_TEMPLATES.find(tmpl => tmpl.key === template);
   const previewMsg = template === "custom" ? customMsg : (selected?.message ?? "");
 
   const handleSend = async () => {
@@ -2878,9 +2958,9 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
     <div className="space-y-5">
       <div>
         <h3 className="font-semibold flex items-center gap-2 text-base">
-          <BellRing className="h-4 w-4 text-blue-500" />Fee Reminders
+          <BellRing className="h-4 w-4 text-blue-500" />{t('fees.rem.title')}
         </h3>
-        <p className="text-sm text-muted-foreground mt-0.5">Send bulk payment reminders to parents via push notification, SMS, email, or WhatsApp</p>
+        <p className="text-sm text-muted-foreground mt-0.5">{t('fees.rem.subtitle')}</p>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
@@ -2888,19 +2968,19 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">1. Choose Reminder Template</CardTitle>
+              <CardTitle className="text-sm font-semibold">{t('fees.rem.chooseTemplate')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {REMINDER_TEMPLATES.map(t => (
+              {REMINDER_TEMPLATES.map(tmpl => (
                 <button
-                  key={t.key}
-                  onClick={() => setTemplate(t.key)}
-                  className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${template === t.key ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
+                  key={tmpl.key}
+                  onClick={() => setTemplate(tmpl.key)}
+                  className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${template === tmpl.key ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
                 >
-                  <span className="text-lg mt-0.5">{t.icon}</span>
+                  <span className="text-lg mt-0.5">{tmpl.icon}</span>
                   <div>
-                    <div className="text-sm font-medium">{t.label}</div>
-                    <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{t.message.substring(0, 90)}…</div>
+                    <div className="text-sm font-medium">{tmplLabel(tmpl.key)}</div>
+                    <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{tmpl.message.substring(0, 90)}…</div>
                   </div>
                 </button>
               ))}
@@ -2910,15 +2990,15 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
               >
                 <span className="text-lg mt-0.5">✏️</span>
                 <div>
-                  <div className="text-sm font-medium">Custom Message</div>
-                  <div className="text-xs text-muted-foreground">Write your own reminder message</div>
+                  <div className="text-sm font-medium">{t('fees.rem.customMessage')}</div>
+                  <div className="text-xs text-muted-foreground">{t('fees.rem.customMessageDesc')}</div>
                 </div>
               </button>
               {template === "custom" && (
                 <Textarea
                   className="text-sm mt-1"
                   rows={4}
-                  placeholder="Type your custom reminder message here…"
+                  placeholder={t('fees.rem.customPlaceholder')}
                   value={customMsg}
                   onChange={e => setCustomMsg(e.target.value)}
                 />
@@ -2928,23 +3008,23 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">2. Target Audience &amp; Channel</CardTitle>
+              <CardTitle className="text-sm font-semibold">{t('fees.rem.targetAudience')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">Send To</Label>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">{t('fees.rem.sendTo')}</Label>
                 <Select value={daysBefore} onValueChange={setDaysBefore}>
                   <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">All overdue students</SelectItem>
-                    <SelectItem value="7">Due within next 7 days</SelectItem>
-                    <SelectItem value="15">Due within next 15 days</SelectItem>
-                    <SelectItem value="30">Due within next 30 days</SelectItem>
+                    <SelectItem value="0">{t('fees.rem.allOverdue')}</SelectItem>
+                    <SelectItem value="7">{t('fees.rem.due7')}</SelectItem>
+                    <SelectItem value="15">{t('fees.rem.due15')}</SelectItem>
+                    <SelectItem value="30">{t('fees.rem.due30')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">Delivery Channel</Label>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">{t('fees.rem.deliveryChannel')}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {CHANNELS.map(ch => (
                     <button
@@ -2965,18 +3045,18 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">3. Message Preview</CardTitle>
+              <CardTitle className="text-sm font-semibold">{t('fees.rem.preview')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="bg-muted/40 rounded-lg p-4 text-sm text-muted-foreground italic border border-dashed min-h-[100px]">
-                {previewMsg || "Your message will appear here…"}
+                {previewMsg || t('fees.rem.previewPlaceholder')}
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {["{{studentName}}", "{{class}}", "{{amount}}", "{{dueDate}}"].map(v => (
                   <span key={v} className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-mono">{v}</span>
                 ))}
               </div>
-              <p className="text-[11px] text-muted-foreground mt-2">Variables are auto-replaced with each student's actual data when sending.</p>
+              <p className="text-[11px] text-muted-foreground mt-2">{t('fees.rem.variablesNote')}</p>
             </CardContent>
           </Card>
 
@@ -2984,11 +3064,11 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
             <Card className={`border ${result.failed === 0 ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
               <CardContent className="p-4">
                 <div className={`font-semibold text-sm ${result.failed === 0 ? "text-green-800" : "text-amber-800"}`}>
-                  {result.failed === 0 ? "✓ Reminders sent successfully" : "⚠ Partially sent"}
+                  {result.failed === 0 ? t('fees.rem.successTitle') : t('fees.rem.partialTitle')}
                 </div>
                 <div className="text-sm mt-1 space-x-2 text-muted-foreground">
-                  <span className="text-green-700 font-medium">{result.sent} sent</span>
-                  {result.failed > 0 && <span className="text-red-600 font-medium">· {result.failed} failed</span>}
+                  <span className="text-green-700 font-medium">{result.sent} {t('fees.rem.sent')}</span>
+                  {result.failed > 0 && <span className="text-red-600 font-medium">· {result.failed} {t('fees.rem.failed')}</span>}
                 </div>
               </CardContent>
             </Card>
@@ -3000,10 +3080,10 @@ function RemindersTab({ canManage }: { canManage: boolean }) {
             onClick={handleSend}
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {sending ? "Sending Reminders…" : "Send Fee Reminders"}
+            {sending ? t('fees.rem.sendingBtn') : t('fees.rem.sendBtn')}
           </Button>
           {!canManage && (
-            <p className="text-xs text-center text-muted-foreground">You need Fees › Create permission to send reminders.</p>
+            <p className="text-xs text-center text-muted-foreground">{t('fees.rem.noPermission')}</p>
           )}
         </div>
       </div>
@@ -3029,6 +3109,7 @@ const SYSTEM_CONCESSION_DEFAULTS = [
 const BLANK_CT_FORM = { name: "", description: "", discountType: "Percentage", discountValue: "", maxDiscountAmount: "", requiresDocuments: false, requiresApproval: false };
 
 function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
+  const { t } = useLanguage();
   const [types, setTypes]       = useState<ConcessionType[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -3122,18 +3203,18 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h3 className="font-semibold text-base flex items-center gap-2"><Tag className="h-4 w-4 text-primary" />Concession Types</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">Configure the concession categories available in the fee payment form. Add custom types as needed.</p>
+          <h3 className="font-semibold text-base flex items-center gap-2"><Tag className="h-4 w-4 text-primary" />{t('fees.con.title')}</h3>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('fees.con.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {canManage && (
             <>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSeedDefaults} disabled={seeding}>
                 {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackagePlus className="h-3.5 w-3.5" />}
-                Load Defaults
+                {t('fees.con.loadDefaults')}
               </Button>
               <Button size="sm" className="gap-1.5" onClick={openAdd}>
-                <Plus className="h-3.5 w-3.5" />Add Type
+                <Plus className="h-3.5 w-3.5" />{t('fees.con.addType')}
               </Button>
             </>
           )}
@@ -3143,8 +3224,8 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
       {!loading && types.length === 0 && (
         <Card className="bg-amber-50 border-amber-200">
           <CardContent className="p-4 text-sm text-amber-800">
-            <div className="font-semibold mb-1">No concession types configured yet</div>
-            <div>Click <strong>Load Defaults</strong> to pre-populate with India-standard types (Merit, RTE, EWS, Sibling, Staff Ward, etc.) or use <strong>Add Type</strong> to create custom ones.</div>
+            <div className="font-semibold mb-1">{t('fees.con.noTypesTitle')}</div>
+            <div>{t('fees.con.noTypesDesc')}</div>
           </CardContent>
         </Card>
       )}
@@ -3153,48 +3234,48 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
         <div className="flex justify-center p-12"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {types.map(t => (
-            <Card key={t.id} className={`border transition-all ${t.isActive ? "" : "opacity-55 bg-muted/30"}`}>
+          {types.map(ctype => (
+            <Card key={ctype.id} className={`border transition-all ${ctype.isActive ? "" : "opacity-55 bg-muted/30"}`}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{t.name}</div>
-                    {t.description && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{t.description}</div>}
+                    <div className="font-medium text-sm truncate">{ctype.name}</div>
+                    {ctype.description && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ctype.description}</div>}
                   </div>
                   {canManage ? (
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`text-[11px] font-medium ${t.isActive ? "text-green-700" : "text-gray-400"}`}>
-                        {t.isActive ? "Active" : "Inactive"}
+                      <span className={`text-[11px] font-medium ${ctype.isActive ? "text-green-700" : "text-gray-400"}`}>
+                        {ctype.isActive ? t('fees.con.active') : t('fees.con.inactive')}
                       </span>
                       <Switch
-                        checked={t.isActive}
-                        onCheckedChange={() => handleToggleActive(t)}
-                        aria-label={t.isActive ? `Disable ${t.name}` : `Enable ${t.name}`}
+                        checked={ctype.isActive}
+                        onCheckedChange={() => handleToggleActive(ctype)}
+                        aria-label={ctype.isActive ? `Disable ${ctype.name}` : `Enable ${ctype.name}`}
                       />
                     </div>
                   ) : (
-                    <Badge variant="outline" className={t.isActive ? "text-green-700 border-green-300 bg-green-50 shrink-0" : "text-gray-400 shrink-0"}>
-                      {t.isActive ? "Active" : "Inactive"}
+                    <Badge variant="outline" className={ctype.isActive ? "text-green-700 border-green-300 bg-green-50 shrink-0" : "text-gray-400 shrink-0"}>
+                      {ctype.isActive ? t('fees.con.active') : t('fees.con.inactive')}
                     </Badge>
                   )}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
                   <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
-                    {discountLabel(t)} {t.discountType === "Percentage" ? "off" : "fixed"}
+                    {discountLabel(ctype)} {ctype.discountType === "Percentage" ? t('fees.con.off') : t('fees.con.fixed')}
                   </span>
-                  {t.maxDiscountAmount != null && t.maxDiscountAmount > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-gray-50 text-gray-600 border">cap {inr(t.maxDiscountAmount)}</span>
+                  {ctype.maxDiscountAmount != null && ctype.maxDiscountAmount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-gray-50 text-gray-600 border">{t('fees.con.cap')} {inr(ctype.maxDiscountAmount)}</span>
                   )}
-                  {t.requiresDocuments && <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Docs req.</span>}
-                  {t.requiresApproval  && <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">Approval req.</span>}
+                  {ctype.requiresDocuments && <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{t('fees.con.docsReq')}</span>}
+                  {ctype.requiresApproval  && <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">{t('fees.con.approvalReq')}</span>}
                 </div>
                 {canManage && (
                   <div className="mt-3 flex items-center gap-1.5 pt-2 border-t">
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 flex-1" onClick={() => openEdit(t)}>
-                      <Pencil className="h-3 w-3" />Edit
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 flex-1" onClick={() => openEdit(ctype)}>
+                      <Pencil className="h-3 w-3" />{t('fees.con.editBtn')}
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(t.id)} disabled={deleting === t.id}>
-                      {deleting === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(ctype.id)} disabled={deleting === ctype.id}>
+                      {deleting === ctype.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                     </Button>
                   </div>
                 )}
@@ -3208,34 +3289,34 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
       <Dialog open={showForm} onOpenChange={v => !v && setShowForm(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editTarget ? "Edit Concession Type" : "Add Concession Type"}</DialogTitle>
+            <DialogTitle>{editTarget ? t('fees.con.dialogEditTitle') : t('fees.con.dialogAddTitle')}</DialogTitle>
             <DialogDescription>
-              {editTarget ? "Update this concession type's details." : "New types appear immediately in the fee payment dropdown."}
+              {editTarget ? t('fees.con.dialogEditDesc') : t('fees.con.dialogAddDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Name *</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.nameLbl')} *</Label>
               <Input className="h-9 text-sm" placeholder="e.g. Sports Achievement" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Description</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.descLbl')}</Label>
               <Input className="h-9 text-sm" placeholder="Brief eligibility description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Discount Type</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.discTypeLbl')}</Label>
                 <Select value={form.discountType} onValueChange={v => setForm({ ...form, discountType: v })}>
                   <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Percentage">Percentage (%)</SelectItem>
-                    <SelectItem value="Fixed">Fixed Amount (₹)</SelectItem>
+                    <SelectItem value="Percentage">{t('fees.con.percentage')}</SelectItem>
+                    <SelectItem value="Fixed">{t('fees.con.fixedAmount')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">
-                  {form.discountType === "Fixed" ? "Amount (₹) *" : "Percentage (%) *"}
+                  {form.discountType === "Fixed" ? t('fees.con.discValFixedLbl') : t('fees.con.discValLbl')}
                 </Label>
                 <Input className="h-9 text-sm" type="number" min={0} max={form.discountType === "Percentage" ? 100 : undefined}
                   placeholder={form.discountType === "Fixed" ? "e.g. 5000" : "e.g. 25"}
@@ -3243,25 +3324,25 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
               </div>
             </div>
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Max Discount Cap (₹, optional)</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.maxCapLbl')}</Label>
               <Input className="h-9 text-sm" type="number" min={0} placeholder="Leave blank for no cap" value={form.maxDiscountAmount} onChange={e => setForm({ ...form, maxDiscountAmount: e.target.value })} />
             </div>
             <div className="flex gap-5 pt-1">
               <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input type="checkbox" checked={form.requiresDocuments} onChange={e => setForm({ ...form, requiresDocuments: e.target.checked })} className="rounded" />
-                Requires Documents
+                {t('fees.con.requiresDocs')}
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input type="checkbox" checked={form.requiresApproval} onChange={e => setForm({ ...form, requiresApproval: e.target.checked })} className="rounded" />
-                Requires Approval
+                {t('fees.con.requiresApproval')}
               </label>
             </div>
           </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>{t('fees.con.cancelBtn')}</Button>
             <Button className="flex-1 gap-2" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {saving ? "Saving…" : editTarget ? "Update Type" : "Add Type"}
+              {saving ? t('fees.con.savingBtn') : editTarget ? t('fees.con.updateBtn') : t('fees.con.addBtn')}
             </Button>
           </div>
         </DialogContent>
@@ -3279,6 +3360,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicYear: string }) {
+  const { t } = useLanguage();
   const [sending, setSending] = useState(false);
 
   // ── Derived metrics ──────────────────────────────────────────────────────
@@ -3330,10 +3412,10 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
 
   // ── Status distribution (pie data) ───────────────────────────────────────
   const statusDist = [
-    { label: "Paid",    count: paid.length,    amount: paid.reduce((s, r) => s + r.paidAmount, 0),    color: STATUS_COLORS.paid    },
-    { label: "Partial", count: partial.length, amount: partial.reduce((s, r) => s + r.pendingAmount, 0), color: STATUS_COLORS.partial },
+    { label: t('fees.rep.collected'), count: paid.length,    amount: paid.reduce((s, r) => s + r.paidAmount, 0),    color: STATUS_COLORS.paid    },
+    { label: t('fees.rep.outstanding'), count: partial.length, amount: partial.reduce((s, r) => s + r.pendingAmount, 0), color: STATUS_COLORS.partial },
     { label: "Pending", count: pending.length, amount: pending.reduce((s, r) => s + r.pendingAmount, 0), color: STATUS_COLORS.pending },
-    { label: "Overdue", count: overdue.length, amount: overdue.reduce((s, r) => s + r.pendingAmount, 0), color: STATUS_COLORS.overdue },
+    { label: t('fees.rep.overdue'), count: overdue.length, amount: overdue.reduce((s, r) => s + r.pendingAmount, 0), color: STATUS_COLORS.overdue },
   ];
   const statusPieData = statusDist.filter(d => d.count > 0).map(d => ({ name: d.label, value: d.count, fill: d.color }));
 
@@ -3419,11 +3501,11 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
       {/* ── KPI Strip ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: "Total Billed",     value: inr(totalBilled),    sub: `${records.length} records`,  color: "text-slate-700",  bg: "bg-slate-50",   border: "border-l-slate-400"  },
-          { label: "Collected",        value: inr(totalCollected), sub: `${paid.length} fully paid`,  color: "text-emerald-700",bg: "bg-emerald-50", border: "border-l-emerald-500"},
-          { label: "Outstanding",      value: inr(totalPending),   sub: `${nonPaid.length} students`, color: "text-rose-700",   bg: "bg-rose-50",    border: "border-l-rose-500"   },
-          { label: "Overdue",          value: inr(totalOverdue),   sub: `${overdue.length} defaulters`,color:"text-amber-700",  bg: "bg-amber-50",   border: "border-l-amber-500"  },
-          { label: "Collection Rate",  value: `${collectionRate}%`,sub: "Of total billed",            color: collectionRate >= 80 ? "text-emerald-700" : collectionRate >= 60 ? "text-amber-700" : "text-rose-700",
+          { label: t('fees.rep.totalBilled'),    value: inr(totalBilled),    sub: `${records.length} ${t('fees.rep.records')}`,  color: "text-slate-700",  bg: "bg-slate-50",   border: "border-l-slate-400"  },
+          { label: t('fees.rep.collected'),       value: inr(totalCollected), sub: `${paid.length} ${t('fees.rep.fullyPaid')}`,  color: "text-emerald-700",bg: "bg-emerald-50", border: "border-l-emerald-500"},
+          { label: t('fees.rep.outstanding'),     value: inr(totalPending),   sub: `${nonPaid.length} ${t('fees.rep.students')}`, color: "text-rose-700",   bg: "bg-rose-50",    border: "border-l-rose-500"   },
+          { label: t('fees.rep.overdue'),         value: inr(totalOverdue),   sub: `${overdue.length} ${t('fees.rep.defaulters')}`,color:"text-amber-700",  bg: "bg-amber-50",   border: "border-l-amber-500"  },
+          { label: t('fees.rep.collectionRate'),  value: `${collectionRate}%`,sub: t('fees.rep.ofTotalBilled'),                color: collectionRate >= 80 ? "text-emerald-700" : collectionRate >= 60 ? "text-amber-700" : "text-rose-700",
             bg: collectionRate >= 80 ? "bg-emerald-50" : collectionRate >= 60 ? "bg-amber-50" : "bg-rose-50",
             border: collectionRate >= 80 ? "border-l-emerald-500" : collectionRate >= 60 ? "border-l-amber-500" : "border-l-rose-500" },
         ].map(c => (
@@ -3444,13 +3526,13 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
           <CardHeader className="pb-2 pt-4 px-5">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-emerald-600" />
-              Monthly Collection Trend
+              {t('fees.rep.monthlyTrend')}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Collected vs Outstanding by due month</p>
+            <p className="text-xs text-muted-foreground">{t('fees.rep.monthlyTrendSub')}</p>
           </CardHeader>
           <CardContent className="px-2 pb-4">
             {monthlyTrend.length === 0 ? (
-              <div className="h-48 flex items-center justify-center text-xs text-muted-foreground">No monthly data available</div>
+              <div className="h-48 flex items-center justify-center text-xs text-muted-foreground">{t('fees.rep.noMonthlyData')}</div>
             ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={monthlyTrend} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
@@ -3459,9 +3541,9 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
                   <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" tickFormatter={fmtInr} width={70} />
                   <Tooltip formatter={fmtInrTooltip} />
                   <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="collected" name="Collected" fill="#10b981" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="collected" name={t('fees.rep.collected')} fill="#10b981" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="pending"   name="Pending"   fill="#3b82f6" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="overdue"   name="Overdue"   fill="#ef4444" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="overdue"   name={t('fees.rep.overdue')}   fill="#ef4444" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -3473,13 +3555,13 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
           <CardHeader className="pb-2 pt-4 px-5">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Receipt className="h-4 w-4 text-blue-600" />
-              Payment Status
+              {t('fees.rep.paymentStatus')}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">{records.length} total records</p>
+            <p className="text-xs text-muted-foreground">{records.length} {t('fees.rep.totalRecords')}</p>
           </CardHeader>
           <CardContent className="flex flex-col items-center pb-4 px-4">
             {statusPieData.length === 0 ? (
-              <div className="h-40 flex items-center justify-center text-xs text-muted-foreground">No data</div>
+              <div className="h-40 flex items-center justify-center text-xs text-muted-foreground">{t('fees.rep.noData')}</div>
             ) : (
               <ResponsiveContainer width="100%" height={140}>
                 <PieChart>
@@ -3514,9 +3596,9 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
           <CardHeader className="pb-2 pt-4 px-5">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-indigo-600" />
-              Class-wise Collection
+              {t('fees.rep.classWise')}
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Collected vs Pending per class</p>
+            <p className="text-xs text-muted-foreground">{t('fees.rep.classWiseSub')}</p>
           </CardHeader>
           <CardContent className="px-2 pb-4">
             <ResponsiveContainer width="100%" height={Math.max(160, classSummary.length * 28)}>
@@ -3526,7 +3608,7 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
                 <YAxis type="category" dataKey="cls" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" width={55} />
                 <Tooltip formatter={fmtInrTooltip} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="collected" name="Collected" fill="#10b981" radius={[0, 3, 3, 0]} />
+                <Bar dataKey="collected" name={t('fees.rep.collected')} fill="#10b981" radius={[0, 3, 3, 0]} />
                 <Bar dataKey="pending"   name="Pending"   fill="#f43f5e" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -3540,7 +3622,7 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
           <CardHeader className="pb-3 pt-4 px-5">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Tag className="h-4 w-4 text-violet-600" />
-              Fee Structure Breakdown
+              {t('fees.rep.structureBreakdown')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-5 pb-4 space-y-3">
@@ -3572,26 +3654,26 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
         <CardHeader className="pb-3 pt-4 px-5">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Download className="h-4 w-4 text-slate-600" />
-            Reports & Actions
+            {t('fees.rep.reportsActions')}
           </CardTitle>
         </CardHeader>
         <CardContent className="px-5 pb-5">
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" className="gap-2 h-9" onClick={downloadDefaulters} disabled={!overdue.length}>
               <Download className="h-4 w-4 text-red-500" />
-              Defaulters List ({overdue.length})
+              {t('fees.rep.downloadDefaulters')} ({overdue.length})
             </Button>
             <Button variant="outline" className="gap-2 h-9" onClick={downloadClassWise}>
               <Download className="h-4 w-4 text-blue-500" />
-              Class-wise Summary
+              {t('fees.rep.downloadClassWise')}
             </Button>
             <Button variant="outline" className="gap-2 h-9" onClick={downloadFeeRegister}>
               <Download className="h-4 w-4 text-slate-500" />
-              Full Fee Register
+              {t('fees.rep.downloadRegister')}
             </Button>
             <Button variant="outline" className="gap-2 h-9" onClick={sendReminders} disabled={sending || !overdue.length}>
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-amber-500" />}
-              {sending ? "Sending…" : `SMS Reminders (${overdue.length})`}
+              {sending ? t('fees.rep.sendingReminders') : `${t('fees.rep.smsReminders')} (${overdue.length})`}
             </Button>
           </div>
         </CardContent>
@@ -3603,13 +3685,13 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-red-500" />
-              Fee Defaulters
+              {t('fees.rep.feeDefaulters')}
               {overdue.length > 0 && (
                 <Badge variant="destructive" className="text-[10px] h-5 px-1.5">{overdue.length}</Badge>
               )}
             </CardTitle>
             {overdue.length > 0 && (
-              <span className="text-xs text-muted-foreground">Total outstanding: <span className="font-semibold text-red-600">{inr(totalOverdue)}</span></span>
+              <span className="text-xs text-muted-foreground">{t('fees.rep.totalOutstanding')}: <span className="font-semibold text-red-600">{inr(totalOverdue)}</span></span>
             )}
           </div>
         </CardHeader>
@@ -3617,22 +3699,22 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
           {overdue.length === 0 ? (
             <div className="text-center p-10 text-muted-foreground">
               <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-emerald-500 opacity-70" />
-              <p className="font-semibold text-foreground">No defaulters!</p>
-              <p className="text-sm mt-1">All students are up to date with payments.</p>
+              <p className="font-semibold text-foreground">{t('fees.rep.noDefaulters')}</p>
+              <p className="text-sm mt-1">{t('fees.rep.noDefaultersDesc')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40">
-                    <TableHead className="pl-5">#</TableHead>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead className="text-right">Total Fee</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Days Overdue</TableHead>
+                    <TableHead className="pl-5">{t('fees.rep.colNo')}</TableHead>
+                    <TableHead>{t('fees.rep.colStudent')}</TableHead>
+                    <TableHead>{t('fees.rep.colClass')}</TableHead>
+                    <TableHead className="text-right">{t('fees.rep.colTotalFee')}</TableHead>
+                    <TableHead className="text-right">{t('fees.rep.colPaid')}</TableHead>
+                    <TableHead className="text-right">{t('fees.rep.colBalance')}</TableHead>
+                    <TableHead>{t('fees.rep.colDueDate')}</TableHead>
+                    <TableHead>{t('fees.rep.colDaysOverdue')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -3667,7 +3749,7 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
         <CardHeader className="pb-3 pt-4 px-5">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <Users className="h-4 w-4 text-indigo-500" />
-            Class-wise Fee Summary
+            {t('fees.rep.classWiseSummary')}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -3675,17 +3757,17 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40">
-                  <TableHead className="pl-5">Class</TableHead>
-                  <TableHead className="text-right">Students</TableHead>
-                  <TableHead className="text-right">Billed</TableHead>
-                  <TableHead className="text-right">Collected</TableHead>
-                  <TableHead className="text-right">Pending</TableHead>
-                  <TableHead className="min-w-[120px]">Progress</TableHead>
+                  <TableHead className="pl-5">{t('fees.rep.colClass')}</TableHead>
+                  <TableHead className="text-right">{t('fees.rep.colStudents')}</TableHead>
+                  <TableHead className="text-right">{t('fees.rep.colBilled')}</TableHead>
+                  <TableHead className="text-right">{t('fees.rep.colCollected')}</TableHead>
+                  <TableHead className="text-right">{t('fees.rep.colPending')}</TableHead>
+                  <TableHead className="min-w-[120px]">{t('fees.rep.colProgress')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {classSummary.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No data available</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">{t('fees.rep.noDataAvailable')}</TableCell></TableRow>
                 ) : classSummary.map(d => {
                   const pct = d.total > 0 ? Math.round((d.collected / d.total) * 100) : 0;
                   return (
@@ -3720,6 +3802,7 @@ function ReportsTab({ records, academicYear }: { records: FeeRecord[]; academicY
 
 // ─── Aging Analysis Tab ──────────────────────────────────
 function AgingTab() {
+  const { t } = useLanguage();
   const [aging, setAging] = useState<AgingBucket | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -3732,7 +3815,7 @@ function AgingTab() {
   }, []);
 
   if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  if (!aging) return <div className="text-center p-12 text-muted-foreground">No aging data available</div>;
+  if (!aging) return <div className="text-center p-12 text-muted-foreground">{t('fees.aging.noData')}</div>;
 
   const buckets = [
     { label: "Current", amount: aging.current, color: "bg-green-500", bg: "bg-green-50", text: "text-green-700", border: "border-green-200" },
@@ -3747,11 +3830,11 @@ function AgingTab() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-lg">Outstanding Receivables — Aging Analysis</h3>
-          <p className="text-sm text-muted-foreground">CA-audit ready breakdown · {aging.studentCount} students with dues</p>
+          <h3 className="font-semibold text-lg">{t('fees.aging.title')}</h3>
+          <p className="text-sm text-muted-foreground">{t('fees.aging.subtitle')} · {aging.studentCount} {t('fees.aging.studentsWithDues')}</p>
         </div>
         <div className="text-right">
-          <div className="text-xs text-muted-foreground">Total Outstanding</div>
+          <div className="text-xs text-muted-foreground">{t('fees.aging.totalOutstanding')}</div>
           <div className="text-2xl font-bold text-red-600">{inr(aging.totalOutstanding)}</div>
         </div>
       </div>
@@ -3764,7 +3847,7 @@ function AgingTab() {
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{b.label}</div>
               <div className={`text-xl font-bold mt-1 ${b.text}`}>{inr(b.amount)}</div>
               <div className="text-xs text-muted-foreground mt-1">
-                {aging.totalOutstanding > 0 ? `${Math.round((b.amount / aging.totalOutstanding) * 100)}%` : "0%"} of total
+                {aging.totalOutstanding > 0 ? `${Math.round((b.amount / aging.totalOutstanding) * 100)}% ${t('fees.aging.ofTotal')}` : `0% ${t('fees.aging.ofTotal')}`}
               </div>
             </CardContent>
           </Card>
@@ -3776,7 +3859,7 @@ function AgingTab() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-blue-500" />
-            Aging Distribution
+            {t('fees.aging.distribution')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -3807,8 +3890,8 @@ function AgingTab() {
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4">
           <div className="text-sm text-blue-800 space-y-1">
-            <div className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4" />Audit Note</div>
-            <p className="text-xs">This aging schedule classifies outstanding fee receivables by the number of days past their due date. Amounts in the "90+ Days" bucket may require provision for doubtful debts as per applicable accounting standards. All figures are computed in real-time from the fee ledger.</p>
+            <div className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4" />{t('fees.aging.auditNote')}</div>
+            <p className="text-xs">{t('fees.aging.auditNoteText')}</p>
           </div>
         </CardContent>
       </Card>
@@ -3818,6 +3901,7 @@ function AgingTab() {
 
 // ─── Audit Trail Tab ─────────────────────────────────────
 function AuditTrailTab() {
+  const { t } = useLanguage();
   const [logs, setLogs] = useState<FeeAuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -3857,36 +3941,36 @@ function AuditTrailTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-lg">Audit Trail</h3>
-          <p className="text-sm text-muted-foreground">Immutable log of every financial mutation — CA traceable</p>
+          <h3 className="font-semibold text-lg">{t('fees.audit.title')}</h3>
+          <p className="text-sm text-muted-foreground">{t('fees.audit.subtitle')}</p>
         </div>
-        <Badge variant="outline" className="text-muted-foreground">{total} entries</Badge>
+        <Badge variant="outline" className="text-muted-foreground">{total} {t('fees.audit.entries')}</Badge>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <Select value={actionFilter} onValueChange={v => { setActionFilter(v); setPage(1); }}>
-          <SelectTrigger className="w-48 h-9 text-sm"><SelectValue placeholder="All Actions" /></SelectTrigger>
+          <SelectTrigger className="w-48 h-9 text-sm"><SelectValue placeholder={t('fees.audit.allActions')} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Actions</SelectItem>
-            <SelectItem value="PaymentReceived">Payment Received</SelectItem>
-            <SelectItem value="ConcessionApproved">Concession Approved</SelectItem>
-            <SelectItem value="ConcessionRejected">Concession Rejected</SelectItem>
-            <SelectItem value="FeeRecordCreated">Fee Record Created</SelectItem>
-            <SelectItem value="LateFeeApplied">Late Fee Applied</SelectItem>
-            <SelectItem value="RefundProcessed">Refund Processed</SelectItem>
+            <SelectItem value="all">{t('fees.audit.allActions')}</SelectItem>
+            <SelectItem value="PaymentReceived">{t('fees.audit.paymentReceived')}</SelectItem>
+            <SelectItem value="ConcessionApproved">{t('fees.audit.concessionApproved')}</SelectItem>
+            <SelectItem value="ConcessionRejected">{t('fees.audit.concessionRejected')}</SelectItem>
+            <SelectItem value="FeeRecordCreated">{t('fees.audit.feeRecordCreated')}</SelectItem>
+            <SelectItem value="LateFeeApplied">{t('fees.audit.lateFeeApplied')}</SelectItem>
+            <SelectItem value="RefundProcessed">{t('fees.audit.refundProcessed')}</SelectItem>
           </SelectContent>
         </Select>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">{t('fees.audit.from')}</Label>
           <Input type="date" className="h-9 text-sm w-40" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} />
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">{t('fees.audit.to')}</Label>
           <Input type="date" className="h-9 text-sm w-40" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} />
         </div>
         <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => { setActionFilter("all"); setDateFrom(""); setDateTo(""); setPage(1); }}>
-          <RefreshCw className="h-3.5 w-3.5" />Clear
+          <RefreshCw className="h-3.5 w-3.5" />{t('fees.audit.clear')}
         </Button>
       </div>
 
@@ -3896,20 +3980,20 @@ function AuditTrailTab() {
       ) : logs.length === 0 ? (
         <div className="text-center p-12 border-2 border-dashed rounded-xl text-muted-foreground">
           <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
-          <p className="font-medium">No audit entries found</p>
-          <p className="text-sm mt-1">Financial events will appear here as they occur</p>
+          <p className="font-medium">{t('fees.audit.noEntries')}</p>
+          <p className="text-sm mt-1">{t('fees.audit.noEntriesDesc')}</p>
         </div>
       ) : (
         <div className="border rounded-lg overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-40">Timestamp</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Entity</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Performed By</TableHead>
-                <TableHead>Remarks</TableHead>
+                <TableHead className="w-40">{t('fees.audit.colTimestamp')}</TableHead>
+                <TableHead>{t('fees.audit.colAction')}</TableHead>
+                <TableHead>{t('fees.audit.colEntity')}</TableHead>
+                <TableHead className="text-right">{t('fees.audit.colAmount')}</TableHead>
+                <TableHead>{t('fees.audit.colPerformedBy')}</TableHead>
+                <TableHead>{t('fees.audit.colRemarks')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -3932,7 +4016,7 @@ function AuditTrailTab() {
                   <TableCell className="text-right font-semibold">
                     {log.amount != null ? inr(log.amount) : "—"}
                   </TableCell>
-                  <TableCell className="text-sm">{log.performedByName ?? "System"}</TableCell>
+                  <TableCell className="text-sm">{log.performedByName ?? t('fees.audit.system')}</TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={log.remarks ?? ""}>
                     {log.remarks ?? "—"}
                   </TableCell>
@@ -3946,10 +4030,10 @@ function AuditTrailTab() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">Page {page} of {totalPages} ({total} entries)</span>
+          <span className="text-sm text-muted-foreground">{t('fees.audit.page')} {page} {t('fees.audit.of')} {totalPages} ({total} {t('fees.audit.entries')})</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{t('fees.audit.previous')}</Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>{t('fees.audit.next')}</Button>
           </div>
         </div>
       )}
@@ -3958,8 +4042,8 @@ function AuditTrailTab() {
       <Card className="bg-green-50 border-green-200">
         <CardContent className="p-4">
           <div className="text-sm text-green-800 space-y-1">
-            <div className="font-semibold flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />Audit Integrity</div>
-            <p className="text-xs">All entries in this log are immutable (insert-only). No record can be edited or deleted once created. Each entry captures the old and new state as JSON snapshots, the performing user, timestamp, and transaction amount. This log can be used as primary evidence for statutory audit.</p>
+            <div className="font-semibold flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{t('fees.audit.integrityTitle')}</div>
+            <p className="text-xs">{t('fees.audit.integrityText')}</p>
           </div>
         </CardContent>
       </Card>
@@ -3969,6 +4053,7 @@ function AuditTrailTab() {
 
 // ─── Main Fee Module Page ─────────────────────────────────
 export default function Fees() {
+  const { t } = useLanguage();
   const { hasUserPermission } = usePermissions();
   const canViewFees    = hasUserPermission('Fees', 'View');
   const canManageFees  = hasUserPermission('Fees', 'Create');
@@ -4117,11 +4202,11 @@ export default function Fees() {
   );
 
   const kpiCards = [
-    { label: "Today's Collection", value: inr(todayCollected), sub: "Cash counter today", color: "text-green-600", bg: "bg-green-50", icon: <IndianRupee className="h-5 w-5 text-green-600" /> },
-    { label: "Total Collected", value: inr(stats.totalCollected), sub: "This academic year", color: "text-blue-600", bg: "bg-blue-50", icon: <TrendingUp className="h-5 w-5 text-blue-600" /> },
-    { label: "Total Pending", value: inr(stats.totalPending), sub: "Across all students", color: "text-amber-600", bg: "bg-amber-50", icon: <Clock className="h-5 w-5 text-amber-600" /> },
-    { label: "Overdue", value: inr(stats.totalOverdue), sub: `${records.filter(r => r.status === "overdue").length} students`, color: "text-red-600", bg: "bg-red-50", icon: <AlertTriangle className="h-5 w-5 text-red-600" /> },
-    { label: "Collection Rate", value: `${isNaN(stats.collectionRate) || !isFinite(stats.collectionRate) ? 0 : Math.round(stats.collectionRate)}%`, sub: "Of total fees", color: "text-purple-600", bg: "bg-purple-50", icon: <BarChart3 className="h-5 w-5 text-purple-600" /> },
+    { label: t('fees.kpi.todayCollection'), value: inr(todayCollected), sub: t('fees.kpi.todayCollectionSub'), color: "text-green-600", bg: "bg-green-50", icon: <IndianRupee className="h-5 w-5 text-green-600" /> },
+    { label: t('fees.kpi.totalCollected'), value: inr(stats.totalCollected), sub: t('fees.kpi.totalCollectedSub'), color: "text-blue-600", bg: "bg-blue-50", icon: <TrendingUp className="h-5 w-5 text-blue-600" /> },
+    { label: t('fees.totalPending'), value: inr(stats.totalPending), sub: t('fees.kpi.totalPendingSub'), color: "text-amber-600", bg: "bg-amber-50", icon: <Clock className="h-5 w-5 text-amber-600" /> },
+    { label: t('fees.overdue'), value: inr(stats.totalOverdue), sub: `${records.filter(r => r.status === "overdue").length} ${t('fees.nStudents')}`, color: "text-red-600", bg: "bg-red-50", icon: <AlertTriangle className="h-5 w-5 text-red-600" /> },
+    { label: t('fees.kpi.collectionRateLabel'), value: `${isNaN(stats.collectionRate) || !isFinite(stats.collectionRate) ? 0 : Math.round(stats.collectionRate)}%`, sub: t('fees.kpi.collectionRateSub'), color: "text-purple-600", bg: "bg-purple-50", icon: <BarChart3 className="h-5 w-5 text-purple-600" /> },
   ];
 
   if (accessDenied) {
@@ -4129,8 +4214,8 @@ export default function Fees() {
       <div className="flex flex-col items-center justify-center h-64 gap-4 text-muted-foreground">
         <ShieldOff className="h-12 w-12" />
         <div className="text-center">
-          <p className="text-lg font-semibold">Access Denied</p>
-          <p className="text-sm">You don't have permission to view fee management.</p>
+          <p className="text-lg font-semibold">{t('fees.accessDenied')}</p>
+          <p className="text-sm">{t('fees.accessDeniedSubtitle')}</p>
         </div>
       </div>
     );
@@ -4146,16 +4231,16 @@ export default function Fees() {
             Fee Management
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {canManageFees ? "Collect fees, manage installments, concessions, and reports — all in one place" : "View fee records, installments, and reports"}
+            {canManageFees ? t('fees.subtitleManage') : t('fees.subtitleView')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => loadData()}>
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />Refresh
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{t('fees.btnRefresh')}
           </Button>
           {canManageFees && (
             <Button size="sm" className="gap-1.5" onClick={() => { setQuickSearch(""); setQuickRecord(null); setQuickOpen(true); }}>
-              <Plus className="h-3.5 w-3.5" />Quick Collect
+              <Plus className="h-3.5 w-3.5" />{t('fees.quickCollect')}
             </Button>
           )}
         </div>
@@ -4171,7 +4256,7 @@ export default function Fees() {
                 <div className={`h-8 w-8 rounded-full ${k.bg} flex items-center justify-center shrink-0`}>{k.icon}</div>
               </div>
               <div className={`text-xl font-bold ${k.color}`}>
-                {statsLoading && k.label !== "Today's Collection" ? <span className="text-muted-foreground text-base">—</span> : k.value}
+                {statsLoading && k.label !== t('fees.kpi.todayCollection') ? <span className="text-muted-foreground text-base">—</span> : k.value}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">{k.sub}</div>
             </CardContent>
@@ -4183,31 +4268,31 @@ export default function Fees() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-9 h-auto">
           <TabsTrigger value="collect" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Receipt className="h-4 w-4" /><span>Collect Fees</span>
+            <Receipt className="h-4 w-4" /><span>{t('fees.collectFee')}</span>
           </TabsTrigger>
           <TabsTrigger value="overview" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <CalendarDays className="h-4 w-4" /><span>Day Summary</span>
+            <CalendarDays className="h-4 w-4" /><span>{t('fees.tabs.daySummary')}</span>
           </TabsTrigger>
           <TabsTrigger value="structure" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Building2 className="h-4 w-4" /><span>Fee Structure</span>
+            <Building2 className="h-4 w-4" /><span>{t('fees.feeStructure')}</span>
           </TabsTrigger>
           <TabsTrigger value="defaulters" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <AlertTriangle className="h-4 w-4" /><span>Defaulters</span>
+            <AlertTriangle className="h-4 w-4" /><span>{t('fees.tabs.defaulters')}</span>
           </TabsTrigger>
           <TabsTrigger value="reminders" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <BellRing className="h-4 w-4" /><span>Reminders</span>
+            <BellRing className="h-4 w-4" /><span>{t('fees.tabs.reminders')}</span>
           </TabsTrigger>
           <TabsTrigger value="concessions" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Tag className="h-4 w-4" /><span>Concessions</span>
+            <Tag className="h-4 w-4" /><span>{t('fees.concession')}</span>
           </TabsTrigger>
           <TabsTrigger value="bulkpayment" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Upload className="h-4 w-4" /><span>Bulk Upload</span>
+            <Upload className="h-4 w-4" /><span>{t('fees.tabs.bulkUpload')}</span>
           </TabsTrigger>
           <TabsTrigger value="receipttemplates" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <FileText className="h-4 w-4" /><span>Receipts</span>
+            <FileText className="h-4 w-4" /><span>{t('fees.tabs.receipts')}</span>
           </TabsTrigger>
           <TabsTrigger value="reports" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <BarChart3 className="h-4 w-4" /><span>Reports</span>
+            <BarChart3 className="h-4 w-4" /><span>{t('fees.tabs.reports')}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -4216,31 +4301,31 @@ export default function Fees() {
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9 h-9 text-sm" placeholder="Search by name or admission number…" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="pl-9 h-9 text-sm" placeholder={t('fees.searchByNameOrAdmission')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {/* Academic year filter — "all-years" shows every record */}
             <Select value={collectYear} onValueChange={setCollectYear}>
-              <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder="All Years" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder={t('fees.allYears')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all-years">All Years</SelectItem>
+                <SelectItem value="all-years">{t('fees.allYears')}</SelectItem>
                 {availableYears.map(y => <SelectItem key={y.id} value={y.name}>{y.name}{y.isCurrent ? " ✓" : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterClass} onValueChange={setFilterClass}>
-              <SelectTrigger className="w-full sm:w-36 h-9 text-sm"><SelectValue placeholder="All Classes" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-36 h-9 text-sm"><SelectValue placeholder={t('fees.allClasses')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Classes</SelectItem>
+                <SelectItem value="all">{t('fees.allClasses')}</SelectItem>
                 {uniqueClasses.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full sm:w-36 h-9 text-sm"><SelectValue placeholder="All Status" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-36 h-9 text-sm"><SelectValue placeholder={t('fees.allStatus')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="partial">Partial</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="overdue">Overdue</SelectItem>
+                <SelectItem value="all">{t('fees.allStatus')}</SelectItem>
+                <SelectItem value="paid">{t('fees.paid')}</SelectItem>
+                <SelectItem value="partial">{t('fees.partial')}</SelectItem>
+                <SelectItem value="pending">{t('fees.pendingStatus')}</SelectItem>
+                <SelectItem value="overdue">{t('fees.overdue')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -4251,24 +4336,24 @@ export default function Fees() {
             <div className="text-center p-12 border-2 border-dashed rounded-xl">
               <Users className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
               <p className="font-semibold text-muted-foreground">
-                {records.length === 0 ? "No fee records yet" : "No students match your filters"}
+                {records.length === 0 ? t('fees.noFeeRecordsYet') : t('fees.noStudentsMatchFilter')}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">Set up fee structures and assign fees to students to get started</p>
+              <p className="text-sm text-muted-foreground mt-1">{t('fees.noFeeRecordsDesc')}</p>
             </div>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground mb-3">{groupedStudents.length} students</p>
+              <p className="text-sm text-muted-foreground mb-3">{groupedStudents.length} {t('fees.nStudents')}</p>
               <div className="border rounded-xl overflow-hidden shadow-sm">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="font-semibold">Student</TableHead>
-                      <TableHead className="font-semibold">Class</TableHead>
-                      <TableHead className="text-right font-semibold">Total Fee</TableHead>
-                      <TableHead className="text-right font-semibold">Paid</TableHead>
-                      <TableHead className="text-right font-semibold">Balance</TableHead>
-                      <TableHead className="font-semibold">Terms</TableHead>
-                      <TableHead className="text-right font-semibold">Action</TableHead>
+                      <TableHead className="font-semibold">{t('fees.colStudent')}</TableHead>
+                      <TableHead className="font-semibold">{t('fees.class')}</TableHead>
+                      <TableHead className="text-right font-semibold">{t('fees.totalAmount')}</TableHead>
+                      <TableHead className="text-right font-semibold">{t('fees.paidAmount')}</TableHead>
+                      <TableHead className="text-right font-semibold">{t('fees.balanceAmount')}</TableHead>
+                      <TableHead className="font-semibold">{t('fees.colTerms')}</TableHead>
+                      <TableHead className="text-right font-semibold">{t('fees.colAction')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -4311,10 +4396,10 @@ export default function Fees() {
                             <TableCell className="text-right text-sm">
                               {g.totalBalance > 0
                                 ? <span className="font-bold text-red-600">{inr(g.totalBalance)}</span>
-                                : <span className="text-green-600 font-medium">Nil</span>
+                                : <span className="text-green-600 font-medium">{t('fees.nil')}</span>
                               }
                               {maxOverdueDays > 0 && (
-                                <div className="text-[10px] text-red-500 font-medium">{maxOverdueDays}d overdue</div>
+                                <div className="text-[10px] text-red-500 font-medium">{maxOverdueDays}{t('fees.daysOverdue')}</div>
                               )}
                             </TableCell>
                             {/* Term bubbles — use rich schedule from fee structure when available */}
@@ -4384,7 +4469,7 @@ export default function Fees() {
                                     onClick={e => { e.stopPropagation(); setSelectedRecord(g.records[g.records.length - 1]); setPayDialogOpen(true); }}
                                   >
                                     <Eye className="h-3 w-3" />
-                                    View Summary
+                                    {t('fees.viewSummary')}
                                   </Button>
                                 ) : (
                                   <Button
@@ -4398,10 +4483,10 @@ export default function Fees() {
                                     {canManageFees
                                       ? actionNextTerm
                                         ? actionNextTerm.isUpcoming
-                                          ? `Advance — ${actionNextTerm.label}`
-                                          : `Collect ${actionNextTerm.label}`
-                                        : "Collect"
-                                      : "View"}
+                                          ? `${t('fees.advancePayment')} — ${actionNextTerm.label}`
+                                          : `${t('fees.collect')} ${actionNextTerm.label}`
+                                        : t('fees.collect')
+                                      : t('fees.viewBtn')}
                                   </Button>
                                 )}
                                 {isExpanded
@@ -4461,28 +4546,28 @@ export default function Fees() {
                                           {/* Stats chips */}
                                           <div className="flex flex-wrap gap-4 text-sm">
                                             <div className="flex items-center gap-1.5">
-                                              <span className="text-muted-foreground text-xs">Total</span>
+                                              <span className="text-muted-foreground text-xs">{t('fees.totalAmount')}</span>
                                               <span className="font-semibold">{inr(r.totalAmount)}</span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
-                                              <span className="text-muted-foreground text-xs">Paid</span>
+                                              <span className="text-muted-foreground text-xs">{t('fees.paidAmount')}</span>
                                               <span className="font-semibold text-green-600">{inr(r.paidAmount)}</span>
                                             </div>
                                             {r.discountAmount > 0 && (
                                               <div className="flex items-center gap-1.5">
-                                                <span className="text-muted-foreground text-xs">Concession</span>
+                                                <span className="text-muted-foreground text-xs">{t('fees.concession')}</span>
                                                 <span className="font-semibold text-blue-600">−{inr(r.discountAmount)}</span>
                                               </div>
                                             )}
                                             {r.lateFeeAmount > 0 && (
                                               <div className="flex items-center gap-1.5">
-                                                <span className="text-muted-foreground text-xs">Late fee</span>
+                                                <span className="text-muted-foreground text-xs">{t('fees.lateFee')}</span>
                                                 <span className="font-semibold text-amber-600">+{inr(r.lateFeeAmount)}</span>
                                               </div>
                                             )}
                                             {r.pendingAmount > 0 && (
                                               <div className="flex items-center gap-1.5">
-                                                <span className="text-muted-foreground text-xs">Balance</span>
+                                                <span className="text-muted-foreground text-xs">{t('fees.balanceAmount')}</span>
                                                 <span className="font-bold text-red-600">{inr(r.pendingAmount)}</span>
                                               </div>
                                             )}
@@ -4490,7 +4575,7 @@ export default function Fees() {
                                           {/* Payment history */}
                                           {r.payments && r.payments.length > 0 ? (
                                             <div>
-                                              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Payment History</div>
+                                              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">{t('fees.paymentHistory')}</div>
                                               <div className="space-y-1.5">
                                                 {r.payments.map(p => (
                                                   <div key={p.id} className="flex items-center justify-between bg-green-50/70 border border-green-100 rounded-lg px-3 py-2">
@@ -4518,7 +4603,7 @@ export default function Fees() {
                                             </div>
                                           ) : (
                                             <div className="text-xs text-muted-foreground italic py-1">
-                                              {r.status === "paid" ? "Payment recorded (no transaction details)" : "No payments yet"}
+                                              {r.status === "paid" ? t('fees.paymentRecorded') : t('fees.noPaymentsYet')}
                                             </div>
                                           )}
                                           {/* Term payment CTA */}
@@ -4537,7 +4622,7 @@ export default function Fees() {
                                                       className="h-7 text-xs gap-1 border-slate-200 text-slate-600 hover:bg-slate-50"
                                                       onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}
                                                     >
-                                                      <Eye className="h-3 w-3" /> View
+                                                      <Eye className="h-3 w-3" /> {t('fees.viewBtn')}
                                                     </Button>
                                                     {nextDueTerm && (
                                                       <Button
@@ -4546,7 +4631,7 @@ export default function Fees() {
                                                         onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}
                                                       >
                                                         <CreditCard className="h-3 w-3" />
-                                                        {nextDueTerm.isUpcoming ? `Advance — ${nextDueTerm.label}` : `Collect ${nextDueTerm.label}`}
+                                                    {nextDueTerm.isUpcoming ? `${t('fees.advancePayment')} — ${nextDueTerm.label}` : `${t('fees.collect')} ${nextDueTerm.label}`}
                                                       </Button>
                                                     )}
                                                   </div>
@@ -4555,14 +4640,14 @@ export default function Fees() {
                                                 /* Term is due / partial — standard collect */
                                                 <>
                                                   <span className="text-xs text-muted-foreground">
-                                                    Outstanding: <span className="text-red-600 font-bold">{inr(r.pendingAmount)}</span>
+                                                    {t('fees.outstanding')}: <span className="text-red-600 font-bold">{inr(r.pendingAmount)}</span>
                                                   </span>
                                                   <Button
                                                     size="sm" className="h-7 text-xs gap-1.5"
                                                     onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}
                                                   >
                                                     <IndianRupee className="h-3 w-3" />
-                                                    Collect {tLabel}
+                                                    {t('fees.collect')} {tLabel}
                                                   </Button>
                                                 </>
                                               )}
@@ -4592,7 +4677,7 @@ export default function Fees() {
             <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
               <CalendarDays className="h-5 w-5 text-blue-600 shrink-0" />
               <div className="text-sm text-blue-800">
-                <span className="font-medium">Today: </span>
+                <span className="font-medium">{t('fees.daySummaryToday')} </span>
                 {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
               </div>
             </div>
@@ -4600,24 +4685,24 @@ export default function Fees() {
             {/* Recent payments */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Recent Payments</CardTitle>
+                <CardTitle className="text-base">{t('fees.recentPayments')}</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 {recentPaymentsLoading ? (
                   <div className="text-center p-8 text-muted-foreground text-sm">Loading...</div>
                 ) : recentPayments.length === 0 ? (
-                  <div className="text-center p-8 text-muted-foreground text-sm">No payment transactions found</div>
+                  <div className="text-center p-8 text-muted-foreground text-sm">{t('fees.noPaymentsFound')}</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Student</TableHead>
-                          <TableHead>Class</TableHead>
-                          <TableHead>Method</TableHead>
-                          <TableHead className="text-right">Amount</TableHead>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Receipt</TableHead>
+                          <TableHead>{t('fees.colStudent')}</TableHead>
+                          <TableHead>{t('fees.class')}</TableHead>
+                          <TableHead>{t('fees.colMethod')}</TableHead>
+                          <TableHead className="text-right">{t('fees.totalAmount')}</TableHead>
+                          <TableHead>{t('fees.colDate')}</TableHead>
+                          <TableHead>{t('fees.colReceipt')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -4669,7 +4754,7 @@ export default function Fees() {
           {canManageFees && (
             <div className="flex justify-end items-center gap-2 mb-3">
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFeeHeadsOpen(true)}>
-                <Tags className="h-3.5 w-3.5" />Manage Fee Heads
+                <Tags className="h-3.5 w-3.5" />{t('fees.manageFeeHeads')}
               </Button>
               <PromoteFeesDialog structures={structures} onPromoted={() => loadData(true)} />
             </div>
@@ -4736,9 +4821,9 @@ export default function Fees() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IndianRupee className="h-5 w-5 text-primary" />
-              Quick Collect
+              {t('fees.quickCollect')}
             </DialogTitle>
-            <DialogDescription>Search by student name or admission number. Paid students open the Transaction Summary.</DialogDescription>
+            <DialogDescription>{t('fees.quickCollectDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {!quickRecord ? (
@@ -4748,7 +4833,7 @@ export default function Fees() {
                   <Input
                     autoFocus
                     className="pl-9 h-10"
-                    placeholder="Type student name or admission no…"
+                    placeholder={t('fees.typeToSearch')}
                     value={quickSearch}
                     onChange={e => setQuickSearch(e.target.value)}
                   />
@@ -4756,7 +4841,7 @@ export default function Fees() {
                 {quickSearch.length >= 2 && (
                   quickMatches.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">
-                      No fee records found for "{quickSearch}"
+                      {t('fees.noRecordsForSearch').replace('{query}', quickSearch)}
                     </p>
                   ) : (
                     <div className="space-y-1.5 max-h-72 overflow-y-auto">
@@ -4790,7 +4875,7 @@ export default function Fees() {
                 {quickSearch.length < 2 && (
                   <div className="text-center py-6 text-sm text-muted-foreground">
                     <Search className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    Type at least 2 characters to search
+                    {t('fees.typeToSearch')}
                   </div>
                 )}
               </>

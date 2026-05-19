@@ -398,5 +398,37 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
         }
+
+        // ─── School Onboarding ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Onboard a new school end-to-end: creates school, academic year, admin user,
+        /// and applies module permissions in a single operation. (Super Admin only)
+        /// </summary>
+        [HttpPost("onboard")]
+        [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
+        public async Task<ActionResult<SchoolOnboardingResult>> OnboardSchool([FromBody] SchoolOnboardingRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            try
+            {
+                var result = await _service.OnboardSchoolAsync(request);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
     }
 }

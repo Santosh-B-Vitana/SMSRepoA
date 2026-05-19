@@ -10,6 +10,8 @@ using SmsApi.Models.Entities;
 using SmsApi.Models.DTOs;
 using SmsApi.Utils;
 
+#pragma warning disable CS0618 // Student.Class is obsolete - migration to StudentEnrollment is in progress
+
 namespace SmsApi.Services
 {
     public interface IFeeService
@@ -668,12 +670,19 @@ namespace SmsApi.Services
                 LateFeeAmount = request.LateFeeAmount,
                 PendingAmount = pendingAmount,
                 AcademicYear = request.AcademicYear,
-                Status = request.Status,
+                Status = request.Status ?? "pending",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             _context.FeeRecords.Add(record);
+            // Queue parent notifications alongside the record so they're saved atomically
+            await AddFeeParentNotificationsAsync(
+                record.SchoolId, record.StudentId,
+                $"New fee generated for {student.FirstName}",
+                $"A fee of \u20B9{record.TotalAmount:F0} has been created for the academic year {record.AcademicYear}, " +
+                $"due on {record.DueDate:dd MMM yyyy}. Please log in to view the details.",
+                record.Id);
             await _context.SaveChangesAsync();
 
             return await GetFeeRecordByIdAsync(record.Id, record.SchoolId) ?? throw new InvalidOperationException("Failed to retrieve created fee record.");
@@ -748,7 +757,7 @@ namespace SmsApi.Services
                     FeeRecordId = request.FeeRecordId,
                     Amount = request.Amount,
                     Date = request.Date,
-                    Method = request.Method,
+                    Method = request.Method ?? string.Empty,
                     Status = "success",
                     ReceiptNumber = request.ReceiptNumber,
                     GatewayRef = request.GatewayRef,
@@ -802,6 +811,22 @@ namespace SmsApi.Services
                     Timestamp = DateTime.UtcNow,
                 });
 
+                // In-app parent notification (inside same transaction so it rolls back on failure)
+                if (request.NotifyParent)
+                {
+                    var studentForNotif = await _context.Students.FindAsync(request.StudentId);
+                    var studentName = studentForNotif?.FirstName ?? "your child";
+                    await AddFeeParentNotificationsAsync(
+                        request.SchoolId!.Value, request.StudentId,
+                        $"Payment received for {studentName}",
+                        $"Fee payment of \u20B9{request.Amount:F0} received via {request.Method}. " +
+                        $"Receipt #{payment.ReceiptNumber}. " +
+                        (feeRecord.PendingAmount > 0
+                            ? $"Remaining outstanding: \u20B9{feeRecord.PendingAmount:F0}."
+                            : "Fee account is now fully paid."),
+                        feeRecord.Id);
+                }
+
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
@@ -840,9 +865,9 @@ namespace SmsApi.Services
                     FeeRecordId = payment.FeeRecordId,
                     Amount = payment.Amount,
                     Date = payment.Date,
-                    Method = payment.Method,
+                    Method = payment.Method ?? string.Empty,
                     Status = payment.Status,
-                    ReceiptNumber = payment.ReceiptNumber,
+                    ReceiptNumber = payment.ReceiptNumber ?? string.Empty,
                     GatewayRef = payment.GatewayRef,
                     GatewayOrderId = payment.GatewayOrderId,
                     ChequeNumber = payment.ChequeNumber,
@@ -924,7 +949,7 @@ namespace SmsApi.Services
                 Id = config.Id,
                 SchoolId = config.SchoolId,
                 GracePeriodDays = config.GracePeriodDays,
-                FeeType = config.FeeType,
+                FeeType = config.FeeType ?? string.Empty,
                 Amount = config.Amount,
                 MaxAmount = config.MaxAmount,
                 IsActive = config.IsActive
@@ -959,7 +984,7 @@ namespace SmsApi.Services
                     Id = Guid.NewGuid(),
                     SchoolId = schoolId,
                     GracePeriodDays = dto.GracePeriodDays,
-                    FeeType = dto.FeeType,
+                    FeeType = dto.FeeType ?? string.Empty,
                     Amount = dto.Amount,
                     MaxAmount = dto.MaxAmount,
                     IsActive = dto.IsActive,
@@ -971,7 +996,7 @@ namespace SmsApi.Services
             else
             {
                 config.GracePeriodDays = dto.GracePeriodDays;
-                config.FeeType = dto.FeeType;
+                config.FeeType = dto.FeeType ?? string.Empty;
                 config.Amount = dto.Amount;
                 config.MaxAmount = dto.MaxAmount;
                 config.IsActive = dto.IsActive;
@@ -985,7 +1010,7 @@ namespace SmsApi.Services
                 Id = config.Id,
                 SchoolId = config.SchoolId,
                 GracePeriodDays = config.GracePeriodDays,
-                FeeType = config.FeeType,
+                FeeType = config.FeeType ?? string.Empty,
                 Amount = config.Amount,
                 MaxAmount = config.MaxAmount,
                 IsActive = config.IsActive
@@ -1501,8 +1526,9 @@ namespace SmsApi.Services
             {
                 try
                 {
+                    var studentName = fee.Student?.FirstName ?? "Student";
                     var message = dto.CustomMessage ?? 
-                        $"Reminder: Fee of ₹{fee.BalanceAmount} is due on {fee.DueDate:dd/MM/yyyy} for {fee.Student?.FirstName}.";
+                        $"Reminder: Fee of ₹{fee.BalanceAmount} is due on {fee.DueDate:dd/MM/yyyy} for {studentName}.";
 
                     // Send via requested channel
                     if (dto.Channel == "sms" || dto.Channel == "all")
@@ -1515,6 +1541,19 @@ namespace SmsApi.Services
                     {
                         // Send Email (placeholder - integrate with email provider)
                         // await emailService.SendEmail(fee.Student?.Email, "Fee Reminder", message);
+                    }
+
+                    // Always create in-app notification for the parent portal
+                    if (dto.Channel == "app" || dto.Channel == "all" || dto.Channel == null)
+                    {
+                        await AddFeeParentNotificationsAsync(
+                            schoolId, fee.StudentId,
+                            $"Fee reminder for {studentName}",
+                            $"Fee of \u20B9{fee.BalanceAmount:F0} is due on {fee.DueDate:dd MMM yyyy} for {studentName}. " +
+                            "Please log in to your parent portal to view and pay.",
+                            fee.Id,
+                            priority: "High");
+                        await _context.SaveChangesAsync();
                     }
 
                     result.SentSuccessfully++;
@@ -2131,6 +2170,52 @@ namespace SmsApi.Services
                 await _context.SaveChangesAsync();
 
             return (missing.Count, covered.Count);
+        }
+
+        // ─── Private helper: queue in-app notifications for guardians ────────
+        // NOTE: does NOT call SaveChangesAsync — callers are responsible for persisting.
+        private async Task AddFeeParentNotificationsAsync(
+            Guid schoolId, Guid studentId,
+            string title, string content,
+            Guid? referenceId = null,
+            string priority = "Normal")
+        {
+            try
+            {
+                var parentUserIds = await _context.GuardianStudents
+                    .Include(gs => gs.Guardian)
+                    .Where(gs => gs.StudentId == studentId && gs.SchoolId == schoolId && gs.CanViewFees
+                                 && gs.Guardian != null && gs.Guardian.UserLoginId != null)
+                    .Select(gs => gs.Guardian!.UserLoginId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+                foreach (var userId in parentUserIds)
+                {
+                    _context.Notifications.Add(new SmsApi.Models.Entities.Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        RecipientId = userId,
+                        RecipientType = "Parent",
+                        Type = "Fee",
+                        Title = title,
+                        Content = content,
+                        Priority = priority,
+                        ReferenceId = referenceId,
+                        ReferenceType = "FeeRecord",
+                        ActionUrl = "/parent-fees",
+                        IsRead = false,
+                        SenderName = "School Fee Office",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to queue fee notifications for student {StudentId}", studentId);
+            }
         }
     }
 }

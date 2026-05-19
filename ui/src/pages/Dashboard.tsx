@@ -7,8 +7,10 @@ import { StatsCard } from "../components/dashboard/StatsCard";
 import { QuickActions } from "../components/dashboard/QuickActions";
 import { RecentActivity } from "../components/dashboard/RecentActivity";
 import { analyticsApi, DashboardSummary } from "../services/api/analyticsApi";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export default function Dashboard() {
+  const { t } = useLanguage();
   const [stats, setStats] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +39,7 @@ export default function Dashboard() {
         setStats(data);
       } catch (err) {
         console.error("Failed to fetch dashboard stats:", err);
-        setError("Unable to load dashboard data. Please refresh.");
+        setError(t('dashboard.loadError'));
       } finally {
         setLoading(false);
       }
@@ -70,7 +72,7 @@ export default function Dashboard() {
             className="text-sm text-primary underline"
             onClick={() => window.location.reload()}
           >
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       </div>
@@ -81,31 +83,31 @@ export default function Dashboard() {
     <div className="space-y-8 animate-fade-in">
       {/* Welcome Section */}
       <div>
-        <h1 className="text-display">Dashboard</h1>
+        <h1 className="text-display">{t('nav.dashboard')}</h1>
         <p className="text-muted-foreground mt-2">
-          Welcome back! Here's what's happening at your school today.
+          {t('dashboard.subtitle')}
         </p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
-          title="Total Students"
+          title={t('dashboard.totalStudents')}
           value={stats?.totalStudents ?? 0}
           icon={Users}
         />
         <StatsCard
-          title="Total Staff"
+          title={t('dashboard.totalStaff')}
           value={stats?.totalStaff ?? 0}
           icon={UserCheck}
         />
         <StatsCard
-          title="Today's Attendance"
+          title={t('dashboard.todayAttendance')}
           value={`${stats?.todayAttendancePercentage?.toFixed(1) ?? 0}%`}
           icon={Calendar}
         />
         <StatsCard
-          title="Pending Fees"
+          title={t('dashboard.pendingFees')}
           value={`₹${stats?.pendingFees?.toLocaleString('en-IN') ?? 0}`}
           icon={DollarSign}
         />
@@ -114,17 +116,17 @@ export default function Dashboard() {
       {/* Secondary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatsCard
-          title="Upcoming Exams"
+          title={t('dashboard.upcomingExams')}
           value={stats?.upcomingExams ?? 0}
           icon={BookOpen}
         />
         <StatsCard
-          title="Pending Assignments"
+          title={t('dashboard.pendingAssignments')}
           value={stats?.pendingAssignments ?? 0}
           icon={ClipboardList}
         />
         <StatsCard
-          title="Absent Today"
+          title={t('dashboard.absentToday')}
           value={stats?.todayAbsentStudents ?? 0}
           icon={Users}
         />

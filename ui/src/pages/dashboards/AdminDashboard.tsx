@@ -1,5 +1,6 @@
 ﻿import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   Users, UserCheck, Calendar, GraduationCap, Award, Loader2,
   RefreshCw, BookOpen, Bus, Home as HomeIcon, HeartPulse,
@@ -136,20 +137,21 @@ function statusBadge(status: string) {
 
 // ─── Paginator ────────────────────────────────────────────────────────────────
 function Paginator({ page, total, pageSize, onChange }: { page: number; total: number; pageSize: number; onChange: (p: number) => void }) {
+  const { t } = useLanguage();
   const pages = Math.ceil(total / pageSize);
   if (pages <= 1) return null;
   return (
     <div className="flex items-center justify-between pt-3 border-t mt-3">
-      <p className="text-xs text-muted-foreground">Showing {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total}</p>
+      <p className="text-xs text-muted-foreground">{t('dashboard.showingResults')} {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} {t('dashboard.ofLabel')} {total}</p>
       <div className="flex gap-1">
-        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={page <= 1} onClick={() => onChange(page - 1)}>‹ Prev</Button>
+        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={page <= 1} onClick={() => onChange(page - 1)}>{t('dashboard.prevPage')}</Button>
         {Array.from({ length: Math.min(5, pages) }, (_, i) => {
           const p = pages <= 5 ? i + 1 : page <= 3 ? i + 1 : page >= pages - 2 ? pages - 4 + i : page - 2 + i;
           return (
             <Button key={p} variant={p === page ? "default" : "outline"} size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => onChange(p)}>{p}</Button>
           );
         })}
-        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={page >= pages} onClick={() => onChange(page + 1)}>Next ›</Button>
+        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={page >= pages} onClick={() => onChange(page + 1)}>{t('dashboard.nextPage')}</Button>
       </div>
     </div>
   );
@@ -159,6 +161,14 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { schoolInfo } = useSchool();
+  const { t } = useLanguage();
+
+  const getGreeting = () => {
+    const h = new Date().getHours();
+    if (h < 12) return t('dashboard.goodMorning');
+    if (h < 17) return t('dashboard.goodAfternoon');
+    return t('dashboard.goodEvening');
+  };
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
@@ -347,7 +357,7 @@ export default function AdminDashboard() {
           </div>
           <Loader2 className="h-5 w-5 animate-spin text-primary absolute -top-1 -right-1" />
         </div>
-        <p className="text-sm text-muted-foreground">Loading dashboard…</p>
+        <p className="text-sm text-muted-foreground">{t('dashboard.loadingDashboard')}</p>
       </div>
     );
   }
@@ -355,8 +365,8 @@ export default function AdminDashboard() {
   if (!summary) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
-        <p className="text-sm text-muted-foreground">Dashboard data unavailable. Please refresh.</p>
-        <button onClick={() => loadData()} className="text-sm text-primary underline">Retry</button>
+        <p className="text-sm text-muted-foreground">{t('dashboard.dataUnavailable')}</p>
+        <button onClick={() => loadData()} className="text-sm text-primary underline">{t('dashboard.retry')}</button>
       </div>
     );
   }
@@ -372,10 +382,10 @@ export default function AdminDashboard() {
   ];
 
   const alerts: { type: "warn" | "ok" | "info"; text: string }[] = [];
-  if (attendancePct > 0 && attendancePct < 85) alerts.push({ type: "warn", text: `Attendance is low today - ${attendancePct}%` });
-  if (s.pendingFees > 0) alerts.push({ type: "warn", text: `${inr(s.pendingFees)} in fee collections pending` });
-  if (s.upcomingExams > 0) alerts.push({ type: "info", text: `${s.upcomingExams} exam(s) scheduled in the next 7 days` });
-  if (alerts.length === 0) alerts.push({ type: "ok", text: "All systems operating normally" });
+  if (attendancePct > 0 && attendancePct < 85) alerts.push({ type: "warn", text: `${t('dashboard.alertAttendanceLow')} ${attendancePct}%` });
+  if (s.pendingFees > 0) alerts.push({ type: "warn", text: `${inr(s.pendingFees)} ${t('dashboard.alertFeesPending')}` });
+  if (s.upcomingExams > 0) alerts.push({ type: "info", text: `${s.upcomingExams} ${t('dashboard.alertExamsScheduled')}` });
+  if (alerts.length === 0) alerts.push({ type: "ok", text: t('dashboard.alertAllOk') });
 
   return (
     <>
@@ -386,14 +396,14 @@ export default function AdminDashboard() {
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 bg-primary/5 border-primary/20 text-primary">
-              Admin
+              {t('dashboard.adminBadge')}
             </Badge>
             {schoolInfo?.boardAffiliation && (
               <Badge variant="outline" className="text-[10px] px-2 py-0.5 text-muted-foreground">{schoolInfo.boardAffiliation}</Badge>
             )}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-            {greeting()}, {user?.name?.split(" ")[0] ?? "Admin"}
+            {getGreeting()}, {user?.name?.split(" ")[0] ?? t('dashboard.adminBadge')}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {DATE_LABEL}{schoolInfo?.name ? ` · ${schoolInfo.name}` : ""}
@@ -402,12 +412,12 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-2 shrink-0">
           {lastUpdated && (
             <span className="text-xs text-muted-foreground hidden sm:block">
-              Updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+              {t('dashboard.updated')} {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
           <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => loadData(true)} disabled={refreshing}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
+            {t('dashboard.refresh')}
           </Button>
         </div>
       </div>
@@ -415,44 +425,44 @@ export default function AdminDashboard() {
       {/* KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         <KpiCard
-          label="Total Students" value={s.totalStudents.toLocaleString()} sub="Active enrolment"
+          label={t('dashboard.totalStudents')} value={s.totalStudents.toLocaleString()} sub={t('dashboard.activeEnrollment')}
           icon={Users} accent="text-blue-600" accentBg="bg-blue-50" borderColor="border-l-blue-500"
-          trend="neutral" trendLabel="Enrolled this year" onClick={() => navigate("/students")}
+          trend="neutral" trendLabel={t('dashboard.enrolledThisYear')} onClick={() => navigate("/students")}
         />
         <KpiCard
-          label="Teaching Staff" value={s.totalStaff.toLocaleString()} sub="Active members"
+          label={t('dashboard.teachingStaff')} value={s.totalStaff.toLocaleString()} sub={t('dashboard.activeMembers')}
           icon={UserCheck} accent="text-violet-600" accentBg="bg-violet-50" borderColor="border-l-violet-500"
-          trend="neutral" trendLabel="Full-time & part-time" onClick={() => navigate("/staff")}
+          trend="neutral" trendLabel={t('dashboard.fullTimePartTime')} onClick={() => navigate("/staff")}
         />
         <KpiCard
-          label="Attendance Today" value={attendancePct > 0 ? `${attendancePct}%` : "–"} sub={`${s.todayAbsentStudents} absent`}
+          label={t('dashboard.attendanceToday')} value={attendancePct > 0 ? `${attendancePct}%` : "–"} sub={`${s.todayAbsentStudents} ${t('dashboard.absentLabel')}`}
           icon={Calendar}
           accent={attendancePct >= 90 ? "text-emerald-600" : attendancePct >= 80 ? "text-amber-600" : "text-rose-600"}
           accentBg={attendancePct >= 90 ? "bg-emerald-50" : attendancePct >= 80 ? "bg-amber-50" : "bg-rose-50"}
           borderColor={attendancePct >= 90 ? "border-l-emerald-500" : attendancePct >= 80 ? "border-l-amber-500" : "border-l-rose-500"}
           trend={attendancePct >= 90 ? "up" : attendancePct >= 80 ? "neutral" : "down"}
-          trendLabel={attendancePct >= 90 ? "On target" : attendancePct >= 80 ? "Near target" : "Below target"}
+          trendLabel={attendancePct >= 90 ? t('dashboard.onTarget') : attendancePct >= 80 ? t('dashboard.nearTarget') : t('dashboard.belowTarget')}
           onClick={() => navigate("/attendance")}
         />
         <KpiCard
-          label="Pending Fees" value={inr(s.pendingFees)} sub="Dues outstanding"
+          label={t('dashboard.pendingFees')} value={inr(s.pendingFees)} sub={t('dashboard.duesOutstanding')}
           icon={IndianRupee} accent="text-rose-600" accentBg="bg-rose-50" borderColor="border-l-rose-500"
-          trend={s.pendingFees === 0 ? "up" : "down"} trendLabel={s.pendingFees === 0 ? "All clear" : "Action needed"}
+          trend={s.pendingFees === 0 ? "up" : "down"} trendLabel={s.pendingFees === 0 ? t('dashboard.allClear') : t('dashboard.actionNeeded')}
           onClick={() => navigate("/fees")}
         />
         <KpiCard
-          label="Active Classes" value={s.totalClasses.toLocaleString()} sub="Standards & sections"
+          label={t('dashboard.activeClasses')} value={s.totalClasses.toLocaleString()} sub={t('dashboard.standardsSections')}
           icon={GraduationCap} accent="text-indigo-600" accentBg="bg-indigo-50" borderColor="border-l-indigo-500"
-          trend="neutral" trendLabel="This academic year" onClick={() => navigate("/academics")}
+          trend="neutral" trendLabel={t('dashboard.thisAcademicYear')} onClick={() => navigate("/academics")}
         />
         <KpiCard
-          label="Upcoming Exams" value={s.upcomingExams.toLocaleString()} sub="Next 7 days"
+          label={t('dashboard.examsLabel')} value={s.upcomingExams.toLocaleString()} sub={t('dashboard.next7Days')}
           icon={Award}
           accent={s.upcomingExams > 0 ? "text-amber-600" : "text-slate-500"}
           accentBg={s.upcomingExams > 0 ? "bg-amber-50" : "bg-slate-50"}
           borderColor={s.upcomingExams > 0 ? "border-l-amber-500" : "border-l-slate-300"}
           trend={s.upcomingExams > 0 ? "neutral" : "up"}
-          trendLabel={s.upcomingExams > 0 ? "Scheduled" : "No exams this week"}
+          trendLabel={s.upcomingExams > 0 ? t('dashboard.scheduled') : t('dashboard.noExamsThisWeek')}
           onClick={() => navigate("/examinations")}
         />
       </div>
@@ -466,17 +476,17 @@ export default function AdminDashboard() {
           <CardHeader className="pb-2 pt-5 px-5">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-sm font-semibold">Attendance Trend</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">Student presence rate (%)</p>
+                <CardTitle className="text-sm font-semibold">{t('dashboard.attendanceTrend')}</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.studentPresenceRate')}</p>
               </div>
               <Select value={attPeriod} onValueChange={(v) => setAttPeriod(v as AttPeriod)}>
                 <SelectTrigger className="h-7 w-28 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="7">This week</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                  <SelectItem value="90">Last 3 months</SelectItem>
+                  <SelectItem value="7">{t('dashboard.thisWeekFilter')}</SelectItem>
+                  <SelectItem value="30">{t('dashboard.last30Days')}</SelectItem>
+                  <SelectItem value="90">{t('dashboard.last3Months')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -504,7 +514,7 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader className="pb-2 pt-5 px-5">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Fee Overview</CardTitle>
+              <CardTitle className="text-sm font-semibold">{t('dashboard.feeOverview')}</CardTitle>
               <Select value={feeMonths} onValueChange={(v) => setFeeMonths(v as FeeMonths)}>
                 <SelectTrigger className="h-7 w-24 text-xs">
                   <SelectValue />
@@ -516,7 +526,7 @@ export default function AdminDashboard() {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">Collected vs pending</p>
+            <p className="text-xs text-muted-foreground">{t('dashboard.collectedVsPending')}</p>
           </CardHeader>
           <CardContent className="flex flex-col items-center pb-4">
             <ResponsiveContainer width="100%" height={140}>
@@ -528,12 +538,12 @@ export default function AdminDashboard() {
               </PieChart>
             </ResponsiveContainer>
             <div className="flex gap-4 text-xs mt-1">
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-2))]" />Collected</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-5))]" />Pending</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-2))]" />{t('dashboard.collected')}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-5))]" />{t('dashboard.pendingCol')}</span>
             </div>
             <div className="mt-3 w-full border-t pt-3 space-y-1.5 px-1">
               <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Outstanding dues</span>
+                <span className="text-muted-foreground">{t('dashboard.outstandingDues')}</span>
                 <span className="font-semibold text-rose-600">{inr(s.pendingFees)}</span>
               </div>
             </div>
@@ -561,7 +571,7 @@ export default function AdminDashboard() {
       <section className="space-y-4">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
-          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">School Intelligence</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('dashboard.schoolIntelligence')}</h2>
         </div>
 
         {/* Row 1: Fee Collection Overview + Transport Summary */}
@@ -574,7 +584,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <IndianRupee className="h-4 w-4 text-emerald-600" />
-                  Overall Fee Collection
+                  {t('dashboard.overallFeeCollection')}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   <Select value={feeMonths} onValueChange={(v) => setFeeMonths(v as FeeMonths)}>
@@ -595,15 +605,15 @@ export default function AdminDashboard() {
               {feeAnalytics && (
                 <div className="grid grid-cols-3 gap-3 mt-3">
                   <div className="bg-emerald-50 dark:bg-emerald-950/40 rounded-xl p-3 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">Collected</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">{t('dashboard.collected')}</p>
                     <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{inr(feeAnalytics.totalCollected)}</p>
                   </div>
                   <div className="bg-rose-50 dark:bg-rose-950/40 rounded-xl p-3 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400 mb-1">Pending</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400 mb-1">{t('dashboard.pendingCol')}</p>
                     <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{inr(feeAnalytics.totalPending)}</p>
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-950/40 rounded-xl p-3 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-400 mb-1">Collection Rate</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-400 mb-1">{t('dashboard.collectionRate')}</p>
                     <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{feeAnalytics.collectionRate.toFixed(1)}%</p>
                   </div>
                 </div>
@@ -613,7 +623,7 @@ export default function AdminDashboard() {
               {feeAnalyticsLoading ? (
                 <div className="h-[145px] flex items-center justify-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">Loading…</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.loadingLabel')}</p>
                 </div>
               ) : feeAnalytics?.monthlyData?.length ? (
                 <ResponsiveContainer width="100%" height={145}>
@@ -628,7 +638,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               ) : (
                 <div className="h-[145px] flex items-center justify-center">
-                  <p className="text-xs text-muted-foreground">Fee analytics loading…</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.feeAnalyticsLoading')}</p>
                 </div>
               )}
             </CardContent>
@@ -641,7 +651,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Bus className="h-4 w-4 text-orange-600" />
-                  Transport Summary
+                  {t('dashboard.transportSummary')}
                 </CardTitle>
                 <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => setTransportDialog(true)}>
                   View All <ExternalLink className="h-2.5 w-2.5 ml-1" />
@@ -650,11 +660,11 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-2 gap-2 mt-3">
                 <div className="bg-orange-50 dark:bg-orange-950/40 rounded-xl p-2.5 text-center">
                   <p className="text-2xl font-bold text-orange-700 dark:text-orange-400">{routes.length}</p>
-                  <p className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold uppercase tracking-wider">Routes</p>
+                  <p className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold uppercase tracking-wider">{t('dashboard.routes')}</p>
                 </div>
                 <div className="bg-amber-50 dark:bg-amber-950/40 rounded-xl p-2.5 text-center">
                   <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{routes.reduce((s, r) => s + (r.studentsAssigned ?? 0), 0)}</p>
-                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider">Students</p>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wider">{t('dashboard.studentsCol')}</p>
                 </div>
               </div>
             </CardHeader>
@@ -676,7 +686,7 @@ export default function AdminDashboard() {
                   </div>
                 ))}
                 {routes.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-4">No routes configured</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">{t('dashboard.noRoutesConfigured')}</p>
                 )}
               </div>
             </CardContent>
@@ -693,10 +703,10 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-violet-600" />
-                  Classwise Fee Balance
+                  {t('dashboard.classwiseFeeBalance')}
                 </CardTitle>
                 <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => setClasswiseFeeDialog(true)}>
-                  View All <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                  {t('dashboard.viewAll')} <ExternalLink className="h-2.5 w-2.5 ml-1" />
                 </Button>
               </div>
             </CardHeader>
@@ -713,7 +723,7 @@ export default function AdminDashboard() {
                       return (
                         <div key={cls}>
                           <div className="flex justify-between text-xs mb-1">
-                            <span className="font-medium text-foreground">Class {cls}</span>
+                            <span className="font-medium text-foreground">{t('dashboard.classLabel')} {cls}</span>
                             <span className="text-muted-foreground font-semibold">{inr(amount as number)}</span>
                           </div>
                           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -724,7 +734,7 @@ export default function AdminDashboard() {
                     })}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground text-center py-6">No class-wise data available</p>
+                <p className="text-xs text-muted-foreground text-center py-6">{t('dashboard.noClasswiseData')}</p>
               )}
             </CardContent>
           </Card>
@@ -736,10 +746,10 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Trophy className="h-4 w-4 text-rose-600" />
-                  Top Outstanding Balances
+                  {t('dashboard.topOutstandingBalances')}
                 </CardTitle>
                 <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => openDebtorDialog(1)}>
-                  View All <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                  {t('dashboard.viewAll')} <ExternalLink className="h-2.5 w-2.5 ml-1" />
                 </Button>
               </div>
             </CardHeader>
@@ -758,7 +768,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-foreground truncate">{rec.studentName}</p>
-                        <p className="text-[10px] text-muted-foreground">Class {rec.class}</p>
+                        <p className="text-[10px] text-muted-foreground">{t('dashboard.classLabel')} {rec.class}</p>
                       </div>
                       <span className="text-xs font-bold text-rose-600 shrink-0">{inr(rec.pendingAmount)}</span>
                     </div>
@@ -767,8 +777,8 @@ export default function AdminDashboard() {
               ) : (
                 <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
                   <CheckCircle2 className="h-10 w-10 text-emerald-400" />
-                  <p className="text-xs font-medium text-foreground">All dues cleared!</p>
-                  <p className="text-[10px] text-muted-foreground">No outstanding balances</p>
+                  <p className="text-xs font-medium text-foreground">{t('dashboard.allDuesCleared')}</p>
+                  <p className="text-[10px] text-muted-foreground">{t('dashboard.noOutstandingBalances')}</p>
                 </div>
               )}
             </CardContent>
@@ -781,16 +791,16 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Users className="h-4 w-4 text-blue-600" />
-                  Head Count by Class
+                  {t('dashboard.headCountByClass')}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {enrollmentData && (
                     <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 bg-blue-50">
-                      {enrollmentData.totalActiveStudents} total
+                      {enrollmentData.totalActiveStudents} {t('common.total')}
                     </Badge>
                   )}
                   <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => setHeadcountDialog(true)}>
-                    View All <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                    {t('dashboard.viewAll')} <ExternalLink className="h-2.5 w-2.5 ml-1" />
                   </Button>
                 </div>
               </div>
@@ -814,7 +824,7 @@ export default function AdminDashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="text-xs text-muted-foreground text-center py-6">No enrollment data</p>
+                <p className="text-xs text-muted-foreground text-center py-6">{t('dashboard.noEnrollmentData')}</p>
               )}
             </CardContent>
           </Card>
@@ -830,22 +840,22 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <CalendarDays className="h-4 w-4 text-amber-600" />
-                  Upcoming Calendar
+                  {t('dashboard.upcomingCalendar')}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   <div className="flex gap-2 text-[10px] font-medium">
                     <span className="flex items-center gap-1 text-muted-foreground">
-                      <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" /> Exams
+                      <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" /> {t('dashboard.examsLabel')}
                     </span>
                     <span className="flex items-center gap-1 text-muted-foreground">
-                      <span className="h-2 w-2 rounded-full bg-blue-500 inline-block" /> Holidays
+                      <span className="h-2 w-2 rounded-full bg-blue-500 inline-block" /> {t('dashboard.holidaysLabel')}
                     </span>
                   </div>
                   <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => openExamDialog(1)}>
-                    All Exams <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                    {t('dashboard.allExams')} <ExternalLink className="h-2.5 w-2.5 ml-1" />
                   </Button>
                   <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => setHolidayDialog(true)}>
-                    All Holidays <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                    {t('dashboard.allHolidays')} <ExternalLink className="h-2.5 w-2.5 ml-1" />
                   </Button>
                 </div>
               </div>
@@ -874,7 +884,7 @@ export default function AdminDashboard() {
                   return (
                     <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
                       <CalendarDays className="h-10 w-10 text-muted-foreground/30" />
-                      <p className="text-xs text-muted-foreground">No upcoming events</p>
+                      <p className="text-xs text-muted-foreground">{t('dashboard.noUpcomingEvents')}</p>
                     </div>
                   );
                 }
@@ -903,7 +913,7 @@ export default function AdminDashboard() {
                             daysFromNow <= 3 ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800" :
                             "bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900/40 dark:border-slate-700"
                           }`}>
-                            {daysFromNow === 0 ? "Today" : daysFromNow === 1 ? "Tomorrow" : `in ${daysFromNow}d`}
+                            {daysFromNow === 0 ? t('dashboard.todayLabel') : daysFromNow === 1 ? t('dashboard.tomorrowLabel') : `in ${daysFromNow}d`}
                           </Badge>
                         </div>
                       );
@@ -921,7 +931,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Cake className="h-4 w-4 text-pink-600" />
-                  Birthdays This Week
+                  {t('dashboard.birthdaysThisWeek')}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {birthdayStudents.length > 0 && (
@@ -930,7 +940,7 @@ export default function AdminDashboard() {
                     </Badge>
                   )}
                   <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-primary hover:text-primary" onClick={() => setBirthdayDialog(true)}>
-                    View All <ExternalLink className="h-2.5 w-2.5 ml-1" />
+                    {t('dashboard.viewAll')} <ExternalLink className="h-2.5 w-2.5 ml-1" />
                   </Button>
                 </div>
               </div>
@@ -962,11 +972,11 @@ export default function AdminDashboard() {
                             {s.name}{isToday && " 🎂"}
                           </p>
                           <p className="text-[10px] text-muted-foreground">
-                            {s.class} {s.section} · Turns {age}
+                            {s.class} {s.section} · {t('dashboard.turnsLabel')} {age}
                           </p>
                         </div>
                         {isToday && (
-                          <Badge className="text-[9px] bg-pink-500 hover:bg-pink-500 border-0 shrink-0">Today!</Badge>
+                          <Badge className="text-[9px] bg-pink-500 hover:bg-pink-500 border-0 shrink-0">{t('dashboard.todayBadge')}</Badge>
                         )}
                       </div>
                     );
@@ -978,8 +988,8 @@ export default function AdminDashboard() {
                     <Cake className="h-6 w-6 text-pink-300" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-foreground">No birthdays this week</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Upcoming birthdays will appear here</p>
+                    <p className="text-xs font-medium text-foreground">{t('dashboard.noBirthdaysThisWeek')}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{t('dashboard.upcomingBirthdaysAppear')}</p>
                   </div>
                 </div>
               )}
@@ -992,18 +1002,18 @@ export default function AdminDashboard() {
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Activity className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Quick Actions</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('dashboard.quickActions')}</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           {[
-            { label: "Collect Fee",    url: "/fees",       primary: false },
-            { label: "Add Student",   url: "/students",   primary: false },
-            { label: "Add Staff",     url: "/staff",      primary: false },
-            { label: "Issue Book",    url: "/library",    primary: false },
-            { label: "View Analytics", url: "/analytics", primary: false },
+            { labelKey: "dashboard.collectFee",    url: "/fees",       primary: false },
+            { labelKey: "dashboard.addStudent",    url: "/students",   primary: false },
+            { labelKey: "dashboard.addStaff",      url: "/staff",      primary: false },
+            { labelKey: "dashboard.issueBook",     url: "/library",    primary: false },
+            { labelKey: "dashboard.viewAnalytics", url: "/analytics",  primary: false },
           ].map(q => (
             <Button key={q.url} variant={q.primary ? "default" : "outline"} size="sm" onClick={() => navigate(q.url)}>
-              {q.label}
+              {t(q.labelKey)}
             </Button>
           ))}
         </div>
@@ -1021,8 +1031,8 @@ export default function AdminDashboard() {
                 <Calendar className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-base">Leave Management</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">Approve, reject, and manage staff/student leave requests</p>
+                <CardTitle className="text-base">{t('dashboard.leaveManagementTitle')}</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.leaveManagementDesc')}</p>
               </div>
             </div>
             {showLeaveManagement ? (
@@ -1053,7 +1063,7 @@ export default function AdminDashboard() {
             <IndianRupee className="h-4 w-4 text-emerald-600" />
             All Fee Records
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/fees")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1067,13 +1077,13 @@ export default function AdminDashboard() {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                 <tr>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Student</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Class</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">Total</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">Paid</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">Pending</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Due Date</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Status</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.studentCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.classCol')}</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.totalCol')}</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.paidCol')}</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.pendingCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.dueDateCol')}</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.statusCol')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1089,7 +1099,7 @@ export default function AdminDashboard() {
                   </tr>
                 ))}
                 {feeDialogData.length === 0 && (
-                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No records found</td></tr>
+                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t('dashboard.noRecordsFound')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1107,7 +1117,7 @@ export default function AdminDashboard() {
             <Trophy className="h-4 w-4 text-rose-600" />
             All Outstanding Fee Balances
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/fees")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1122,11 +1132,11 @@ export default function AdminDashboard() {
               <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                 <tr>
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground w-8">#</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Student</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Class</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">Total Fee</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-rose-600">Pending</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Due Date</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.studentCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.classCol')}</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.totalFeeCol')}</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-rose-600">{t('dashboard.pendingCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.dueDateCol')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1147,7 +1157,7 @@ export default function AdminDashboard() {
                 {debtorDialogData.length === 0 && (
                   <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">
                     <CheckCircle2 className="h-8 w-8 text-emerald-400 mx-auto mb-2" />
-                    No outstanding balances — all fees cleared!
+                    {t('dashboard.noOutstandingMsg')}
                   </td></tr>
                 )}
               </tbody>
@@ -1166,7 +1176,7 @@ export default function AdminDashboard() {
             <Bus className="h-4 w-4 text-orange-600" />
             All Transport Routes
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/transport")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1174,13 +1184,13 @@ export default function AdminDashboard() {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
               <tr>
-                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Route</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Vehicle</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Driver</th>
-                <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Students</th>
-                <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Capacity</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">Monthly Fee</th>
-                <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Status</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.routeCol')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.vehicleCol')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.driverCol')}</th>
+                <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.studentsCol')}</th>
+                <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.capacityCol')}</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.monthlyFeeCol')}</th>
+                <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.statusCol')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1199,7 +1209,7 @@ export default function AdminDashboard() {
                 </tr>
               ))}
               {routes.length === 0 && (
-                <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No routes configured</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t('dashboard.noRoutesConfigured')}</td></tr>
               )}
             </tbody>
           </table>
@@ -1215,7 +1225,7 @@ export default function AdminDashboard() {
             <Award className="h-4 w-4 text-amber-600" />
             All Examinations
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/examinations")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1229,13 +1239,13 @@ export default function AdminDashboard() {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                 <tr>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Exam</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Type</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Class</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Subject</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Date</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.examNameCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.typeCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.classCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.subjectCol')}</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('common.date')}</th>
                   <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Max Marks</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Status</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.statusCol')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1260,7 +1270,7 @@ export default function AdminDashboard() {
                   );
                 })}
                 {examDialogData.length === 0 && (
-                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No examinations found</td></tr>
+                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t('dashboard.noExamsFound')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1278,7 +1288,7 @@ export default function AdminDashboard() {
             <CalendarDays className="h-4 w-4 text-blue-600" />
             Upcoming Holidays (Next 45 days)
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/holidays")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1315,7 +1325,7 @@ export default function AdminDashboard() {
                   daysFromNow <= 7 ? "bg-amber-50 text-amber-700 border-amber-200" :
                   "bg-slate-50 text-slate-500 border-slate-200"
                 }`}>
-                  {daysFromNow === 0 ? "Today" : daysFromNow === 1 ? "Tomorrow" : `in ${daysFromNow}d`}
+                  {daysFromNow === 0 ? t('dashboard.todayLabel') : daysFromNow === 1 ? t('dashboard.tomorrowLabel') : `in ${daysFromNow}d`}
                 </Badge>
               </div>
             );
@@ -1377,9 +1387,9 @@ export default function AdminDashboard() {
                     <p className="text-sm font-semibold text-foreground truncate">
                       {s.name}{isToday && " 🎂"}
                     </p>
-                    <p className="text-[11px] text-muted-foreground">{s.class} {s.section} · Turns {s.age} on {s.dob.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</p>
+                    <p className="text-[11px] text-muted-foreground">{s.class} {s.section} · {t('dashboard.turnsLabel')} {s.age} on {s.dob.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</p>
                   </div>
-                  {isToday && <Badge className="text-[9px] bg-pink-500 hover:bg-pink-500 border-0 shrink-0">Today!</Badge>}
+                  {isToday && <Badge className="text-[9px] bg-pink-500 hover:bg-pink-500 border-0 shrink-0">{t('dashboard.todayBadge')}</Badge>}
                   {!isPast && !isToday && (
                     <span className="text-[10px] text-muted-foreground shrink-0">in {s.daysFromNow}d</span>
                   )}
@@ -1399,7 +1409,7 @@ export default function AdminDashboard() {
             <Users className="h-4 w-4 text-blue-600" />
             Student Head Count — All Classes
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/students")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1409,24 +1419,24 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <div className="bg-blue-50 dark:bg-blue-950/40 rounded-xl p-3 text-center">
                   <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{enrollmentData.totalActiveStudents}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">Active</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">{t('common.active')}</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-900/40 rounded-xl p-3 text-center">
                   <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">{enrollmentData.totalInactiveStudents}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Inactive</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t('common.inactive')}</p>
                 </div>
                 <div className="bg-indigo-50 dark:bg-indigo-950/40 rounded-xl p-3 text-center">
                   <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">{enrollmentData.totalClasses}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600">Classes</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600">{t('dashboard.activeClasses')}</p>
                 </div>
               </div>
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                   <tr>
-                    <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Class</th>
-                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Total</th>
-                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground text-emerald-600">Active</th>
-                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">Capacity</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.classCol')}</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.totalCol')}</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground text-emerald-600">{t('common.active')}</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.capacityCol')}</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Fill Rate</th>
                   </tr>
                 </thead>
@@ -1456,7 +1466,7 @@ export default function AdminDashboard() {
           ) : (
             <div className="flex items-center justify-center py-12 gap-2">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Loading enrollment data…</span>
+              <span className="text-sm text-muted-foreground">{t('dashboard.loadingLabel')}</span>
             </div>
           )}
         </div>
@@ -1471,7 +1481,7 @@ export default function AdminDashboard() {
             <BarChart3 className="h-4 w-4 text-violet-600" />
             Classwise Fee Collection Summary
             <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => navigate("/fees")}>
-              Open Full Page <ExternalLink className="h-3 w-3 ml-1" />
+              {t('dashboard.openFullPage')} <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
           </DialogTitle>
         </DialogHeader>
@@ -1498,8 +1508,8 @@ export default function AdminDashboard() {
                 <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                   <tr>
                     <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">#</th>
-                    <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Class</th>
-                    <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">Collected</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.classCol')}</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">{t('dashboard.collected')}</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Share</th>
                   </tr>
                 </thead>
@@ -1511,7 +1521,7 @@ export default function AdminDashboard() {
                       .map(([cls, amount], i) => (
                         <tr key={cls} className={`border-b border-border/50 hover:bg-muted/30 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
                           <td className="px-3 py-2.5 text-muted-foreground">{i + 1}</td>
-                          <td className="px-3 py-2.5 font-medium text-foreground">Class {cls}</td>
+                          <td className="px-3 py-2.5 font-medium text-foreground">{t('dashboard.classLabel')} {cls}</td>
                           <td className="px-3 py-2.5 text-right font-semibold text-violet-600">{inrFull(amount as number)}</td>
                           <td className="px-3 py-2.5 min-w-[100px]">
                             <div className="flex items-center gap-2">
@@ -1529,7 +1539,7 @@ export default function AdminDashboard() {
             </>
           ) : (
             <div className="flex items-center justify-center py-12 gap-2">
-              <p className="text-sm text-muted-foreground">No classwise fee data available</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.noClasswiseData')}</p>
             </div>
           )}
         </div>

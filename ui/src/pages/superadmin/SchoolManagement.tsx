@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Plus, Edit, Eye, PowerOff, Power, Building2, Search } from "lucide-react";
+﻿import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Edit, Eye, PowerOff, Power, Building2, Search, Rocket } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ interface SchoolForm {
 const emptyForm: SchoolForm = { name: "", schoolCode: "", address: "", phone: "", email: "", logo: "" };
 
 export default function SchoolManagement() {
+  const navigate = useNavigate();
   const [schools, setSchools] = useState<SchoolListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -120,9 +122,15 @@ export default function SchoolManagement() {
           </h1>
           <p className="text-muted-foreground mt-1">Manage all registered schools on the Vitana platform</p>
         </div>
-        <Button onClick={() => { setAddForm(emptyForm); setAddDialog(true); }}>
-          <Plus className="h-4 w-4 mr-2" /> Add School
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/superadmin/onboard")} className="gap-2">
+            <Rocket className="h-4 w-4" />
+            Onboard School
+          </Button>
+          <Button onClick={() => { setAddForm(emptyForm); setAddDialog(true); }}>
+            <Plus className="h-4 w-4 mr-2" /> Add School
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -174,7 +182,14 @@ export default function SchoolManagement() {
                           ? <img src={school.logo} alt="" className="h-8 w-8 rounded object-cover border" />
                           : <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center"><Building2 className="h-4 w-4 text-primary" /></div>
                         }
-                        <span className="font-medium">{school.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{school.name}</span>
+                          {school.isOnboarded && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 w-fit mt-0.5">
+                              <Rocket className="h-3 w-3" /> Onboarded
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{school.schoolCode}</TableCell>
@@ -188,6 +203,16 @@ export default function SchoolManagement() {
                       <div className="flex items-center justify-center gap-1">
                         <Button size="sm" variant="ghost" onClick={() => setViewSchool(school)}><Eye className="h-4 w-4" /></Button>
                         <Button size="sm" variant="ghost" onClick={() => openEditDialog(school)}><Edit className="h-4 w-4" /></Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={school.isOnboarded ? "Already onboarded via wizard" : "Run onboarding wizard"}
+                          disabled={school.isOnboarded}
+                          onClick={() => !school.isOnboarded && navigate("/superadmin/onboard")}
+                          className={school.isOnboarded ? "opacity-40 cursor-not-allowed" : "text-indigo-600 hover:text-indigo-800"}
+                        >
+                          <Rocket className="h-4 w-4" />
+                        </Button>
                         <Button size="sm" variant="ghost" onClick={() => handleToggleStatus(school)}
                           className={school.isActive ? "text-red-500 hover:text-red-700" : "text-green-600 hover:text-green-800"}>
                           {school.isActive ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}

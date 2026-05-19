@@ -17,6 +17,7 @@ export interface SchoolListItem {
   isActive: boolean;
   enabledModulesCount: number;
   totalModulesCount: number;
+  isOnboarded: boolean;
 }
 
 export interface SchoolDetail {
@@ -132,3 +133,36 @@ export const resetUserPassword = (userId: string, newPassword: string): Promise<
 
 export const getPlatformStats = (): Promise<PlatformStats> =>
   apiGet("/school-feature-permissions/stats");
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+
+export interface OnboardSchoolRequest {
+  name: string;
+  schoolCode: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  logo?: string;
+  academicYearName: string;
+  academicYearStart: string; // ISO date
+  academicYearEnd: string;   // ISO date
+  academicYearIsCurrent: boolean;
+  adminUsername: string;
+  adminEmail: string;
+  adminPassword: string;
+  moduleOverrides?: Record<string, boolean>;
+}
+
+export interface OnboardSchoolResult {
+  schoolId: string;
+  schoolName: string;
+  schoolCode: string;
+  adminUserId: string;
+  adminEmail: string;
+  academicYearId: string;
+  academicYearName: string;
+  enabledModules: string[];
+}
+
+export const onboardSchool = (data: OnboardSchoolRequest): Promise<OnboardSchoolResult> =>
+  apiPost("/school-feature-permissions/onboard", data);

@@ -20,6 +20,7 @@ import {
 } from "@/services/api/healthApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { academicApi } from "@/services/api/academicApi";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -68,6 +69,7 @@ function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record
     status: record?.status ?? "normal",
   });
   const [saving, setSaving] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (isEdit) return;
@@ -98,28 +100,28 @@ function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record
       if (isEdit && record) {
         const upd: UpdateHealthRecordDto = { ...form };
         await healthApi.updateRecord(record.id, upd);
-        toast.success("Record updated");
+        toast.success(t('health.toast.recordUpdated'));
       } else {
         await healthApi.createRecord(form);
-        toast.success("Health record created");
+        toast.success(t('health.toast.recordCreated'));
       }
       onSaved(); onClose();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to save record");
+      toast.error(err instanceof Error ? err.message : t('health.toast.failedSaveRecord'));
     } finally { setSaving(false); }
   }
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? "Edit Health Record" : "New Health Checkup"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? t('health.recordForm.titleEdit') : t('health.recordForm.titleNew')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
           {!isEdit && (
             <div className="space-y-2">
-              <Label>Search Student</Label>
-              <Input value={studentSearch} onChange={e => setStudentSearch(e.target.value)} placeholder="Search by name..." />
+              <Label>{t('health.recordForm.searchStudent')}</Label>
+              <Input value={studentSearch} onChange={e => setStudentSearch(e.target.value)} placeholder={t('health.recordForm.searchPlaceholder')} />
               <Select value={form.studentId} onValueChange={v => set("studentId", v)}>
-                <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('health.recordForm.selectStudent')} /></SelectTrigger>
                 <SelectContent>
                   {filteredStudents.slice(0, 50).map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.name} — {s.class} {s.section}</SelectItem>
@@ -131,103 +133,103 @@ function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label>Checkup Date *</Label>
+              <Label>{t('health.recordForm.checkupDate')} *</Label>
               <Input type="date" value={form.checkupDate} onChange={e => set("checkupDate", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Height (cm) *</Label>
+              <Label>{t('health.recordForm.height')} *</Label>
               <Input type="number" step="0.1" value={form.height || ""} onChange={e => setNum("height", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Weight (kg) *</Label>
+              <Label>{t('health.recordForm.weight')} *</Label>
               <Input type="number" step="0.1" value={form.weight || ""} onChange={e => setNum("weight", e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
-              <Label>BP Systolic</Label>
+              <Label>{t('health.recordForm.bpSystolic')}</Label>
               <Input type="number" value={form.bloodPressureSystolic ?? ""} onChange={e => setNum("bloodPressureSystolic", e.target.value)} placeholder="120" />
             </div>
             <div className="space-y-1.5">
-              <Label>BP Diastolic</Label>
+              <Label>{t('health.recordForm.bpDiastolic')}</Label>
               <Input type="number" value={form.bloodPressureDiastolic ?? ""} onChange={e => setNum("bloodPressureDiastolic", e.target.value)} placeholder="80" />
             </div>
             <div className="space-y-1.5">
-              <Label>Heart Rate</Label>
+              <Label>{t('health.recordForm.heartRate')}</Label>
               <Input type="number" value={form.heartRate ?? ""} onChange={e => setNum("heartRate", e.target.value)} placeholder="72" />
             </div>
             <div className="space-y-1.5">
-              <Label>Temp (°F)</Label>
+              <Label>{t('health.recordForm.temperature')}</Label>
               <Input type="number" step="0.1" value={form.temperature ?? ""} onChange={e => setNum("temperature", e.target.value)} placeholder="98.6" />
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label>Blood Group</Label>
+              <Label>{t('health.recordForm.bloodGroup')}</Label>
               <Select value={form.bloodGroup ?? ""} onValueChange={v => set("bloodGroup", v)}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('health.recordForm.selectBloodGroup')} /></SelectTrigger>
                 <SelectContent>
                   {["A+","A-","B+","B-","AB+","AB-","O+","O-"].map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Vision Left</Label>
+              <Label>{t('health.recordForm.visionLeft')}</Label>
               <Input value={form.visionLeft ?? ""} onChange={e => set("visionLeft", e.target.value)} placeholder="6/6" />
             </div>
             <div className="space-y-1.5">
-              <Label>Vision Right</Label>
+              <Label>{t('health.recordForm.visionRight')}</Label>
               <Input value={form.visionRight ?? ""} onChange={e => set("visionRight", e.target.value)} placeholder="6/6" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Allergies (comma-separated)</Label>
+            <Label>{t('health.recordForm.allergies')}</Label>
             <Input value={(form.allergies ?? []).join(", ")} onChange={e => set("allergies", e.target.value.split(",").map(s => s.trim()).filter(Boolean))} placeholder="Peanuts, Dust" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Doctor Name *</Label>
+              <Label>{t('health.recordForm.doctorName')} *</Label>
               <Input value={form.doctorName} onChange={e => set("doctorName", e.target.value)} placeholder="Dr. Sharma" />
             </div>
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>{t('health.recordForm.status')}</Label>
               <Select value={form.status} onValueChange={v => set("status", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="attention_required">Attention Required</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="follow_up">Follow Up</SelectItem>
+                  <SelectItem value="normal">{t('health.status.normal')}</SelectItem>
+                  <SelectItem value="attention_required">{t('health.status.attentionRequired')}</SelectItem>
+                  <SelectItem value="critical">{t('health.status.critical')}</SelectItem>
+                  <SelectItem value="follow_up">{t('health.status.followUp')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Doctor Notes</Label>
+            <Label>{t('health.recordForm.doctorNotes')}</Label>
             <Textarea value={form.doctorNotes ?? ""} onChange={e => set("doctorNotes", e.target.value)} rows={2} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Recommendations</Label>
+              <Label>{t('health.recordForm.recommendations')}</Label>
               <Textarea value={form.recommendations ?? ""} onChange={e => set("recommendations", e.target.value)} rows={2} />
             </div>
             <div className="space-y-1.5">
-              <Label>Next Checkup Date</Label>
+              <Label>{t('health.recordForm.nextCheckupDate')}</Label>
               <Input type="date" value={form.nextCheckupDate ?? ""} onChange={e => set("nextCheckupDate", e.target.value)} />
             </div>
           </div>
 
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('health.recordForm.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEdit ? "Update Record" : "Create Record"}
+              {isEdit ? t('health.recordForm.updateRecord') : t('health.recordForm.createRecord')}
             </Button>
           </DialogFooter>
         </form>
@@ -241,6 +243,7 @@ function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record
 function ViewRecordDialog({ recordId, onClose, onEdit }: { recordId: string; onClose: () => void; onEdit: (r: HealthRecordFull) => void }) {
   const [record, setRecord] = useState<HealthRecordFull | null>(null);
   const [loading, setLoading] = useState(true);
+  const { t } = useLanguage();
 
   useEffect(() => {
     healthApi.getRecordById(recordId)
@@ -263,30 +266,30 @@ function ViewRecordDialog({ recordId, onClose, onEdit }: { recordId: string; onC
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-3 text-sm">
-            <div><span className="text-muted-foreground">Class:</span> {record.class} {record.section}</div>
-            <div><span className="text-muted-foreground">Date:</span> {new Date(record.checkupDate).toLocaleDateString("en-IN")}</div>
-            <div><span className="text-muted-foreground">Blood Group:</span> {record.bloodGroup ?? "—"}</div>
-            <div><span className="text-muted-foreground">Doctor:</span> {record.doctorName}</div>
+            <div><span className="text-muted-foreground">{t('health.viewRecord.class')}:</span> {record.class} {record.section}</div>
+            <div><span className="text-muted-foreground">{t('health.viewRecord.date')}:</span> {new Date(record.checkupDate).toLocaleDateString("en-IN")}</div>
+            <div><span className="text-muted-foreground">{t('health.viewRecord.bloodGroup')}:</span> {record.bloodGroup ?? "—"}</div>
+            <div><span className="text-muted-foreground">{t('health.viewRecord.doctor')}:</span> {record.doctorName}</div>
           </div>
           <div className="grid grid-cols-4 gap-3">
-            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">Height</p><p className="text-lg font-bold">{record.height} cm</p></CardContent></Card>
-            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">Weight</p><p className="text-lg font-bold">{record.weight} kg</p></CardContent></Card>
-            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">BMI</p><p className={`text-lg font-bold ${BMI_COLOR[record.bmiCategory] ?? ""}`}>{record.bmi?.toFixed(1)}</p><p className="text-xs">{record.bmiCategory}</p></CardContent></Card>
-            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">BP</p><p className="text-lg font-bold">{record.bloodPressureSystolic ?? "—"}/{record.bloodPressureDiastolic ?? "—"}</p></CardContent></Card>
+            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">{t('health.viewRecord.height')}</p><p className="text-lg font-bold">{record.height} cm</p></CardContent></Card>
+            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">{t('health.viewRecord.weight')}</p><p className="text-lg font-bold">{record.weight} kg</p></CardContent></Card>
+            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">{t('health.viewRecord.bmi')}</p><p className={`text-lg font-bold ${BMI_COLOR[record.bmiCategory] ?? ""}`}>{record.bmi?.toFixed(1)}</p><p className="text-xs">{record.bmiCategory}</p></CardContent></Card>
+            <Card><CardContent className="pt-3 text-center"><p className="text-xs text-muted-foreground">{t('health.viewRecord.bp')}</p><p className="text-lg font-bold">{record.bloodPressureSystolic ?? "—"}/{record.bloodPressureDiastolic ?? "—"}</p></CardContent></Card>
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><span className="text-muted-foreground">Vision:</span> L: {record.visionLeft ?? "—"} R: {record.visionRight ?? "—"}</div>
-            <div><span className="text-muted-foreground">Heart Rate:</span> {record.heartRate ?? "—"} bpm</div>
+            <div><span className="text-muted-foreground">{t('health.viewRecord.vision')}:</span> L: {record.visionLeft ?? "—"} R: {record.visionRight ?? "—"}</div>
+            <div><span className="text-muted-foreground">{t('health.viewRecord.heartRate')}:</span> {record.heartRate ?? "—"} bpm</div>
           </div>
           {(record.allergies?.length > 0) && (
-            <div><span className="text-sm text-muted-foreground">Allergies:</span> <div className="flex flex-wrap gap-1 mt-1">{record.allergies.map(a => <Badge key={a} variant="outline" className="text-red-600">{a}</Badge>)}</div></div>
+            <div><span className="text-sm text-muted-foreground">{t('health.viewRecord.allergies')}:</span> <div className="flex flex-wrap gap-1 mt-1">{record.allergies.map(a => <Badge key={a} variant="outline" className="text-red-600">{a}</Badge>)}</div></div>
           )}
-          {record.doctorNotes && <div><span className="text-sm text-muted-foreground">Notes:</span><p className="text-sm mt-1">{record.doctorNotes}</p></div>}
-          {record.recommendations && <div><span className="text-sm text-muted-foreground">Recommendations:</span><p className="text-sm mt-1">{record.recommendations}</p></div>}
+          {record.doctorNotes && <div><span className="text-sm text-muted-foreground">{t('health.viewRecord.notes')}:</span><p className="text-sm mt-1">{record.doctorNotes}</p></div>}
+          {record.recommendations && <div><span className="text-sm text-muted-foreground">{t('health.viewRecord.recommendations')}:</span><p className="text-sm mt-1">{record.recommendations}</p></div>}
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={() => { onEdit(record); onClose(); }} className="gap-1"><Pencil className="h-4 w-4" />Edit</Button>
+          <Button variant="outline" onClick={onClose}>{t('health.viewRecord.close')}</Button>
+          <Button onClick={() => { onEdit(record); onClose(); }} className="gap-1"><Pencil className="h-4 w-4" />{t('health.viewRecord.edit')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -302,6 +305,7 @@ function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () =
     studentId: "", vaccineName: "", vaccinationDate: new Date().toISOString().split("T")[0],
   });
   const [saving, setSaving] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
@@ -321,7 +325,7 @@ function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () =
     setSaving(true);
     try {
       await healthApi.addVaccination(form);
-      toast.success("Vaccination recorded");
+      toast.success(t('health.toast.vaccinationRecorded'));
       onSaved(); onClose();
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
     finally { setSaving(false); }
@@ -330,21 +334,21 @@ function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () =
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Record Vaccination</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('health.vaccination.title')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Search Student</Label>
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." />
+            <Label>{t('health.vaccination.searchStudent')}</Label>
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('health.search.placeholder')} />
           </div>
           <div className="space-y-1.5">
-            <Label>Student *</Label>
+            <Label>{t('health.vaccination.student')} *</Label>
             <Select value={form.studentId} onValueChange={v => setForm(p => ({ ...p, studentId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('health.recordForm.selectStudent')} /></SelectTrigger>
               <SelectContent>{filtered.slice(0, 50).map(s => <SelectItem key={s.id} value={s.id}>{s.name} — {s.class}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Vaccine Name *</Label>
+            <Label>{t('health.vaccination.vaccineName')} *</Label>
             <Select value={form.vaccineName} onValueChange={v => setForm(p => ({ ...p, vaccineName: v }))}>
               <SelectTrigger><SelectValue placeholder="Select vaccine" /></SelectTrigger>
               <SelectContent>
@@ -354,21 +358,21 @@ function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () =
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Date Administered *</Label>
+              <Label>{t('health.vaccination.dateAdministered')} *</Label>
               <Input type="date" value={form.vaccinationDate} onChange={e => setForm(p => ({ ...p, vaccinationDate: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Next Due Date</Label>
+              <Label>{t('health.vaccination.nextDueDate')}</Label>
               <Input type="date" value={form.nextDueDate ?? ""} onChange={e => setForm(p => ({ ...p, nextDueDate: e.target.value || undefined }))} />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Administered By</Label>
+            <Label>{t('health.vaccination.administeredBy')}</Label>
             <Input value={form.administeredBy ?? ""} onChange={e => setForm(p => ({ ...p, administeredBy: e.target.value }))} placeholder="Dr. Sharma" />
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={saving} className="gap-2">{saving && <Loader2 className="h-4 w-4 animate-spin" />}Record Vaccination</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('health.vaccination.cancel')}</Button>
+            <Button type="submit" disabled={saving} className="gap-2">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('health.vaccination.title')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -383,6 +387,7 @@ function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => 
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateHealthAlertDto>({ studentId: "", alertType: "follow_up", severity: "medium", description: "" });
   const [saving, setSaving] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
@@ -401,7 +406,7 @@ function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => 
     setSaving(true);
     try {
       await healthApi.createAlert(form);
-      toast.success("Alert created");
+      toast.success(t('health.toast.alertCreated'));
       onSaved(); onClose();
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
     finally { setSaving(false); }
@@ -410,53 +415,53 @@ function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Create Health Alert</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('health.alertForm.title')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Search Student</Label>
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." />
+            <Label>{t('health.alertForm.searchStudent')}</Label>
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('health.search.placeholder')} />
           </div>
           <div className="space-y-1.5">
-            <Label>Student *</Label>
+            <Label>{t('health.alertForm.student')} *</Label>
             <Select value={form.studentId} onValueChange={v => setForm(p => ({ ...p, studentId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('health.recordForm.selectStudent')} /></SelectTrigger>
               <SelectContent>{filtered.slice(0, 50).map(s => <SelectItem key={s.id} value={s.id}>{s.name} — {s.class}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Alert Type</Label>
+              <Label>{t('health.alertForm.alertType')}</Label>
               <Select value={form.alertType} onValueChange={v => setForm(p => ({ ...p, alertType: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="allergy">Allergy</SelectItem>
-                  <SelectItem value="medical_condition">Medical Condition</SelectItem>
-                  <SelectItem value="medication">Medication</SelectItem>
-                  <SelectItem value="vaccination_due">Vaccination Due</SelectItem>
-                  <SelectItem value="follow_up">Follow Up</SelectItem>
+                  <SelectItem value="allergy">{t('health.alertForm.alertType.allergy')}</SelectItem>
+                  <SelectItem value="medical_condition">{t('health.alertForm.alertType.medicalCondition')}</SelectItem>
+                  <SelectItem value="medication">{t('health.alertForm.alertType.medication')}</SelectItem>
+                  <SelectItem value="vaccination_due">{t('health.alertForm.alertType.vaccinationDue')}</SelectItem>
+                  <SelectItem value="follow_up">{t('health.alertForm.alertType.followUp')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Severity</Label>
+              <Label>{t('health.alertForm.severity')}</Label>
               <Select value={form.severity} onValueChange={v => setForm(p => ({ ...p, severity: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="low">{t('health.alertForm.severity.low')}</SelectItem>
+                  <SelectItem value="medium">{t('health.alertForm.severity.medium')}</SelectItem>
+                  <SelectItem value="high">{t('health.alertForm.severity.high')}</SelectItem>
+                  <SelectItem value="critical">{t('health.alertForm.severity.critical')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Description *</Label>
+            <Label>{t('health.alertForm.description')} *</Label>
             <Textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} rows={3} placeholder="Describe the health concern..." />
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={saving} className="gap-2">{saving && <Loader2 className="h-4 w-4 animate-spin" />}Create Alert</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('health.alertForm.cancel')}</Button>
+            <Button type="submit" disabled={saving} className="gap-2">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('health.alertForm.createAlert')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -468,6 +473,7 @@ function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => 
 
 export function HealthManager() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   // null = no restriction (admin / counselor / hostel warden)
   // string[] = only show records for these class names (class teacher staff)
   const [classTeacherClasses, setClassTeacherClasses] = useState<string[] | null>(null);
@@ -548,10 +554,10 @@ export function HealthManager() {
   }
 
   async function handleDeleteRecord(id: string) {
-    if (!confirm("Delete this health record?")) return;
+    if (!confirm(t('health.confirm.deleteRecord'))) return;
     try {
       await healthApi.deleteRecord(id);
-      toast.success("Record deleted");
+      toast.success(t('health.toast.recordDeleted'));
       loadRecords(page);
       loadStats();
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
@@ -560,7 +566,7 @@ export function HealthManager() {
   async function handleAcknowledgeAlert(id: string) {
     try {
       await healthApi.acknowledgeAlert(id);
-      toast.success("Alert acknowledged");
+      toast.success(t('health.toast.alertAcknowledged'));
       loadAlerts();
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
   }
@@ -589,8 +595,8 @@ export function HealthManager() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Heart className="h-6 w-6 text-red-500" />Health Management</h1>
-          <p className="text-muted-foreground">Student health records, vaccinations, and alerts</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Heart className="h-6 w-6 text-red-500" />{t('health.title')}</h1>
+          <p className="text-muted-foreground">{t('health.subtitle')}</p>
         </div>
       </div>
 
@@ -598,23 +604,23 @@ export function HealthManager() {
       {stats && (
         <div className="grid grid-cols-5 gap-4">
           <Card><CardContent className="pt-4">
-            <p className="text-sm text-muted-foreground">Total Records</p>
+            <p className="text-sm text-muted-foreground">{t('health.stats.totalRecords')}</p>
             <p className="text-2xl font-bold">{stats.totalRecords}</p>
           </CardContent></Card>
           <Card><CardContent className="pt-4">
-            <p className="text-sm text-muted-foreground">Normal</p>
+            <p className="text-sm text-muted-foreground">{t('health.stats.normal')}</p>
             <p className="text-2xl font-bold text-green-600">{stats.normalStatus}</p>
           </CardContent></Card>
           <Card><CardContent className="pt-4">
-            <p className="text-sm text-muted-foreground">Attention Required</p>
+            <p className="text-sm text-muted-foreground">{t('health.stats.attentionRequired')}</p>
             <p className="text-2xl font-bold text-amber-600">{stats.attentionRequired}</p>
           </CardContent></Card>
           <Card><CardContent className="pt-4">
-            <p className="text-sm text-muted-foreground">Critical</p>
+            <p className="text-sm text-muted-foreground">{t('health.stats.critical')}</p>
             <p className="text-2xl font-bold text-red-600">{stats.critical}</p>
           </CardContent></Card>
           <Card><CardContent className="pt-4">
-            <p className="text-sm text-muted-foreground">Avg BMI</p>
+            <p className="text-sm text-muted-foreground">{t('health.stats.avgBmi')}</p>
             <p className="text-2xl font-bold">{stats.avgBMI?.toFixed(1) ?? "—"}</p>
           </CardContent></Card>
         </div>
@@ -623,29 +629,29 @@ export function HealthManager() {
       <Tabs value={tab} onValueChange={handleTabChange}>
         <div className="flex items-center justify-between gap-4">
           <TabsList>
-            <TabsTrigger value="records" className="gap-1.5"><Activity className="h-4 w-4" />Health Records</TabsTrigger>
+            <TabsTrigger value="records" className="gap-1.5"><Activity className="h-4 w-4" />{t('health.tabs.records')}</TabsTrigger>
             <TabsTrigger value="alerts" className="gap-1.5">
-              <AlertTriangle className="h-4 w-4" />Alerts
+              <AlertTriangle className="h-4 w-4" />{t('health.tabs.alerts')}
               {alerts.filter(a => !a.isAcknowledged).length > 0 && (
                 <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center rounded-full">
                   {alerts.filter(a => !a.isAcknowledged).length}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="stats" className="gap-1.5"><BarChart3 className="h-4 w-4" />Analytics</TabsTrigger>
+            <TabsTrigger value="stats" className="gap-1.5"><BarChart3 className="h-4 w-4" />{t('health.tabs.analytics')}</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9 w-64" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="pl-9 w-64" placeholder={t('health.search.placeholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {tab === "records" && (
               <>
-                <Button variant="outline" onClick={() => setShowVaccination(true)} className="gap-1"><Syringe className="h-4 w-4" />Vaccination</Button>
-                <Button onClick={() => setShowAddRecord(true)} className="gap-1"><Plus className="h-4 w-4" />New Checkup</Button>
+                <Button variant="outline" onClick={() => setShowVaccination(true)} className="gap-1"><Syringe className="h-4 w-4" />{t('health.button.vaccination')}</Button>
+                <Button onClick={() => setShowAddRecord(true)} className="gap-1"><Plus className="h-4 w-4" />{t('health.button.newCheckup')}</Button>
               </>
             )}
-            {tab === "alerts" && <Button onClick={() => setShowAlert(true)} className="gap-1"><Plus className="h-4 w-4" />Create Alert</Button>}
+            {tab === "alerts" && <Button onClick={() => setShowAlert(true)} className="gap-1"><Plus className="h-4 w-4" />{t('health.button.createAlert')}</Button>}
           </div>
         </div>
 
@@ -656,9 +662,9 @@ export function HealthManager() {
           ) : filteredRecords.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <Heart className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No health records found</p>
-              <p className="text-sm">Create the first health checkup record</p>
-              <Button className="mt-4 gap-1" onClick={() => setShowAddRecord(true)}><Plus className="h-4 w-4" />New Checkup</Button>
+              <p className="font-medium">{t('health.empty.noRecords')}</p>
+              <p className="text-sm">{t('health.empty.noRecordsHint')}</p>
+              <Button className="mt-4 gap-1" onClick={() => setShowAddRecord(true)}><Plus className="h-4 w-4" />{t('health.button.newCheckup')}</Button>
             </CardContent></Card>
           ) : (
             <>
@@ -666,14 +672,14 @@ export function HealthManager() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Student</TableHead>
-                      <TableHead>Class</TableHead>
-                      <TableHead>Checkup Date</TableHead>
-                      <TableHead className="text-center">Height/Weight</TableHead>
-                      <TableHead className="text-center">BMI</TableHead>
-                      <TableHead>Blood Group</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{t('health.table.student')}</TableHead>
+                      <TableHead>{t('health.table.class')}</TableHead>
+                      <TableHead>{t('health.table.checkupDate')}</TableHead>
+                      <TableHead className="text-center">{t('health.table.heightWeight')}</TableHead>
+                      <TableHead className="text-center">{t('health.table.bmi')}</TableHead>
+                      <TableHead>{t('health.table.bloodGroup')}</TableHead>
+                      <TableHead>{t('health.table.status')}</TableHead>
+                      <TableHead className="text-right">{t('health.table.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -704,8 +710,8 @@ export function HealthManager() {
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">Page {page} of {totalPages} ({total} records)</p>
                   <div className="flex gap-1">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>Previous</Button>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => handlePageChange(page + 1)}>Next</Button>
+                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>{t('health.pagination.previous')}</Button>
+                    <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => handlePageChange(page + 1)}>{t('health.pagination.next')}</Button>
                   </div>
                 </div>
               )}
@@ -720,8 +726,8 @@ export function HealthManager() {
           ) : alerts.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <AlertTriangle className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No health alerts</p>
-              <p className="text-sm">Create alerts for students needing attention</p>
+              <p className="font-medium">{t('health.empty.noAlerts')}</p>
+              <p className="text-sm">{t('health.empty.noAlertsHint')}</p>
             </CardContent></Card>
           ) : (
             <div className="space-y-3">
@@ -733,14 +739,14 @@ export function HealthManager() {
                         <span className="font-medium">{a.studentName}</span>
                         <Badge className={SEVERITY_COLOR[a.severity] ?? ""}>{a.severity}</Badge>
                         <Badge variant="outline">{a.alertType.replace("_", " ")}</Badge>
-                        {a.isAcknowledged && <Badge variant="secondary" className="gap-1"><CheckCircle2 className="h-3 w-3" />Acknowledged</Badge>}
+                        {a.isAcknowledged && <Badge variant="secondary" className="gap-1"><CheckCircle2 className="h-3 w-3" />{t('health.alert.acknowledged')}</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground">{a.description}</p>
                       <p className="text-xs text-muted-foreground">{new Date(a.createdAt).toLocaleString("en-IN")}</p>
                     </div>
                     {!a.isAcknowledged && (
                       <Button variant="outline" size="sm" className="gap-1" onClick={() => handleAcknowledgeAlert(a.id)}>
-                        <CheckCircle2 className="h-3 w-3" />Acknowledge
+                        <CheckCircle2 className="h-3 w-3" />{t('health.button.acknowledge')}
                       </Button>
                     )}
                   </CardContent>
@@ -756,13 +762,13 @@ export function HealthManager() {
             <div className="grid grid-cols-2 gap-6">
               <Card>
                 <CardContent className="pt-6">
-                  <h3 className="font-semibold mb-4">BMI Distribution</h3>
+                  <h3 className="font-semibold mb-4">{t('health.stats.bmiDistribution')}</h3>
                   <div className="space-y-3">
                     {[
-                      { label: "Underweight", value: stats.bmiDistribution.underweight, color: "bg-amber-500" },
-                      { label: "Normal", value: stats.bmiDistribution.normal, color: "bg-green-500" },
-                      { label: "Overweight", value: stats.bmiDistribution.overweight, color: "bg-orange-500" },
-                      { label: "Obese", value: stats.bmiDistribution.obese, color: "bg-red-500" },
+                      { label: t('health.bmi.underweight'), value: stats.bmiDistribution.underweight, color: "bg-amber-500" },
+                      { label: t('health.bmi.normal'), value: stats.bmiDistribution.normal, color: "bg-green-500" },
+                      { label: t('health.bmi.overweight'), value: stats.bmiDistribution.overweight, color: "bg-orange-500" },
+                      { label: t('health.bmi.obese'), value: stats.bmiDistribution.obese, color: "bg-red-500" },
                     ].map(item => {
                       const pct = stats.totalRecords > 0 ? Math.round((item.value / stats.totalRecords) * 100) : 0;
                       return (
@@ -782,13 +788,13 @@ export function HealthManager() {
               </Card>
               <Card>
                 <CardContent className="pt-6">
-                  <h3 className="font-semibold mb-4">Health Status Overview</h3>
+                  <h3 className="font-semibold mb-4">{t('health.stats.statusOverview')}</h3>
                   <div className="space-y-3">
                     {[
-                      { label: "Normal", value: stats.normalStatus, color: "bg-green-500" },
-                      { label: "Attention Required", value: stats.attentionRequired, color: "bg-amber-500" },
-                      { label: "Critical", value: stats.critical, color: "bg-red-500" },
-                      { label: "Follow Up", value: stats.followUp, color: "bg-blue-500" },
+                      { label: t('health.status.normal'), value: stats.normalStatus, color: "bg-green-500" },
+                      { label: t('health.status.attentionRequired'), value: stats.attentionRequired, color: "bg-amber-500" },
+                      { label: t('health.status.critical'), value: stats.critical, color: "bg-red-500" },
+                      { label: t('health.status.followUp'), value: stats.followUp, color: "bg-blue-500" },
                     ].map(item => {
                       const pct = stats.totalRecords > 0 ? Math.round((item.value / stats.totalRecords) * 100) : 0;
                       return (
@@ -808,12 +814,12 @@ export function HealthManager() {
               </Card>
               <Card className="col-span-2">
                 <CardContent className="pt-6">
-                  <h3 className="font-semibold mb-4">Quick Stats</h3>
+                  <h3 className="font-semibold mb-4">{t('health.stats.quickStats')}</h3>
                   <div className="grid grid-cols-4 gap-4 text-center">
-                    <div><p className="text-3xl font-bold text-blue-600">{stats.upcomingCheckups}</p><p className="text-sm text-muted-foreground">Upcoming Checkups</p></div>
-                    <div><p className="text-3xl font-bold text-purple-600">{stats.vaccinationsDue}</p><p className="text-sm text-muted-foreground">Vaccinations Due</p></div>
-                    <div><p className="text-3xl font-bold">{stats.avgBMI?.toFixed(1) ?? "—"}</p><p className="text-sm text-muted-foreground">Average BMI</p></div>
-                    <div><p className="text-3xl font-bold">{stats.totalRecords}</p><p className="text-sm text-muted-foreground">Total Records</p></div>
+                    <div><p className="text-3xl font-bold text-blue-600">{stats.upcomingCheckups}</p><p className="text-sm text-muted-foreground">{t('health.stats.upcomingCheckups')}</p></div>
+                    <div><p className="text-3xl font-bold text-purple-600">{stats.vaccinationsDue}</p><p className="text-sm text-muted-foreground">{t('health.stats.vaccinationsDue')}</p></div>
+                    <div><p className="text-3xl font-bold">{stats.avgBMI?.toFixed(1) ?? "—"}</p><p className="text-sm text-muted-foreground">{t('health.stats.averageBmi')}</p></div>
+                    <div><p className="text-3xl font-bold">{stats.totalRecords}</p><p className="text-sm text-muted-foreground">{t('health.stats.totalRecords')}</p></div>
                   </div>
                 </CardContent>
               </Card>

@@ -51,6 +51,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "PEOPLE & ENROLLMENT", isLabel: true },
         { title: t('nav.students'), url: "/students", icon: Users, moduleKey: "students" },
         { title: t('nav.staff'), url: "/staff", icon: UserCheck, moduleKey: "staff" },
+        { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: "admissions" },
 
         { title: "ACADEMICS & ASSESSMENT", isLabel: true },
         { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },

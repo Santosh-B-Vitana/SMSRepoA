@@ -87,6 +87,7 @@ const StaffMyAttendance    = lazy(() => import("./pages/StaffMyAttendance"));
 const ParentDiaryView      = lazy(() => import("./pages/ParentDiaryView"));
 const SchoolManagement     = lazy(() => import("@/pages/superadmin/SchoolManagement"));
 const UserManagement       = lazy(() => import("@/pages/superadmin/UserManagement"));
+const SchoolOnboardingWizard = lazy(() => import("@/pages/superadmin/SchoolOnboardingWizard"));
 const ExamSummary          = lazy(() => import("@/pages/reports/ExamSummary"));
 const ExamPerformance      = lazy(() => import("@/pages/reports/ExamPerformance"));
 const StudentMarks         = lazy(() => import("@/pages/reports/StudentMarks"));
@@ -150,6 +151,7 @@ function App() {
                   <Route path="/super-admin-dashboard" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SuperAdminDashboard /></Layout></ProtectedRoute>} />
                   <Route path="/superadmin/schools" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SchoolManagement /></Layout></ProtectedRoute>} />
                   <Route path="/superadmin/users" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><UserManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/onboard" element={<ProtectedRoute allowedRoles={['super_admin']}><SchoolOnboardingWizard /></ProtectedRoute>} />
 
                   {/* ── Protected: staff / admin (teacher-facing) ─────────── */}
                   <Route path="/staff-dashboard" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDashboard /></Layout></ProtectedRoute>} />
