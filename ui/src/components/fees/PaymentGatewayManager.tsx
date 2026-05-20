@@ -20,12 +20,12 @@ const statusColor: Record<string, string> = {
   Pending: "bg-yellow-100 text-yellow-800",
   Initiated: "bg-blue-100 text-blue-800",
   Refunded: "bg-purple-100 text-purple-800",
-  Cancelled: "bg-gray-100 text-gray-700",
+  Cancelled: "bg-muted text-muted-foreground",
 };
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${statusColor[status] ?? "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${statusColor[status] ?? "bg-muted text-muted-foreground"}`}>
       {status}
     </span>
   );
@@ -63,9 +63,9 @@ function RefundDialog({ transaction, onClose }: { transaction: PaymentTransactio
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+      <div className="bg-card border rounded-lg shadow-xl w-full max-w-md p-6">
         <h3 className="text-lg font-semibold mb-4">{t('payGateway.refundDialogTitle')}</h3>
-        <p className="text-sm text-gray-600 mb-4">Transaction: <span className="font-mono">{transaction.transactionId}</span> | Original: {fmt(transaction.amount, transaction.currency)}</p>
+        <p className="text-sm text-muted-foreground mb-4">Transaction: <span className="font-mono">{transaction.transactionId}</span> | Original: {fmt(transaction.amount, transaction.currency)}</p>
         <form onSubmit={submit} className="space-y-3">
           <div>
             <label className="block text-sm font-medium mb-1">{t('payGateway.refundAmountLabel')}</label>
@@ -76,7 +76,7 @@ function RefundDialog({ transaction, onClose }: { transaction: PaymentTransactio
             <input type="text" className="w-full border rounded px-3 py-2 text-sm" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Customer requested refund" required />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">{t('common.cancel')}</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-muted/50">{t('common.cancel')}</button>
             <button type="submit" disabled={refundMut.isPending} className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">
               {refundMut.isPending ? t('payGateway.processing') : t('payGateway.refundBtn')}
             </button>
@@ -121,15 +121,15 @@ export function PaymentGatewayManager() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('payGateway.title')}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{t('payGateway.subtitle')}</p>
+          <h1 className="text-2xl font-bold text-foreground">{t('payGateway.title')}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('payGateway.subtitle')}</p>
         </div>
       </div>
 
-      <div className="border-b border-gray-200">
+      <div className="border-b border-border">
         <nav className="flex gap-6">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tab.label}
             </button>
           ))}
@@ -138,7 +138,7 @@ export function PaymentGatewayManager() {
 
       {activeTab === "overview" && (
         <div className="space-y-6">
-          {statsLoading ? <p className="text-gray-400 text-sm">{t('payGateway.loadingStats')}</p> : stats ? (
+          {statsLoading ? <p className="text-muted-foreground text-sm">{t('payGateway.loadingStats')}</p> : stats ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
@@ -147,10 +147,10 @@ export function PaymentGatewayManager() {
                   { label: t('payGateway.kpiSuccessRate'), value: `${stats.successRate.toFixed(1)}%`, sub: `${stats.totalTransactions} total` },
                   { label: t('payGateway.kpiRefunded'), value: fmt(stats.totalRefundedAmount), sub: `${stats.totalRefunds} refunds` },
                 ].map(kpi => (
-                  <div key={kpi.label} className="bg-white border rounded-lg p-4 shadow-sm">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">{kpi.label}</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">{kpi.value}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{kpi.sub}</p>
+                  <div key={kpi.label} className="bg-card border rounded-lg p-4 shadow-sm">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">{kpi.label}</p>
+                    <p className="text-2xl font-bold text-foreground mt-1">{kpi.value}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{kpi.sub}</p>
                   </div>
                 ))}
               </div>
@@ -161,19 +161,19 @@ export function PaymentGatewayManager() {
                   { label: t('payGateway.failed'), value: stats.failedTransactions },
                   { label: t('payGateway.pendingInitiated'), value: stats.pendingTransactions },
                 ].map(s => (
-                  <div key={s.label} className="bg-gray-50 border rounded-lg p-3">
-                    <p className="text-xs text-gray-500">{s.label}</p>
-                    <p className="text-xl font-semibold text-gray-800 mt-0.5">{s.value}</p>
+                  <div key={s.label} className="bg-muted/50 border rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                    <p className="text-xl font-semibold text-foreground mt-0.5">{s.value}</p>
                   </div>
                 ))}
               </div>
               {Object.keys(stats.byPurpose).length > 0 && (
-                <div className="bg-white border rounded-lg p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('payGateway.byPurpose')}</h3>
+                <div className="bg-card border rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">{t('payGateway.byPurpose')}</h3>
                   <div className="flex flex-wrap gap-3">
                     {Object.entries(stats.byPurpose).map(([purpose, count]) => (
-                      <div key={purpose} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-1.5">
-                        <span className="text-sm font-medium text-gray-700">{purpose}</span>
+                      <div key={purpose} className="flex items-center gap-2 bg-muted/50 rounded px-3 py-1.5">
+                        <span className="text-sm font-medium text-foreground">{purpose}</span>
                         <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-1.5 py-0.5 rounded-full">{count}</span>
                       </div>
                     ))}
@@ -181,27 +181,27 @@ export function PaymentGatewayManager() {
                 </div>
               )}
             </>
-          ) : <p className="text-gray-400 text-sm">{t('payGateway.noStats')}</p>}
+          ) : <p className="text-muted-foreground text-sm">{t('payGateway.noStats')}</p>}
         </div>
       )}
 
       {activeTab === "configs" && (
         <div className="space-y-4">
-          {configsLoading ? <p className="text-gray-400 text-sm">{t('common.loading')}</p> : configs && configs.configs.length > 0 ? (
+          {configsLoading ? <p className="text-muted-foreground text-sm">{t('common.loading')}</p> : configs && configs.configs.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>{["Gateway","Merchant ID","Mode","Currency","Fee %","Active","Default",""].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>)}</tr>
+              <table className="min-w-full divide-y divide-border text-sm">
+                <thead className="bg-muted/50">
+                  <tr>{["Gateway","Merchant ID","Mode","Currency","Fee %","Active","Default",""].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">{h}</th>)}</tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
+                <tbody className="divide-y divide-border">
                   {configs.configs.map(cfg => (
-                    <tr key={cfg.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{cfg.gatewayName}</td>
-                      <td className="px-4 py-3 font-mono text-gray-600 text-xs">{cfg.merchantId}</td>
+                    <tr key={cfg.id} className="hover:bg-muted/50">
+                      <td className="px-4 py-3 font-medium text-foreground">{cfg.gatewayName}</td>
+                      <td className="px-4 py-3 font-mono text-muted-foreground text-xs">{cfg.merchantId}</td>
                       <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded font-semibold ${cfg.mode === "Production" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>{cfg.mode}</span></td>
-                      <td className="px-4 py-3 text-gray-600">{cfg.currency}</td>
-                      <td className="px-4 py-3 text-gray-600">{cfg.transactionFeePercentage != null ? `${cfg.transactionFeePercentage}%` : "-"}</td>
-                      <td className="px-4 py-3">{cfg.isActive ? <span className="text-green-600 font-semibold">Yes</span> : <span className="text-gray-400">No</span>}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{cfg.currency}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{cfg.transactionFeePercentage != null ? `${cfg.transactionFeePercentage}%` : "-"}</td>
+                      <td className="px-4 py-3">{cfg.isActive ? <span className="text-green-600 font-semibold">Yes</span> : <span className="text-muted-foreground">No</span>}</td>
                       <td className="px-4 py-3">{cfg.isDefault ? <span className="text-blue-600 font-semibold">Yes</span> : "-"}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => { if (confirm(`Delete ${cfg.gatewayName} configuration?`)) deleteMut.mutate(cfg.id); }} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
@@ -212,7 +212,7 @@ export function PaymentGatewayManager() {
               </table>
             </div>
           ) : (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-muted-foreground">
               <p className="text-lg">{t('payGateway.noConfigs')}</p>
               <p className="text-sm mt-1">{t('payGateway.noConfigsDesc')}</p>
             </div>
@@ -232,76 +232,76 @@ export function PaymentGatewayManager() {
               {["FeePayment","WalletTopup","StorePayment","Donation"].map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          {txLoading ? <p className="text-gray-400 text-sm">{t('payGateway.loadingTx')}</p> : transactions && transactions.transactions.length > 0 ? (
+          {txLoading ? <p className="text-muted-foreground text-sm">{t('payGateway.loadingTx')}</p> : transactions && transactions.transactions.length > 0 ? (
             <>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>{[t('payGateway.colTxId'),t('payGateway.colGateway'),t('common.amount'),t('payGateway.colFee'),t('payGateway.colPurpose'),t('payGateway.colPayer'),t('common.status'),t('common.date'),""].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>)}</tr>
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>{[t('payGateway.colTxId'),t('payGateway.colGateway'),t('common.amount'),t('payGateway.colFee'),t('payGateway.colPurpose'),t('payGateway.colPayer'),t('common.status'),t('common.date'),""].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">{h}</th>)}</tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-100">
+                  <tbody className="divide-y divide-border">
                     {transactions.transactions.map(tx => (
-                      <tr key={tx.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-mono text-xs text-gray-700">{tx.transactionId}</td>
-                        <td className="px-4 py-3 text-gray-600">{tx.gatewayName}</td>
-                        <td className="px-4 py-3 font-semibold text-gray-900">{fmt(tx.amount, tx.currency)}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{tx.transactionFee != null ? fmt(tx.transactionFee, tx.currency) : "-"}</td>
-                        <td className="px-4 py-3 text-gray-600">{tx.purpose}</td>
-                        <td className="px-4 py-3 text-gray-600">{tx.payerType}</td>
+                      <tr key={tx.id} className="hover:bg-muted/50">
+                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{tx.transactionId}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{tx.gatewayName}</td>
+                        <td className="px-4 py-3 font-semibold text-foreground">{fmt(tx.amount, tx.currency)}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{tx.transactionFee != null ? fmt(tx.transactionFee, tx.currency) : "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{tx.purpose}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{tx.payerType}</td>
                         <td className="px-4 py-3"><StatusBadge status={tx.status} /></td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(tx.createdAt)}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(tx.createdAt)}</td>
                         <td className="px-4 py-3">{tx.status === "Success" && <button onClick={() => setRefundTarget(tx)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">{t('payGateway.refundAction')}</button>}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between text-sm text-gray-500">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>{transactions.totalCount} total transactions</span>
                 <div className="flex gap-2">
-                  <button onClick={() => setTxPage(p => Math.max(1,p-1))} disabled={txPage===1} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50">{t('common.previous')}</button>
+                  <button onClick={() => setTxPage(p => Math.max(1,p-1))} disabled={txPage===1} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50">{t('common.previous')}</button>
                   <span className="px-2 py-1">{txPage} / {transactions.totalPages}</span>
-                  <button onClick={() => setTxPage(p => Math.min(transactions.totalPages,p+1))} disabled={txPage>=transactions.totalPages} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50">{t('common.next')}</button>
+                  <button onClick={() => setTxPage(p => Math.min(transactions.totalPages,p+1))} disabled={txPage>=transactions.totalPages} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50">{t('common.next')}</button>
                 </div>
               </div>
             </>
-          ) : <p className="text-gray-400 text-sm py-8 text-center">{t('payGateway.noTx')}</p>}
+          ) : <p className="text-muted-foreground text-sm py-8 text-center">{t('payGateway.noTx')}</p>}
         </div>
       )}
 
       {activeTab === "refunds" && (
         <div className="space-y-4">
-          {refundsLoading ? <p className="text-gray-400 text-sm">{t('payGateway.loadingRefunds')}</p> : refunds && refunds.refunds.length > 0 ? (
+          {refundsLoading ? <p className="text-muted-foreground text-sm">{t('payGateway.loadingRefunds')}</p> : refunds && refunds.refunds.length > 0 ? (
             <>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>{[t('payGateway.colRefundId'),t('common.amount'),t('common.reason'),t('common.status'),t('payGateway.colGatewayRefundId'),t('common.date')].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>)}</tr>
+                <table className="min-w-full divide-y divide-border text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>{[t('payGateway.colRefundId'),t('common.amount'),t('common.reason'),t('common.status'),t('payGateway.colGatewayRefundId'),t('common.date')].map(h => <th key={h} className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">{h}</th>)}</tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-100">
+                  <tbody className="divide-y divide-border">
                     {refunds.refunds.map((r: PaymentRefund) => (
-                      <tr key={r.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-mono text-xs text-gray-700">{r.refundId}</td>
-                        <td className="px-4 py-3 font-semibold text-gray-900">{fmt(r.refundAmount)}</td>
-                        <td className="px-4 py-3 text-gray-600">{r.reason}</td>
+                      <tr key={r.id} className="hover:bg-muted/50">
+                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{r.refundId}</td>
+                        <td className="px-4 py-3 font-semibold text-foreground">{fmt(r.refundAmount)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{r.reason}</td>
                         <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.gatewayRefundId ?? "-"}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(r.createdAt)}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{r.gatewayRefundId ?? "-"}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(r.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between text-sm text-gray-500">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>{refunds.totalCount} total refunds</span>
                 <div className="flex gap-2">
-                  <button onClick={() => setRefundPage(p => Math.max(1,p-1))} disabled={refundPage===1} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50">{t('common.previous')}</button>
+                  <button onClick={() => setRefundPage(p => Math.max(1,p-1))} disabled={refundPage===1} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50">{t('common.previous')}</button>
                   <span className="px-2 py-1">{refundPage} / {refunds.totalPages}</span>
-                  <button onClick={() => setRefundPage(p => Math.min(refunds.totalPages,p+1))} disabled={refundPage>=refunds.totalPages} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50">{t('common.next')}</button>
+                  <button onClick={() => setRefundPage(p => Math.min(refunds.totalPages,p+1))} disabled={refundPage>=refunds.totalPages} className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50">{t('common.next')}</button>
                 </div>
               </div>
             </>
-          ) : <p className="text-gray-400 text-sm py-8 text-center">No refunds yet.</p>}
+          ) : <p className="text-muted-foreground text-sm py-8 text-center">No refunds yet.</p>}
         </div>
       )}
 

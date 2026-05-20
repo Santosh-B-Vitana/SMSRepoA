@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Users, UserPlus, GraduationCap, ArrowUpCircle } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
@@ -8,53 +8,143 @@ import { toast } from "sonner";
 import { StudentForm } from "./StudentForm";
 import { StudentList } from "./StudentList";
 import { BulkPromotionDialog } from "./BulkPromotionDialog";
-import { StudentBasic, studentApi } from "@/services/api/studentApi";
+import { StudentBasic, StudentClassesSections, studentApi } from "@/services/api/studentApi";
 import { LoadingState, EmptyState, ExportButton, ImportButton, ErrorBoundary } from "@/components/common";
 import { AnimatedBackground } from "@/components/common/AnimatedBackground";
 import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
 
+const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
+
+interface StudentStats {
+  total: number;
+  active: number;
+  inactive: number;
+  byClass?: Record<string, number>;
+}
+
 export function StudentsManager() {
   const { t } = useLanguage();
   const { academicYear } = useAcademicYear();
+
+  // ── paginated list state ──────────────────────────────────────────────────
   const [students, setStudents] = useState<StudentBasic[]>([]);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [page, setPage] = useState(1);
+
+  // ── filter state (all server-side) ────────────────────────────────────────
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("");
+  const [classFilter, setClassFilter] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
+
+  // ── dropdown options ──────────────────────────────────────────────────────
+  const [classesSections, setClassesSections] = useState<StudentClassesSections>({ classes: [], sections: [] });
+
+  // ── school-wide stats (not affected by current filters) ───────────────────
+  const [stats, setStats] = useState<StudentStats>({ total: 0, active: 0, inactive: 0 });
+
+  // ── UI state ──────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [promotionDialogOpen, setPromotionDialogOpen] = useState(false);
 
-  const fetchStudents = useCallback(async () => {
+  // ── debounce ref ──────────────────────────────────────────────────────────
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSearch = useRef(search);
+
+  // ── fetch current page ────────────────────────────────────────────────────
+  const fetchPage = useCallback(async (opts: {
+    page: number;
+    search: string;
+    statusFilter: string;
+    classFilter: string;
+    sectionFilter: string;
+  }) => {
     try {
-      const result = await studentApi.list({ pageSize: 1000 });
+      const result = await studentApi.list({
+        page: opts.page,
+        pageSize: PAGE_SIZE,
+        search: opts.search || undefined,
+        status: opts.statusFilter || undefined,
+        classFilter: opts.classFilter || undefined,
+        sectionFilter: opts.sectionFilter || undefined,
+      });
       setStudents(result.students || []);
-    } catch (error) {
-      console.error("Failed to fetch students:", error);
-      toast.error("Failed to load students data.");
+      setTotal(result.total);
+      setTotalPages(result.totalPages ?? Math.ceil(result.total / PAGE_SIZE));
+    } catch {
+      toast.error("Failed to load students.");
     } finally {
       setLoading(false);
     }
-  }, [academicYear]); // academicYear in deps so we re-fetch when year changes
+  }, []);
 
+  // ── fetch school-wide stats + dropdown options once on mount / year change ─
   useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]);
+    studentApi.getStats()
+      .then((s: Record<string, unknown>) => setStats({
+        total: (s.total as number) ?? 0,
+        active: (s.active as number) ?? 0,
+        inactive: (s.inactive as number) ?? 0,
+        byClass: s.byClass as Record<string, number>,
+      }))
+      .catch(() => {/* non-critical */});
+
+    studentApi.classesSections()
+      .then(setClassesSections)
+      .catch(() => {/* non-critical */});
+  }, [academicYear]);
+
+  // ── initial + page/filter re-fetch ────────────────────────────────────────
+  useEffect(() => {
+    fetchPage({ page, search, statusFilter, classFilter, sectionFilter });
+  }, [fetchPage, page, statusFilter, classFilter, sectionFilter, academicYear]);
+  // NOTE: search is intentionally excluded here — handled via debounce below
+
+  // ── debounced search ──────────────────────────────────────────────────────
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    pendingSearch.current = value;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      fetchPage({ page: 1, search: pendingSearch.current, statusFilter, classFilter, sectionFilter });
+    }, SEARCH_DEBOUNCE_MS);
+  }, [fetchPage, statusFilter, classFilter, sectionFilter]);
+
+  // ── filter change helpers (reset to page 1) ───────────────────────────────
+  const handleStatusChange = (v: "" | "active" | "inactive") => { setStatusFilter(v); setPage(1); };
+  const handleClassChange = (v: string) => { setClassFilter(v); setSectionFilter(""); setPage(1); };
+  const handleSectionChange = (v: string) => { setSectionFilter(v); setPage(1); };
+  const handlePageChange = (p: number) => setPage(p);
+
+  const refresh = useCallback(async () => {
+    await fetchPage({ page, search, statusFilter, classFilter, sectionFilter });
+    // Refresh stats too after mutations
+    studentApi.getStats()
+      .then((s: Record<string, unknown>) => setStats({
+        total: (s.total as number) ?? 0,
+        active: (s.active as number) ?? 0,
+        inactive: (s.inactive as number) ?? 0,
+        byClass: s.byClass as Record<string, number>,
+      }))
+      .catch(() => {});
+    studentApi.classesSections().then(setClassesSections).catch(() => {});
+  }, [fetchPage, page, search, statusFilter, classFilter, sectionFilter]);
 
   const handleStudentSuccess = async () => {
     setIsAddDialogOpen(false);
-    await fetchStudents();
+    await refresh();
   };
-
-  const getStats = () => ({
-    total: students.length,
-    active: students.filter((s) => s.status === "active").length,
-    inactive: students.filter((s) => s.status !== "active").length,
-    classes: new Set(students.map((s) => s.class)).size,
-  });
-
-  const stats = getStats();
 
   if (loading) {
     return <LoadingState variant="cards" message="Loading students..." />;
   }
+
+  const classCount = stats.byClass ? Object.keys(stats.byClass).length : 0;
 
   return (
     <ErrorBoundary>
@@ -91,8 +181,8 @@ export function StudentsManager() {
                   apiTemplateUrl="/Students/bulk-import/template"
                   apiImportUrl="/Students/bulk-import/csv"
                   onImport={async (_data) => {
-                    toast.success(`Students imported successfully`);
-                    await fetchStudents();
+                    toast.success("Students imported successfully");
+                    await refresh();
                   }}
                   templateFilename="students_import_template"
                 />
@@ -174,7 +264,7 @@ export function StudentsManager() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">{t("studentMgmt.classes")}</p>
-                      <p className="text-xl font-semibold">{stats.classes}</p>
+                      <p className="text-xl font-semibold">{classCount}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -182,7 +272,7 @@ export function StudentsManager() {
             </div>
 
             {/* Students List */}
-            {students.length === 0 ? (
+            {stats.total === 0 ? (
               <EmptyState
                 title={t("students.noStudentsFound")}
                 description={t("students.noStudentsDesc")}
@@ -192,14 +282,31 @@ export function StudentsManager() {
                 }}
               />
             ) : (
-              <StudentList students={students} onRefresh={fetchStudents} />
+              <StudentList
+                students={students}
+                total={total}
+                page={page}
+                pageSize={PAGE_SIZE}
+                totalPages={totalPages}
+                statusFilter={statusFilter}
+                onStatusChange={handleStatusChange}
+                search={search}
+                onSearchChange={handleSearchChange}
+                classFilter={classFilter}
+                onClassChange={handleClassChange}
+                sectionFilter={sectionFilter}
+                onSectionChange={handleSectionChange}
+                availableClasses={classesSections.classes}
+                availableSections={classesSections.sections}
+                onPageChange={handlePageChange}
+                onRefresh={refresh}
+              />
             )}
 
-            {/* Bulk Promotion Dialog */}
             <BulkPromotionDialog
               open={promotionDialogOpen}
               onOpenChange={setPromotionDialogOpen}
-              onComplete={fetchStudents}
+              onComplete={refresh}
             />
           </AnimatedWrapper>
         </div>

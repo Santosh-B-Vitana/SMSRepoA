@@ -11,12 +11,53 @@ import { feeApi, BulkFeePaymentRow, BulkPaymentResult } from "@/services/api/fee
 // Template columns match backend BulkFeePaymentRow (camelCase JSON names)
 const TEMPLATE_HEADERS = ["admissionNumber", "studentName", "amountPaid", "paymentDate", "paymentMethod", "receiptNumber", "remarks"];
 const PAYMENT_METHODS = ["cash", "online", "cheque", "dd", "neft", "upi"];
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB hard limit
 
 /** Parse "ADM001: reason" error strings from backend */
 function parseError(err: string): { adm: string; reason: string } {
   const idx = err.indexOf(": ");
   if (idx === -1) return { adm: "—", reason: err };
   return { adm: err.slice(0, idx), reason: err.slice(idx + 2) };
+}
+
+/** RFC 4180-compliant CSV line parser — handles quoted fields containing commas or newlines. */
+function parseCSVLine(line: string): string[] {
+  const cols: string[] = [];
+  let inQuotes = false;
+  let current = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === "," && !inQuotes) {
+      cols.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  cols.push(current.trim());
+  return cols;
+}
+
+/** Escape a CSV field value: wrap in quotes if it contains comma, quote, or newline. */
+function csvEscape(val: string): string {
+  if (/[",\n\r]/.test(val)) return `"${val.replace(/"/g, '""')}"`;
+  // Prevent formula injection when opened in Excel — prefix dangerous chars with a tab
+  if (/^[=+\-@]/.test(val)) return `\t${val}`;
+  return val;
+}
+
+/** Trigger a browser download for a blob URL, cross-browser safe. */
+function triggerDownload(url: string, filename: string): void {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export function BulkFeePaymentUpload() {
@@ -31,13 +72,13 @@ export function BulkFeePaymentUpload() {
   const parseCSV = (text: string): { rows: BulkFeePaymentRow[]; errors: string[] } => {
     const lines = text.trim().split(/\r?\n/);
     if (lines.length < 2) return { rows: [], errors: ["CSV has no data rows."] };
-    const header = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, ""));
+    const header = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ""));
     const errors: string[] = [];
     const parsed: BulkFeePaymentRow[] = [];
 
     lines.slice(1).forEach((line, i) => {
       if (!line.trim()) return;
-      const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
+      const cols = parseCSVLine(line);
       const get = (keys: string[]) => {
         for (const k of keys) {
           const idx = header.indexOf(k);
@@ -53,6 +94,9 @@ export function BulkFeePaymentUpload() {
       const amountPaid = parseFloat(rawAmt);
       if (isNaN(amountPaid) || amountPaid <= 0) {
         errors.push(`Row ${i + 2} (${admNo}): invalid amount '${rawAmt}'`); return;
+      }
+      if (amountPaid > 10_000_000) {
+        errors.push(`Row ${i + 2} (${admNo}): amount ₹${amountPaid.toLocaleString("en-IN")} exceeds the ₹1 crore per-row maximum`); return;
       }
 
       const rawDate = get(["paymentdate", "date", "paiddate"]);
@@ -81,6 +125,13 @@ export function BulkFeePaymentUpload() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_FILE_BYTES) {
+      toast.error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum size is 5 MB.`);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = ev => {
@@ -130,9 +181,7 @@ export function BulkFeePaymentUpload() {
       "ADM003,Ananya Reddy,7500,2026-06-02,cheque,CHQ-56789,Q1 fees",
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "bulk_payment_template.csv"; a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(URL.createObjectURL(blob), "bulk_payment_template.csv");
   };
 
   const downloadResultReport = () => {
@@ -141,16 +190,13 @@ export function BulkFeePaymentUpload() {
       "admissionNumber,status,reason",
       ...rows.map(r => {
         const err = result.errors.find(e => e.startsWith(r.admissionNumber + ":"));
-        return err ? `${r.admissionNumber},FAILED,${parseError(err).reason}` : `${r.admissionNumber},SUCCESS,`;
+        const status = err ? "FAILED" : "SUCCESS";
+        const reason = err ? parseError(err).reason : "";
+        return [csvEscape(r.admissionNumber), csvEscape(status), csvEscape(reason)].join(",");
       }),
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bulk_upload_result_${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(URL.createObjectURL(blob), `bulk_upload_result_${new Date().toISOString().split("T")[0]}.csv`);
   };
 
   return (

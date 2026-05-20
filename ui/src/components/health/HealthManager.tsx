@@ -668,32 +668,32 @@ export function HealthManager() {
             </CardContent></Card>
           ) : (
             <>
-              <div className="border rounded-lg">
+              <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('health.table.student')}</TableHead>
-                      <TableHead>{t('health.table.class')}</TableHead>
-                      <TableHead>{t('health.table.checkupDate')}</TableHead>
-                      <TableHead className="text-center">{t('health.table.heightWeight')}</TableHead>
-                      <TableHead className="text-center">{t('health.table.bmi')}</TableHead>
-                      <TableHead>{t('health.table.bloodGroup')}</TableHead>
-                      <TableHead>{t('health.table.status')}</TableHead>
-                      <TableHead className="text-right">{t('health.table.actions')}</TableHead>
+                    <TableRow className="bg-muted/50 dark:bg-slate-800 hover:bg-muted/50">
+                      <TableHead className="font-semibold text-foreground">{t('health.table.student')}</TableHead>
+                      <TableHead className="font-semibold text-foreground">{t('health.table.class')}</TableHead>
+                      <TableHead className="font-semibold text-foreground">{t('health.table.checkupDate')}</TableHead>
+                      <TableHead className="text-center font-semibold text-foreground">{t('health.table.heightWeight')}</TableHead>
+                      <TableHead className="text-center font-semibold text-foreground">{t('health.table.bmi')}</TableHead>
+                      <TableHead className="font-semibold text-foreground">{t('health.table.bloodGroup')}</TableHead>
+                      <TableHead className="font-semibold text-foreground">{t('health.table.status')}</TableHead>
+                      <TableHead className="text-right font-semibold text-foreground">{t('health.table.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="dark:[&>tr]:border-slate-600/70">
                     {filteredRecords.map(r => (
-                      <TableRow key={r.id}>
-                        <TableCell className="font-medium">{r.studentName}</TableCell>
-                        <TableCell>{r.class} {r.section}</TableCell>
-                        <TableCell>{new Date(r.checkupDate).toLocaleDateString("en-IN")}</TableCell>
-                        <TableCell className="text-center">{r.height}cm / {r.weight}kg</TableCell>
+                      <TableRow key={r.id} className="dark:border-slate-600/70 dark:hover:bg-slate-700/40">
+                        <TableCell className="font-medium dark:text-white">{r.studentName}</TableCell>
+                        <TableCell className="dark:text-slate-200">{r.class} {r.section}</TableCell>
+                        <TableCell className="dark:text-slate-200">{new Date(r.checkupDate).toLocaleDateString("en-IN")}</TableCell>
+                        <TableCell className="text-center dark:text-slate-200">{r.height}cm / {r.weight}kg</TableCell>
                         <TableCell className="text-center">
                           <span className={`font-medium ${BMI_COLOR[r.bmiCategory] ?? ""}`}>{r.bmi?.toFixed(1)}</span>
-                          <span className="text-xs text-muted-foreground ml-1">({r.bmiCategory})</span>
+                          <span className="text-xs text-muted-foreground dark:text-slate-400 ml-1">({r.bmiCategory})</span>
                         </TableCell>
-                        <TableCell>{r.bloodGroup ?? "—"}</TableCell>
+                        <TableCell className="dark:text-slate-200">{r.bloodGroup ?? "—"}</TableCell>
                         <TableCell><Badge className={STATUS_COLOR[r.status] ?? ""}>{r.status.replace("_", " ")}</Badge></TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">

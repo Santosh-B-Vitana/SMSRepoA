@@ -91,10 +91,10 @@ function daysOverdue(dueDate: string | undefined) {
 
 // ─── Status config ────────────────────────────────────────
 const statusConfig: Record<string, { label: string; color: string }> = {
-  paid:    { label: "Paid",    color: "text-green-700 bg-green-50 border-green-200" },
-  partial: { label: "Partial", color: "text-blue-700 bg-blue-50 border-blue-200" },
-  pending: { label: "Pending", color: "text-amber-700 bg-amber-50 border-amber-200" },
-  overdue: { label: "Overdue", color: "text-red-700 bg-red-50 border-red-200" },
+  paid:    { label: "Paid",    color: "text-green-700 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-950/60 dark:border-green-800" },
+  partial: { label: "Partial", color: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/60 dark:border-blue-800" },
+  pending: { label: "Pending", color: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/60 dark:border-amber-800" },
+  overdue: { label: "Overdue", color: "text-red-700 bg-red-50 border-red-200 dark:text-red-300 dark:bg-red-950/60 dark:border-red-800" },
 };
 
 // ─── Term helpers ─────────────────────────────────────────
@@ -196,9 +196,9 @@ function termDotColor(status: string): string {
   return "bg-red-400";
 }
 function termDotRing(status: string): string {
-  if (status === "paid")    return "ring-green-300";
-  if (status === "partial") return "ring-amber-300";
-  return "ring-red-300";
+  if (status === "paid")    return "ring-green-400 dark:ring-green-500";
+  if (status === "partial") return "ring-amber-400 dark:ring-amber-500";
+  return "ring-red-400 dark:ring-red-500";
 }
 
 // ─── Collect Payment Dialog (Industry Grade) ────────────
@@ -4202,11 +4202,11 @@ export default function Fees() {
   );
 
   const kpiCards = [
-    { label: t('fees.kpi.todayCollection'), value: inr(todayCollected), sub: t('fees.kpi.todayCollectionSub'), color: "text-green-600", bg: "bg-green-50", icon: <IndianRupee className="h-5 w-5 text-green-600" /> },
-    { label: t('fees.kpi.totalCollected'), value: inr(stats.totalCollected), sub: t('fees.kpi.totalCollectedSub'), color: "text-blue-600", bg: "bg-blue-50", icon: <TrendingUp className="h-5 w-5 text-blue-600" /> },
-    { label: t('fees.totalPending'), value: inr(stats.totalPending), sub: t('fees.kpi.totalPendingSub'), color: "text-amber-600", bg: "bg-amber-50", icon: <Clock className="h-5 w-5 text-amber-600" /> },
-    { label: t('fees.overdue'), value: inr(stats.totalOverdue), sub: `${records.filter(r => r.status === "overdue").length} ${t('fees.nStudents')}`, color: "text-red-600", bg: "bg-red-50", icon: <AlertTriangle className="h-5 w-5 text-red-600" /> },
-    { label: t('fees.kpi.collectionRateLabel'), value: `${isNaN(stats.collectionRate) || !isFinite(stats.collectionRate) ? 0 : Math.round(stats.collectionRate)}%`, sub: t('fees.kpi.collectionRateSub'), color: "text-purple-600", bg: "bg-purple-50", icon: <BarChart3 className="h-5 w-5 text-purple-600" /> },
+    { label: t('fees.kpi.todayCollection'), value: inr(todayCollected), sub: t('fees.kpi.todayCollectionSub'), color: "text-green-600 dark:text-green-400", bg: "bg-green-50 dark:bg-green-900/30", icon: <IndianRupee className="h-5 w-5 text-green-600 dark:text-green-400" /> },
+    { label: t('fees.kpi.totalCollected'), value: inr(stats.totalCollected), sub: t('fees.kpi.totalCollectedSub'), color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/30", icon: <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" /> },
+    { label: t('fees.totalPending'), value: inr(stats.totalPending), sub: t('fees.kpi.totalPendingSub'), color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/30", icon: <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" /> },
+    { label: t('fees.overdue'), value: inr(stats.totalOverdue), sub: `${records.filter(r => r.status === "overdue").length} ${t('fees.nStudents')}`, color: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-900/30", icon: <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" /> },
+    { label: t('fees.kpi.collectionRateLabel'), value: `${isNaN(stats.collectionRate) || !isFinite(stats.collectionRate) ? 0 : Math.round(stats.collectionRate)}%`, sub: t('fees.kpi.collectionRateSub'), color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-50 dark:bg-purple-900/30", icon: <BarChart3 className="h-5 w-5 text-purple-600 dark:text-purple-400" /> },
   ];
 
   if (accessDenied) {
@@ -4343,20 +4343,20 @@ export default function Fees() {
           ) : (
             <>
               <p className="text-sm text-muted-foreground mb-3">{groupedStudents.length} {t('fees.nStudents')}</p>
-              <div className="border rounded-xl overflow-hidden shadow-sm">
+              <div className="rounded-xl overflow-hidden border border-border dark:border-slate-700 shadow-sm bg-card dark:text-slate-100">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="font-semibold">{t('fees.colStudent')}</TableHead>
-                      <TableHead className="font-semibold">{t('fees.class')}</TableHead>
-                      <TableHead className="text-right font-semibold">{t('fees.totalAmount')}</TableHead>
-                      <TableHead className="text-right font-semibold">{t('fees.paidAmount')}</TableHead>
-                      <TableHead className="text-right font-semibold">{t('fees.balanceAmount')}</TableHead>
-                      <TableHead className="font-semibold">{t('fees.colTerms')}</TableHead>
-                      <TableHead className="text-right font-semibold">{t('fees.colAction')}</TableHead>
+                    <TableRow className="bg-muted/50 dark:bg-slate-800 dark:border-b-slate-600 hover:bg-muted/50">
+                      <TableHead className="font-semibold text-foreground">{t('fees.colStudent')}</TableHead>
+                      <TableHead className="font-semibold text-foreground">{t('fees.class')}</TableHead>
+                      <TableHead className="text-right font-semibold text-foreground">{t('fees.totalAmount')}</TableHead>
+                      <TableHead className="text-right font-semibold text-foreground">{t('fees.paidAmount')}</TableHead>
+                      <TableHead className="text-right font-semibold text-foreground">{t('fees.balanceAmount')}</TableHead>
+                      <TableHead className="font-semibold text-foreground">{t('fees.colTerms')}</TableHead>
+                      <TableHead className="text-right font-semibold text-foreground">{t('fees.colAction')}</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="dark:[&>tr]:border-slate-600/70">
                     {groupedStudents.map(g => {
                       const isExpanded = expandedRow === g.studentId;
                       const firstPendingRecord = g.records.find(r => r.status !== "paid");
@@ -4378,28 +4378,28 @@ export default function Fees() {
                         <Fragment key={g.studentId}>
                           {/* ── Student Summary Row ── */}
                           <TableRow
-                            className={`cursor-pointer hover:bg-muted/30 transition-colors ${isExpanded ? "bg-blue-50/40 border-b-0" : ""}`}
+                            className={`cursor-pointer hover:bg-muted/30 dark:hover:bg-slate-700/40 dark:border-slate-600/70 transition-colors ${isExpanded ? "bg-blue-50/40 dark:bg-blue-950/30 border-b-0" : ""}`}
                             onClick={() => setExpandedRow(isExpanded ? null : g.studentId)}
                           >
                             {/* Student name + admission number */}
                             <TableCell>
-                              <div className="font-semibold text-sm leading-tight">{g.studentName}</div>
+                              <div className="font-semibold text-sm leading-tight dark:text-white">{g.studentName}</div>
                               {g.admissionNumber ? (
-                                <div className="text-xs text-muted-foreground font-mono mt-0.5 tracking-wide">{g.admissionNumber}</div>
+                                <div className="text-xs text-muted-foreground dark:text-slate-400 font-mono mt-0.5 tracking-wide">{g.admissionNumber}</div>
                               ) : (
                                 <div className="text-xs text-muted-foreground/40 mt-0.5 italic">No adm. no.</div>
                               )}
                             </TableCell>
-                            <TableCell className="text-sm">{g.class ?? "—"}</TableCell>
-                            <TableCell className="text-right font-medium text-sm">{inr(g.totalFee)}</TableCell>
-                            <TableCell className="text-right font-medium text-sm text-green-600">{inr(g.totalPaid)}</TableCell>
+                            <TableCell className="text-sm dark:text-slate-200">{g.class ?? "—"}</TableCell>
+                            <TableCell className="text-right font-medium text-sm dark:text-slate-200">{inr(g.totalFee)}</TableCell>
+                            <TableCell className="text-right font-medium text-sm text-green-600 dark:text-green-400">{inr(g.totalPaid)}</TableCell>
                             <TableCell className="text-right text-sm">
                               {g.totalBalance > 0
-                                ? <span className="font-bold text-red-600">{inr(g.totalBalance)}</span>
-                                : <span className="text-green-600 font-medium">{t('fees.nil')}</span>
+                                ? <span className="font-bold text-red-600 dark:text-red-400">{inr(g.totalBalance)}</span>
+                                : <span className="text-green-600 dark:text-green-400 font-medium">{t('fees.nil')}</span>
                               }
                               {maxOverdueDays > 0 && (
-                                <div className="text-[10px] text-red-500 font-medium">{maxOverdueDays}{t('fees.daysOverdue')}</div>
+                                <div className="text-[10px] text-red-500 dark:text-red-400 font-medium">{maxOverdueDays}{t('fees.daysOverdue')}</div>
                               )}
                             </TableCell>
                             {/* Term bubbles — use rich schedule from fee structure when available */}
@@ -4499,7 +4499,7 @@ export default function Fees() {
 
                           {/* ── Expanded: Term-wise history ── */}
                           {isExpanded && (
-                            <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
+                            <TableRow className="bg-slate-50/60 dark:bg-slate-800/60 dark:border-slate-600/70 hover:bg-slate-50/60 dark:hover:bg-slate-800/60">
                               <TableCell colSpan={7} className="px-4 py-4">
                                 <div className="space-y-3">
                                   {g.records.map((r, idx) => {

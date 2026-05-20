@@ -716,7 +716,7 @@ export function AdvancedFeesManager() {
             <CardContent>
               {receiptData ? (
                 <div className="space-y-4">
-                  <div className="border rounded-lg p-6 bg-white">
+                  <div className="border rounded-lg p-6 bg-card">
                     <div className="text-center mb-6">
                       <h2 className="text-2xl font-bold">Fee Receipt</h2>
                       <p className="text-sm text-muted-foreground">Vitana Schools</p>

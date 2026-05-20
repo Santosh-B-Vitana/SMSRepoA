@@ -430,5 +430,55 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
         }
+
+        // ── Billing ──────────────────────────────────────────────────────────────
+
+        /// <summary>Get billing info for a specific school (SuperAdmin or that school's Admin).</summary>
+        [HttpGet("schools/{schoolId}/billing")]
+        [Authorize(Roles = "SuperAdmin,Admin")]
+        public async Task<ActionResult<SchoolBillingDto>> GetSchoolBilling(Guid schoolId)
+        {
+            try
+            {
+                var dto = await _service.GetSchoolBillingAsync(schoolId);
+                return Ok(dto);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)            { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
+
+        /// <summary>Update billing info for a school (SuperAdmin only).</summary>
+        [HttpPut("schools/{schoolId}/billing")]
+        [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
+        public async Task<ActionResult<SchoolBillingDto>> UpdateSchoolBilling(Guid schoolId, [FromBody] UpdateSchoolBillingRequest request)
+        {
+            try
+            {
+                var dto = await _service.UpdateSchoolBillingAsync(schoolId, request);
+                return Ok(dto);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)            { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Login billing notification — called by admin dashboard on mount.
+        /// Returns a warning when subscription is expiring soon or expired.
+        /// </summary>
+        [HttpGet("billing-notification")]
+        [Authorize]
+        public async Task<ActionResult<BillingNotificationDto>> GetBillingNotification()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                if (schoolId == Guid.Empty)
+                    return Ok(new BillingNotificationDto { HasWarning = false });
+
+                var dto = await _service.GetBillingNotificationAsync(schoolId);
+                return Ok(dto);
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
     }
 }

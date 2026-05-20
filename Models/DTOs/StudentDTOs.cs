@@ -693,6 +693,13 @@ namespace SmsApi.Models.DTOs
         public List<string> SuccessfulAdmissionNumbers { get; set; } = new();
     }
 
+    // Distinct classes and sections for filter dropdowns
+    public class StudentClassesSectionsResponse
+    {
+        public List<string> Classes { get; set; } = new();
+        public List<string> Sections { get; set; } = new();
+    }
+
     // Student List Response
     public class StudentListResponse
     {

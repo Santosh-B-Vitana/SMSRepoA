@@ -1,7 +1,9 @@
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { Plus, Search, Users, Calendar, CheckCircle, Loader2, Pencil, Trash2, UserCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Plus, Search, Users, CheckCircle, Loader2, Pencil, Trash2, UserCheck, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ApplicationTrackingSystem } from "./ApplicationTrackingSystem";
@@ -19,7 +20,8 @@ import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
 import { useAdmissions, useAdmissionStats } from "@/hooks/useAdmissions";
 import { AdmissionForm } from "./AdmissionForm";
-import type { Admission } from "@/services/admissionService";
+import { admissionService } from "@/services/admissionService";
+import type { Admission, AdmissionFull } from "@/services/admissionService";
 
 const statusColors: Record<string, string> = {
   pending:    "bg-yellow-100 text-yellow-800",
@@ -31,17 +33,37 @@ const statusColors: Record<string, string> = {
 };
 
 const CLASSES = ["Nursery","LKG","UKG","1","2","3","4","5","6","7","8","9","10","11","12"];
+const SECTIONS = ["A","B","C","D","E","F","G","H"];
 
 export function AdmissionsManager() {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  const [searchTerm, setSearchTerm]     = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [classFilter, setClassFilter]   = useState("all");
-  const [page, setPage]                 = useState(1);
-  const [isAddDialogOpen, setIsAddDialogOpen]   = useState(false);
-  const [editAdmission, setEditAdmission]         = useState<Admission | null>(null);
+  const designation = (user as any)?.designation?.toLowerCase() ?? "";
+  const isReceptionist =
+    user?.role === "staff" &&
+    (designation.includes("receptionist") || designation.includes("front desk"));
+
+  const [searchTerm, setSearchTerm]       = useState("");
+  const [statusFilter, setStatusFilter]   = useState("all");
+  const [classFilter, setClassFilter]     = useState("all");
+  const [page, setPage]                   = useState(1);
+  const [isAddDialogOpen, setIsAddDialogOpen]     = useState(false);
+  const [editAdmission, setEditAdmission]           = useState<AdmissionFull | null>(null);
+  const [formKey, setFormKey]                       = useState(0);
+
+  // Admit dialog state
+  const [admitTarget, setAdmitTarget]     = useState<Admission | null>(null);
+  const [admitNumber, setAdmitNumber]     = useState("");
+  const [admitSection, setAdmitSection]   = useState("A");
+  const [admitBusy, setAdmitBusy]         = useState(false);
+
+  // Success dialog after admit
+  const [enrolledStudent, setEnrolledStudent] = useState<{
+    name: string; admissionNumber: string; class: string; section: string;
+  } | null>(null);
 
   const { items, totalCount, totalPages, isLoading, error, updateStatus, enrollApplication, deleteAdmission, refetch } = useAdmissions({
     filters: {
@@ -76,18 +98,43 @@ export function AdmissionsManager() {
     }
   };
 
-  const handleEnroll = async (id: string) => {
-    const admissionNumber = window.prompt("Enter admission number for this student:");
-    if (!admissionNumber || admissionNumber.trim().length === 0) return;
+  // Opens the proper Admit dialog
+  const openAdmitDialog = (admission: Admission) => {
+    setAdmitTarget(admission);
+    setAdmitNumber("");
+    setAdmitSection("A");
+  };
+
+  const handleAdmitSubmit = async () => {
+    if (!admitTarget) return;
+    if (!admitNumber.trim()) {
+      toast({ title: "Admission number required", variant: "destructive" });
+      return;
+    }
+    setAdmitBusy(true);
     try {
-      await enrollApplication({ id, admissionNumber: admissionNumber.trim() });
-      toast({ title: "Student Enrolled", description: `Assigned admission number ${admissionNumber.trim()}.` });
+      // Auto-approve if not already approved
+      if (admitTarget.status !== "approved") {
+        await admissionService.approveApplication(admitTarget.id);
+      }
+      // Enroll → creates Student record with status = "active"
+      await enrollApplication({ id: admitTarget.id, admissionNumber: admitNumber.trim(), section: admitSection });
+      // Close admit dialog and show success
+      setAdmitTarget(null);
+      setEnrolledStudent({
+        name: admitTarget.studentName,
+        admissionNumber: admitNumber.trim(),
+        class: admitTarget.appliedClass,
+        section: admitSection,
+      });
     } catch (err: any) {
       toast({
-        title: "Enrollment Failed",
+        title: "Admission Failed",
         description: err?.response?.data?.message ?? err?.message ?? "Unknown error",
         variant: "destructive",
       });
+    } finally {
+      setAdmitBusy(false);
     }
   };
 
@@ -105,21 +152,134 @@ export function AdmissionsManager() {
     }
   };
 
+  const handleEditClick = async (admission: Admission) => {
+    try {
+      const full = await admissionService.getAdmissionById(admission.id);
+      setEditAdmission(full);
+      setFormKey(k => k + 1);
+      setIsAddDialogOpen(true);
+    } catch {
+      // Fall back to basic admission if full fetch fails
+      setEditAdmission(admission as unknown as AdmissionFull);
+      setFormKey(k => k + 1);
+      setIsAddDialogOpen(true);
+    }
+  };
+
   const handleFormSuccess = () => {
     setIsAddDialogOpen(false);
     setEditAdmission(null);
-    if (typeof refetch === "function") refetch();
-    toast({ title: editAdmission ? "Application updated" : "Application submitted successfully" });
+    setFormKey(k => k + 1);
+    queryClient.invalidateQueries({ queryKey: ['admissions'] });
+    queryClient.invalidateQueries({ queryKey: ['admission-stats'] });
+    refetch();
   };
 
   const handleFormClose = () => {
     setIsAddDialogOpen(false);
     setEditAdmission(null);
+    setFormKey(k => k + 1);
   };
 
 
   return (
     <div className="relative min-h-screen">
+      {/* ── Admit Dialog ─────────────────────────────────────────────── */}
+      <Dialog open={!!admitTarget} onOpenChange={(open) => { if (!open) setAdmitTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-purple-600" />
+              Admit Student
+            </DialogTitle>
+          </DialogHeader>
+          {admitTarget && (
+            <div className="space-y-4 pt-2">
+              <div className="rounded-lg bg-muted/50 p-3 space-y-1">
+                <p className="font-semibold">{admitTarget.studentName}</p>
+                <p className="text-sm text-muted-foreground">
+                  Applying for Class {admitTarget.appliedClass} · {admitTarget.academicYear}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="admitNumber">Admission Number <span className="text-red-500">*</span></Label>
+                <Input
+                  id="admitNumber"
+                  placeholder="e.g. STU2025001"
+                  value={admitNumber}
+                  onChange={e => setAdmitNumber(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") e.preventDefault(); }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="admitSection">Section</Label>
+                <Select value={admitSection} onValueChange={setAdmitSection}>
+                  <SelectTrigger id="admitSection">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SECTIONS.map(s => (
+                      <SelectItem key={s} value={s}>Section {s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setAdmitTarget(null)} disabled={admitBusy}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  onClick={handleAdmitSubmit}
+                  disabled={admitBusy || !admitNumber.trim()}
+                >
+                  {admitBusy ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />Admitting…</>
+                  ) : (
+                    <><UserCheck className="h-4 w-4 mr-2" />Confirm Admission</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Enrollment Success Dialog ────────────────────────────────── */}
+      <Dialog open={!!enrolledStudent} onOpenChange={(open) => { if (!open) setEnrolledStudent(null); }}>
+        <DialogContent className="max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="flex flex-col items-center gap-2">
+              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                <GraduationCap className="h-8 w-8 text-green-600" />
+              </div>
+              Student Admitted! 🎓
+            </DialogTitle>
+          </DialogHeader>
+          {enrolledStudent && (
+            <div className="space-y-4 py-2">
+              <p className="text-muted-foreground text-sm">
+                <strong>{enrolledStudent.name}</strong> has been successfully admitted to the school.
+              </p>
+              <div className="rounded-lg bg-muted/50 p-3 text-left space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Admission No.</span>
+                  <span className="font-semibold">{enrolledStudent.admissionNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Class</span>
+                  <span className="font-semibold">{enrolledStudent.class} – {enrolledStudent.section}</span>
+                </div>
+              </div>
+              <Button className="w-full" onClick={() => setEnrolledStudent(null)}>
+                Done
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <AnimatedBackground variant="mesh" className="fixed inset-0 -z-10 opacity-30" />
 
       <div className="space-y-6 relative z-10">
@@ -129,7 +289,7 @@ export function AdmissionsManager() {
               <h1 className="text-display gradient-text">{t('admissions.title')}</h1>
               <p className="text-muted-foreground mt-2">{t('admissions.manageDesc')}</p>
             </div>
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (!open) { setFormKey(k => k + 1); setEditAdmission(null); } }}>
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-2" />
@@ -138,6 +298,7 @@ export function AdmissionsManager() {
               </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto p-0">
                 <AdmissionForm
+                  key={formKey}
                   admission={editAdmission}
                   onClose={handleFormClose}
                   onSuccess={handleFormSuccess}
@@ -286,29 +447,31 @@ export function AdmissionsManager() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1">
-                                  <Select
-                                    value={admission.status}
-                                    onValueChange={v => handleStatusChange(admission.id, v)}
-                                    disabled={admission.status === "enrolled"}
-                                  >
-                                    <SelectTrigger className="w-32">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="pending">Pending</SelectItem>
-                                      <SelectItem value="interviewed">Interviewed</SelectItem>
-                                      <SelectItem value="approved">Approved</SelectItem>
-                                      <SelectItem value="waitlisted">Waitlisted</SelectItem>
-                                      <SelectItem value="rejected">Rejected</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  {admission.status === "approved" && (
+                                  {!isReceptionist && (
+                                    <Select
+                                      value={admission.status}
+                                      onValueChange={v => handleStatusChange(admission.id, v)}
+                                      disabled={admission.status === "enrolled"}
+                                    >
+                                      <SelectTrigger className="w-32">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="pending">Pending</SelectItem>
+                                        <SelectItem value="interviewed">Interviewed</SelectItem>
+                                        <SelectItem value="approved">Approved</SelectItem>
+                                        <SelectItem value="waitlisted">Waitlisted</SelectItem>
+                                        <SelectItem value="rejected">Rejected</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                  {!isReceptionist && admission.status !== "enrolled" && (
                                     <Button
                                       variant="outline"
                                       size="sm"
                                       className="text-purple-600 border-purple-300 hover:bg-purple-50"
-                                      title="Enroll student"
-                                      onClick={() => handleEnroll(admission.id)}
+                                      title="Admit student"
+                                      onClick={() => openAdmitDialog(admission)}
                                     >
                                       <UserCheck className="h-4 w-4" />
                                     </Button>
@@ -318,20 +481,22 @@ export function AdmissionsManager() {
                                     size="sm"
                                     title="Edit application"
                                     disabled={admission.status === "enrolled"}
-                                    onClick={() => { setEditAdmission(admission); setIsAddDialogOpen(true); }}
+                                    onClick={() => handleEditClick(admission)}
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                    title="Delete application"
-                                    disabled={admission.status === "enrolled"}
-                                    onClick={() => handleDelete(admission.id, admission.studentName)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                  {!isReceptionist && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                      title="Delete application"
+                                      disabled={admission.status === "enrolled"}
+                                      onClick={() => handleDelete(admission.id, admission.studentName)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>

@@ -13,6 +13,7 @@ export function MobileBottomNav() {
   // Role-specific native nav bars
   if (user?.role === "parent") return <ParentMobileBottomNav />;
   if (user?.role === "staff")  return <StaffMobileBottomNav />;
+  if (user?.role === "super_admin") return null; // Super admin uses sidebar only
 
   // Admin / principal fallback — keep original simple nav
   const navItems = [

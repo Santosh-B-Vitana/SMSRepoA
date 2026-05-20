@@ -13,6 +13,7 @@ namespace SmsApi.Services
     public interface IStudentService
     {
         Task<StudentListResponse> GetStudentsAsync(Guid schoolId, int page, int pageSize, string? search, string? classFilter, string? sectionFilter, string? status, string? academicYear = null, string? sortBy = null, string? sortOrder = null);
+        Task<StudentClassesSectionsResponse> GetDistinctClassesSectionsAsync(Guid schoolId);
         Task<StudentResponse?> GetStudentByIdAsync(Guid id, Guid schoolId);
         Task<StudentResponse?> GetStudentByEmailAsync(string email, Guid schoolId);
         Task<StudentResponse> CreateStudentAsync(CreateStudentRequest request);
@@ -216,6 +217,25 @@ namespace SmsApi.Services
                 Page = page,
                 PageSize = pageSize
             };
+        }
+
+        public async Task<StudentClassesSectionsResponse> GetDistinctClassesSectionsAsync(Guid schoolId)
+        {
+            var classes = await _context.Students
+                .Where(s => s.SchoolId == schoolId && s.Class != null && s.Class != "")
+                .Select(s => s.Class!)
+                .Distinct()
+                .OrderBy(c => c)
+                .ToListAsync();
+
+            var sections = await _context.Students
+                .Where(s => s.SchoolId == schoolId && s.Section != null && s.Section != "")
+                .Select(s => s.Section!)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToListAsync();
+
+            return new StudentClassesSectionsResponse { Classes = classes, Sections = sections };
         }
 
         public async Task<StudentResponse?> GetStudentByEmailAsync(string email, Guid schoolId)

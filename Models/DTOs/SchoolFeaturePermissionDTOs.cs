@@ -248,4 +248,45 @@ namespace SmsApi.Models.DTOs
         public string AcademicYearName { get; set; } = string.Empty;
         public List<string> EnabledModules { get; set; } = new();
     }
+
+    // ─── Billing ─────────────────────────────────────────────────────────────────
+
+    public class SchoolBillingDto
+    {
+        public Guid SchoolId { get; set; }
+        public string SchoolName { get; set; } = string.Empty;
+        public string BillingPlan { get; set; } = "Standard";
+        public string BillingStatus { get; set; } = "Active";
+        public DateTime? BillingExpiryDate { get; set; }
+        public int RenewalReminderDays { get; set; } = 30;
+        public int? DaysUntilExpiry { get; set; }
+        public bool IsExpiringSoon { get; set; }
+        public bool IsExpired { get; set; }
+    }
+
+    public class UpdateSchoolBillingRequest
+    {
+        [MaxLength(50)]
+        public string? BillingPlan { get; set; }
+
+        [MaxLength(20)]
+        public string? BillingStatus { get; set; }
+
+        public DateTime? BillingExpiryDate { get; set; }
+
+        [Range(1, 365)]
+        public int? RenewalReminderDays { get; set; }
+    }
+
+    public class BillingNotificationDto
+    {
+        public bool HasWarning { get; set; }
+        public string Message { get; set; } = string.Empty;
+        /// <summary>info | warning | critical</summary>
+        public string Severity { get; set; } = "info";
+        public int? DaysUntilExpiry { get; set; }
+        public string BillingPlan { get; set; } = string.Empty;
+        public string BillingStatus { get; set; } = string.Empty;
+        public DateTime? BillingExpiryDate { get; set; }
+    }
 }

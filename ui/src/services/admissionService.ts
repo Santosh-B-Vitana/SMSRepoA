@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092/api';
+import { apiClient } from '@/lib/apiClient';
 
 // ==================== TYPES ====================
 
@@ -124,23 +122,6 @@ export interface UpdateAdmissionData {
   interviewNotes?: string;
 }
 
-// ==================== AUTH HELPERS ====================
-
-const getAuthHeaders = () => {
-  let token: string | null = null;
-  try {
-    const raw = sessionStorage.getItem('auth_session');
-    if (raw) token = JSON.parse(raw)?.token ?? null;
-  } catch { /* ignore */ }
-  if (!token) token = localStorage.getItem('authToken') ?? localStorage.getItem('token');
-  return {
-    headers: {
-      Authorization: token ? `Bearer ${token}` : '',
-      'Content-Type': 'application/json'
-    }
-  };
-};
-
 // ==================== API SERVICE ====================
 
 class AdmissionService {
@@ -158,99 +139,56 @@ class AdmissionService {
     if (pagination?.page)    params.set('page', pagination.page.toString());
     if (pagination?.pageSize) params.set('pageSize', pagination.pageSize.toString());
 
-    const response = await axios.get(
-      `${API_BASE_URL}/admissions/applications?${params}`,
-      getAuthHeaders()
-    );
+    const response = await apiClient.get(`/admissions/applications?${params}`);
     return response.data;
   }
 
   async getAdmissionById(admissionId: string): Promise<AdmissionFull> {
-    const response = await axios.get(
-      `${API_BASE_URL}/admissions/applications/${admissionId}`,
-      getAuthHeaders()
-    );
+    const response = await apiClient.get(`/admissions/applications/${admissionId}`);
     return response.data;
   }
 
   async createAdmission(data: CreateAdmissionData): Promise<AdmissionFull> {
-    const response = await axios.post(
-      `${API_BASE_URL}/admissions/applications`,
-      data,
-      getAuthHeaders()
-    );
+    const response = await apiClient.post(`/admissions/applications`, data);
     return response.data;
   }
 
   async updateAdmission(admissionId: string, data: UpdateAdmissionData): Promise<AdmissionFull> {
-    const response = await axios.put(
-      `${API_BASE_URL}/admissions/applications/${admissionId}`,
-      data,
-      getAuthHeaders()
-    );
+    const response = await apiClient.put(`/admissions/applications/${admissionId}`, data);
     return response.data;
   }
 
   async deleteAdmission(admissionId: string): Promise<void> {
-    await axios.delete(
-      `${API_BASE_URL}/admissions/applications/${admissionId}`,
-      getAuthHeaders()
-    );
+    await apiClient.delete(`/admissions/applications/${admissionId}`);
   }
 
   async updateStatus(admissionId: string, status: string, remarks?: string): Promise<void> {
-    await axios.put(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/status`,
-      { status, remarks },
-      getAuthHeaders()
-    );
+    await apiClient.put(`/admissions/applications/${admissionId}/status`, { status, remarks });
   }
 
   async scheduleInterview(admissionId: string, interviewDate: string, notes?: string): Promise<void> {
-    await axios.put(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/interview`,
-      { interviewDate, notes },
-      getAuthHeaders()
-    );
+    await apiClient.put(`/admissions/applications/${admissionId}/interview`, { interviewDate, notes });
   }
 
   async approveApplication(admissionId: string): Promise<void> {
-    await axios.put(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/approve`,
-      {},
-      getAuthHeaders()
-    );
+    await apiClient.put(`/admissions/applications/${admissionId}/approve`, {});
   }
 
   async rejectApplication(admissionId: string, rejectionReason: string): Promise<void> {
-    await axios.put(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/reject`,
-      { rejectionReason },
-      getAuthHeaders()
-    );
+    await apiClient.put(`/admissions/applications/${admissionId}/reject`, { rejectionReason });
   }
 
-  async enrollApplication(admissionId: string, admissionNumber: string): Promise<void> {
-    await axios.put(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/enroll`,
-      { admissionNumber },
-      getAuthHeaders()
-    );
+  async enrollApplication(admissionId: string, admissionNumber: string, section?: string): Promise<void> {
+    await apiClient.put(`/admissions/applications/${admissionId}/enroll`, { admissionNumber, section });
   }
 
   async getStats(): Promise<AdmissionStats> {
-    const response = await axios.get(
-      `${API_BASE_URL}/admissions/stats`,
-      getAuthHeaders()
-    );
+    const response = await apiClient.get(`/admissions/stats`);
     return response.data;
   }
 
   async getDocuments(admissionId: string): Promise<AdmissionDocument[]> {
-    const response = await axios.get(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/documents`,
-      getAuthHeaders()
-    );
+    const response = await apiClient.get(`/admissions/applications/${admissionId}/documents`);
     return response.data;
   }
 
@@ -260,11 +198,11 @@ class AdmissionService {
     documentName: string,
     fileUrl: string
   ): Promise<AdmissionDocument> {
-    const response = await axios.post(
-      `${API_BASE_URL}/admissions/applications/${admissionId}/documents`,
-      { documentType, documentName, fileUrl },
-      getAuthHeaders()
-    );
+    const response = await apiClient.post(`/admissions/applications/${admissionId}/documents`, {
+      documentType,
+      documentName,
+      fileUrl,
+    });
     return response.data;
   }
 }

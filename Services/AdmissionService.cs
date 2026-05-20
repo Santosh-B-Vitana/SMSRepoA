@@ -27,7 +27,7 @@ namespace SmsApi.Services
         Task<bool> ScheduleInterviewAsync(Guid schoolId, Guid id, DateTime interviewDate, string? notes);
         Task<bool> ApproveApplicationAsync(Guid schoolId, Guid id, Guid userId);
         Task<bool> RejectApplicationAsync(Guid schoolId, Guid id, string reason, Guid userId);
-        Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId);
+        Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId, string? section = null);
 
         // Statistics
         Task<AdmissionStatsDto> GetApplicationStatsAsync(Guid schoolId);
@@ -555,7 +555,9 @@ namespace SmsApi.Services
             var additionalData = ParseAdditionalData(admission.Remarks);
 
             admission.Status = normalizedStatus;
-            admission.ProcessedBy = userId;
+            // ProcessedBy would require userId to be a valid Staff ID (foreign key constraint)
+            // Since the JWT token contains User IDs, not Staff IDs, we skip setting this to avoid FK violation
+            // admission.ProcessedBy = userId;
             admission.ProcessedAt = DateTime.UtcNow;
             admission.UpdatedAt = DateTime.UtcNow;
 
@@ -628,7 +630,7 @@ namespace SmsApi.Services
             return await UpdateStatusAsync(schoolId, id, "rejected", reason, userId);
         }
 
-        public async Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId)
+        public async Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId, string? section = null)
         {
             // ===== UPFRONT VALIDATION (before transaction) =====
             if (string.IsNullOrWhiteSpace(admissionNumber))
@@ -683,9 +685,10 @@ namespace SmsApi.Services
                         DateOfBirth = admissionInTx.DateOfBirth,
                         Gender = admissionInTx.Gender,
                         Class = admissionInTx.ApplyingForClass,
-                        Section = "A",
+                        Section = !string.IsNullOrWhiteSpace(section) ? section.Trim() : "A",
                         RollNumber = rollNumber,
-                        Status = "Active",
+                        Status = "active",  // Lowercase to match queries
+                        IsActive = true,
                         GuardianName = admissionInTx.ParentName,
                         Address = admissionInTx.Address,
                         AdmissionDate = DateTime.UtcNow,
@@ -703,7 +706,7 @@ namespace SmsApi.Services
                     additionalData["StudentId"] = student.Id.ToString();
 
                     admissionInTx.Status = "enrolled";
-                    admissionInTx.ProcessedBy = userId;
+                    // admissionInTx.ProcessedBy = userId;  // Avoid FK constraint: userId is not a valid Staff ID
                     admissionInTx.ProcessedAt = DateTime.UtcNow;
                     admissionInTx.Remarks = JsonSerializer.Serialize(additionalData);
                     admissionInTx.UpdatedAt = DateTime.UtcNow;

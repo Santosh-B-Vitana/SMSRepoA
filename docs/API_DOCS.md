@@ -1,6 +1,6 @@
 # API Documentation — SMS API
 
-**Last Updated:** May 19, 2026 | **Version:** 1.1.0 | **Project:** SMSRepoA  
+**Last Updated:** May 21, 2026 | **Version:** 1.2.0 | **Project:** SMSRepoA  
 **Base URL:** `http://localhost:5092` (dev) | `https://api.your-domain.com` (prod)  
 **Format:** JSON | **Authentication:** JWT Bearer Token
 
@@ -11,6 +11,7 @@
 - [Authentication](#authentication)
 - [Students](#students)
 - [Fees](#fees)
+- [Billing Management](#billing-management)
 - [Health & Status](#health--status)
 - [Error Responses](#error-responses)
 - [Rate Limiting](#rate-limiting)
@@ -334,6 +335,112 @@ curl -X POST http://localhost:5092/api/Fees/records/550e8400-e29b-41d4-a716-4466
   -H "Content-Type: application/json" \
   -d '{"reason":"No longer eligible","removedBy":"principal@school.edu"}'
 ```
+
+---
+
+## Billing Management
+
+> **Auth roles:** `GET` requires `SuperAdmin` or `Admin`; `PUT` requires `SuperAdmin` only; notification endpoint requires any authenticated role.
+
+### Get School Billing
+
+**Endpoint:** `GET /api/school-feature-permissions/schools/{schoolId}/billing`  
+**Auth:** `SuperAdmin` or `Admin`
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:5092/api/school-feature-permissions/schools/550e8400-e29b-41d4-a716-446655440000/billing
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "schoolId": "550e8400-e29b-41d4-a716-446655440000",
+    "schoolName": "Ajith International Schools",
+    "billingPlan": "Pro",
+    "billingStatus": "Active",
+    "billingExpiryDate": "2027-05-20T00:00:00",
+    "renewalReminderDays": 30,
+    "daysUntilExpiry": 365,
+    "isExpiringSoon": false,
+    "isExpired": false
+  }
+}
+```
+
+`isExpiringSoon` is `true` when `daysUntilExpiry <= renewalReminderDays`.  
+`isExpired` is `true` when `billingExpiryDate` is in the past.
+
+---
+
+### Update School Billing
+
+**Endpoint:** `PUT /api/school-feature-permissions/schools/{schoolId}/billing`  
+**Auth:** `SuperAdmin` only
+
+**Request:**
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "billingPlan": "Enterprise",
+    "billingStatus": "Active",
+    "billingExpiryDate": "2028-01-01",
+    "renewalReminderDays": 45
+  }' \
+  http://localhost:5092/api/school-feature-permissions/schools/550e8400-e29b-41d4-a716-446655440000/billing
+```
+
+**Fields (all optional — only supplied fields are updated):**
+
+| Field | Type | Allowed Values |
+|-------|------|----------------|
+| `billingPlan` | string | `Standard`, `Pro`, `Enterprise` |
+| `billingStatus` | string | `Active`, `Inactive`, `Suspended`, `Trial` |
+| `billingExpiryDate` | ISO 8601 date | any future date |
+| `renewalReminderDays` | int | 1–365 |
+
+**Success Response (200 OK):** Same shape as GET response above, with updated values.
+
+---
+
+### Get Billing Notification (Admin Dashboard)
+
+**Endpoint:** `GET /api/school-feature-permissions/billing-notification`  
+**Auth:** Any authenticated user (scoped to the caller's school via tenant context)
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:5092/api/school-feature-permissions/billing-notification
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "hasWarning": true,
+    "message": "Your Pro subscription expires in 6 days. Please renew to avoid service interruption.",
+    "severity": "critical",
+    "daysUntilExpiry": 6,
+    "billingPlan": "Pro",
+    "billingStatus": "Active",
+    "billingExpiryDate": "2026-05-27T00:00:00"
+  }
+}
+```
+
+**Severity values:**
+
+| Value | Condition |
+|-------|-----------|
+| `info` | Healthy — more than `renewalReminderDays` away |
+| `warning` | Within `renewalReminderDays` of expiry |
+| `critical` | Expired **or** ≤ 7 days remaining |
+
+When `hasWarning = false` the admin dashboard suppresses any toast notification. The frontend gates further calls with `sessionStorage` so the toast appears at most once per browser session.
 
 ---
 

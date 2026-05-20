@@ -68,6 +68,33 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Update current user's own profile (firstName, lastName only).
+        /// Uses JWT identity — no SchoolId scoping needed since the user is updating themselves.
+        /// </summary>
+        [HttpPut("me")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<UserResponse>> UpdateMyProfile([FromBody] UpdateProfileRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return Unauthorized(new { message = "User ID not found in token" });
+
+            var result = await _userManagementService.UpdateMyProfileAsync(userId, request);
+
+            if (!result.Success)
+                return result.Message == "User not found"
+                    ? NotFound(new { message = result.Message })
+                    : BadRequest(new { message = result.Message });
+
+            return Ok(result.Data);
+        }
+
+        /// <summary>
         /// Update an existing user
         /// </summary>
         [HttpPut("{userId}")]

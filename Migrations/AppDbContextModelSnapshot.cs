@@ -8569,6 +8569,25 @@ namespace SmsApi.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("BillingPlan")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Standard");
+
+                    b.Property<string>("BillingStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Active");
+
+                    b.Property<DateTime?>("BillingExpiryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RenewalReminderDays")
+                        .HasColumnType("int")
+                        .HasDefaultValue(30);
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 

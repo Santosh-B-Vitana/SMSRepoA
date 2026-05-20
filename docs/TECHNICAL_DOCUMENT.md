@@ -1,7 +1,109 @@
 # sms-api — Technical Document
 
-> **Version 2.7** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
-> **Last Updated:** May 19, 2026 (Session 8) | **Project:** SMSRepoA
+> **Version 2.9** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
+> **Last Updated:** May 21, 2026 (Session 10) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 21, 2026 (Session 10)
+
+| Area | Change |
+|------|--------|
+| **`Models/Entities/School.cs` — Billing fields** | Added 4 new properties: `BillingPlan` (`nvarchar(50)`, default `"Standard"`), `BillingStatus` (`nvarchar(20)`, default `"Active"`), `BillingExpiryDate` (`datetime2`, nullable), `RenewalReminderDays` (`int`, default `30`). All decorated with `[MaxLength]` where applicable. |
+| **`Models/DTOs/SchoolFeaturePermissionDTOs.cs` — Billing DTOs** | Added 3 new DTOs: `SchoolBillingDto` (read model with computed `DaysUntilExpiry`, `IsExpiringSoon`, `IsExpired`), `UpdateSchoolBillingRequest` (partial update; `RenewalReminderDays` has `[Range(1, 365)]`), and `BillingNotificationDto` (notification payload with `HasWarning`, `Message`, `Severity`, and subscription facts). |
+| **`Services/ISchoolFeaturePermissionService.cs` — Billing interface** | Added 3 method signatures: `GetSchoolBillingAsync(Guid)`, `UpdateSchoolBillingAsync(Guid, UpdateSchoolBillingRequest)`, `GetBillingNotificationAsync(Guid)`. |
+| **`Services/SchoolFeaturePermissionService.cs` — Billing implementation** | Implemented all 3 methods plus a private `BuildBillingDto` helper. `GetBillingNotificationAsync` computes severity: `critical` if expired or `daysUntilExpiry ≤ 7`; `warning` if within `RenewalReminderDays`; `info` otherwise (sets `HasWarning = false`). `UpdateSchoolBillingAsync` only updates fields that are non-null in the request (partial update pattern). |
+| **`Controllers/SchoolFeaturePermissionsController.cs` — Billing endpoints** | Added 3 endpoints under `api/school-feature-permissions`: `GET schools/{schoolId}/billing` (`[Authorize(Roles = "SuperAdmin,Admin")]`), `PUT schools/{schoolId}/billing` (`[Authorize(Roles = StatusConstants.Roles.SuperAdmin)]`), `GET billing-notification` (`[Authorize]` — any authenticated user, scoped by tenant context). |
+| **`Migrations/20260520000000_AddBillingToSchool.cs`** | Manually authored EF Core migration. `Up()` adds 4 columns to `Schools` with correct defaults. `Down()` drops them. Applied to live DB via direct `sqlcmd` (server was running; `dotnet ef` was blocked by the locked process). Row manually inserted into `__EFMigrationsHistory` so EF does not re-run on startup. |
+| **`Migrations/AppDbContextModelSnapshot.cs`** | Billing properties inserted into the `Schools` entity block in the snapshot (after `SchoolCode`, before the next property group). |
+| **`ui/src/services/api/superAdminApi.ts` — Billing types + API functions** | Added 3 TypeScript interfaces: `SchoolBilling`, `UpdateBillingRequest`, `BillingNotification`. Added 3 exported API functions: `getSchoolBilling(schoolId)`, `updateSchoolBilling(schoolId, data)`, `getBillingNotification()`. All use existing `apiGet`/`apiPut` helpers (envelope auto-unwrapped). |
+| **`ui/src/components/layout/UserMenuDropdown.tsx` — Role-aware BillingDialog** | `BillingDialog` replaced with a role-branching wrapper: `super_admin` → `SuperAdminBillingManager` (school selector synced to `useSuperAdminSchool()` context, editable plan/status/expiry/reminder form, Save button calling `updateSchoolBilling`); all other roles → `AdminBillingViewer` (read-only card with plan badge, status badge, expiry date, amber/red warning banner). `PLAN_COLORS` and `STATUS_COLORS` constant maps control badge styling. |
+| **`ui/src/pages/dashboards/SuperAdminDashboard.tsx` — Billing tab** | Added `"Billing"` tab between Feature Toggles and Quick Links. Tab content: school selector, expiry warning alerts, clickable all-schools list (with plan/status/days badges), inline edit form (plan dropdown, status dropdown, expiry date input, reminder days input), Save button with loading state. All wired to `superAdminApi.getSchoolBilling` / `updateSchoolBilling`. |
+| **`ui/src/pages/dashboards/AdminDashboard.tsx` — Billing notification toast** | New `useEffect` on mount calls `getBillingNotification()`. If `hasWarning`, fires `toast.error` (critical) or `toast.warning` (warning) with the server-generated message. `sessionStorage` key `billing_notif_shown` gates the call so the toast appears at most once per browser session. Errors are silently ignored (non-blocking). |
+| **`ui/src/components/layout/MobileBottomNav.tsx`** | Returns `null` for `super_admin` — prevents the mobile tab bar from showing irrelevant navigation items to super admin users. |
+| **`ui/src/contexts/AuthContext.tsx`** | Lazy state initialization added to eliminate the black screen / dark flash on first load. `useState` now uses an initializer function that reads `sessionStorage` synchronously before first render. |
+
+### Billing severity algorithm
+
+```csharp
+// Services/SchoolFeaturePermissionService.cs  GetBillingNotificationAsync()
+int? days = school.BillingExpiryDate.HasValue
+    ? (int)Math.Ceiling((school.BillingExpiryDate.Value - DateTime.UtcNow).TotalDays)
+    : null;
+
+bool expired    = days.HasValue && days.Value <= 0;
+bool critical   = expired || (days.HasValue && days.Value <= 7);
+bool warning    = !critical && days.HasValue && days.Value <= school.RenewalReminderDays;
+bool hasWarning = critical || warning;
+
+severity = critical ? "critical" : warning ? "warning" : "info";
+```
+
+### Migration deployment pattern (billing columns — same as previous session)
+
+1. Server was running; `dotnet ef migrations add` would fail because the Debug exe was locked.
+2. Columns applied directly via `sqlcmd` `ALTER TABLE` statements.
+3. Migration file hand-authored (`Up()` / `Down()` SQL written manually).
+4. Row inserted into `__EFMigrationsHistory`:
+   ```sql
+   INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion)
+   VALUES ('20260520000000_AddBillingToSchool', '8.0.0');
+   ```
+5. `AppDbContextModelSnapshot.cs` updated manually to match.
+
+### JWT role claim — how `SuperAdmin` is resolved
+
+```csharp
+// Services/TokenService.cs  NormalizeRole()
+"super_admin" or "superadmin" => "SuperAdmin"
+```
+
+The `superadmin` DB user has `Role = "superadmin"` which normalises to `"SuperAdmin"` in the JWT `ClaimTypes.Role` claim. The `[Authorize(Roles = "SuperAdmin")]` attribute matches this exactly.
+
+---
+
+## Changelog — May 19, 2026 (Session 9)
+
+| Area | Change |
+|------|--------|
+| **`Services/SchoolFeaturePermissionService.cs` — `GetAllSchoolsAsync`** | `IsOnboarded` is now computed at query time inside the `Select` projection: `IsOnboarded = _context.UserLogins.Any(u => u.SchoolId == s.Id && u.Role == "Admin")`. No EF migration or schema change is required — the value is derived from the existing `UserLogins` table and is recalculated on every request. |
+| **`Models/DTOs/SchoolFeaturePermissionDTOs.cs` — `SchoolListDto`** | Added `bool IsOnboarded` property. No annotation needed (no DB column). |
+| **`ui/src/services/api/superAdminApi.ts` — `SchoolListItem`** | Added `isOnboarded: boolean` to the TypeScript interface. |
+| **`ui/src/pages/superadmin/SchoolManagement.tsx`** | School name cell now wraps the name in a `<div className="flex flex-col">` and renders a green pill badge `🚀 Onboarded` when `school.isOnboarded`. Actions column: per-row Rocket button is `disabled` + `opacity-40 cursor-not-allowed` when `isOnboarded`; active indigo otherwise. |
+| **`ui/src/pages/superadmin/SchoolOnboardingWizard.tsx`** | Replaced `existingCodes: Set<string>` with `existingSchools: SchoolListItem[]`. Derived: `matchingSchool`, `codeAlreadyExists`, `codeIsOnboarded`. `validateStep` now differentiates: *"already fully onboarded — cannot run setup again"* vs *"code already in use"*. `StepSchoolProfile` receives `codeIsOnboarded: boolean` prop and renders a `🚫` blocking message for onboarded vs `⚠️` for code-taken. 409 handler refreshes the schools list. |
+| **`ui/src/contexts/LanguageContext.tsx`** | `'exams.tabs.cce'` key changed from `'Co-Scholastic'` to `'Co-Scholastic & CCE'`. Applied to both `en` and `hi` locale maps. |
+| **`ui/src/pages/CCEManagement.tsx`** | `reportcards` `TabsTrigger` label changed from `'Report Cards'` to `'CCE Report Cards'`. |
+| **`ui/src/components/layout/AppSidebar.tsx` — admin nav `PEOPLE & ENROLLMENT`** | Added `{ title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: "admissions" }` after the Staff entry. `UserPlus` was already imported. `'nav.admissions'` translation key already existed (`'Admissions'` / `'प्रवेश'`). The route `/admissions` and the `ModuleGuard` wrapper were already in `App.tsx` — only the sidebar entry was missing. |
+| **`ui/src/services/admissionService.ts` — `getAuthHeaders()`** | **Security fix.** Was reading the JWT from `localStorage.getItem('token')` (wrong key — the app stores auth in `sessionStorage`). Replaced with: (1) parse `sessionStorage.getItem('auth_session')` → `.token`; (2) fallback to `localStorage.getItem('authToken')`; (3) final fallback to `localStorage.getItem('token')` for legacy compatibility. Matches the pattern used by `ui/src/services/api/apiClient.ts`. |
+| **`ui/src/components/admissions/AdmissionsManager.tsx`** | Destructures `enrollApplication` and `deleteAdmission` from `useAdmissions`. Added `handleEnroll(id)` (prompts for admission number, calls `enrollApplication` mutation) and `handleDelete(id, name)` (confirm dialog, calls `deleteAdmission` mutation). Actions column now renders: status dropdown (non-enrolled statuses) + conditional purple **Enroll** button (visible when `status === "approved"`, calls `enrollApplication`) + **Edit** pencil button (opens form in edit mode) + red **Delete** trash button. All action buttons are `disabled` when `status === "enrolled"`. |
+
+### IsOnboarded — how it works (no migration needed)
+
+```csharp
+// Services/SchoolFeaturePermissionService.cs  GetAllSchoolsAsync()
+Select: new SchoolListDto {
+  // ... other fields ...
+  IsOnboarded = _context.UserLogins
+    .Any(u => u.SchoolId == s.Id && u.Role == "Admin")
+}
+```
+
+The logic: a school is considered onboarded once the wizard has created an Admin `UserLogin` for it. No extra column or nullable flag is needed on `School`.
+
+### Admissions auth pattern — before and after
+
+```ts
+// BEFORE (broken — always null in production)
+const token = localStorage.getItem('token');
+
+// AFTER (matches AuthContext / apiClient)
+let token: string | null = null;
+try {
+  const raw = sessionStorage.getItem('auth_session');
+  if (raw) token = JSON.parse(raw)?.token ?? null;
+} catch { /* ignore */ }
+if (!token) token = localStorage.getItem('authToken') ?? localStorage.getItem('token');
+```
 
 ---
 

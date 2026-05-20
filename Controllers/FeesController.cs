@@ -459,6 +459,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("records")]
+        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult<FeeRecordResponse>> CreateFeeRecord([FromBody] CreateFeeRecordRequest request)
         {
             try
@@ -2226,12 +2227,32 @@ namespace SmsApi.Controllers
             var processedBy = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "BulkUpload";
             var result = new BulkFeePaymentResult { TotalRows = rows.Count };
 
+            var allowedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cash", "online", "cheque", "dd", "neft", "upi" };
+            const decimal MaxSinglePayment = 10_000_000m; // ₹1 crore hard ceiling per row
+
+            // ── Detect duplicate admission numbers in this batch (warn, don't abort) ──
+            var duplicateAdmNos = rows
+                .Where(r => !string.IsNullOrWhiteSpace(r.AdmissionNumber))
+                .GroupBy(r => r.AdmissionNumber!.Trim().ToUpperInvariant())
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (duplicateAdmNos.Count > 0)
+                result.Errors.Add($"Warning: the following admission numbers appear more than once in this batch — each occurrence is processed in order: {string.Join(", ", duplicateAdmNos)}.");
+
             foreach (var row in rows)
             {
                 try
                 {
                     if (string.IsNullOrWhiteSpace(row.AdmissionNumber)) { result.Errors.Add($"Missing admission number for row '{row.StudentName}'."); result.Failed++; continue; }
                     if (row.AmountPaid <= 0) { result.Errors.Add($"{row.AdmissionNumber}: Amount must be positive."); result.Failed++; continue; }
+                    if (row.AmountPaid > MaxSinglePayment) { result.Errors.Add($"{row.AdmissionNumber}: Amount ₹{row.AmountPaid:N0} exceeds the maximum allowed per row (₹{MaxSinglePayment:N0})."); result.Failed++; continue; }
+                    if (!allowedMethods.Contains(row.PaymentMethod ?? ""))
+                    {
+                        result.Errors.Add($"{row.AdmissionNumber}: Invalid payment method '{row.PaymentMethod}'. Allowed: cash, online, cheque, dd, neft, upi.");
+                        result.Failed++;
+                        continue;
+                    }
 
                     var student = await _context.Students
                         .FirstOrDefaultAsync(s => s.AdmissionNumber == row.AdmissionNumber && s.SchoolId == schoolId && !s.IsDeleted);
@@ -2243,25 +2264,58 @@ namespace SmsApi.Controllers
                         .FirstOrDefaultAsync();
                     if (feeRecord == null) { result.Errors.Add($"{row.AdmissionNumber}: No pending fee record."); result.Failed++; continue; }
 
-                    var receiptNum = row.ReceiptNumber ?? $"BLK-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpper()}";
+                    // ── Overpayment guard: cap the payment at the outstanding balance ──────────
+                    var pendingBefore = feeRecord.PendingAmount;
+                    if (pendingBefore <= 0) { result.Errors.Add($"{row.AdmissionNumber}: Fee record has no outstanding balance."); result.Failed++; continue; }
+                    var amountToRecord = Math.Min(row.AmountPaid, pendingBefore);
+
+                    var receiptNum = string.IsNullOrWhiteSpace(row.ReceiptNumber)
+                        ? $"BLK-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpper()}"
+                        : row.ReceiptNumber;
+
+                    var safeRemarks = row.Remarks?.Length > 500 ? row.Remarks[..500] : row.Remarks;
                     var payment = new SmsApi.Models.Entities.PaymentTransaction
                     {
                         Id = Guid.NewGuid(), SchoolId = schoolId, StudentId = student.Id,
-                        FeeRecordId = feeRecord.Id, Amount = row.AmountPaid, Method = row.PaymentMethod,
+                        FeeRecordId = feeRecord.Id, Amount = amountToRecord, Method = row.PaymentMethod!.ToLowerInvariant(),
                         Status = "success", Date = row.PaymentDate, ReceiptNumber = receiptNum,
-                        AcademicYear = feeRecord.AcademicYear, ProcessedBy = processedBy, Remarks = row.Remarks
+                        AcademicYear = feeRecord.AcademicYear, ProcessedBy = processedBy, Remarks = safeRemarks
                     };
                     _context.PaymentTransactions.Add(payment);
 
-                    feeRecord.PaidAmount += row.AmountPaid;
+                    var prevPaid = feeRecord.PaidAmount;
+                    feeRecord.PaidAmount += amountToRecord;
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount + feeRecord.LateFeeAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.LastPaymentDate = row.PaymentDate;
                     feeRecord.Status = feeRecord.PendingAmount <= 0 ? "paid" : "partial";
                     feeRecord.UpdatedAt = DateTime.UtcNow;
 
+                    // ── Audit log entry (matches all other payment paths) ─────────────────────
+                    _context.FeeAuditLogs.Add(new SmsApi.Models.Entities.FeeAuditLog
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        EntityType = "Payment",
+                        EntityId = payment.Id,
+                        FeeRecordId = feeRecord.Id,
+                        StudentId = student.Id,
+                        Action = "bulk_payment_uploaded",
+                        PerformedByUserId = _tenant.UserId,
+                        PerformedByName = processedBy,
+                        Amount = amountToRecord,
+                        Remarks = $"Bulk upload. Method: {row.PaymentMethod}. Receipt: {receiptNum}.",
+                        Timestamp = DateTime.UtcNow,
+                        OldValues = $"{{\"paidAmount\":{prevPaid},\"pendingAmount\":{pendingBefore}}}",
+                        NewValues = $"{{\"paidAmount\":{feeRecord.PaidAmount},\"pendingAmount\":{feeRecord.PendingAmount},\"method\":\"{row.PaymentMethod}\",\"receipt\":\"{receiptNum}\"}}",
+                    });
+
                     await _context.SaveChangesAsync();
                     result.Successful++;
+
+                    // Warn if the requested amount was capped (overpayment attempt)
+                    if (row.AmountPaid > amountToRecord)
+                        result.Errors.Add($"{row.AdmissionNumber}: Requested ₹{row.AmountPaid:N0} but only ₹{amountToRecord:N0} was outstanding — recorded ₹{amountToRecord:N0}.");
                 }
                 catch (Exception ex)
                 {

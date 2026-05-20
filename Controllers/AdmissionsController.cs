@@ -268,7 +268,7 @@ namespace SmsApi.Controllers
             {
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
-                await _service.EnrollStudentAsync(schoolId, id, dto.AdmissionNumber ?? string.Empty, userId);
+                await _service.EnrollStudentAsync(schoolId, id, dto.AdmissionNumber ?? string.Empty, userId, dto.Section);
                 return NoContent();
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }

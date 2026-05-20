@@ -64,6 +64,26 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Returns the distinct classes and sections that exist across all students.
+        /// Used to populate filter dropdowns without loading the full student roster.
+        /// </summary>
+        [HttpGet("classes-sections")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<StudentClassesSectionsResponse>> GetClassesSections()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _studentService.GetDistinctClassesSectionsAsync(schoolId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch classes and sections.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get the logged-in student's own profile (resolved by JWT email). Student role only.
         /// </summary>
         [HttpGet("me")]

@@ -32,6 +32,10 @@ namespace SmsApi.Services
         Task<PlatformStatsDto> GetPlatformStatsAsync();
         // Onboarding
         Task<SchoolOnboardingResult> OnboardSchoolAsync(SchoolOnboardingRequest request);
+        // Billing
+        Task<SchoolBillingDto> GetSchoolBillingAsync(Guid schoolId);
+        Task<SchoolBillingDto> UpdateSchoolBillingAsync(Guid schoolId, UpdateSchoolBillingRequest request);
+        Task<BillingNotificationDto> GetBillingNotificationAsync(Guid schoolId);
     }
 
     public class SchoolFeaturePermissionService : ISchoolFeaturePermissionService
@@ -535,6 +539,113 @@ namespace SmsApi.Services
                 AcademicYearId = academicYear.Id,
                 AcademicYearName = academicYear.Name,
                 EnabledModules = enabledModules,
+            };
+        }
+
+        // ── Billing ──────────────────────────────────────────────────────────
+
+        public async Task<SchoolBillingDto> GetSchoolBillingAsync(Guid schoolId)
+        {
+            var school = await _context.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                throw new KeyNotFoundException($"School {schoolId} not found");
+
+            return BuildBillingDto(school);
+        }
+
+        public async Task<SchoolBillingDto> UpdateSchoolBillingAsync(Guid schoolId, UpdateSchoolBillingRequest request)
+        {
+            var school = await _context.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                throw new KeyNotFoundException($"School {schoolId} not found");
+
+            if (request.BillingPlan   != null) school.BillingPlan          = request.BillingPlan;
+            if (request.BillingStatus != null) school.BillingStatus        = request.BillingStatus;
+            if (request.BillingExpiryDate.HasValue) school.BillingExpiryDate = request.BillingExpiryDate;
+            if (request.RenewalReminderDays.HasValue) school.RenewalReminderDays = request.RenewalReminderDays.Value;
+
+            await _context.SaveChangesAsync();
+            return BuildBillingDto(school);
+        }
+
+        public async Task<BillingNotificationDto> GetBillingNotificationAsync(Guid schoolId)
+        {
+            var school = await _context.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                return new BillingNotificationDto { HasWarning = false };
+
+            if (school.BillingExpiryDate == null)
+                return new BillingNotificationDto
+                {
+                    HasWarning = false,
+                    BillingPlan = school.BillingPlan,
+                    BillingStatus = school.BillingStatus,
+                };
+
+            var today = DateTime.UtcNow.Date;
+            var expiry = school.BillingExpiryDate.Value.Date;
+            var daysLeft = (expiry - today).Days;
+
+            string severity, message;
+            bool hasWarning = false;
+
+            if (daysLeft < 0)
+            {
+                hasWarning = true; severity = "critical";
+                message = $"Your subscription has expired {Math.Abs(daysLeft)} day(s) ago. Please renew immediately to avoid service interruption.";
+            }
+            else if (daysLeft == 0)
+            {
+                hasWarning = true; severity = "critical";
+                message = "Your subscription expires today. Please renew immediately.";
+            }
+            else if (daysLeft <= school.RenewalReminderDays)
+            {
+                hasWarning = true;
+                severity = daysLeft <= 7 ? "critical" : "warning";
+                message = $"Your {school.BillingPlan} subscription expires in {daysLeft} day(s) on {expiry:dd MMM yyyy}. Please renew to continue uninterrupted access.";
+            }
+            else
+            {
+                severity = "info";
+                message = $"Your {school.BillingPlan} plan is active until {expiry:dd MMM yyyy}.";
+            }
+
+            return new BillingNotificationDto
+            {
+                HasWarning    = hasWarning,
+                Message       = message,
+                Severity      = severity,
+                DaysUntilExpiry = daysLeft,
+                BillingPlan   = school.BillingPlan,
+                BillingStatus = school.BillingStatus,
+                BillingExpiryDate = school.BillingExpiryDate,
+            };
+        }
+
+        private static SchoolBillingDto BuildBillingDto(School school)
+        {
+            int? daysLeft = null;
+            bool expiringSoon = false, isExpired = false;
+
+            if (school.BillingExpiryDate.HasValue)
+            {
+                daysLeft = (school.BillingExpiryDate.Value.Date - DateTime.UtcNow.Date).Days;
+                isExpired    = daysLeft < 0;
+                expiringSoon = !isExpired && daysLeft <= school.RenewalReminderDays;
+            }
+
+            return new SchoolBillingDto
+            {
+                SchoolId            = school.Id,
+                SchoolName          = school.Name,
+                BillingPlan         = school.BillingPlan,
+                BillingStatus       = school.BillingStatus,
+                BillingExpiryDate   = school.BillingExpiryDate,
+                RenewalReminderDays = school.RenewalReminderDays,
+                DaysUntilExpiry     = daysLeft,
+                IsExpiringSoon      = expiringSoon,
+                IsExpired           = isExpired,
             };
         }
     }

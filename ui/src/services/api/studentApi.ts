@@ -232,6 +232,11 @@ export interface StudentFilters {
   status?: string;
 }
 
+export interface StudentClassesSections {
+  classes: string[];
+  sections: string[];
+}
+
 export interface CreateStudentRequest {
   name: string;
   firstName?: string;
@@ -327,6 +332,10 @@ export interface StaffChildDto {
 export const studentApi = {
   list: (filters?: StudentFilters) =>
     apiGet<StudentListResponse>('/students', filters as Record<string, unknown>),
+
+  /** Distinct classes and sections across all students — for filter dropdowns. */
+  classesSections: () =>
+    apiGet<StudentClassesSections>('/students/classes-sections'),
 
   /** Get the logged-in student's own record (Student role only — resolved via JWT email). */
   getMe: () =>

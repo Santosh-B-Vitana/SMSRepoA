@@ -186,6 +186,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           ...shared,
           { title: "FRONT DESK", isLabel: true },
           { title: "Visitor Management", url: "/visitor-management", icon: UserCog },
+          { title: "ADMISSIONS", isLabel: true },
+          { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: "admissions" as const },
         ];
       } else if (designation === 'hr manager') {
         staffItems = [
@@ -316,14 +318,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         staffItems.push(
           { title: "GRADES", isLabel: true },
           { title: "Grades", url: "/grades", icon: Star },
-        );
-      }
-
-      // Reports: show for anyone with Reports.View permission
-      if (hasUserPermission('Reports', 'View') && !staffItems.some(i => i.url === '/reports')) {
-        staffItems.push(
-          { title: "REPORTS", isLabel: true },
-          { title: "Reports", url: "/reports", icon: BarChart3 },
         );
       }
 

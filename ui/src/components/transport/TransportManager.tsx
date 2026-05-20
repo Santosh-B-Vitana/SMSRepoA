@@ -249,8 +249,8 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
           <div className="space-y-1.5">
             <Label>{t('transport.assignDialog.routeLabel')} *</Label>
             <Select value={form.routeId} onValueChange={v => setForm(p => ({ ...p, routeId: v }))}>
-              <SelectTrigger><SelectValue placeholder={t('transport.assignDialog.selectRoute')} /></SelectTrigger>              <SelectContent>
-                {routes.filter(r => r.status === "active" || r.id === assignment.routeId).map(r => (              <SelectContent>
+              <SelectTrigger><SelectValue placeholder={t('transport.assignDialog.selectRoute')} /></SelectTrigger>
+              <SelectContent>
                 {routes.filter(r => r.status === "active").map(r => (
                   <SelectItem key={r.id} value={r.id}>{r.routeNumber} — {r.routeName} ({r.studentsAssigned}/{r.capacity})</SelectItem>
                 ))}
@@ -518,36 +518,36 @@ export function TransportManager() {
               {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
             </CardContent></Card>
           ) : (
-            <div className="border rounded-lg">
+            <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('transport.routes.col.route')}</TableHead>
-                    <TableHead>{t('transport.routes.col.vehicle')}</TableHead>
-                    <TableHead>{t('transport.routes.col.driver')}</TableHead>
-                    <TableHead className="text-center">{t('transport.routes.col.students')}</TableHead>
-                    <TableHead className="text-right">{t('transport.routes.col.feePerMonth')}</TableHead>
-                    <TableHead>{t('transport.routes.col.status')}</TableHead>
-                    <TableHead className="text-right">{t('transport.routes.col.actions')}</TableHead>
+                  <TableRow className="bg-muted/50 dark:bg-slate-800 hover:bg-muted/50">
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.route')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.vehicle')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.driver')}</TableHead>
+                    <TableHead className="text-center font-semibold text-foreground">{t('transport.routes.col.students')}</TableHead>
+                    <TableHead className="text-right font-semibold text-foreground">{t('transport.routes.col.feePerMonth')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.status')}</TableHead>
+                    <TableHead className="text-right font-semibold text-foreground">{t('transport.routes.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="dark:[&>tr]:border-slate-600/70">
                   {filteredRoutes.map(r => (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="dark:border-slate-600/70 dark:hover:bg-slate-700/40">
                       <TableCell>
-                        <div className="font-medium">{r.routeName}</div>
-                        <div className="text-xs text-muted-foreground">{r.routeNumber}</div>
+                        <div className="font-medium dark:text-white">{r.routeName}</div>
+                        <div className="text-xs text-muted-foreground dark:text-slate-400">{r.routeNumber}</div>
                       </TableCell>
-                      <TableCell>{r.vehicleNumber || "—"}</TableCell>
+                      <TableCell className="dark:text-slate-200">{r.vehicleNumber || "—"}</TableCell>
                       <TableCell>
-                        <div>{r.driverName || "—"}</div>
-                        {r.driverPhone && <div className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{r.driverPhone}</div>}
+                        <div className="dark:text-slate-200">{r.driverName || "—"}</div>
+                        {r.driverPhone && <div className="text-xs text-muted-foreground dark:text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" />{r.driverPhone}</div>}
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-medium">{r.studentsAssigned}</span>
-                        <span className="text-muted-foreground">/{r.capacity}</span>
+                        <span className="font-medium dark:text-slate-200">{r.studentsAssigned}</span>
+                        <span className="text-muted-foreground dark:text-slate-400">/{r.capacity}</span>
                       </TableCell>
-                      <TableCell className="text-right">₹{(r.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="text-right dark:text-slate-200">₹{(r.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
                       <TableCell>
                         <Badge variant={r.status === "active" ? "default" : r.status === "maintenance" ? "secondary" : "outline"}>
                           {r.status}
@@ -589,32 +589,32 @@ export function TransportManager() {
               )}
             </CardContent></Card>
           ) : (
-            <div className="border rounded-lg">
+            <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('transport.students.col.student')}</TableHead>
-                    <TableHead>{t('transport.students.col.class')}</TableHead>
-                    <TableHead>{t('transport.students.col.route')}</TableHead>
-                    <TableHead>{t('transport.students.col.pickupPoint')}</TableHead>
-                    <TableHead>{t('transport.students.col.dropPoint')}</TableHead>
-                    <TableHead>{t('transport.students.col.fee')}</TableHead>
-                    <TableHead>{t('transport.students.col.status')}</TableHead>
-                    <TableHead className="text-right">{t('transport.students.col.actions')}</TableHead>
+                  <TableRow className="bg-muted/50 dark:bg-slate-800 hover:bg-muted/50">
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.student')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.class')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.route')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.pickupPoint')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.dropPoint')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.fee')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.status')}</TableHead>
+                    <TableHead className="text-right font-semibold text-foreground">{t('transport.students.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="dark:[&>tr]:border-slate-600/70">
                   {filteredStudents.map(s => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.studentName}</TableCell>
-                      <TableCell>{s.studentClass} {s.studentSection}</TableCell>
+                    <TableRow key={s.id} className="dark:border-slate-600/70 dark:hover:bg-slate-700/40">
+                      <TableCell className="font-medium dark:text-white">{s.studentName}</TableCell>
+                      <TableCell className="dark:text-slate-200">{s.studentClass} {s.studentSection}</TableCell>
                       <TableCell>
-                        <div className="font-medium">{s.routeName}</div>
-                        <div className="text-xs text-muted-foreground">{s.routeNumber}</div>
+                        <div className="font-medium dark:text-slate-200">{s.routeName}</div>
+                        <div className="text-xs text-muted-foreground dark:text-slate-400">{s.routeNumber}</div>
                       </TableCell>
-                      <TableCell><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-green-600" />{s.pickupPoint || "—"}</div></TableCell>
-                      <TableCell><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-red-500" />{s.dropPoint || "—"}</div></TableCell>
-                      <TableCell>₹{(s.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="dark:text-slate-200"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-green-600 dark:text-green-400" />{s.pickupPoint || "—"}</div></TableCell>
+                      <TableCell className="dark:text-slate-200"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-red-500 dark:text-red-400" />{s.dropPoint || "—"}</div></TableCell>
+                      <TableCell className="dark:text-slate-200">₹{(s.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
                       <TableCell><Badge variant={s.status === "active" ? "default" : "outline"}>{s.status}</Badge></TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">

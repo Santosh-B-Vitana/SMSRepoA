@@ -110,7 +110,7 @@ const STATUS_CFG: Record<string, { label: string; color: string }> = {
   scheduled: { label: "Scheduled",   color: "text-blue-600 bg-blue-50 border-blue-200" },
   ongoing:   { label: "In Progress", color: "text-amber-600 bg-amber-50 border-amber-200" },
   completed: { label: "Results In",  color: "text-green-600 bg-green-50 border-green-200" },
-  draft:     { label: "Draft",       color: "text-gray-600 bg-gray-100 border-gray-200" },
+  draft:     { label: "Draft",       color: "text-muted-foreground bg-muted border-border" },
 };
 
 function fmtRange(from: string, to: string) {
@@ -420,7 +420,7 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
                   {stats.topPerformers.slice(0, 5).map((p, i) => (
                     <div key={p.studentId} className="flex items-center justify-between px-4 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-amber-100 text-amber-700" : i === 1 ? "bg-gray-100 text-gray-700" : i === 2 ? "bg-orange-100 text-orange-700" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>
+                        <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-amber-100 text-amber-700" : i === 1 ? "bg-muted text-muted-foreground" : i === 2 ? "bg-orange-100 text-orange-700" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>
                         <div>
                           <p className="text-xs font-medium">{p.studentName}</p>
                           <p className="text-[10px] text-muted-foreground">{p.class}</p>
@@ -456,7 +456,7 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
           <Printer className="h-4 w-4" /> Print / Save PDF
         </Button>
       </div>
-      <div className="bg-white border rounded-xl p-8 shadow-sm print:shadow-none print:border-none max-w-2xl mx-auto">
+      <div className="bg-card border rounded-xl p-8 shadow-sm print:shadow-none print:border-none max-w-2xl mx-auto print:bg-white">
         <div className="text-center border-b pb-5 mb-5">
           <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
             <GraduationCap className="h-8 w-8 text-primary" />
@@ -534,7 +534,7 @@ function PrintableReportCard({ card, onBack }: { card: GeneratedReportCard; onBa
         <div className="flex justify-between pt-6 border-t">
           {[t('exams.reportCard.signature.classTeacher'), "Principal"].map(sig => (
             <div key={sig} className="text-center">
-              <div className="h-10 border-b border-gray-400 w-36 mb-1" />
+              <div className="h-10 border-b border-border w-36 mb-1" />
               <p className="text-xs text-muted-foreground">{sig}</p>
             </div>
           ))}
@@ -930,7 +930,7 @@ function AllExamsTab({ events, loading, onEnterMarks, onViewSchedule, onRefresh 
               <div key={typeKey} className="border rounded-xl overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 bg-muted/30 border-b">
                   <div className="flex items-center gap-3">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${tm?.color ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${tm?.color ?? "bg-muted text-muted-foreground border-border"}`}>
                       {typeKey.replace(/-/g, " ") || "Other"}
                     </span>
                     <span className="text-sm font-semibold">{examTypeLabel(typeKey)}</span>

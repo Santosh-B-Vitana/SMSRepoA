@@ -166,3 +166,43 @@ export interface OnboardSchoolResult {
 
 export const onboardSchool = (data: OnboardSchoolRequest): Promise<OnboardSchoolResult> =>
   apiPost("/school-feature-permissions/onboard", data);
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+export interface SchoolBilling {
+  schoolId: string;
+  schoolName: string;
+  billingPlan: string;        // Standard | Pro | Enterprise
+  billingStatus: string;      // Active | Inactive | Suspended | Trial
+  billingExpiryDate: string | null;
+  renewalReminderDays: number;
+  daysUntilExpiry: number | null;
+  isExpiringSoon: boolean;
+  isExpired: boolean;
+}
+
+export interface UpdateBillingRequest {
+  billingPlan?: string;
+  billingStatus?: string;
+  billingExpiryDate?: string | null;
+  renewalReminderDays?: number;
+}
+
+export interface BillingNotification {
+  hasWarning: boolean;
+  message: string;
+  severity: "info" | "warning" | "critical";
+  daysUntilExpiry: number | null;
+  billingPlan: string;
+  billingStatus: string;
+  billingExpiryDate: string | null;
+}
+
+export const getSchoolBilling = (schoolId: string): Promise<SchoolBilling> =>
+  apiGet(`/school-feature-permissions/schools/${schoolId}/billing`);
+
+export const updateSchoolBilling = (schoolId: string, data: UpdateBillingRequest): Promise<SchoolBilling> =>
+  apiPut(`/school-feature-permissions/schools/${schoolId}/billing`, data);
+
+export const getBillingNotification = (): Promise<BillingNotification> =>
+  apiGet("/school-feature-permissions/billing-notification");

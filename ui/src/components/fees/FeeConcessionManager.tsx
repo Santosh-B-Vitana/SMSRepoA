@@ -145,7 +145,7 @@ export default function FeeConcessionManager() {
   };
 
   const getConcessionTypeColor = (type: string) => {
-    return concessionTypes.find(t => t.value === type)?.color || "bg-gray-500";
+    return concessionTypes.find(t => t.value === type)?.color || "bg-muted text-muted-foreground";
   };
 
   const getStatusBadge = (status: string) => {

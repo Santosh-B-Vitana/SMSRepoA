@@ -1,6 +1,7 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { cn } from "@/lib/utils";
 import {
@@ -49,14 +50,15 @@ import {
   type AdmissionFormData,
 } from "@/schemas/admissionSchema";
 import { admissionService, type Admission } from "@/services/admissionService";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STEP_ICONS = [User, Phone, BookOpen, Users, ClipboardList];
 
-const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"] as const;
+const GENDER_OPTIONS = ["Male", "Female", "Other"] as const;
 const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"] as const;
-const CATEGORY_OPTIONS = ["General", "OBC", "SC", "ST", "EWS", "Other"] as const;
+const CATEGORY_OPTIONS = ["General", "OBC", "SC", "ST", "EWS"] as const;
 const CLASS_OPTIONS = [
   "Nursery", "LKG", "UKG",
   ...Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`),
@@ -139,8 +141,12 @@ function StepIndicator({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormProps) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [submitting, setSubmitting]   = useState(false);
+  const { availableYears, currentYear } = useAcademicYear();
+  const queryClient = useQueryClient();
+  const [currentStep, setCurrentStep]   = useState(0);
+  const [submitting, setSubmitting]     = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [submittedInfo, setSubmittedInfo] = useState<{ appNumber: string; studentName: string; academicYear: string } | null>(null);
   const isEditMode = !!admission;
 
   const form = useForm<AdmissionFormData>({
@@ -163,7 +169,7 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
       state:              (admission as any)?.state ?? "",
       pincode:            (admission as any)?.pincode ?? "",
       classAppliedFor:    admission?.appliedClass ?? "",
-      academicYearId:     "",
+      academicYearId:     admission?.academicYear ?? currentYear?.name ?? "",
       previousSchool:     admission?.previousSchool ?? "",
       previousClass:      (admission as any)?.previousClass ?? "",
       previousPercentage: "",
@@ -185,6 +191,13 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
   });
 
   const { formState: { errors } } = form;
+
+  // Sync academic year from context when it loads (context reads from localStorage)
+  useEffect(() => {
+    if (currentYear?.name && !form.getValues('academicYearId')) {
+      form.setValue('academicYearId', currentYear.name, { shouldValidate: false });
+    }
+  }, [currentYear?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stepErrorCount = () => {
     const stepKeys = Object.keys((STEP_SCHEMAS[currentStep] as any).shape ?? {});
@@ -243,19 +256,31 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
         previousMarks:   data.previousPercentage ? Number(data.previousPercentage) : undefined,
         guardianName:    data.fatherName,
         guardianRelation: "Father",
-        guardianPhone:   data.fatherPhone ?? data.guardianPhone ?? "",
+        guardianPhone:   data.fatherPhone?.trim() || data.guardianPhone?.trim() || data.phone?.trim() || "",
         fatherName:      data.fatherName,
         motherName:      data.motherName,
         remarks:         data.remarks,
       };
       if (isEditMode) {
         await admissionService.updateAdmission(admission!.id, payload as any);
-        toast.success("Application updated successfully");
+        setSubmittedInfo({
+          appNumber: admission!.applicationNumber,
+          studentName: `${data.firstName} ${data.lastName}`,
+          academicYear: data.academicYearId,
+        });
       } else {
-        await admissionService.createAdmission(payload as any);
-        toast.success("Application submitted successfully");
+        const result = await admissionService.createAdmission(payload as any);
+        // Invalidate the admissions list immediately so it refreshes when the dialog closes
+        queryClient.invalidateQueries({ queryKey: ['admissions'] });
+        queryClient.invalidateQueries({ queryKey: ['admission-stats'] });
+        const appNumber = result.applicationNumber || (result as any).ApplicationNumber || '';
+        setSubmittedInfo({
+          appNumber,
+          studentName: `${data.firstName} ${data.lastName}`,
+          academicYear: data.academicYearId,
+        });
       }
-      onSuccess();
+      setShowSuccessDialog(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message ?? "Submission failed.";
       toast.error(msg);
@@ -265,6 +290,49 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
   };
 
   const progress = ((currentStep + 1) / STEPS_COUNT) * 100;
+
+  if (showSuccessDialog && submittedInfo) {
+    return (
+      <Card className="w-full max-w-3xl mx-auto">
+        <CardContent className="flex flex-col items-center justify-center py-14 space-y-6">
+          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+            <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
+          </div>
+          <div className="text-center space-y-2">
+            <h2 className="text-xl font-semibold">
+              {isEditMode ? "Application Updated!" : "Application Submitted!"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {isEditMode
+                ? "The application has been saved successfully."
+                : "Application received and is pending review."}
+            </p>
+          </div>
+          <div className="w-full max-w-sm bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Application No.</span>
+              <span className="font-mono font-semibold text-primary">
+                {submittedInfo.appNumber || <span className="text-muted-foreground italic text-xs">Generating…</span>}
+              </span>
+            </div>
+            <Separator />
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Student Name</span>
+              <span className="font-medium">{submittedInfo.studentName}</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Academic Year</span>
+              <span className="font-medium">{submittedInfo.academicYear}</span>
+            </div>
+          </div>
+          <Button onClick={onSuccess} size="lg" className="min-w-[160px]">
+            Done
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-3xl mx-auto">
@@ -479,6 +547,24 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
                         <SelectContent>
                           {CLASS_OPTIONS.map((c) => (
                             <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="academicYearId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Academic Year <span className="text-destructive">*</span></FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select academic year" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableYears.map((y) => (
+                            <SelectItem key={y.id} value={y.name}>
+                              {y.name}{y.isCurrent ? " (Current)" : ""}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

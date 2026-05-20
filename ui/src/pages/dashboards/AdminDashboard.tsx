@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { analyticsApi, DashboardSummaryResponse, AttendanceDayDataPoint } from "@/services/api/analyticsApi";
+import { getBillingNotification } from "@/services/api/superAdminApi";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSchool } from "@/contexts/SchoolContext";
 import { toast } from "sonner";
@@ -305,6 +306,23 @@ export default function AdminDashboard() {
   // Period changes after mount — only re-fetch the specific piece
   useEffect(() => { if (!loading) loadAttendance(); }, [attPeriod]); // eslint-disable-line
   useEffect(() => { if (!loading) loadFeeAnalytics(); }, [feeMonths]); // eslint-disable-line
+
+  // Billing expiry notification — fires once per session for admin
+  useEffect(() => {
+    const SESSION_KEY = "billing_notif_shown";
+    if (sessionStorage.getItem(SESSION_KEY)) return;
+    getBillingNotification()
+      .then((notif) => {
+        if (!notif.hasWarning) return;
+        sessionStorage.setItem(SESSION_KEY, "1");
+        if (notif.severity === "critical") {
+          toast.error(notif.message, { duration: 8000, description: "Contact Vitana Group to renew your subscription." });
+        } else {
+          toast.warning(notif.message, { duration: 6000, description: "Contact Vitana Group to renew your subscription." });
+        }
+      })
+      .catch(() => { /* silently ignore billing check failures */ });
+  }, []); // eslint-disable-line
 
   // ── Dialog data loaders ────────────────────────────────────────────────────
   const openFeeDialog = useCallback(async (page = 1) => {

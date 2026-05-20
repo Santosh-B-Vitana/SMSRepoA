@@ -1187,7 +1187,7 @@ export default function RoleManagement() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />{t('roles.staffTable.title')}
+                <Users className="h-4 w-4 text-muted-foreground" />{t('roles.staffTable.cardTitle')}
               </CardTitle>
               <Button size="sm" variant="outline" onClick={() => loadUsers(usersPage)} disabled={usersLoading} className="gap-1">
                 <RefreshCw className={`h-3.5 w-3.5 ${usersLoading ? "animate-spin" : ""}`} />{t('roles.staffTable.refresh')}
@@ -1199,20 +1199,20 @@ export default function RoleManagement() {
               ) : users.length === 0 ? (
                 <EmptyState
                   icon={<Users className="h-8 w-8 text-muted-foreground" />}
-                  title={t('roles.staffTable.noStaffFound')}
-                  description={t('roles.staffTable.noStaffDescription')}
+                  title={t('roles.staffTable.emptyTitle')}
+                  description={t('roles.staffTable.emptyDescription')}
                 />
               ) : (
                 <>
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
-                        <TableHead className="font-semibold">{t('roles.staffTable.staffMember')}</TableHead>
-                        <TableHead className="font-semibold">{t('roles.staffTable.email')}</TableHead>
-                        <TableHead className="font-semibold">{t('roles.staffTable.assignedRoles')}</TableHead>
-                        <TableHead className="font-semibold">{t('roles.staffTable.accessScope')}</TableHead>
-                        <TableHead className="font-semibold">{t('roles.staffTable.status')}</TableHead>
-                        <TableHead className="text-right font-semibold">{t('roles.staffTable.action')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colStaffMember')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colEmail')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colAssignedRoles')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colAccessScope')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colStatus')}</TableHead>
+                        <TableHead className="text-right font-semibold">{t('roles.staffTable.colAction')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1274,11 +1274,11 @@ export default function RoleManagement() {
                                 // Admin row: greyed out — no role changes needed for the system admin
                                 (user.primaryRole ?? "").toLowerCase() === "admin" ? (
                                   <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 opacity-40 cursor-not-allowed" disabled>
-                                    <UserCog className="h-3 w-3" />{t('roles.staffTable.manage')}
+                                    <UserCog className="h-3 w-3" />{t('roles.staffTable.manageButton')}
                                   </Button>
                                 ) : (
                                   <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1" onClick={() => setAssignUser(user)}>
-                                    <UserCog className="h-3 w-3" />{t('roles.staffTable.manage')}
+                                    <UserCog className="h-3 w-3" />{t('roles.staffTable.manageButton')}
                                   </Button>
                                 )
                               ) : (
@@ -1292,7 +1292,7 @@ export default function RoleManagement() {
                                     ? <Loader2 className="h-3 w-3 animate-spin" />
                                     : <Key className="h-3 w-3" />
                                   }
-                                  {t('roles.staffTable.createLogin')}
+                                  {t('roles.staffTable.createLoginButton')}
                                 </Button>
                               )}
                             </TableCell>

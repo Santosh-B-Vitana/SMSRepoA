@@ -46,6 +46,20 @@ namespace SmsApi.Models.DTOs
         public string? Password { get; set; }
     }
 
+    /// <summary>
+    /// Lightweight self-update: a user updating their own first/last name.
+    /// No username/email/role fields — those are system-managed.
+    /// </summary>
+    public class UpdateProfileRequest
+    {
+        [Required(ErrorMessage = "First name is required")]
+        [StringLength(100)]
+        public string FirstName { get; set; } = string.Empty;
+
+        [StringLength(100)]
+        public string LastName { get; set; } = string.Empty;
+    }
+
     public class ResetPasswordRequest
     {
         [Required(ErrorMessage = "User ID is required")]

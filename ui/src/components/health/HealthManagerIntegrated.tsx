@@ -298,7 +298,7 @@ export function HealthManagerIntegrated() {
       case 'normal': return 'text-green-500';
       case 'overweight': return 'text-orange-500';
       case 'obese': return 'text-red-500';
-      default: return 'text-gray-500';
+      default: return 'text-muted-foreground';
     }
   };
 

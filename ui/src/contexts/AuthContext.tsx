@@ -164,19 +164,12 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
-
-  // Initialize auth state from stored session
-  useEffect(() => {
-    const session = getStoredSession();
-    if (session) {
-      setUser(session.user);
-      setSessionExpiresAt(session.expiresAt);
-    }
-    setLoading(false);
-  }, []);
+  // Initialize synchronously from sessionStorage to avoid a loading flash on page load
+  const [user, setUser] = useState<User | null>(() => getStoredSession()?.user ?? null);
+  const [loading, setLoading] = useState(false);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(
+    () => getStoredSession()?.expiresAt ?? null
+  );
 
   // Session expiry warning
   useEffect(() => {

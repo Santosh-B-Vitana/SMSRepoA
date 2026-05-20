@@ -12,6 +12,7 @@ namespace SmsApi.Services
     {
         Task<ServiceResult<UserResponse>> CreateUserAsync(Guid schoolId, CreateUserRequest request);
         Task<ServiceResult<UserResponse>> UpdateUserAsync(Guid schoolId, Guid userId, UpdateUserRequest request);
+        Task<ServiceResult<UserResponse>> UpdateMyProfileAsync(Guid userId, UpdateProfileRequest request);
         Task<ServiceResult<bool>> DeleteUserAsync(Guid schoolId, Guid userId);
         Task<ServiceResult<UserResponse>> GetUserByIdAsync(Guid schoolId, Guid userId);
         Task<ServiceResult<UserListResponse>> GetAllUsersAsync(Guid schoolId, int pageNumber = 1, int pageSize = 50);
@@ -153,6 +154,41 @@ namespace SmsApi.Services
             {
                 _logger.LogError($"Error updating user: {ex.Message}");
                 return CreateErrorResult<UserResponse>("Error updating user");
+            }
+        }
+
+        /// <summary>
+        /// Self-service profile update: allows a user to update their own first/last name.
+        /// Uses IgnoreQueryFilters to bypass the school-scope global filter, since we
+        /// identify the user solely by their JWT UserId (which is guaranteed unique).
+        /// </summary>
+        public async Task<ServiceResult<UserResponse>> UpdateMyProfileAsync(Guid userId, UpdateProfileRequest request)
+        {
+            try
+            {
+                // IgnoreQueryFilters so the school-scope filter doesn't block finding the own record
+                var user = await _context.Set<UserLogin>()
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+
+                if (user == null)
+                    return CreateErrorResult<UserResponse>("User not found");
+
+                user.FirstName = request.FirstName.Trim();
+                user.LastName  = (request.LastName ?? string.Empty).Trim();
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _context.Set<UserLogin>().Update(user);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("User {UserId} updated their own profile", userId);
+
+                return CreateSuccessResult(MapToUserResponse(user));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating profile for user {UserId}", userId);
+                return CreateErrorResult<UserResponse>("Error updating profile");
             }
         }
 

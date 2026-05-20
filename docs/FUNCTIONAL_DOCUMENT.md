@@ -2,7 +2,59 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.6 | **Last Updated:** May 19, 2026 (Session 8) | **Project:** SMSRepoA
+**Version:** 2.8 | **Last Updated:** May 21, 2026 (Session 10) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 21, 2026 (Session 10)
+
+| Area | Change |
+|------|--------|
+| **Billing Management — Super Admin** | Super admins can now manage subscription billing for every school directly from the platform. A dedicated **Billing** tab has been added to the Super Admin Dashboard, listing all schools with their current plan, billing status, expiry date, and days remaining. Clicking a school row populates an inline edit form where the super admin can update: **Plan** (Standard / Pro / Enterprise), **Status** (Active / Inactive / Suspended / Trial), **Expiry Date**, and **Renewal Reminder Days** (1–365). Saving writes changes immediately to the database via `PUT /api/school-feature-permissions/schools/{id}/billing`. |
+| **Billing Management — Super Admin Header Dropdown** | The **Billing** menu item in the super admin header dropdown opens a role-aware `BillingDialog`. For super admins, this is a full management form with a school selector (synced to the header school context switcher), all four editable fields, and a Save button. For admin users, the same menu item opens a read-only view (see below). |
+| **Billing Notifications — Admin Login Toast** | When an admin logs in, the dashboard automatically checks the school's billing status via `GET /api/school-feature-permissions/billing-notification`. If the subscription is expiring soon or has expired, a toast notification fires: amber `toast.warning` for upcoming expiry, red `toast.error` for critical (≤ 7 days or already expired). The toast shows only once per browser session — subsequent navigations do not repeat it (gated via `sessionStorage`). |
+| **Billing Dialog — Admin Read-Only View** | The **Billing** item in the admin header dropdown opens a read-only billing card showing the school's current plan badge (colour-coded), status badge, expiry date, and a "Contact Vitana" call-to-action. An amber banner appears when the subscription is expiring soon; a red banner appears when it is expired. No editable fields are shown to admin users. |
+| **Super Admin UI Fixes (previous session carry-over)** | `MobileBottomNav` now returns `null` for `super_admin` users — the mobile bottom bar was previously showing generic navigation items that don't apply to the super admin role. `AuthContext` was updated to use lazy state initialization, eliminating a black screen / dark flash on first load. |
+
+### Billing severity model
+
+| Severity | Condition | UI behaviour |
+|----------|-----------|--------------|
+| `info` | Expiry is more than `renewalReminderDays` away | No warning — `hasWarning: false` |
+| `warning` | Within `renewalReminderDays` of expiry | Amber toast on admin login; amber banner in Billing dialog |
+| `critical` | Expired **or** ≤ 7 days remaining | Red `toast.error` on login; red banner in Billing dialog |
+
+### Billing plan tiers
+
+| Plan | Target school size | Default |
+|------|--------------------|---------|
+| Standard | Small schools (< 500 students) | ✅ |
+| Pro | Medium schools (500–2000 students) | |
+| Enterprise | Large chains / group schools | |
+
+---
+
+## Changelog — May 19, 2026 (Session 9)
+
+| Area | Change |
+|------|--------|
+| **Super Admin — IsOnboarded Detection** | The School Management table in the super-admin portal now shows whether a school has already been onboarded. A green **🚀 Onboarded** pill badge appears below the school name for schools that have a live Admin login. The "Setup" (rocket) button is disabled with 40% opacity and a `not-allowed` cursor for onboarded schools — preventing accidental re-runs of the onboarding wizard. The Onboarding Wizard itself now blocks re-entry: if you type a school code that belongs to an already-onboarded school, a 🚫 message appears explaining the school is already fully set up, and the Next button is disabled. This is distinct from the ⚠️ message shown when a code is in use by a non-onboarded school. No database schema change was required — `IsOnboarded` is computed at query time from the presence of an Admin-role `UserLogin` for the school. |
+| **Examinations — Co-Scholastic tab renamed** | The Co-Scholastic tab in the Examinations module has been renamed to **"Co-Scholastic & CCE"** to accurately reflect that this tab covers both Co-Scholastic grading areas and the CCE (Continuous and Comprehensive Evaluation) framework. |
+| **Examinations — CCE Report Cards tab renamed** | Inside the Co-Scholastic & CCE tab, the "Report Cards" sub-tab has been renamed to **"CCE Report Cards"** to distinguish it clearly from the main Examinations report cards. |
+| **Admissions Module — Re-enabled in Admin Sidebar** | Admissions Management is now visible in the admin/super-admin sidebar under **PEOPLE & ENROLLMENT**, between Staff and the Academics section. The module was previously implemented but its navigation link had been removed. The route (`/admissions`) was already protected and wired; only the sidebar entry was missing. |
+| **Admissions — Applications Table Actions** | The actions column in the Admissions table has been upgraded from a plain status dropdown to a full action set: (1) **Status dropdown** — move applications between Pending → Interviewed → Approved → Waitlisted → Rejected; (2) **Enroll button** (purple, appears only when status is `approved`) — prompts for an admission number and formally enrolls the student; (3) **Edit button** (pencil icon) — opens the full admission form in edit mode; (4) **Delete button** (red trash icon) — confirms and removes the application. Enrolled applications are locked (Edit/Delete disabled, status dropdown disabled). |
+| **Admissions — Enroll Workflow** | When an approved application is enrolled, the admin is prompted to enter an admission number. The system calls the dedicated `POST /admissions/applications/{id}/enroll` endpoint (not just a status update), which assigns the admission number and marks the student as enrolled. This is the correct production flow — enrollment is a distinct business action from a status change. |
+
+### Admissions module — full workflow for support staff
+
+| Stage | Action | Status |
+|-------|--------|--------|
+| Application received | Admin creates new application via "+ New Application" | `pending` |
+| Initial review | Admin changes status dropdown | `pending` → `interviewed` / `waitlisted` |
+| Interview scheduled | Admin sets status to `interviewed` | `interviewed` |
+| Decision | Admin approves or rejects | `approved` / `rejected` |
+| Enrollment | Admin clicks purple Enroll button, enters admission number | `enrolled` |
+| Edit/Delete | Available for any non-enrolled application | — |
 
 ---
 
