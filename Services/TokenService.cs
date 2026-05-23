@@ -40,6 +40,10 @@ public class TokenService : ITokenService
         if (!string.IsNullOrWhiteSpace(user.Designation))
             claimsList.Add(new Claim("Designation", user.Designation));
 
+        // Include linked entity ID so staff can access their own leave balance, etc.
+        if (user.LinkedEntityId.HasValue)
+            claimsList.Add(new Claim("LinkedEntityId", user.LinkedEntityId.Value.ToString()));
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expiry = DateTime.UtcNow.AddMinutes(expirationInMinutes);

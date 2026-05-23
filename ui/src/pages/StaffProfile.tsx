@@ -29,6 +29,14 @@ import { StaffChildDto } from "@/services/api/studentApi";
 import { academicApi, MyClassAssignment, TeacherAssignmentResponse } from "@/services/api/academicApi";
 import { attendanceApi, StaffAttendanceResponse, CreateStaffAttendanceRequest, StaffAttendanceStatus, UpdateStaffAttendanceRequest } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
+import leaveManagementApi, { LeaveType } from "@/services/api/leaveManagementApi";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSchool } from "@/contexts/SchoolContext";
@@ -81,6 +89,8 @@ export default function StaffProfile() {
   const [markTodayOpen, setMarkTodayOpen] = useState(false);
   const [markTodayStatus, setMarkTodayStatus] = useState<StaffAttendanceStatus>('present');
   const [markTodaySaving, setMarkTodaySaving] = useState(false);
+  const [markTodayLeaveTypeId, setMarkTodayLeaveTypeId] = useState<string>("");
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   
   const { id } = useParams();
   const navigate = useNavigate();
@@ -136,6 +146,8 @@ export default function StaffProfile() {
       fetchStaffAttendance();
       fetchChildrenInSchool();
     }
+    // Load leave types once
+    leaveManagementApi.getLeaveTypes("Staff").then(types => setLeaveTypes(types ?? [])).catch(() => {});
   }, [id]);
 
   const fetchStaffAttendance = async () => {
@@ -158,7 +170,10 @@ export default function StaffProfile() {
     const todayRecord = staffAttendance.find(r => r.date?.startsWith(today));
     try {
       if (todayRecord) {
-        await attendanceApi.updateStaffAttendance(todayRecord.id, { status: markTodayStatus } as UpdateStaffAttendanceRequest);
+        await attendanceApi.updateStaffAttendance(todayRecord.id, {
+          status: markTodayStatus,
+          leaveTypeId: markTodayStatus === 'leave' ? markTodayLeaveTypeId || undefined : undefined,
+        } as UpdateStaffAttendanceRequest);
         toast({ title: "Attendance updated", description: `Updated to ${markTodayStatus} for ${today}` });
       } else {
         await attendanceApi.createStaffAttendance({
@@ -166,6 +181,7 @@ export default function StaffProfile() {
           staffId: id,
           date: today,
           status: markTodayStatus,
+          leaveTypeId: markTodayStatus === 'leave' ? markTodayLeaveTypeId || undefined : undefined,
         } as CreateStaffAttendanceRequest);
         toast({ title: "Attendance marked", description: `Marked as ${markTodayStatus} for ${today}` });
       }
@@ -917,7 +933,7 @@ export default function StaffProfile() {
             const leaveCount   = staffAttendance.filter(r => r.status === 'leave').length;
             const pct = Math.round((presentCount / total) * 100);
             return (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <div className="grid grid-cols-3 gap-3 mb-4">
                 <div className="rounded-xl border bg-emerald-50 dark:bg-emerald-950/30 p-3 flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -925,15 +941,6 @@ export default function StaffProfile() {
                   <div>
                     <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{presentCount}</p>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-500">Present</p>
-                  </div>
-                </div>
-                <div className="rounded-xl border bg-rose-50 dark:bg-rose-950/30 p-3 flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/40">
-                    <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{absentCount}</p>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-500">Absent</p>
                   </div>
                 </div>
                 <div className="rounded-xl border bg-amber-50 dark:bg-amber-950/30 p-3 flex items-center gap-3">
@@ -1084,7 +1091,7 @@ export default function StaffProfile() {
                   <p className="text-xs text-muted-foreground">{staff?.designation} · {staff?.department}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {((['present', 'absent', 'late', 'leave'] as StaffAttendanceStatus[]).map(s => {
+                  {((['present', 'late', 'leave'] as StaffAttendanceStatus[]).map(s => {
                     const icons: Record<StaffAttendanceStatus, ReactNode> = {
                       present: <CheckCircle2 className="h-4 w-4" />,
                       absent:  <XCircle className="h-4 w-4" />,
@@ -1113,6 +1120,21 @@ export default function StaffProfile() {
                     );
                   }))}
                 </div>
+                {markTodayStatus === 'leave' && leaveTypes.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Leave Type</p>
+                    <Select value={markTodayLeaveTypeId} onValueChange={setMarkTodayLeaveTypeId}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Select leave type…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {leaveTypes.map(lt => (
+                          <SelectItem key={lt.id} value={lt.id}>{lt.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="flex justify-end gap-2 pt-1">
                   <Button variant="outline" size="sm" onClick={() => setMarkTodayOpen(false)} disabled={markTodaySaving}>
                     Cancel

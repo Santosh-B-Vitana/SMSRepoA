@@ -214,15 +214,26 @@ const leaveManagementApi = {
     }
   },
 
-  // Get leave balance for specific user (admin/principal)
+  // Get leave balance for specific user (admin/principal or self via staffMemberId)
   async getLeaveBalance(userId: string, userType: string = 'Staff'): Promise<LeaveBalance[]> {
     try {
       const response = await api.get(`/LeaveManagement/balance/${userId}`, {
         params: { userType }
       });
-      return response.data;
+      // Backend wraps response: { success, data: [...] }
+      return response.data?.data ?? response.data ?? [];
     } catch (error) {
       console.error('Error fetching leave balance:', error);
+      throw error;
+    }
+  },
+
+  async getMyLeaveBalance(): Promise<LeaveBalance[]> {
+    try {
+      const response = await api.get('/LeaveManagement/my-balance');
+      return response.data?.data ?? response.data ?? [];
+    } catch (error) {
+      console.error('Error fetching my leave balance:', error);
       throw error;
     }
   },

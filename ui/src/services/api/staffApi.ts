@@ -107,6 +107,10 @@ export interface StaffFilters {
   pageSize?: number;
   search?: string;
   status?: string;
+  department?: string;
+  designation?: string;
+  sortBy?: string;
+  sortOrder?: string;
 }
 
 export interface CreateStaffRequest {

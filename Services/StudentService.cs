@@ -662,49 +662,140 @@ namespace SmsApi.Services
             try
             {
                 var academicYear = await GetActiveAcademicYearAsync(student.SchoolId);
-                
-                var feeStructure = await _context.FeeStructures
-                    .Where(f => f.SchoolId == student.SchoolId && 
-                               f.Class == student.Class &&
-                               f.AcademicYear == academicYear)
-                    .OrderByDescending(f => f.CreatedAt)
-                    .FirstOrDefaultAsync();
-
-                if (feeStructure != null)
-                {
-                    var feeRecord = new FeeRecord
-                    {
-                        Id = Guid.NewGuid(),
-                        SchoolId = student.SchoolId,
-                        StudentId = student.Id,
-                        FeeStructureId = feeStructure.Id,
-                        AcademicYear = academicYear,
-                        TotalAmount = feeStructure.TotalAmount,
-                        PaidAmount = 0,
-                        BalanceAmount = feeStructure.TotalAmount,
-                        DueDate = DateTime.UtcNow.AddDays(30), // 30 days to pay
-                        Status = "pending",
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-
-                    _context.FeeRecords.Add(feeRecord);
-                    await _context.SaveChangesAsync();
-                    
-                    _logger.LogInformation("Fee record auto-created for student {StudentId}, Amount: {Amount}", 
-                        student.Id, feeStructure.TotalAmount);
-                }
-                else
-                {
-                    _logger.LogWarning("No fee structure found for class {Class}, academic year {Year}. Fee record not created.",
-                        student.Class, academicYear);
-                }
+                await CreateFeeRecordForStudentInternalAsync(
+                    student.SchoolId, student.Id,
+                    student.Class, academicYear,
+                    student.TransportRequired, student.HostelRequired);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create fee record for student {StudentId}", student.Id);
                 // Don't throw - fee record creation failure shouldn't block student creation
             }
+        }
+
+        /// <summary>
+        /// Looks up the best matching fee structure for the given class + academic year and
+        /// creates a fee record for the student.  The effective total is adjusted so that
+        /// transport and hostel fee components are only included when the student actually
+        /// requires those services.
+        /// Returns the created FeeRecord, or null if no matching structure was found.
+        /// </summary>
+        private async Task<FeeRecord?> CreateFeeRecordForStudentInternalAsync(
+            Guid schoolId, Guid studentId,
+            string studentClass, string academicYear,
+            bool transportRequired, bool hostelRequired)
+        {
+            // Skip if a fee record already exists for this student + year
+            var alreadyExists = await _context.FeeRecords
+                .AnyAsync(f => f.SchoolId == schoolId &&
+                               f.StudentId == studentId &&
+                               f.AcademicYear == academicYear);
+            if (alreadyExists)
+            {
+                _logger.LogInformation("Fee record already exists for student {StudentId}, year {Year}. Skipping auto-creation.",
+                    studentId, academicYear);
+                return null;
+            }
+
+            // Flexible class matching: "Class 10-A" student should match a "Class 10" fee structure.
+            // Priority: (1) exact match for year, (2) prefix match for year,
+            //           (3) exact match any year, (4) prefix match any year.
+            var structures = await _context.FeeStructures
+                .Where(f => f.SchoolId == schoolId)
+                .ToListAsync();
+
+            FeeStructure? feeStructure = structures
+                .Where(f => f.AcademicYear == academicYear &&
+                            IsClassMatch(f.Class, studentClass))
+                .OrderByDescending(f => f.CreatedAt)
+                .FirstOrDefault()
+                ?? structures
+                    .Where(f => IsClassMatch(f.Class, studentClass))
+                    .OrderByDescending(f => f.AcademicYear)
+                    .ThenByDescending(f => f.CreatedAt)
+                    .FirstOrDefault();
+
+            if (feeStructure == null)
+            {
+                _logger.LogWarning("No fee structure found for class {Class}, academic year {Year}. Fee record not created.",
+                    studentClass, academicYear);
+                return null;
+            }
+
+            // Calculate effective total from fee head components (not the stored TotalAmount,
+            // which may be stale if the structure was edited after originally being saved).
+            var effectiveTotal = feeStructure.ComputeTotalFromComponents();
+            if (!transportRequired && feeStructure.TransportFee > 0)
+                effectiveTotal -= feeStructure.TransportFee;
+            if (!hostelRequired && feeStructure.HostelFee > 0)
+                effectiveTotal -= feeStructure.HostelFee;
+            if (effectiveTotal < 0) effectiveTotal = 0;
+
+            var feeRecord = new FeeRecord
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                StudentId = studentId,
+                FeeStructureId = feeStructure.Id,
+                AcademicYear = academicYear,
+                TotalAmount = effectiveTotal,
+                PaidAmount = 0,
+                DiscountAmount = 0,
+                LateFeeAmount = 0,
+                PendingAmount = effectiveTotal,
+                BalanceAmount = effectiveTotal,
+                DueDate = DateTime.UtcNow.AddDays(30),
+                Status = "pending",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.FeeRecords.Add(feeRecord);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Fee record auto-created for student {StudentId} | Class: {Class} | Structure: {Structure} | Amount: {Amount} | Transport included: {T} | Hostel included: {H}",
+                studentId, studentClass, feeStructure.Name, effectiveTotal, transportRequired, hostelRequired);
+
+            return feeRecord;
+        }
+
+        /// <summary>
+        /// Returns true when <paramref name="structureClass"/> is a reasonable match for
+        /// <paramref name="studentClass"/>.
+        /// Handles formats like:  "10" ↔ "Class 10-A",  "Class 10" ↔ "Class 10-A",  "10" ↔ "10 A"
+        /// </summary>
+        private static bool IsClassMatch(string structureClass, string studentClass)
+        {
+            if (string.IsNullOrWhiteSpace(structureClass) || string.IsNullOrWhiteSpace(studentClass))
+                return false;
+
+            var sc = structureClass.Trim();
+            var st = studentClass.Trim();
+
+            // Exact match
+            if (string.Equals(sc, st, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Prefix match: student class starts with the structure class followed by space, dash, or end
+            // e.g., "Class 10" matches "Class 10-A" / "Class 10 A" / "Class 10A"
+            if (st.StartsWith(sc + "-", StringComparison.OrdinalIgnoreCase)) return true;
+            if (st.StartsWith(sc + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // Handle "Class " prefix difference:  "10" vs "Class 10-A"
+            // Strip "Class " prefix from both sides and compare
+            var scStripped = sc.StartsWith("Class ", StringComparison.OrdinalIgnoreCase)
+                ? sc.Substring(6).Trim() : sc;
+            var stStripped = st.StartsWith("Class ", StringComparison.OrdinalIgnoreCase)
+                ? st.Substring(6).Trim() : st;
+
+            if (string.Equals(scStripped, stStripped, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (stStripped.StartsWith(scStripped + "-", StringComparison.OrdinalIgnoreCase)) return true;
+            if (stStripped.StartsWith(scStripped + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
         }
         
         private async Task CreateLibraryCardAsync(Student student)

@@ -2,20 +2,22 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { staffApi, Staff } from "@/services/api/staffApi";
+import { payrollApi, PayrollRecordBasic } from "@/services/api/payrollApi";
 import { useToast } from "@/hooks/use-toast";
 import { StaffForm } from "./StaffForm"; // Import StaffForm
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pencil, Plus, User, Briefcase, CalendarDays, Star, Trash2 } from "lucide-react";
 
-// Local types for sub-sections (no backend endpoints — shown empty)
-interface StaffPayroll { id: string; month: string; basic: number; allowances: number; deductions: number; netPay: number; status: string; }
+// Local types for sub-sections
 interface StaffLeave { id: string; type: string; from: string; to: string; days: number; status: string; reason: string; }
 interface StaffPerformance { id: string; year: string; rating: number; feedback: string; reviewer: string; }
 
 export default function StaffProfile() {
   const { id } = useParams();
   const [staff, setStaff] = useState<Staff | null>(null);
-  const [payroll, setPayroll] = useState<StaffPayroll[]>([]);
+  const [payroll, setPayroll] = useState<PayrollRecordBasic[]>([]);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+  const [editingPayroll, setEditingPayroll] = useState<PayrollRecordBasic | null>(null);
   const [leaves, setLeaves] = useState<StaffLeave[]>([]);
   const [performance, setPerformance] = useState<StaffPerformance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,8 +45,7 @@ export default function StaffProfile() {
         const staffData = await staffApi.getById(id);
         setStaff(staffData);
         setStatus(staffData.status);
-        // No backend endpoints for payroll/leaves/performance — show empty state
-        setPayroll([]);
+        // No backend endpoints for leaves/performance — show empty state
         setLeaves([]);
         setPerformance([]);
       } catch {
@@ -54,6 +55,22 @@ export default function StaffProfile() {
       }
     }
     fetchAll();
+  }, [id]);
+
+  const loadPayroll = async (staffId: string) => {
+    setPayrollLoading(true);
+    try {
+      const result = await payrollApi.getRecords({ staffId }, 1, 50);
+      setPayroll(result.items);
+    } catch {
+      // silently ignore — show empty state
+    } finally {
+      setPayrollLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) loadPayroll(id);
   }, [id]);
 
   // Functions from StaffList
@@ -81,37 +98,173 @@ export default function StaffProfile() {
     }
   };
 
-  // Payroll Form
-  function PayrollForm({ staffId, onClose, onSuccess, initial }: { staffId: string, onClose: () => void, onSuccess: () => void, initial?: any }) {
-    const [form, setForm] = useState(initial || { month: '', basic: '', allowances: '', deductions: '', netPay: '', status: 'pending' });
-    const [loading, setLoading] = useState(false);
-    return (
-      <form onSubmit={async e => {
-        e.preventDefault();
-        setLoading(true);
-        // Add to local state (no backend endpoint for staff payroll)
-        const entry: StaffPayroll = { id: Date.now().toString(), month: form.month, basic: Number(form.basic), allowances: Number(form.allowances), deductions: Number(form.deductions), netPay: Number(form.netPay), status: form.status };
-        setPayroll(prev => [...prev, entry]);
-        setLoading(false);
+  // Payroll Form — create OR edit
+  function PayrollForm({ staffId, onClose, onSuccess, record }: {
+    staffId: string;
+    onClose: () => void;
+    onSuccess: () => void;
+    record?: PayrollRecordBasic; // present = edit mode
+  }) {
+    const isEdit = !!record;
+    const [form, setForm] = useState({
+      month: record?.month ?? '',
+      year: record?.year ? String(record.year) : String(new Date().getFullYear()),
+      basicSalary: '',
+      hra: '', da: '', ta: '', otherAllowances: '',
+      pf: '', esi: '', otherDeductions: '',
+      status: record?.status ?? 'pending',
+      paymentDate: record?.paymentDate ? record.paymentDate.slice(0, 10) : '',
+      remarks: '',
+    });
+    const [saving, setSaving] = useState(false);
+    const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setSaving(true);
+      try {
+        if (isEdit && record) {
+          await payrollApi.update(record.id, {
+            allowances: {
+              hra: form.hra ? Number(form.hra) : undefined,
+              da: form.da ? Number(form.da) : undefined,
+              ta: form.ta ? Number(form.ta) : undefined,
+              other: form.otherAllowances ? Number(form.otherAllowances) : undefined,
+            },
+            deductions: {
+              pf: form.pf ? Number(form.pf) : undefined,
+              esi: form.esi ? Number(form.esi) : undefined,
+              other: form.otherDeductions ? Number(form.otherDeductions) : undefined,
+            },
+            status: form.status || undefined,
+            paymentDate: form.paymentDate || undefined,
+            remarks: form.remarks || undefined,
+          });
+        } else {
+          const yearNum = form.month.length >= 7 ? parseInt(form.month.slice(0, 4)) : parseInt(form.year);
+          await payrollApi.create({
+            staffId,
+            month: form.month,
+            year: yearNum,
+            basicSalary: Number(form.basicSalary),
+            allowances: {
+              hra: Number(form.hra) || 0,
+              da: Number(form.da) || 0,
+              ta: Number(form.ta) || 0,
+              other: Number(form.otherAllowances) || 0,
+            },
+            deductions: {
+              pf: Number(form.pf) || 0,
+              esi: Number(form.esi) || 0,
+              other: Number(form.otherDeductions) || 0,
+            },
+            remarks: form.remarks || undefined,
+          });
+        }
         onSuccess();
-      }}>
-        <div className="grid gap-2 mb-2">
-          <input className="border rounded px-2 py-1" placeholder="Month (YYYY-MM)" value={form.month} onChange={e => setForm(f => ({ ...f, month: e.target.value }))} required />
-          <input className="border rounded px-2 py-1" placeholder="Basic" type="number" value={form.basic} onChange={e => setForm(f => ({ ...f, basic: e.target.value }))} required />
-          <input className="border rounded px-2 py-1" placeholder="Allowances" type="number" value={form.allowances} onChange={e => setForm(f => ({ ...f, allowances: e.target.value }))} required />
-          <input className="border rounded px-2 py-1" placeholder="Deductions" type="number" value={form.deductions} onChange={e => setForm(f => ({ ...f, deductions: e.target.value }))} required />
-          <input className="border rounded px-2 py-1" placeholder="Net Pay" type="number" value={form.netPay} onChange={e => setForm(f => ({ ...f, netPay: e.target.value }))} required />
-          <select className="border rounded px-2 py-1" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-          </select>
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+        toast({ title: "Error", description: msg || "Failed to save payroll record", variant: "destructive" });
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {!isEdit && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-medium text-gray-600">Month (YYYY-MM) *</label>
+              <input className="border rounded px-2 py-1 w-full" placeholder="e.g. 2025-05"
+                value={form.month} onChange={e => set('month', e.target.value)} required pattern="\d{4}-\d{2}" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Basic Salary (₹) *</label>
+              <input className="border rounded px-2 py-1 w-full" placeholder="0.00" type="number" min="0" step="0.01"
+                value={form.basicSalary} onChange={e => set('basicSalary', e.target.value)} required />
+            </div>
+          </div>
+        )}
+        {isEdit && (
+          <div className="text-sm text-gray-500 bg-gray-50 rounded px-3 py-2">
+            Editing: <strong>{record?.month}/{record?.year}</strong> — Basic salary cannot be changed after creation.
+          </div>
+        )}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Allowances</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-gray-500">HRA</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.hra} onChange={e => set('hra', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">DA</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.da} onChange={e => set('da', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">TA</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.ta} onChange={e => set('ta', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Other Allowances</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.otherAllowances} onChange={e => set('otherAllowances', e.target.value)} />
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2 justify-end mt-4">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Deductions</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-gray-500">PF</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.pf} onChange={e => set('pf', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">ESI</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.esi} onChange={e => set('esi', e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-gray-500">Other Deductions</label>
+              <input className="border rounded px-2 py-1 w-full" type="number" min="0" step="0.01"
+                placeholder="0.00" value={form.otherDeductions} onChange={e => set('otherDeductions', e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-medium text-gray-600">Status</label>
+            <select className="border rounded px-2 py-1 w-full" value={form.status} onChange={e => set('status', e.target.value)}>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="paid">Paid</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Payment Date</label>
+            <input className="border rounded px-2 py-1 w-full" type="date"
+              value={form.paymentDate} onChange={e => set('paymentDate', e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600">Remarks</label>
+          <input className="border rounded px-2 py-1 w-full" placeholder="Optional remarks"
+            value={form.remarks} onChange={e => set('remarks', e.target.value)} />
+        </div>
+        <div className="flex gap-2 justify-end pt-2">
           <button type="button" className="px-4 py-2 bg-gray-200 rounded" onClick={onClose}>Cancel</button>
-          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={loading}>{loading ? 'Saving...' : 'Save'}</button>
+          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       </form>
     );
+  }
   }
   // Leave Form
   function LeaveForm({ staffId, onClose, onSuccess }: { staffId: string, onClose: () => void, onSuccess: () => void }) {
@@ -266,20 +419,64 @@ export default function StaffProfile() {
       <Card className="mb-6 shadow border border-gray-100">
         <CardHeader className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-600" /><CardTitle>Payroll</CardTitle></div>
-          <button className="px-2 py-1 bg-blue-100 text-blue-700 rounded flex items-center gap-1" onClick={() => setShowPayrollDialog(true)}><Pencil className="h-4 w-4" /> Manage</button>
+          <button className="px-2 py-1 bg-blue-100 text-blue-700 rounded flex items-center gap-1"
+            onClick={() => { setEditingPayroll(null); setShowPayrollDialog(true); }}>
+            <Plus className="h-4 w-4" /> Add Record
+          </button>
         </CardHeader>
         <CardContent>
-          {payroll.length === 0 ? <div className="text-muted-foreground">No payroll records.</div> : (
+          {payrollLoading ? (
+            <div className="text-muted-foreground text-sm">Loading payroll...</div>
+          ) : payroll.length === 0 ? (
+            <div className="text-muted-foreground">No payroll records.</div>
+          ) : (
             <table className="w-full text-sm border">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="text-left">Month</th><th className="text-right">Basic</th><th className="text-right">Allowances</th><th className="text-right">Deductions</th><th className="text-right">Net Pay</th><th className="text-center">Status</th>
+                  <th className="text-left px-2 py-1">Month</th>
+                  <th className="text-right px-2 py-1">Gross</th>
+                  <th className="text-right px-2 py-1">Deductions</th>
+                  <th className="text-right px-2 py-1">Net Pay</th>
+                  <th className="text-center px-2 py-1">Status</th>
+                  <th className="text-center px-2 py-1">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {payroll.map(p => (
-                  <tr key={p.id} className="hover:bg-blue-50">
-                    <td className="text-left">{p.month}</td><td className="text-right">₹{p.basic}</td><td className="text-right">₹{p.allowances}</td><td className="text-right">₹{p.deductions}</td><td className="text-right">₹{p.netPay}</td><td className="text-center">{p.status}</td>
+                  <tr key={p.id} className="hover:bg-blue-50 border-t">
+                    <td className="text-left px-2 py-1">{p.month}/{p.year}</td>
+                    <td className="text-right px-2 py-1">₹{p.grossSalary?.toLocaleString()}</td>
+                    <td className="text-right px-2 py-1">₹{p.totalDeductions?.toLocaleString()}</td>
+                    <td className="text-right px-2 py-1 font-semibold">₹{p.netSalary?.toLocaleString()}</td>
+                    <td className="text-center px-2 py-1">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        p.status === 'paid' ? 'bg-green-100 text-green-700' :
+                        p.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                        'bg-yellow-100 text-yellow-700'}`}>{p.status}</span>
+                    </td>
+                    <td className="text-center px-2 py-1">
+                      <div className="flex justify-center gap-1">
+                        <button
+                          className="p-1 rounded hover:bg-blue-100 text-blue-600"
+                          title="Edit"
+                          onClick={() => { setEditingPayroll(p); setShowPayrollDialog(true); }}
+                        ><Pencil className="h-3.5 w-3.5" /></button>
+                        <button
+                          className="p-1 rounded hover:bg-red-100 text-red-500"
+                          title="Delete"
+                          onClick={async () => {
+                            if (!window.confirm('Delete this payroll record?')) return;
+                            try {
+                              await payrollApi.delete(p.id);
+                              setPayroll(prev => prev.filter(r => r.id !== p.id));
+                              toast({ title: "Deleted", description: "Payroll record removed" });
+                            } catch {
+                              toast({ title: "Error", description: "Failed to delete", variant: "destructive" });
+                            }
+                          }}
+                        ><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -369,12 +566,21 @@ export default function StaffProfile() {
           </div>
         </CardContent>
       </Card>
-      {/* Dialogs for Add/Edit actions (placeholders, can be replaced with forms) */}
+      {/* Dialogs for Add/Edit actions */}
       {showPayrollDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full">
-            <h2 className="text-xl font-bold mb-4">Add/Edit Payroll</h2>
-            <PayrollForm staffId={staff.id} onClose={() => setShowPayrollDialog(false)} onSuccess={() => setShowPayrollDialog(false)} />
+          <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">{editingPayroll ? 'Edit Payroll Record' : 'Add Payroll Record'}</h2>
+            <PayrollForm
+              staffId={staff.id}
+              record={editingPayroll ?? undefined}
+              onClose={() => { setShowPayrollDialog(false); setEditingPayroll(null); }}
+              onSuccess={() => {
+                setShowPayrollDialog(false);
+                setEditingPayroll(null);
+                loadPayroll(staff.id);
+              }}
+            />
           </div>
         </div>
       )}

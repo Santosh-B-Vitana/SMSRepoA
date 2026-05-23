@@ -4041,7 +4041,7 @@ namespace SmsApi.Migrations
                     b.Property<DateTime>("DueDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<string?>("FeeHeadOverrides")
+                    b.Property<string>("FeeHeadOverrides")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
@@ -8527,6 +8527,19 @@ namespace SmsApi.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<DateTime?>("BillingExpiryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("BillingPlan")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("BillingStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -8559,6 +8572,9 @@ namespace SmsApi.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<int>("RenewalReminderDays")
+                        .HasColumnType("int");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -8568,25 +8584,6 @@ namespace SmsApi.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("BillingPlan")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("Standard");
-
-                    b.Property<string>("BillingStatus")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)")
-                        .HasDefaultValue("Active");
-
-                    b.Property<DateTime?>("BillingExpiryDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("RenewalReminderDays")
-                        .HasColumnType("int")
-                        .HasDefaultValue(30);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -9568,6 +9565,12 @@ namespace SmsApi.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("LeaveDeducted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("LeaveTypeId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("MarkedBy")
                         .HasColumnType("uniqueidentifier");
 
@@ -9605,6 +9608,8 @@ namespace SmsApi.Migrations
                         .HasColumnType("time");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("LeaveTypeId");
 
                     b.HasIndex("StaffId");
 
@@ -15139,6 +15144,11 @@ namespace SmsApi.Migrations
 
             modelBuilder.Entity("SmsApi.Models.Entities.StaffAttendance", b =>
                 {
+                    b.HasOne("SmsApi.Models.Entities.LeaveType", "LeaveType")
+                        .WithMany()
+                        .HasForeignKey("LeaveTypeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("SmsApi.Models.Entities.School", "School")
                         .WithMany()
                         .HasForeignKey("SchoolId")
@@ -15150,6 +15160,8 @@ namespace SmsApi.Migrations
                         .HasForeignKey("StaffId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("LeaveType");
 
                     b.Navigation("School");
 

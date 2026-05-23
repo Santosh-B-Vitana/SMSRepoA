@@ -321,8 +321,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Certificates: show for anyone with Certificates.View permission
-      if (hasUserPermission('Certificates', 'View') && !staffItems.some(i => i.url === '/certificates')) {
+      // Certificates: show for anyone with Certificates.View permission (not principal/VP — managed by admin)
+      if (!['principal', 'vice principal'].includes(designation) && hasUserPermission('Certificates', 'View') && !staffItems.some(i => i.url === '/certificates')) {
         staffItems.push(
           { title: "CERTIFICATES", isLabel: true },
           { title: "Certificates", url: "/certificates", icon: GraduationCap },

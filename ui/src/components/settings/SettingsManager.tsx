@@ -131,20 +131,31 @@ function ProfileTab({ userId }: { userId: string }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn) {
+      toast.error("First name is required");
+      return;
+    }
     setSaving(true);
     try {
+      // 1. Update the actual UserLogin record so the display name changes everywhere
+      await settingsApi.updateMyProfile({ firstName: fn, lastName: ln });
+
+      // 2. Persist extra profile fields (phone, bio, jobTitle) to KV settings
       await settingsApi.bulkUpdate({
         userSettings: [
-          buildUserSetting("profile_first_name", firstName, "profile"),
-          buildUserSetting("profile_last_name", lastName, "profile"),
+          buildUserSetting("profile_first_name", fn, "profile"),
+          buildUserSetting("profile_last_name", ln, "profile"),
           buildUserSetting("profile_phone", phone, "profile"),
           buildUserSetting("profile_bio", bio, "profile"),
           buildUserSetting("profile_job_title", jobTitle, "profile"),
         ],
       });
       toast.success("Profile updated successfully");
-    } catch {
-      toast.error("Failed to save profile");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to save profile";
+      toast.error(msg);
     } finally {
       setSaving(false);
     }

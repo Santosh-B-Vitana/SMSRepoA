@@ -195,11 +195,25 @@ namespace SmsApi.Models.Entities
         public string? Remarks { get; set; }
         
         public Guid? MarkedBy { get; set; }
+
+        /// <summary>
+        /// Populated when Status = "leave" — tracks which leave type was consumed.
+        /// </summary>
+        public Guid? LeaveTypeId { get; set; }
+
+        /// <summary>
+        /// True when leave balance was automatically deducted on attendance marking
+        /// (i.e. no prior approved StaffLeaveRequest existed for this day).
+        /// </summary>
+        public bool LeaveDeducted { get; set; } = false;
         
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
         
         [ForeignKey("StaffId")]
         public virtual Staff? Staff { get; set; }
+
+        [ForeignKey("LeaveTypeId")]
+        public virtual LeaveType? LeaveType { get; set; }
     }
 }

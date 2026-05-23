@@ -1,7 +1,7 @@
 /**
  * Real Payroll API — connects to sms-api backend at /api/payroll
  */
-import { apiGet, apiPost, apiPut } from '@/lib/apiClient';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/apiClient';
 
 // ---------------------------------------------------------------------------
 // Types — match backend PayrollDTOs (camelCase JSON)
@@ -153,4 +153,8 @@ export const payrollApi = {
   /** Update an existing payroll record */
   update: (id: string, data: UpdatePayrollInput): Promise<PayrollRecordFull> =>
     apiPut<PayrollRecordFull>(`/payroll/records/${id}`, data),
+
+  /** Delete a payroll record */
+  delete: (id: string): Promise<void> =>
+    apiDelete<void>(`/payroll/records/${id}`),
 };

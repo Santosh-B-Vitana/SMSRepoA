@@ -25,6 +25,11 @@ public class UserInfo
     /// When true, the client must redirect the user to the change-password screen before continuing.
     /// </summary>
     public bool RequirePasswordChange { get; set; } = false;
+    /// <summary>
+    /// For staff accounts: the StaffMember.Id linked to this login.
+    /// Null for admin/super-admin users who have no Staff record.
+    /// </summary>
+    public Guid? LinkedEntityId { get; set; }
 }
 
 public class RefreshTokenRequest
@@ -42,6 +47,8 @@ public class User
     public string Role { get; set; } = string.Empty;
     /// <summary>Staff designation from the Staff table (e.g. "Principal").</summary>
     public string? Designation { get; set; }
+    /// <summary>Linked entity ID (e.g. Staff.Id for staff/teacher logins).</summary>
+    public Guid? LinkedEntityId { get; set; }
 }
 
 // ── 2FA request models ────────────────────────────────────────────────────

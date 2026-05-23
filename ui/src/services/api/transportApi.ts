@@ -42,6 +42,15 @@ export interface TransportRouteListResponse {
   total: number;
   page: number;
   pageSize: number;
+  totalPages?: number;
+}
+
+export interface TransportStudentListResponse {
+  students: TransportStudent[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface CreateRouteDto {
@@ -105,8 +114,10 @@ const getStudentsByRoute = async (routeId: string): Promise<TransportStudent[]> 
   return r.data;
 };
 
-const getAllTransportStudents = async (): Promise<TransportStudent[]> => {
-  const r = await apiClient.get<TransportStudent[]>(`${BASE}/students`);
+const getAllTransportStudents = async (page = 1, pageSize = 20, search?: string): Promise<TransportStudentListResponse> => {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (search) params.set('search', search);
+  const r = await apiClient.get<TransportStudentListResponse>(`${BASE}/students?${params}`);
   return r.data;
 };
 

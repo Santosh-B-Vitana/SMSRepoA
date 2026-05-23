@@ -145,13 +145,17 @@ namespace SmsApi.Controllers
 
         [HttpGet("students")]
         [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
-        public async Task<ActionResult> GetAllTransportStudents()
+        public async Task<ActionResult<TransportStudentListResponse>> GetAllTransportStudents(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? search = null)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var students = await _transportService.GetAllTransportStudentsAsync(schoolId);
-                return Ok(students);
+                pageSize = Math.Clamp(pageSize, 1, 500);
+                var result = await _transportService.GetAllTransportStudentsAsync(schoolId, page, pageSize, search);
+                return Ok(result);
             }
             catch (UnauthorizedAccessException ex)
             {

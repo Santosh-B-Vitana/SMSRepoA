@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Calendar, CheckCircle2, Clock, Search, UserCheck, UserX, Loader2, Save } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Search, UserCheck, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 import {
@@ -19,6 +19,7 @@ import {
   type StaffAttendanceStatus,
   type StaffAttendanceResponse,
 } from "@/services/api/attendanceApi";
+import leaveManagementApi, { type LeaveType } from "@/services/api/leaveManagementApi";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -26,6 +27,7 @@ interface StaffAttendanceEntryUI {
   staffId: string;
   status: StaffAttendanceStatus | "none";
   remarks?: string;
+  leaveTypeId?: string;
 }
 
 const STATUS_OPTIONS: Array<{ value: StaffAttendanceStatus; label: string; color: string }> = [
@@ -47,6 +49,7 @@ export function StaffAttendanceManager() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
 
   const schoolId = user?.schoolId;
 
@@ -59,10 +62,15 @@ export function StaffAttendanceManager() {
     setLoading(true);
     try {
       // Use allSettled so a failed attendance fetch doesn't prevent staff from loading
-      const [staffResult, attendanceResult] = await Promise.allSettled([
+      const [staffResult, attendanceResult, leaveTypesResult] = await Promise.allSettled([
         staffApi.list({ page: 1, pageSize: 500, status: "active" }),
         attendanceApi.getStaffAttendances({ date }),
+        leaveManagementApi.getLeaveTypes("Staff"),
       ]);
+
+      if (leaveTypesResult.status === "fulfilled") {
+        setLeaveTypes(leaveTypesResult.value ?? []);
+      }
 
       if (staffResult.status === "rejected") {
         toast.error(t('staffAtt.loadStaffError'));
@@ -84,6 +92,7 @@ export function StaffAttendanceManager() {
           staffId: rec.staffId,
           status: rec.status,
           remarks: rec.remarks,
+          leaveTypeId: rec.leaveTypeId,
         };
       }
 
@@ -138,6 +147,17 @@ export function StaffAttendanceManager() {
     }));
   }
 
+  function setLeaveTypeId(staffId: string, leaveTypeId: string) {
+    setEntries((prev) => ({
+      ...prev,
+      [staffId]: {
+        ...(prev[staffId] ?? { staffId, status: "none" }),
+        staffId,
+        leaveTypeId,
+      },
+    }));
+  }
+
   async function saveAll() {
     if (!schoolId) {
       toast.error("Missing school context");
@@ -148,26 +168,46 @@ export function StaffAttendanceManager() {
       (e) => e.status !== "none" && !existing[e.staffId]
     ) as Array<StaffAttendanceEntryUI & { status: StaffAttendanceStatus }>;
 
-    if (toCreate.length === 0) {
+    // Update records where status/leaveTypeId changed OR leave was never deducted
+    const toUpdate = Object.values(entries).filter((e) => {
+      const ex = existing[e.staffId];
+      if (!ex || e.status === "none") return false;
+      const statusChanged = e.status !== ex.status;
+      const leaveTypeChanged = e.status === "leave" && e.leaveTypeId !== (ex.leaveTypeId ?? undefined);
+      // Also re-send if leave was marked but balance was never deducted (e.g. record created before fix)
+      const pendingDeduction = e.status === "leave" && ex.leaveDeducted === false && !!e.leaveTypeId;
+      return statusChanged || leaveTypeChanged || pendingDeduction;
+    }) as Array<StaffAttendanceEntryUI & { status: StaffAttendanceStatus }>;
+
+    if (toCreate.length === 0 && toUpdate.length === 0) {
       toast.info(t('staffAtt.noChanges'));
       return;
     }
 
     setSaving(true);
     try {
-      await Promise.all(
-        toCreate.map((e) =>
+      await Promise.all([
+        ...toCreate.map((e) =>
           attendanceApi.createStaffAttendance({
             schoolId,
             staffId: e.staffId,
             date,
             status: e.status,
             remarks: e.remarks,
+            leaveTypeId: e.status === "leave" ? e.leaveTypeId : undefined,
           })
-        )
-      );
+        ),
+        ...toUpdate.map((e) =>
+          attendanceApi.updateStaffAttendance(existing[e.staffId].id, {
+            status: e.status,
+            remarks: e.remarks,
+            leaveTypeId: e.status === "leave" ? e.leaveTypeId : undefined,
+          })
+        ),
+      ]);
 
-      toast.success(t('staffAtt.saveSuccess').replace('{n}', String(toCreate.length)));
+      const total = toCreate.length + toUpdate.length;
+      toast.success(t('staffAtt.saveSuccess').replace('{n}', String(total)));
       await loadAll();
     } catch (err: unknown) {
       const msg =
@@ -213,11 +253,10 @@ export function StaffAttendanceManager() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t('staffAtt.summary.total')}</p><p className="text-2xl font-bold">{summary.total}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t('staffAtt.summary.present')}</p><p className="text-2xl font-bold text-green-600">{summary.present}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t('staffAtt.summary.late')}</p><p className="text-2xl font-bold text-amber-600">{summary.late}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t('staffAtt.summary.absent')}</p><p className="text-2xl font-bold text-red-600">{summary.absent}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t('staffAtt.summary.onLeave')}</p><p className="text-2xl font-bold text-blue-600">{summary.leave}</p></CardContent></Card>
       </div>
 
@@ -250,7 +289,6 @@ export function StaffAttendanceManager() {
                 <SelectItem value="all">{t('staffAtt.allStatus')}</SelectItem>
                 <SelectItem value="present">{t('staffAtt.statusPresent')}</SelectItem>
                 <SelectItem value="late">{t('staffAtt.statusLate')}</SelectItem>
-                <SelectItem value="absent">{t('staffAtt.statusAbsent')}</SelectItem>
                 <SelectItem value="leave">{t('staffAtt.statusLeave')}</SelectItem>
                 <SelectItem value="none">{t('staffAtt.notMarked')}</SelectItem>
               </SelectContent>
@@ -285,11 +323,22 @@ export function StaffAttendanceManager() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-1.5 items-center">
                           <Button size="sm" variant={entry.status === "present" ? "default" : "outline"} onClick={() => setStatus(s.id, "present")}><UserCheck className="h-3.5 w-3.5 mr-1" />{t('staffAtt.statusPresent')}</Button>
                           <Button size="sm" variant={entry.status === "late" ? "secondary" : "outline"} onClick={() => setStatus(s.id, "late")}><Clock className="h-3.5 w-3.5 mr-1" />{t('staffAtt.statusLate')}</Button>
-                          <Button size="sm" variant={entry.status === "absent" ? "destructive" : "outline"} onClick={() => setStatus(s.id, "absent")}><UserX className="h-3.5 w-3.5 mr-1" />{t('staffAtt.statusAbsent')}</Button>
                           <Button size="sm" variant={entry.status === "leave" ? "secondary" : "outline"} onClick={() => setStatus(s.id, "leave")}><CheckCircle2 className="h-3.5 w-3.5 mr-1" />{t('staffAtt.statusLeave')}</Button>
+                          {entry.status === "leave" && (
+                            <Select value={entry.leaveTypeId ?? ""} onValueChange={(v) => setLeaveTypeId(s.id, v)}>
+                              <SelectTrigger className="h-7 w-36 text-xs">
+                                <SelectValue placeholder="Leave type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {leaveTypes.map((lt) => (
+                                  <SelectItem key={lt.id} value={lt.id}>{lt.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>

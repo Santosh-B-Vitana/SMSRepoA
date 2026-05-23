@@ -12,7 +12,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   BadgeCheck, Bell, CreditCard, KeyRound, Loader2,
-  LogOut, Monitor, Moon, Settings, Sun, User, Building2,
+  LogOut, Monitor, Moon, Settings, Sun, Building2,
   CheckCircle2, ChevronRight, RefreshCw, Shield, AlertTriangle, Save,
 } from "lucide-react";
 
@@ -83,256 +83,54 @@ interface BackendUser {
 }
 
 function AccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { schoolInfo } = useSchool();
-  const [tab, setTab] = useState("profile");
-
-  // Remote user record (for username, lastLogin, etc.)
-  const [backendUser, setBackendUser] = useState<BackendUser | null>(null);
-  const [fetching, setFetching] = useState(false);
-
-  // Edit state
-  const [firstName, setFirstName] = useState("");
-  const [lastName,  setLastName]  = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-
-  // Change password
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-
-  // Fetch full user record when dialog opens
-  useEffect(() => {
-    if (!open || !user?.id) return;
-    setFetching(true);
-    apiClient
-      .get<BackendUser>(`/user-management/${user.id}`)
-      .then((res) => {
-        const u = res.data;
-        setBackendUser(u);
-        setFirstName(u.firstName || user.name.split(" ")[0] || "");
-        setLastName(u.lastName  || user.name.split(" ").slice(1).join(" ") || "");
-      })
-      .catch(() => {
-        // Fallback: derive from auth context
-        const parts = user.name.split(" ");
-        setFirstName(parts[0] || "");
-        setLastName(parts.slice(1).join(" ") || "");
-      })
-      .finally(() => setFetching(false));
-  }, [open, user]);
-
-  const handleSaveProfile = async () => {
-    if (!user?.id) {
-      setSaveError("User ID not found. Please try logging in again.");
-      return;
-    }
-    const fn = firstName.trim();
-    const ln = lastName.trim();
-    if (!fn) { setSaveError("First name is required."); return; }
-
-    setSaving(true);
-    setSaveError("");
-    try {
-      const updatePayload = {
-        firstName: fn,
-        lastName: ln,
-      };
-      
-      const response = await apiClient.put(`/user-management/me`, updatePayload);
-      toast.success("Profile updated successfully.");
-      onClose();
-    } catch (err: any) {
-      const statusCode = err?.response?.status;
-      const message = err?.response?.data?.message ?? err?.message;
-      
-      // Better error messages
-      if (statusCode === 404) {
-        setSaveError("User profile not found. Please try refreshing the page or logging in again.");
-      } else if (statusCode === 400) {
-        setSaveError(message || "Invalid data. Please check your input.");
-      } else {
-        setSaveError(message || "Failed to save profile. Please try again.");
-      }
-      
-      console.error("Profile update error:", { status: statusCode, message, userId: user.id });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BadgeCheck className="h-5 w-5 text-green-500" />
-              Account
-            </DialogTitle>
-            <DialogDescription>Manage your account details and security settings.</DialogDescription>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BadgeCheck className="h-5 w-5 text-green-500" />
+            Account
+          </DialogTitle>
+          <DialogDescription>Your account information.</DialogDescription>
+        </DialogHeader>
 
-          {/* Avatar + identity strip */}
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/40 border">
-            <Avatar className="h-14 w-14 rounded-xl shadow-md ring-2 ring-background">
-              <AvatarImage src={user?.avatar ?? ""} alt={user?.name ?? ""} />
-              <AvatarFallback className="rounded-xl text-base font-bold bg-gradient-to-br from-primary/20 to-primary/5">
-                {user?.name ? getUserInitials(user.name) : "U"}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold truncate">{user?.name}</p>
-              <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
-              <div className="flex gap-2 mt-1.5 flex-wrap">
-                <Badge className={`text-xs ${ROLE_COLORS[user?.role ?? ""] ?? ""}`}>
-                  {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
+        {/* Avatar + identity strip */}
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/40 border">
+          <Avatar className="h-14 w-14 rounded-xl shadow-md ring-2 ring-background">
+            <AvatarImage src={user?.avatar ?? ""} alt={user?.name ?? ""} />
+            <AvatarFallback className="rounded-xl text-base font-bold bg-gradient-to-br from-primary/20 to-primary/5">
+              {user?.name ? getUserInitials(user.name) : "U"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold truncate">{user?.name}</p>
+            <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
+            <div className="flex gap-2 mt-1.5 flex-wrap">
+              <Badge className={`text-xs ${ROLE_COLORS[user?.role ?? ""] ?? ""}`}>
+                {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
+              </Badge>
+              <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Active
+              </Badge>
+              {schoolInfo?.name && (
+                <Badge variant="secondary" className="text-xs">
+                  <Building2 className="h-3 w-3 mr-1" />
+                  {schoolInfo.name}
                 </Badge>
-                <Badge variant="outline" className="text-xs text-green-600 border-green-300">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Active
-                </Badge>
-                {schoolInfo?.name && (
-                  <Badge variant="secondary" className="text-xs">
-                    <Building2 className="h-3 w-3 mr-1" />
-                    {schoolInfo.name}
-                  </Badge>
-                )}
-              </div>
+              )}
             </div>
           </div>
+        </div>
 
-          <Tabs value={tab} onValueChange={setTab} className="w-full">
-            <TabsList className="w-full">
-              <TabsTrigger value="profile" className="flex-1">Profile</TabsTrigger>
-              <TabsTrigger value="security" className="flex-1">Security</TabsTrigger>
-            </TabsList>
-
-            {/* ── Profile Tab ──────────────────────────────────────────────────── */}
-            <TabsContent value="profile" className="mt-4 space-y-4">
-              {fetching ? (
-                <div className="flex justify-center py-6">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="acc-first">First Name</Label>
-                      <Input
-                        id="acc-first"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        placeholder="First name"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="acc-last">Last Name</Label>
-                      <Input
-                        id="acc-last"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        placeholder="Last name"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Email</Label>
-                    <Input value={user?.email ?? ""} readOnly className="bg-muted/50 text-muted-foreground cursor-not-allowed" />
-                    <p className="text-xs text-muted-foreground">Email cannot be changed here. Contact your system administrator.</p>
-                  </div>
-
-                  {/* Info rows */}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    {backendUser?.lastLogin && (
-                      <div className="rounded-lg border bg-muted/30 px-3 py-2">
-                        <p className="text-xs text-muted-foreground">Last Login</p>
-                        <p className="font-medium mt-0.5">
-                          {new Date(backendUser.lastLogin).toLocaleDateString(undefined, {
-                            day: "2-digit", month: "short", year: "numeric",
-                          })}
-                        </p>
-                      </div>
-                    )}
-                    <div className="rounded-lg border bg-muted/30 px-3 py-2">
-                      <p className="text-xs text-muted-foreground">Role</p>
-                      <p className="font-medium mt-0.5 capitalize">{ROLE_LABELS[user?.role ?? ""] ?? user?.role}</p>
-                    </div>
-                  </div>
-
-                  {saveError && (
-                    <Alert variant="destructive">
-                      <AlertDescription>{saveError}</AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="flex gap-2 justify-end pt-1">
-                    <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-                    <Button onClick={handleSaveProfile} disabled={saving}>
-                      {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save Changes"}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </TabsContent>
-
-            {/* ── Security Tab ─────────────────────────────────────────────────── */}
-            <TabsContent value="security" className="mt-4 space-y-4">
-              <div className="rounded-xl border p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-50 rounded-lg">
-                    <KeyRound className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">Password</p>
-                    <p className="text-xs text-muted-foreground">
-                      {backendUser?.passwordChangedAt
-                        ? `Last changed ${new Date(backendUser.passwordChangedAt).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}`
-                        : "Set a strong password to protect your account"}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { onClose(); setChangePasswordOpen(true); }}
-                  >
-                    Change
-                    <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-xl border p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-50 rounded-lg">
-                    <Shield className="h-4 w-4 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">Session</p>
-                    <p className="text-xs text-muted-foreground">You are currently logged in. Logout to end your session.</p>
-                  </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => { onClose(); logout(); }}
-                  >
-                    <LogOut className="h-3.5 w-3.5 mr-1.5" />
-                    Logout
-                  </Button>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
-
-      {/* Change password — opened from security tab */}
-      <ChangePasswordDialog
-        open={changePasswordOpen}
-        onOpenChange={setChangePasswordOpen}
-        onSuccess={() => { setChangePasswordOpen(false); logout(); }}
-      />
-    </>
+        <div className="flex justify-end pt-1">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -877,23 +675,6 @@ export function UserMenuDropdown() {
           <DropdownMenuSeparator />
 
           <DropdownMenuGroup>
-            <DropdownMenuItem asChild>
-              <Link
-                to={
-                  user.role === "admin" || user.role === "super_admin"
-                    ? "/admin-dashboard?tab=settings&sub=profile"
-                    : user.role === "staff"
-                    ? "/staff-dashboard"
-                    : "/parent-dashboard"
-                }
-                className="cursor-pointer gap-2"
-              >
-                <User className="h-4 w-4" />
-                {t("nav.profile")}
-                <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-              </Link>
-            </DropdownMenuItem>
-
             <DropdownMenuItem
               className="cursor-pointer gap-2"
               onClick={() => setPreferencesOpen(true)}

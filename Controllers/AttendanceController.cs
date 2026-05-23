@@ -761,5 +761,26 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while updating the attendance.", error = ex.Message });
             }
         }
+
+        [HttpDelete("staff/{id:guid}")]
+        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        public async Task<ActionResult> DeleteStaffAttendance(Guid id)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var record = await _context.StaffAttendances
+                    .FirstOrDefaultAsync(a => a.Id == id && a.SchoolId == schoolId);
+                if (record == null)
+                    return NotFound(new { message = "Staff attendance record not found." });
+                _context.StaffAttendances.Remove(record);
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Staff attendance record deleted." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error deleting staff attendance.", error = ex.Message });
+            }
+        }
     }
 }

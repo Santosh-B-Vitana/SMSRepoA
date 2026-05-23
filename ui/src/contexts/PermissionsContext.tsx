@@ -232,8 +232,8 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     if (['Create', 'Edit', 'Delete'].includes(action)) return false;
 
     const d = (designation ?? '').toLowerCase().trim();
-    // Principals / VP / HOD can view everything
-    if (['principal', 'vice principal', 'head of department'].includes(d)) return true;
+    // Principals / VP / HOD can view everything except Certificates (admin-only module)
+    if (['principal', 'vice principal', 'head of department'].includes(d)) return module !== 'Certificates';
     // Class teachers can view their teaching modules including Health for their class
     if (d === 'class teacher') {
       return ['Attendance', 'Grades', 'Assignments', 'Health', 'Students', 'Library'].includes(module);

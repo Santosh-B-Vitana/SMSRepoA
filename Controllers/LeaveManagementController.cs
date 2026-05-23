@@ -240,7 +240,10 @@ namespace SmsApi.Controllers
             var isPrivileged = User.IsInRole(StatusConstants.Roles.Admin)
                                || User.IsInRole(StatusConstants.Roles.Principal)
                                || User.IsInRole("HRManager");
-            if (!isPrivileged && currentUserId != userId)
+            // Also allow if the caller's LinkedEntityId matches userId (staff viewing their own balance)
+            var linkedEntityClaim = User.FindFirst("LinkedEntityId")?.Value;
+            var callerLinkedEntityId = Guid.TryParse(linkedEntityClaim, out var lid) ? lid : (Guid?)null;
+            if (!isPrivileged && currentUserId != userId && callerLinkedEntityId != userId)
             {
                 return Forbid();
             }
@@ -254,6 +257,23 @@ namespace SmsApi.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        /// <summary>Staff member views their own leave balance (resolves entity via email, so works even if LinkedEntityId is not in JWT).</summary>
+        [HttpGet("my-balance")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<List<LeaveBalanceResponse>>> GetMyLeaveBalance()
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty)
+                return Unauthorized();
+
+            var callerEmail = User.FindFirst(ClaimTypes.Email)?.Value;
+            if (string.IsNullOrWhiteSpace(callerEmail))
+                return Unauthorized();
+
+            var balance = await _leaveManagementService.GetMyLeaveBalanceAsync(callerEmail, schoolId);
+            return Ok(balance);
         }
 
         // ── Student Leave Endpoints (parent-initiated, teacher/admin managed) ─────

@@ -127,8 +127,8 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
               <TableRow>
                 {!staffId && <TableHead>Staff</TableHead>}
                 <TableHead>Month/Year</TableHead>
-                <TableHead>Basic Salary</TableHead>
                 <TableHead>Gross Salary</TableHead>
+                <TableHead>Deductions</TableHead>
                 <TableHead>Net Salary</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-24">Actions</TableHead>
@@ -143,9 +143,9 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
                     </TableCell>
                   )}
                   <TableCell>{entry.month} {entry.year}</TableCell>
-                  <TableCell>₹{entry.basicSalary.toLocaleString()}</TableCell>
-                  <TableCell>₹{entry.grossSalary.toLocaleString()}</TableCell>
-                  <TableCell>₹{entry.netSalary.toLocaleString()}</TableCell>
+                  <TableCell>₹{(entry.grossSalary ?? 0).toLocaleString()}</TableCell>
+                  <TableCell>₹{(entry.totalDeductions ?? 0).toLocaleString()}</TableCell>
+                  <TableCell>₹{(entry.netSalary ?? 0).toLocaleString()}</TableCell>
                   <TableCell>
                     <Badge variant={getStatusColor(entry.status)}>
                       {entry.status}
@@ -216,14 +216,30 @@ function PayrollDialog({
 
   useEffect(() => {
     if (entry) {
-      setFormData({
-        staffId: entry.staffId,
-        month: entry.month,
-        year: entry.year,
-        basicSalary: 0, // basicSalary not in basic DTO; editable only on create
-        allowances: { hra: 0, da: 0, ta: 0, other: 0 },
-        deductions: { pf: 0, esi: 0, incomeTax: 0, other: 0 },
-        status: entry.status
+      // Fetch full record to get allowance/deduction breakdown
+      payrollApi.getById(entry.id).then(full => {
+        setFormData({
+          staffId: full.staffId,
+          month: full.month,
+          year: full.year,
+          basicSalary: full.basicSalary ?? 0,
+          allowances: {
+            hra: full.allowances?.hra ?? 0,
+            da: full.allowances?.da ?? 0,
+            ta: full.allowances?.ta ?? 0,
+            other: full.allowances?.other ?? 0,
+          },
+          deductions: {
+            pf: full.deductions?.pf ?? 0,
+            esi: full.deductions?.esi ?? 0,
+            incomeTax: full.deductions?.incomeTax ?? 0,
+            other: full.deductions?.other ?? 0,
+          },
+          status: full.status,
+        });
+      }).catch(() => {
+        // Fallback to basic data if full fetch fails
+        setFormData(prev => ({ ...prev, month: entry.month, year: entry.year, status: entry.status }));
       });
     } else {
       setFormData({
@@ -325,8 +341,8 @@ function PayrollDialog({
               <Label>Month</Label>
               <Select value={formData.month} onValueChange={(value) => 
                 setFormData(prev => ({ ...prev, month: value }))
-              }>
-                <SelectTrigger>
+              } disabled={!!entry}>
+                <SelectTrigger className={entry ? 'bg-muted text-muted-foreground' : ''}>
                   <SelectValue placeholder="Select month" />
                 </SelectTrigger>
                 <SelectContent>
@@ -348,6 +364,8 @@ function PayrollDialog({
                 type="number"
                 value={formData.year}
                 onChange={(e) => setFormData(prev => ({ ...prev, year: parseInt(e.target.value) }))}
+                disabled={!!entry}
+                className={entry ? 'bg-muted text-muted-foreground' : ''}
               />
             </div>
 
@@ -357,7 +375,10 @@ function PayrollDialog({
                 type="number"
                 value={formData.basicSalary}
                 onChange={(e) => setFormData(prev => ({ ...prev, basicSalary: parseFloat(e.target.value) || 0 }))}
+                disabled={!!entry}
+                className={entry ? 'bg-muted text-muted-foreground' : ''}
               />
+              {entry && <p className="text-xs text-muted-foreground mt-1">Basic salary cannot be changed after creation.</p>}
             </div>
           </div>
 

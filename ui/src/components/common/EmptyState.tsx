@@ -47,13 +47,14 @@ export function EmptyState({
   action,
   variant = 'default' 
 }: EmptyStateProps) {
-  const Icon = icon || FileQuestion;
+  const compactIconContent = icon ?? <FileQuestion className="h-6 w-6 text-muted-foreground" />;
+  const defaultIconContent = icon ?? <FileQuestion className="h-10 w-10 text-muted-foreground" />;
 
   if (variant === 'compact') {
     return (
       <div className="text-center py-8">
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-muted mb-3">
-          {typeof Icon === 'function' ? <Icon className="h-6 w-6 text-muted-foreground" /> : Icon}
+          {compactIconContent}
         </div>
         <p className="text-sm text-muted-foreground mb-3">{title}</p>
         {action && (
@@ -70,7 +71,7 @@ export function EmptyState({
     <Card>
       <CardContent className="flex flex-col items-center justify-center py-16 px-6">
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-muted mb-6">
-          {typeof Icon === 'function' ? <Icon className="h-10 w-10 text-muted-foreground" /> : Icon}
+          {defaultIconContent}
         </div>
         
         <h3 className="text-xl font-semibold mb-2">{title}</h3>

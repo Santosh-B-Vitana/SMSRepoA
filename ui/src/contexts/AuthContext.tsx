@@ -69,6 +69,8 @@ export interface User {
   avatar?: string;
   schoolId?: string;
   requirePasswordChange?: boolean;
+  /** For staff accounts: the StaffMember.Id (used for attendance/balance lookups) */
+  linkedEntityId?: string;
   staffData?: {
     employeeId: string;
     department: string;
@@ -259,6 +261,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           : normalizeDesignation(rawRole),
         schoolId: backendUser.schoolId ? String(backendUser.schoolId) : undefined,
         requirePasswordChange: backendUser.requirePasswordChange === true,
+        linkedEntityId: backendUser.linkedEntityId ? String(backendUser.linkedEntityId) : undefined,
       };
 
       // Create session — include token so apiClient.ts can read it

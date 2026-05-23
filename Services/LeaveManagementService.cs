@@ -21,6 +21,7 @@ namespace SmsApi.Services
         Task<LeaveRequestResponse?> ApproveLeaveAsync(Guid id, ApproveLeaveRequest request, Guid schoolId);
         Task<LeaveRequestResponse?> RejectLeaveAsync(Guid id, RejectLeaveRequest request, Guid schoolId);
         Task<List<LeaveBalanceResponse>> GetLeaveBalanceAsync(Guid userId, string userType, Guid schoolId);
+        Task<List<LeaveBalanceResponse>> GetMyLeaveBalanceAsync(string callerEmail, Guid schoolId);
         // Student leave (parent-initiated)
         Task<StudentLeaveResponse> CreateStudentLeaveAsync(string parentEmail, CreateStudentLeaveRequest request, Guid schoolId);
         Task<StudentLeaveListResponse> GetStudentLeaveRequestsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, Guid? callerUserId = null, string? callerRole = null);
@@ -164,7 +165,17 @@ namespace SmsApi.Services
 
             if (applicantId.HasValue)
             {
-                query = query.Where(lr => lr.ApplicantId == applicantId.Value);
+                // Also include admin-created leave records where ApplicantId == Staff.Id (LinkedEntityId)
+                // This happens when no UserLogin was found for the staff at the time of admin marking.
+                var linkedEntityId = await _context.UserLogins
+                    .Where(u => u.Id == applicantId.Value && u.SchoolId == schoolId && !u.IsDeleted)
+                    .Select(u => u.LinkedEntityId)
+                    .FirstOrDefaultAsync();
+
+                if (linkedEntityId.HasValue)
+                    query = query.Where(lr => lr.ApplicantId == applicantId.Value || lr.ApplicantId == linkedEntityId.Value);
+                else
+                    query = query.Where(lr => lr.ApplicantId == applicantId.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(status))
@@ -560,6 +571,20 @@ namespace SmsApi.Services
                 .ToListAsync();
 
             return balances.Select(MapToLeaveBalanceResponse).ToList();
+        }
+
+        public async Task<List<LeaveBalanceResponse>> GetMyLeaveBalanceAsync(string callerEmail, Guid schoolId)
+        {
+            // Resolve the staff entity ID from the caller's email, so staff without LinkedEntityId in JWT can still access their balance
+            var staffId = await _context.StaffMembers
+                .Where(s => s.Email == callerEmail && s.SchoolId == schoolId && !s.IsDeleted)
+                .Select(s => (Guid?)s.Id)
+                .FirstOrDefaultAsync();
+
+            if (staffId == null)
+                return new List<LeaveBalanceResponse>();
+
+            return await GetLeaveBalanceAsync(staffId.Value, "Staff", schoolId);
         }
 
         private LeaveTypeResponse MapToLeaveTypeResponse(LeaveType leaveType)

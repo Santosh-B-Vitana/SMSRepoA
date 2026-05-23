@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1763,10 +1762,57 @@ function OutreachTab() {
 // MAIN HUB
 // ─────────────────────────────────────────────────────────────
 
+const TAB_META = [
+  {
+    value: "overview",
+    icon: TrendingUp,
+    labelKey: "alumni.tabOverview" as const,
+    desc: "Analytics & insights",
+    color: "text-violet-600",
+    activeBg: "bg-violet-50 border-violet-200",
+    activeText: "text-violet-700",
+  },
+  {
+    value: "directory",
+    icon: Users,
+    labelKey: "alumni.tabDirectory" as const,
+    desc: "Browse & manage profiles",
+    color: "text-blue-600",
+    activeBg: "bg-blue-50 border-blue-200",
+    activeText: "text-blue-700",
+  },
+  {
+    value: "meets",
+    icon: Calendar,
+    labelKey: "alumni.tabMeets" as const,
+    desc: "Plan & track events",
+    color: "text-emerald-600",
+    activeBg: "bg-emerald-50 border-emerald-200",
+    activeText: "text-emerald-700",
+  },
+  {
+    value: "donations",
+    icon: Heart,
+    labelKey: "alumni.tabDonations" as const,
+    desc: "Track contributions",
+    color: "text-rose-600",
+    activeBg: "bg-rose-50 border-rose-200",
+    activeText: "text-rose-700",
+  },
+  {
+    value: "outreach",
+    icon: Send,
+    labelKey: "alumni.tabOutreach" as const,
+    desc: "Engage your community",
+    color: "text-amber-600",
+    activeBg: "bg-amber-50 border-amber-200",
+    activeText: "text-amber-700",
+  },
+] as const;
+
 export default function AlumniHub() {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState("overview");
-  const visitedTabs = useRef(new Set(["overview"]));
 
   const [viewingAlumniId, setViewingAlumniId] = useState<string | null>(null);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
@@ -1776,11 +1822,6 @@ export default function AlumniHub() {
 
   // Refresher to tell Directory to reload after add/edit
   const [directoryKey, setDirectoryKey] = useState(0);
-
-  function handleTabChange(tab: string) {
-    visitedTabs.current.add(tab);
-    setActiveTab(tab);
-  }
 
   function openProfile(id: string) {
     setViewingAlumniId(id);
@@ -1798,8 +1839,10 @@ export default function AlumniHub() {
     setShowAddEdit(true);
   }, []);
 
+  const activeMeta = TAB_META.find(t => t.value === activeTab)!;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -1821,53 +1864,57 @@ export default function AlumniHub() {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="h-10">
-          <TabsTrigger value="overview" className="gap-1.5 text-xs sm:text-sm">
-            <TrendingUp className="h-4 w-4" /> {t('alumni.tabOverview')}
-          </TabsTrigger>
-          <TabsTrigger value="directory" className="gap-1.5 text-xs sm:text-sm">
-            <Users className="h-4 w-4" /> {t('alumni.tabDirectory')}
-          </TabsTrigger>
-          <TabsTrigger value="meets" className="gap-1.5 text-xs sm:text-sm">
-            <Calendar className="h-4 w-4" /> {t('alumni.tabMeets')}
-          </TabsTrigger>
-          <TabsTrigger value="donations" className="gap-1.5 text-xs sm:text-sm">
-            <Heart className="h-4 w-4" /> {t('alumni.tabDonations')}
-          </TabsTrigger>
-          <TabsTrigger value="outreach" className="gap-1.5 text-xs sm:text-sm">
-            <Send className="h-4 w-4" /> {t('alumni.tabOutreach')}
-          </TabsTrigger>
-        </TabsList>
+      {/* Visual Tab Navigation */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        {TAB_META.map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.value;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => setActiveTab(tab.value)}
+              className={`flex flex-col items-start gap-1 rounded-xl border px-4 py-3 text-left transition-all hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                isActive
+                  ? `${tab.activeBg} shadow-sm`
+                  : "bg-background border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? tab.activeText : "text-muted-foreground"}`} />
+                <span className={`text-sm font-semibold ${isActive ? tab.activeText : "text-foreground"}`}>
+                  {t(tab.labelKey)}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground leading-tight">{tab.desc}</span>
+              {isActive && (
+                <div className={`mt-1 h-0.5 w-8 rounded-full ${tab.activeBg.includes("violet") ? "bg-violet-500" : tab.activeBg.includes("blue") ? "bg-blue-500" : tab.activeBg.includes("emerald") ? "bg-emerald-500" : tab.activeBg.includes("rose") ? "bg-rose-500" : "bg-amber-500"}`} />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-        <div className="mt-6">
-          <TabsContent value="overview" forceMount={visitedTabs.current.has("overview") || undefined}>
-            {visitedTabs.current.has("overview") && <OverviewTab />}
-          </TabsContent>
+      {/* Section header showing active tab */}
+      <div className="flex items-center gap-2 pb-1 border-b">
+        <activeMeta.icon className={`h-4 w-4 ${activeMeta.color}`} />
+        <h2 className="text-sm font-semibold">{t(activeMeta.labelKey)}</h2>
+        <span className="text-xs text-muted-foreground">— {activeMeta.desc}</span>
+      </div>
 
-          <TabsContent value="directory" forceMount={visitedTabs.current.has("directory") || undefined}>
-            {visitedTabs.current.has("directory") && (
-              <DirectoryTab
-                key={directoryKey}
-                onOpenProfile={openProfile}
-                onAddAlumni={openAddAlumni}
-              />
-            )}
-          </TabsContent>
-
-          <TabsContent value="meets" forceMount={visitedTabs.current.has("meets") || undefined}>
-            {visitedTabs.current.has("meets") && <MeetsTab />}
-          </TabsContent>
-
-          <TabsContent value="donations" forceMount={visitedTabs.current.has("donations") || undefined}>
-            {visitedTabs.current.has("donations") && <DonationsTab />}
-          </TabsContent>
-
-          <TabsContent value="outreach" forceMount={visitedTabs.current.has("outreach") || undefined}>
-            {visitedTabs.current.has("outreach") && <OutreachTab />}
-          </TabsContent>
-        </div>
-      </Tabs>
+      {/* Tab Content — one section rendered at a time */}
+      <div>
+        {activeTab === "overview" && <OverviewTab />}
+        {activeTab === "directory" && (
+          <DirectoryTab
+            key={directoryKey}
+            onOpenProfile={openProfile}
+            onAddAlumni={openAddAlumni}
+          />
+        )}
+        {activeTab === "meets" && <MeetsTab />}
+        {activeTab === "donations" && <DonationsTab />}
+        {activeTab === "outreach" && <OutreachTab />}
+      </div>
 
       {/* Profile Dialog */}
       <ProfileDialog
@@ -1884,10 +1931,7 @@ export default function AlumniHub() {
         editData={editData}
         onSaved={() => {
           setDirectoryKey(k => k + 1);
-          if (activeTab !== "directory") {
-            visitedTabs.current.add("directory");
-            setActiveTab("directory");
-          }
+          setActiveTab("directory");
         }}
       />
     </div>

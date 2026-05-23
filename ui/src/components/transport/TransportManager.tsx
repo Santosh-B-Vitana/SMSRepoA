@@ -11,10 +11,15 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X, ShieldOff } from "lucide-react";
-import { transportApi, TransportRoute, TransportStudent, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
+import { transportApi, TransportRoute, TransportStudent, TransportStudentListResponse, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
 import { usePermissions } from "@/contexts/PermissionsContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { AdvancedPagination } from "@/components/common/AdvancedPagination";
+
+const ROUTES_PAGE_SIZE = 20;
+const STUDENTS_PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 // ─── Route Form Dialog ────────────────────────────────────────────────────────
 
@@ -130,8 +135,8 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
   // Load assigned student IDs once on mount
   useEffect(() => {
     setLoadingAssigned(true);
-    transportApi.getAllTransportStudents().then(ts => {
-      setAssignedStudentIds(new Set(ts.map(t => t.studentId)));
+    transportApi.getAllTransportStudents(1, 500).then(res => {
+      setAssignedStudentIds(new Set(res.students.map(t => t.studentId)));
     }).catch(() => {
       toast.error("Failed to load current assignments");
     }).finally(() => setLoadingAssigned(false));
@@ -374,46 +379,71 @@ export function TransportManager() {
   const [students, setStudents] = useState<TransportStudent[]>([]);
   const [routesLoading, setRoutesLoading] = useState(true);
   const [studentsLoading, setStudentsLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  // Routes: local search, server-side pagination
+  const [routesSearch, setRoutesSearch] = useState("");
+  const [routesPage, setRoutesPage] = useState(1);
+  const [routesTotal, setRoutesTotal] = useState(0);
+  // Students: server-side search + pagination
+  const [studentsSearch, setStudentsSearch] = useState("");
+  const [studentsPage, setStudentsPage] = useState(1);
+  const [studentsTotal, setStudentsTotal] = useState(0);
+  const studentsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingStudentsSearch = useRef("");
   const [editRoute, setEditRoute] = useState<TransportRoute | undefined>();
   const [showAddRoute, setShowAddRoute] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [editStudent, setEditStudent] = useState<TransportStudent | undefined>();
   const [tab, setTab] = useState("routes");
 
-  const loadRoutes = useCallback(async () => {
+  const loadRoutes = useCallback(async (page = 1) => {
     setRoutesLoading(true);
     try {
-      const r = await transportApi.getRoutes(1, 200);
+      const r = await transportApi.getRoutes(page, ROUTES_PAGE_SIZE);
       setRoutes(r.routes ?? []);
+      setRoutesTotal(r.total ?? 0);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load routes");
     } finally { setRoutesLoading(false); }
   }, []);
 
-  const loadStudents = useCallback(async () => {
+  const loadStudents = useCallback(async (page = 1, search = "") => {
     setStudentsLoading(true);
     try {
-      const s = await transportApi.getAllTransportStudents();
-      setStudents(s ?? []);
+      const s = await transportApi.getAllTransportStudents(page, STUDENTS_PAGE_SIZE, search || undefined);
+      setStudents(s.students ?? []);
+      setStudentsTotal(s.total ?? 0);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load students");
     } finally { setStudentsLoading(false); }
   }, []);
 
-  useEffect(() => { loadRoutes(); }, [loadRoutes]);
+  useEffect(() => { loadRoutes(routesPage); }, [loadRoutes, routesPage]);
 
   function handleTabChange(v: string) {
     setTab(v);
-    if (v === "students" && students.length === 0) loadStudents();
+    if (v === "students" && students.length === 0) loadStudents(1);
   }
+
+  function handleStudentsSearchChange(value: string) {
+    setStudentsSearch(value);
+    pendingStudentsSearch.current = value;
+    if (studentsDebounceRef.current) clearTimeout(studentsDebounceRef.current);
+    studentsDebounceRef.current = setTimeout(() => {
+      setStudentsPage(1);
+      loadStudents(1, pendingStudentsSearch.current);
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
+    if (tab === "students") loadStudents(studentsPage, studentsSearch);
+  }, [studentsPage]);
 
   async function handleDeleteRoute(id: string) {
     if (!confirm("Delete this route? Students assigned will be unlinked.")) return;
     try {
       await transportApi.deleteRoute(id);
       toast.success("Route deleted");
-      loadRoutes();
+      loadRoutes(routesPage);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to delete route");
     }
@@ -424,28 +454,41 @@ export function TransportManager() {
     try {
       await transportApi.removeStudentFromRoute(id);
       toast.success("Student removed from route");
-      loadStudents();
-      loadRoutes();
+      loadStudents(studentsPage, studentsSearch);
+      loadRoutes(routesPage);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to remove student");
     }
   }
 
+  // Stats computed from paginated totals + current page data
   const activeRoutes = routes.filter(r => r.status === "active").length;
-  const totalStudents = routes.reduce((a, r) => a + r.studentsAssigned, 0);
+  const totalStudents = routesTotal > 0 ? routes.reduce((a, r) => a + r.studentsAssigned, 0) : students.length;
   const totalCapacity = routes.reduce((a, r) => a + r.capacity, 0);
 
-  const filteredRoutes = routes.filter(r =>
-    r.routeName.toLowerCase().includes(search.toLowerCase()) ||
-    r.routeNumber.toLowerCase().includes(search.toLowerCase()) ||
-    (r.vehicleNumber ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  // Local search filter within current page for routes
+  const filteredRoutes = routesSearch
+    ? routes.filter(r =>
+        r.routeName.toLowerCase().includes(routesSearch.toLowerCase()) ||
+        r.routeNumber.toLowerCase().includes(routesSearch.toLowerCase()) ||
+        (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
+      )
+    : routes;
+    }
+  }
 
-  const filteredStudents = students.filter(s =>
-    s.studentName.toLowerCase().includes(search.toLowerCase()) ||
-    s.routeName.toLowerCase().includes(search.toLowerCase()) ||
-    (s.pickupPoint ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const activeRoutes = routes.filter(r => r.status === "active").length;
+  const totalStudents = routesTotal > 0 ? routes.reduce((a, r) => a + r.studentsAssigned, 0) : students.length;
+  const totalCapacity = routes.reduce((a, r) => a + r.capacity, 0);
+
+  // Local search filter within current page for routes
+  const filteredRoutes = routesSearch
+    ? routes.filter(r =>
+        r.routeName.toLowerCase().includes(routesSearch.toLowerCase()) ||
+        r.routeNumber.toLowerCase().includes(routesSearch.toLowerCase()) ||
+        (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
+      )
+    : routes;
 
   if (accessDenied) {
     return (
@@ -472,12 +515,12 @@ export function TransportManager() {
       <div className="grid grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
           <p className="text-sm text-muted-foreground">{t('transport.stats.totalRoutes')}</p>
-          <p className="text-2xl font-bold">{routes.length}</p>
+          <p className="text-2xl font-bold">{routesTotal || routes.length}</p>
           <p className="text-xs text-green-600">{activeRoutes} active</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-sm text-muted-foreground">{t('transport.stats.studentsUsingTransport')}</p>
-          <p className="text-2xl font-bold">{totalStudents}</p>
+          <p className="text-2xl font-bold">{studentsTotal || totalStudents}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
           <p className="text-sm text-muted-foreground">{t('transport.stats.totalCapacity')}</p>
@@ -497,10 +540,18 @@ export function TransportManager() {
             <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />{t('transport.tabs.students')}</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9 w-64" placeholder={t('transport.search.placeholder')} value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
+            {tab === "routes" && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9 w-64" placeholder={t('transport.search.placeholder')} value={routesSearch} onChange={e => setRoutesSearch(e.target.value)} />
+              </div>
+            )}
+            {tab === "students" && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9 w-64" placeholder="Search students…" value={studentsSearch} onChange={e => handleStudentsSearchChange(e.target.value)} />
+              </div>
+            )}
             {tab === "routes" && canManageRoutes && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
             {tab === "students" && canManageRoutes && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.assignStudent')}</Button>}
           </div>
@@ -564,6 +615,18 @@ export function TransportManager() {
                 </TableBody>
               </Table>
             </div>
+            {routesTotal > ROUTES_PAGE_SIZE && (
+              <div className="mt-4">
+                <AdvancedPagination
+                  currentPage={routesPage}
+                  pageSize={ROUTES_PAGE_SIZE}
+                  totalItems={routesTotal}
+                  onPageChange={(p) => setRoutesPage(p)}
+                  onPageSizeChange={() => {}}
+                  pageSizeOptions={[ROUTES_PAGE_SIZE]}
+                />
+              </div>
+            )}
           )}
         </TabsContent>
 
@@ -571,12 +634,12 @@ export function TransportManager() {
         <TabsContent value="students">
           {studentsLoading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : filteredStudents.length === 0 ? (
+          ) : students.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              {search ? (
+              {studentsSearch ? (
                 <>
-                  <p className="font-medium">No assigned student matches "{search}"</p>
+                  <p className="font-medium">No assigned student matches "{studentsSearch}"</p>
                   <p className="text-sm mt-1">This student may not be assigned to a transport route yet.</p>
                   {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Route</Button>}
                 </>
@@ -589,6 +652,7 @@ export function TransportManager() {
               )}
             </CardContent></Card>
           ) : (
+            <>
             <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
               <Table>
                 <TableHeader>
@@ -604,7 +668,7 @@ export function TransportManager() {
                   </TableRow>
                 </TableHeader>
                 <TableBody className="dark:[&>tr]:border-slate-600/70">
-                  {filteredStudents.map(s => (
+                  {students.map(s => (
                     <TableRow key={s.id} className="dark:border-slate-600/70 dark:hover:bg-slate-700/40">
                       <TableCell className="font-medium dark:text-white">{s.studentName}</TableCell>
                       <TableCell className="dark:text-slate-200">{s.studentClass} {s.studentSection}</TableCell>
@@ -627,16 +691,29 @@ export function TransportManager() {
                 </TableBody>
               </Table>
             </div>
+            {studentsTotal > STUDENTS_PAGE_SIZE && (
+              <div className="mt-4">
+                <AdvancedPagination
+                  currentPage={studentsPage}
+                  pageSize={STUDENTS_PAGE_SIZE}
+                  totalItems={studentsTotal}
+                  onPageChange={(p) => setStudentsPage(p)}
+                  onPageSizeChange={() => {}}
+                  pageSizeOptions={[STUDENTS_PAGE_SIZE]}
+                />
+              </div>
+            )}
+            </>
           )}
         </TabsContent>
       </Tabs>
 
       {/* Dialogs */}
       {(showAddRoute || editRoute) && (
-        <RouteFormDialog route={editRoute} onClose={() => { setShowAddRoute(false); setEditRoute(undefined); }} onSaved={() => { loadRoutes(); }} />
+        <RouteFormDialog route={editRoute} onClose={() => { setShowAddRoute(false); setEditRoute(undefined); }} onSaved={() => { loadRoutes(routesPage); }} />
       )}
-      {showAssign && <AssignStudentDialog routes={routes} onClose={() => setShowAssign(false)} onSaved={() => { loadStudents(); loadRoutes(); }} />}
-      {editStudent && <EditTransportStudentDialog assignment={editStudent} routes={routes} onClose={() => setEditStudent(undefined)} onSaved={() => { loadStudents(); loadRoutes(); }} />}
+      {showAssign && <AssignStudentDialog routes={routes} onClose={() => setShowAssign(false)} onSaved={() => { loadStudents(studentsPage, studentsSearch); loadRoutes(routesPage); }} />}
+      {editStudent && <EditTransportStudentDialog assignment={editStudent} routes={routes} onClose={() => setEditStudent(undefined)} onSaved={() => { loadStudents(studentsPage, studentsSearch); loadRoutes(routesPage); }} />}
     </div>
   );
 }

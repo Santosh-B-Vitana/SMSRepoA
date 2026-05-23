@@ -73,6 +73,15 @@ namespace SmsApi.Models.Entities
         
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
+
+        /// <summary>
+        /// Computes the true total by summing all fee head components.
+        /// Always use this when creating or updating fee records so TotalAmount
+        /// on the record is never stale relative to the structure's actual heads.
+        /// </summary>
+        public decimal ComputeTotalFromComponents() =>
+            TuitionFee + AdmissionFee + ExamFee + LibraryFee + LabFee + SportsFee +
+            TransportFee + HostelFee + UniformFee + BooksFee + DevelopmentFee + Miscellaneous;
     }
 
     public class FeeRecord : BaseEntity

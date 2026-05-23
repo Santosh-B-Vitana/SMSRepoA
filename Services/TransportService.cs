@@ -18,7 +18,7 @@ namespace SmsApi.Services
         Task<TransportRouteResponse?> UpdateRouteAsync(Guid id, Guid schoolId, CreateTransportRouteRequest request);
         Task<bool> DeleteRouteAsync(Guid id, Guid schoolId);
         Task<List<TransportStudentResponse>> GetStudentsByRouteAsync(Guid routeId, Guid schoolId);
-        Task<List<TransportStudentDetailResponse>> GetAllTransportStudentsAsync(Guid schoolId);
+        Task<TransportStudentListResponse> GetAllTransportStudentsAsync(Guid schoolId, int page = 1, int pageSize = 20, string? search = null);
         Task<TransportStudentResponse> AssignStudentToRouteAsync(CreateTransportStudentRequest request);
         Task<TransportStudentResponse?> UpdateTransportStudentAsync(Guid id, Guid schoolId, UpdateTransportStudentRequest request);
         Task<bool> RemoveStudentFromRouteAsync(Guid id, Guid schoolId);
@@ -212,34 +212,59 @@ namespace SmsApi.Services
             return students.Select(MapToStudentResponse).ToList();
         }
 
-        public async Task<List<TransportStudentDetailResponse>> GetAllTransportStudentsAsync(Guid schoolId)
+        public async Task<TransportStudentListResponse> GetAllTransportStudentsAsync(Guid schoolId, int page = 1, int pageSize = 20, string? search = null)
         {
-            var transportStudents = await _context.TransportStudents
+            pageSize = Math.Clamp(pageSize, 1, 500);
+            page = Math.Max(1, page);
+
+            var query = _context.TransportStudents
                 .Include(ts => ts.Student)
                 .Include(ts => ts.Route)
-                .Where(ts => ts.SchoolId == schoolId && ts.Status == "active")
+                .Where(ts => ts.SchoolId == schoolId && ts.Status == "active");
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var lower = search.ToLower();
+                query = query.Where(ts =>
+                    (ts.Student != null && ts.Student.FirstName.ToLower().Contains(lower)) ||
+                    (ts.Student != null && ts.Student.LastName.ToLower().Contains(lower)) ||
+                    (ts.Route != null && ts.Route.RouteName.ToLower().Contains(lower)) ||
+                    (ts.PickupPoint != null && ts.PickupPoint.ToLower().Contains(lower)));
+            }
+
+            var total = await query.CountAsync();
+            var items = await query
+                .OrderBy(ts => ts.Student!.FirstName).ThenBy(ts => ts.Student!.LastName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return transportStudents.Select(ts => new TransportStudentDetailResponse
+            return new TransportStudentListResponse
             {
-                Id = ts.Id,
-                StudentId = ts.StudentId,
-                StudentName = ts.Student != null
-                    ? (!string.IsNullOrWhiteSpace(ts.Student.FirstName)
-                        ? $"{ts.Student.FirstName} {ts.Student.LastName}".Trim()
-                        : ts.Student.Name)
-                    : "Unknown",
-                StudentClass = ts.Student?.Class ?? "N/A",
-                StudentSection = ts.Student?.Section ?? "N/A",
-                RouteId = ts.RouteId,
-                RouteName = ts.Route?.RouteName ?? "Unknown",
-                RouteNumber = ts.Route?.RouteNumber ?? "N/A",
-                PickupPoint = ts.PickupPoint,
-                DropPoint = ts.DropPoint,
-                MonthlyFee = ts.MonthlyFee,
-                Status = ts.Status,
-                CreatedAt = ts.CreatedAt
-            }).ToList();
+                Students = items.Select(ts => new TransportStudentDetailResponse
+                {
+                    Id = ts.Id,
+                    StudentId = ts.StudentId,
+                    StudentName = ts.Student != null
+                        ? (!string.IsNullOrWhiteSpace(ts.Student.FirstName)
+                            ? $"{ts.Student.FirstName} {ts.Student.LastName}".Trim()
+                            : ts.Student.Name)
+                        : "Unknown",
+                    StudentClass = ts.Student?.Class ?? "N/A",
+                    StudentSection = ts.Student?.Section ?? "N/A",
+                    RouteId = ts.RouteId,
+                    RouteName = ts.Route?.RouteName ?? "Unknown",
+                    RouteNumber = ts.Route?.RouteNumber ?? "N/A",
+                    PickupPoint = ts.PickupPoint,
+                    DropPoint = ts.DropPoint,
+                    MonthlyFee = ts.MonthlyFee,
+                    Status = ts.Status,
+                    CreatedAt = ts.CreatedAt
+                }).ToList(),
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            };
         }
 
         public async Task<TransportStudentResponse> AssignStudentToRouteAsync(CreateTransportStudentRequest request)

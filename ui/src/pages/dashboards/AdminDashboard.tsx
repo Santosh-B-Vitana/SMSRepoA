@@ -43,7 +43,7 @@ import {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function inr(n: number) {
-  if (n >= 1000000) return "Rs." + (n / 1000000).toFixed(1) + "L";
+  if (n >= 100000) return "Rs." + (n / 100000).toFixed(1) + "L";
   if (n >= 1000) return "Rs." + (n / 1000).toFixed(0) + "K";
   return "Rs." + n.toLocaleString("en-IN");
 }
@@ -55,6 +55,25 @@ function greeting() {
   if (h < 12) return "Good Morning";
   if (h < 17) return "Good Afternoon";
   return "Good Evening";
+}
+
+/** Collapse multiple fee records for the same student into a single aggregated row. */
+function groupByStudent(records: FeeRecord[]): FeeRecord[] {
+  const byStudent = new Map<string, FeeRecord>();
+  for (const rec of records) {
+    if (!byStudent.has(rec.studentId)) {
+      byStudent.set(rec.studentId, { ...rec });
+    } else {
+      const existing = byStudent.get(rec.studentId)!;
+      existing.totalAmount += rec.totalAmount;
+      existing.pendingAmount += rec.pendingAmount;
+      existing.paidAmount += rec.paidAmount;
+      if (new Date(rec.dueDate) > new Date(existing.dueDate)) {
+        existing.dueDate = rec.dueDate;
+      }
+    }
+  }
+  return [...byStudent.values()].sort((a, b) => b.pendingAmount - a.pendingAmount);
 }
 
 const TODAY = new Date();
@@ -201,6 +220,7 @@ export default function AdminDashboard() {
   const [debtorDialogData, setDebtorDialogData] = useState<FeeRecord[]>([]);
   const [debtorDialogTotal, setDebtorDialogTotal] = useState(0);
   const [debtorDialogLoading, setDebtorDialogLoading] = useState(false);
+  const [debtorAllRecords, setDebtorAllRecords] = useState<FeeRecord[]>([]);
   const [transportDialog, setTransportDialog] = useState(false);
   const [examDialog, setExamDialog] = useState(false);
   const [examDialogPage, setExamDialogPage] = useState(1);
@@ -245,7 +265,7 @@ export default function AdminDashboard() {
       if (feeSt.status === "fulfilled") setFeeStats(feeSt.value);
       if (debtors.status === "fulfilled") {
         const recs = (debtors.value.feeRecords ?? debtors.value.items ?? []) as FeeRecord[];
-        setTopDebtors([...recs].sort((a, b) => b.pendingAmount - a.pendingAmount).slice(0, 5));
+        setTopDebtors(groupByStudent(recs).slice(0, 5));
       }
       if (enroll.status === "fulfilled") setEnrollmentData(enroll.value);
       if (transportRes.status === "fulfilled") setRoutes(transportRes.value.routes ?? []);
@@ -339,19 +359,29 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const DEBTOR_PAGE_SIZE = 12;
   const openDebtorDialog = useCallback(async (page = 1) => {
     setDebtorDialog(true);
     setDebtorDialogPage(page);
-    setDebtorDialogLoading(true);
-    try {
-      const r = await getFeeRecords(page, 12, undefined, "pending");
-      const recs = ([...(r.feeRecords ?? r.items ?? []) as FeeRecord[]]).sort((a, b) => b.pendingAmount - a.pendingAmount);
-      setDebtorDialogData(recs);
-      setDebtorDialogTotal(r.total ?? r.totalCount ?? 0);
-    } catch { toast.error("Failed to load pending fees"); } finally {
-      setDebtorDialogLoading(false);
+    if (page === 1) {
+      // Fetch all pending records in one shot so we can group by student
+      setDebtorDialogLoading(true);
+      try {
+        const r = await getFeeRecords(1, 500, undefined, "pending");
+        const raw = (r.feeRecords ?? r.items ?? []) as FeeRecord[];
+        const grouped = groupByStudent(raw);
+        setDebtorAllRecords(grouped);
+        setDebtorDialogTotal(grouped.length);
+        setDebtorDialogData(grouped.slice(0, DEBTOR_PAGE_SIZE));
+      } catch { toast.error("Failed to load pending fees"); } finally {
+        setDebtorDialogLoading(false);
+      }
+      return;
     }
-  }, []);
+    // Subsequent pages use the already-grouped cache
+    const start = (page - 1) * DEBTOR_PAGE_SIZE;
+    setDebtorDialogData(debtorAllRecords.slice(start, start + DEBTOR_PAGE_SIZE));
+  }, [debtorAllRecords]);
 
   const openExamDialog = useCallback(async (page = 1) => {
     setExamDialog(true);

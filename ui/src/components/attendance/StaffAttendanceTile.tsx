@@ -29,8 +29,9 @@ import {
   StaffAttendanceStatus,
   StaffAttendanceResponse,
   CreateStaffAttendanceRequest,
+  UpdateStaffAttendanceRequest,
 } from "@/services/api/attendanceApi";
-import leaveManagementApi, { LeaveRequest } from "@/services/api/leaveManagementApi";
+import leaveManagementApi, { LeaveRequest, LeaveType } from "@/services/api/leaveManagementApi";
 import { useAuth } from "@/contexts/AuthContext";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ interface RowState {
   approvedLeave?: LeaveRequest;
   pendingLeave?: LeaveRequest;
   isLeaveReadOnly?: boolean;
+  leaveTypeId?: string;
 }
 
 const TODAY_ISO = new Date().toISOString().split("T")[0];
@@ -104,7 +106,7 @@ interface StatusToggleProps {
 function StatusToggle({ staffId, current, onChange, readonly }: StatusToggleProps) {
   return (
     <div className="flex gap-1 flex-wrap">
-      {(Object.entries(STATUS_CONFIG) as [StatusKey, (typeof STATUS_CONFIG)[StatusKey]][]).map(
+      {(Object.entries(STATUS_CONFIG) as [StatusKey, (typeof STATUS_CONFIG)[StatusKey]][]).filter(([key]) => key !== "absent").map(
         ([key, cfg]) => {
           const Icon = cfg.icon;
           const active = current === key;
@@ -141,6 +143,7 @@ export function StaffAttendanceTile() {
   const [open, setOpen] = useState(false);
   const [staffList, setStaffList] = useState<StaffBasic[]>([]);
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [saving, setSaving] = useState(false);
@@ -162,11 +165,14 @@ export function StaffAttendanceTile() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [staffRes, attRes, leaveRes] = await Promise.all([
+      const [staffRes, attRes, leaveRes, leaveTypesRes] = await Promise.all([
         staffApi.list({ pageSize: 500 } as Parameters<typeof staffApi.list>[0]),
         attendanceApi.getStaffAttendances({ date: TODAY_ISO }),
         leaveManagementApi.getLeaveRequests(1, 200).catch(() => ({ items: [] as LeaveRequest[] })),
+        leaveManagementApi.getLeaveTypes("Staff").catch(() => [] as LeaveType[]),
       ]);
+
+      setLeaveTypes(leaveTypesRes ?? []);
 
       const activeStaff = (staffRes.staff ?? []).filter(s => s.status === "active");
       setStaffList(activeStaff);
@@ -197,7 +203,7 @@ export function StaffAttendanceTile() {
         let isLeaveReadOnly = false;
         // Auto-apply approved leave if not yet marked
         if (!existing && approved) { status = "leave"; isLeaveReadOnly = true; }
-        rows[s.id] = { staffId: s.id, status, existingId: existing?.id, approvedLeave: approved, pendingLeave: pending, isLeaveReadOnly };
+        rows[s.id] = { staffId: s.id, status, existingId: existing?.id, approvedLeave: approved, pendingLeave: pending, isLeaveReadOnly, leaveTypeId: existing?.leaveTypeId };
       });
       setRowStates(rows);
 
@@ -282,6 +288,13 @@ export function StaffAttendanceTile() {
     }));
   };
 
+  const handleLeaveTypeChange = (staffId: string, leaveTypeId: string) => {
+    setRowStates(prev => ({
+      ...prev,
+      [staffId]: { ...prev[staffId], leaveTypeId },
+    }));
+  };
+
   const handleMarkAllPresent = () => {
     setRowStates(prev => {
       const updated = { ...prev };
@@ -294,20 +307,33 @@ export function StaffAttendanceTile() {
 
   const handleSave = async () => {
     const toCreate: CreateStaffAttendanceRequest[] = [];
+    const toUpdate: Array<{ id: string; req: UpdateStaffAttendanceRequest; staffId: string }> = [];
 
-    // Only create records that are not already saved (no existingId) and have a status
     Object.values(rowStates).forEach(row => {
-      if (row.status && !row.existingId) {
+      if (!row.status) return;
+      if (!row.existingId) {
+        // New record
         toCreate.push({
           schoolId: schoolId ?? "",
           staffId: row.staffId,
           date: TODAY_ISO,
           status: row.status,
+          leaveTypeId: row.status === "leave" ? row.leaveTypeId : undefined,
+        });
+      } else {
+        // Update existing record
+        toUpdate.push({
+          id: row.existingId,
+          staffId: row.staffId,
+          req: {
+            status: row.status,
+            leaveTypeId: row.status === "leave" ? row.leaveTypeId : undefined,
+          },
         });
       }
     });
 
-    if (toCreate.length === 0) {
+    if (toCreate.length === 0 && toUpdate.length === 0) {
       toast.info("No new records to save. All selected attendance has already been marked.");
       return;
     }
@@ -338,11 +364,22 @@ export function StaffAttendanceTile() {
       });
     }
 
+    for (let i = 0; i < toUpdate.length; i += batchSize) {
+      const batch = toUpdate.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(({ id, req }) => attendanceApi.updateStaffAttendance(id, req))
+      );
+      results.forEach(r => {
+        if (r.status === "fulfilled") succeeded++;
+        else failed++;
+      });
+    }
+
     setSaving(false);
 
     if (failed === 0) {
       toast.success(`Attendance saved for ${succeeded} staff member${succeeded !== 1 ? "s" : ""}`, {
-        description: `${TODAY_ISO} — ${succeeded} records created`,
+        description: `${TODAY_ISO} — ${succeeded} records saved`,
       });
     } else {
       toast.warning(`Saved ${succeeded}, failed ${failed}`, {
@@ -511,7 +548,6 @@ export function StaffAttendanceTile() {
                   {(
                     [
                       { label: "Present", count: sheetCounts.present, color: "text-emerald-600" },
-                      { label: "Absent",  count: sheetCounts.absent,  color: "text-rose-600" },
                       { label: "Late",    count: sheetCounts.late,    color: "text-amber-600" },
                       { label: "Leave",   count: sheetCounts.leave,   color: "text-blue-600" },
                       { label: "Unmarked",count: sheetCounts.unmarked,color: "text-muted-foreground" },
@@ -633,6 +669,20 @@ export function StaffAttendanceTile() {
                                 onChange={handleStatusChange}
                                 readonly={isReadOnly}
                               />
+                              {currentStatus === "leave" && leaveTypes.length > 0 && (
+                                <div className="mt-1.5">
+                                  <select
+                                    value={row?.leaveTypeId ?? ""}
+                                    onChange={e => handleLeaveTypeChange(staff.id, e.target.value)}
+                                    className="h-7 text-xs border border-border rounded-md px-2 bg-background text-foreground w-full max-w-[220px]"
+                                  >
+                                    <option value="">Select leave type…</option>
+                                    {leaveTypes.map(lt => (
+                                      <option key={lt.id} value={lt.id}>{lt.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Plus, Search, Users, CalendarDays, History, ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, CalendarOff, TrendingUp, ChevronRight, ChevronLeft } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { StaffForm } from "./StaffForm";
 import { StaffList } from "./StaffList";
-import { staffApi, StaffBasic as Staff } from "@/services/api/staffApi";
+import { staffApi, StaffBasic as Staff, StaffStatsResponse } from "@/services/api/staffApi";
 import { attendanceApi, StaffAttendanceResponse, StaffAttendanceStatus } from "@/services/api/attendanceApi";
 import { LoadingState, EmptyState, ExportButton, ImportButton, ErrorBoundary } from "@/components/common";
 import { useKeyboardShortcuts, CommonShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -23,18 +23,27 @@ import { AnimatedBackground } from "@/components/common/AnimatedBackground";
 import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
 import { StaffAttendanceManager } from "@/components/attendance/StaffAttendanceManager";
+import { AdvancedPagination } from "@/components/common/AdvancedPagination";
+
+const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function StaffManager() {
   const { t } = useLanguage();
   const { toast } = useToast();
   const [staff, setStaff] = useState<Staff[]>([]);
-  const [filteredStaff, setFilteredStaff] = useState<Staff[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"directory" | "attendance">("directory");
+  const [staffStats, setStaffStats] = useState<StaffStatsResponse | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSearch = useRef(search);
 
   // History state
   const [historyFrom, setHistoryFrom] = useState(() => {
@@ -52,48 +61,52 @@ export function StaffManager() {
     CommonShortcuts.search(() => document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')?.focus()),
   ]);
 
-  const fetchStaff = useCallback(async () => {
+  const fetchPage = useCallback(async (opts: { page: number; pageSize: number; search: string; department: string }) => {
     try {
-      const result = await staffApi.list({ pageSize: 1000 });
+      const result = await staffApi.list({
+        page: opts.page,
+        pageSize: opts.pageSize,
+        search: opts.search || undefined,
+        department: opts.department !== "all" ? opts.department : undefined,
+      });
       setStaff(result.staff);
-      setFilteredStaff(result.staff);
+      setTotal(result.total ?? 0);
     } catch (error) {
       console.error("Failed to fetch staff:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load staff data",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to load staff data", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
+  // Load school-wide stats once
   useEffect(() => {
-    fetchStaff();
-  }, [fetchStaff]);
+    staffApi.getStats().then(setStaffStats).catch(() => {});
+  }, []);
 
+  // Initial load and filter changes
   useEffect(() => {
-    let filtered = staff;
+    fetchPage({ page, pageSize, search, department: departmentFilter });
+  }, [fetchPage, page, pageSize, departmentFilter]);
 
-    if (searchTerm) {
-      filtered = filtered.filter(member =>
-        (member.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (member.email ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (member.employeeId ?? '').toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    pendingSearch.current = value;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      fetchPage({ page: 1, pageSize, search: pendingSearch.current, department: departmentFilter });
+    }, SEARCH_DEBOUNCE_MS);
+  }, [fetchPage, pageSize, departmentFilter]);
 
-    if (departmentFilter !== "all") {
-      filtered = filtered.filter(member => member.department === departmentFilter);
-    }
-
-    setFilteredStaff(filtered);
-  }, [staff, searchTerm, departmentFilter]);
+  const handleDepartmentChange = (v: string) => { setDepartmentFilter(v); setPage(1); };
+  const handlePageChange = (p: number) => setPage(p);
+  const handlePageSizeChange = (s: number) => { setPageSize(s); setPage(1); };
 
   const handleStaffSuccess = async () => {
     try {
-      await fetchStaff();
+      await fetchPage({ page, pageSize, search, department: departmentFilter });
+      staffApi.getStats().then(setStaffStats).catch(() => {});
       setIsAddDialogOpen(false);
       setSelectedStaff(null);
     } catch (error) {
@@ -102,16 +115,16 @@ export function StaffManager() {
   };
 
   const getDepartments = () => {
-    const departments = [...new Set(staff.map(member => member.department))];
-    return departments.sort();
+    if (staffStats?.byDepartment) return Object.keys(staffStats.byDepartment).sort();
+    return [...new Set(staff.map(s => s.department).filter(Boolean))].sort();
   };
 
   const getStaffStats = () => {
     return {
-      total: staff.length,
-      active: staff.filter(s => s.status === 'active').length,
-      inactive: staff.filter(s => s.status !== 'active').length,
-      departments: getDepartments().length,
+      total: staffStats?.totalStaff ?? total,
+      active: staffStats?.activeStaff ?? staff.filter(s => s.status === 'active').length,
+      inactive: staffStats?.inactiveStaff ?? staff.filter(s => s.status !== 'active').length,
+      departments: staffStats ? Object.keys(staffStats.byDepartment ?? {}).length : getDepartments().length,
     };
   };
 
@@ -200,12 +213,13 @@ export function StaffManager() {
                       apiImportUrl="/Staff/bulk-import/csv"
                       onImport={async (_data) => {
                         toast({ title: "Import Complete", description: "Staff imported successfully — login accounts created automatically" });
-                        await fetchStaff();
+                        await fetchPage({ page: 1, pageSize, search, department: departmentFilter });
+                        staffApi.getStats().then(setStaffStats).catch(() => {});
                       }}
                       templateFilename="staff_import_template"
                     />
                     <ExportButton
-                      data={filteredStaff}
+                      data={staff}
                       filename="staff"
                       apiExportUrl="/Staff/export"
                       columns={[
@@ -292,10 +306,48 @@ export function StaffManager() {
               </AnimatedWrapper>
 
               <AnimatedWrapper variant="fadeInUp" delay={0.15}>
-                {staff.length === 0 ? (
+                {/* Search + filter bar */}
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      placeholder={t('staffMgmt.searchPlaceholder') || 'Search staff by name, email, employee ID…'}
+                      value={search}
+                      onChange={e => handleSearchChange(e.target.value)}
+                    />
+                  </div>
+                  <Select value={departmentFilter} onValueChange={handleDepartmentChange}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="All Departments" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      {getDepartments().map(d => (
+                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {loading ? (
+                  <LoadingState variant="cards" message="Loading staff..." />
+                ) : staff.length === 0 ? (
                   <EmptyState title={t('staff.noStaffFound')} description={t('staff.noStaffDesc')} />
                 ) : (
-                  <StaffList staff={staff} refreshStaff={handleStaffSuccess} />
+                  <>
+                    <StaffList staff={staff} refreshStaff={handleStaffSuccess} />
+                    <div className="mt-4">
+                      <AdvancedPagination
+                        currentPage={page}
+                        pageSize={pageSize}
+                        totalItems={total}
+                        onPageChange={handlePageChange}
+                        onPageSizeChange={handlePageSizeChange}
+                        pageSizeOptions={[10, 20, 50, 100]}
+                      />
+                    </div>
+                  </>
                 )}
               </AnimatedWrapper>
             </>

@@ -90,10 +90,17 @@ setup('ensure academic class exists', async ({ page, request }) => {
     return;
   }
 
-  // Check if class already exists
-  const listResp = await request.get(`${API_BASE_URL}/academics/classes?page=1&pageSize=10`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // Check if class already exists (short timeout — this endpoint can be slow on cold start)
+  let listResp: any;
+  try {
+    listResp = await request.get(`${API_BASE_URL}/academics/classes?page=1&pageSize=10`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 10_000,
+    });
+  } catch (err) {
+    console.warn('⚠ GET /academics/classes timed out or failed — skipping class pre-creation');
+    return;
+  }
 
   if (listResp.ok()) {
     const body = await listResp.json();
@@ -108,18 +115,25 @@ setup('ensure academic class exists', async ({ page, request }) => {
   }
 
   // Create the class
-  const createResp = await request.post(`${API_BASE_URL}/academics/classes`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    data: {
-      standard: TEST_CLASS,
-      section: TEST_SECTION,
-      academicYear: TEST_ACADEMIC_YEAR,
-      name: `${TEST_CLASS}-${TEST_SECTION}`,
-    },
-  });
+  let createResp: any;
+  try {
+    createResp = await request.post(`${API_BASE_URL}/academics/classes`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        standard: TEST_CLASS,
+        section: TEST_SECTION,
+        academicYear: TEST_ACADEMIC_YEAR,
+        name: `${TEST_CLASS}-${TEST_SECTION}`,
+      },
+      timeout: 10_000,
+    });
+  } catch (err) {
+    console.warn('⚠ POST /academics/classes timed out or failed — skipping');
+    return;
+  }
 
   if (createResp.ok()) {
     console.log(`✓ Created class ${TEST_CLASS}-${TEST_SECTION} for ${TEST_ACADEMIC_YEAR}`);

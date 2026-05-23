@@ -31,6 +31,15 @@ namespace SmsApi.Models.DTOs
         public string? Description { get; set; }
     }
 
+    public class UpdateFinanceAccountDto
+    {
+        [MaxLength(100)]
+        public string? Name { get; set; }
+
+        [MaxLength(500)]
+        public string? Description { get; set; }
+    }
+
     // ========== FINANCE TRANSACTION DTOs ==========
     public class FinanceTransactionDto
     {
@@ -152,6 +161,9 @@ namespace SmsApi.Models.DTOs
 
         [MaxLength(500)]
         public string? ReceiptUrl { get; set; }
+
+        /// <summary>Optional: link this entry to a specific staff member instead of the current user.</summary>
+        public Guid? StaffId { get; set; }
     }
 
     public class ApprovePettyCashDto

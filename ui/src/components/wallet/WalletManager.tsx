@@ -33,7 +33,9 @@ import {
   FinanceStatsDto, FinanceTransactionDto, FinanceCategoryDto,
   FinanceAccountDto, PettyCashEntryDto, StoreSaleDto, FinanceReportDto,
   TransactionFiltersDto, AggregatedIncomeDto, PayrollSyncResultDto,
+  UpdateFinanceAccountDto, CreatePettyCashEntryDto,
 } from "@/services/api/financeApi";
+import { staffApi, StaffBasic } from "@/services/api/staffApi";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -161,10 +163,16 @@ export function WalletManager() {
   const [addIncomeOpen, setAddIncomeOpen] = useState(false);
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
   const [addPcOpen, setAddPcOpen] = useState(false);
+  const [pcForm, setPcForm] = useState<CreatePettyCashEntryDto>({ date: todayStr(), amount: 0, purpose: '' });
+  const [pcStaffSearch, setPcStaffSearch] = useState('');
+  const [pcStaffResults, setPcStaffResults] = useState<StaffBasic[]>([]);
+  const [pcSelectedStaff, setPcSelectedStaff] = useState<StaffBasic | null>(null);
+  const pcStaffSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [addSaleOpen, setAddSaleOpen] = useState(false);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [editCategoryTarget, setEditCategoryTarget] = useState<FinanceCategoryDto | null>(null);
+  const [editAccountTarget, setEditAccountTarget] = useState<FinanceAccountDto | null>(null);
   const [approvePcId, setApprovePcId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -180,7 +188,6 @@ export function WalletManager() {
 
   const incCats = categories.filter(c => c.type === "INCOME");
   const expCats = categories.filter(c => c.type === "EXPENSE");
-  const assetAccounts = accounts.filter(a => a.type === "ASSET");
 
   // ─── Loaders ───────────────────────────────────────────────────────────────
 
@@ -346,24 +353,43 @@ export function WalletManager() {
     }
   };
 
-  const handleAddPettyCash = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const f = e.currentTarget;
-    const get = (n: string) => (f.elements.namedItem(n) as HTMLInputElement).value;
+  // Debounced staff search for petty cash dialog
+  useEffect(() => {
+    if (!pcStaffSearch || pcStaffSearch.length < 2) { setPcStaffResults([]); return; }
+    if (pcStaffSearchRef.current) clearTimeout(pcStaffSearchRef.current);
+    pcStaffSearchRef.current = setTimeout(() => {
+      staffApi.list({ search: pcStaffSearch, pageSize: 8 } as Parameters<typeof staffApi.list>[0])
+        .then(r => setPcStaffResults(r.staff))
+        .catch(() => { /* silent */ });
+    }, 300);
+    return () => { if (pcStaffSearchRef.current) clearTimeout(pcStaffSearchRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pcStaffSearch]);
+
+  const openAddPcDialog = () => {
+    setPcForm({ date: todayStr(), amount: 0, purpose: '' });
+    setPcSelectedStaff(null);
+    setPcStaffSearch('');
+    setPcStaffResults([]);
+    setAddPcOpen(true);
+  };
+
+  const handleAddPettyCash = async () => {
+    if (!pcForm.purpose.trim()) { toast.error('Purpose is required'); return; }
+    if (!pcForm.amount || pcForm.amount <= 0) { toast.error('Enter a valid amount'); return; }
     setSubmitting(true);
     try {
       await financeApi.createPettyCash({
-        date: get("date"),
-        amount: parseFloat(get("amount")),
-        purpose: get("purpose"),
+        ...pcForm,
+        staffId: pcSelectedStaff?.id,
       });
-      toast.success("Petty cash request submitted");
+      toast.success('Petty cash entry created');
       setAddPcOpen(false);
       loadPettyCash(pcPage);
       loadStats();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg || "Failed to submit request");
+      toast.error(msg || 'Failed to create entry');
     } finally {
       setSubmitting(false);
     }
@@ -428,6 +454,41 @@ export function WalletManager() {
       toast.error(msg || "Failed to create account");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editAccountTarget) return;
+    const f = e.currentTarget;
+    const get = (n: string) => (f.elements.namedItem(n) as HTMLInputElement).value;
+    setSubmitting(true);
+    try {
+      const dto: UpdateFinanceAccountDto = {};
+      const name = get("editAccountName").trim();
+      if (name) dto.name = name;
+      dto.description = get("editAccountDesc") || undefined;
+      await financeApi.updateAccount(editAccountTarget.id, dto);
+      toast.success("Account updated");
+      setEditAccountTarget(null);
+      loadMeta();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || "Failed to update account");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteAccount = async (acc: FinanceAccountDto) => {
+    if (!window.confirm(`Delete account "${acc.name}"? This cannot be undone.`)) return;
+    try {
+      await financeApi.deleteAccount(acc.id);
+      toast.success(`Account "${acc.name}" deleted`);
+      loadMeta();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg || "Failed to delete account");
     }
   };
 
@@ -598,9 +659,9 @@ export function WalletManager() {
               <Select name="accountId" required>
                 <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
                 <SelectContent>
-                  {assetAccounts.length === 0
+                  {accounts.length === 0
                     ? <SelectItem value="__none" disabled>{t('wallet.noAccountsCreate')}</SelectItem>
-                    : assetAccounts.map(a => (
+                    : accounts.map(a => (
                       <SelectItem key={a.id} value={a.id}>{a.name} ({fmt(a.balance)})</SelectItem>
                     ))}
                 </SelectContent>
@@ -863,6 +924,52 @@ export function WalletManager() {
                             <TableCell className={cn("text-right font-semibold",
                               tx.type === "CREDIT" ? "text-emerald-600" : "text-red-600")}>
                               {tx.type === "CREDIT" ? "+" : "−"}{fmt(tx.amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ── Accounts ── */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Wallet className="h-4 w-4" />Accounts
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {accounts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No accounts yet</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead className="text-right">Balance</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {accounts.map(acc => (
+                          <TableRow key={acc.id}>
+                            <TableCell className="font-medium">{acc.name}</TableCell>
+                            <TableCell><Badge variant="outline" className="text-xs">{acc.type}</Badge></TableCell>
+                            <TableCell className="text-right font-semibold">{fmt(acc.balance)}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7"
+                                  onClick={() => setEditAccountTarget(acc)}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600"
+                                  onClick={() => handleDeleteAccount(acc)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1271,8 +1378,8 @@ export function WalletManager() {
             <h2 className="font-semibold text-lg flex items-center gap-2">
               <Banknote className="h-5 w-5 text-amber-500" />{t('wallet.pettyCashMgmt')}
             </h2>
-            <Button onClick={() => setAddPcOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />{t('wallet.newRequest')}
+            <Button onClick={openAddPcDialog}>
+              <Plus className="h-4 w-4 mr-2" />Create Entry
             </Button>
           </div>
           {stats && stats.pendingPettyCash > 0 && (
@@ -1562,31 +1669,106 @@ export function WalletManager() {
       <TransactionForm mode="income" open={addIncomeOpen} onClose={() => setAddIncomeOpen(false)} onSubmit={handleAddIncome} />
       <TransactionForm mode="expense" open={addExpenseOpen} onClose={() => setAddExpenseOpen(false)} onSubmit={handleAddExpense} />
 
-      {/* Petty Cash Request */}
+      {/* Petty Cash Entry */}
       <Dialog open={addPcOpen} onOpenChange={setAddPcOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5 text-amber-500" />{t('wallet.newPcRequest')}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Banknote className="h-5 w-5 text-amber-500" />Create Petty Cash Entry
+            </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleAddPettyCash} className="space-y-4 py-2">
+          <div className="space-y-4 py-2">
+            {/* Staff selector */}
             <div>
-              <Label>{t('wallet.purposeLabel')}</Label>
-              <Textarea name="purpose" required placeholder="What is this cash needed for?" rows={3} />
+              <Label>Staff Member <span className="text-muted-foreground font-normal text-xs">(optional — defaults to you)</span></Label>
+              {pcSelectedStaff ? (
+                <div className="flex items-center gap-3 p-2.5 border rounded-lg bg-muted/30 mt-1">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{pcSelectedStaff.firstName} {pcSelectedStaff.lastName}</p>
+                    <p className="text-xs text-muted-foreground">{pcSelectedStaff.designation} · {pcSelectedStaff.employeeId}</p>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => { setPcSelectedStaff(null); setPcStaffSearch(''); }}>
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name or ID…"
+                    value={pcStaffSearch}
+                    onChange={e => setPcStaffSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                  {pcStaffResults.length > 0 && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-background border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {pcStaffResults.map(s => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-muted text-left text-sm"
+                          onClick={() => {
+                            setPcSelectedStaff(s);
+                            setPcForm(p => ({ ...p, staffId: s.id }));
+                            setPcStaffSearch('');
+                            setPcStaffResults([]);
+                          }}
+                        >
+                          <div className="h-7 w-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-xs font-bold shrink-0">
+                            {s.firstName[0]}{s.lastName[0]}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{s.firstName} {s.lastName}</p>
+                            <p className="text-xs text-muted-foreground">{s.designation} · {s.employeeId}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label>Purpose <span className="text-destructive">*</span></Label>
+              <Textarea
+                value={pcForm.purpose}
+                onChange={e => setPcForm(p => ({ ...p, purpose: e.target.value }))}
+                placeholder="What is this cash needed for?"
+                rows={3}
+                className="mt-1"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>{t('wallet.amountLabel')}</Label>
-                <Input name="amount" type="number" min={1} max={50000} step="0.01" required />
+                <Label>Amount (₹) <span className="text-destructive">*</span></Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50000}
+                  step="0.01"
+                  value={pcForm.amount || ''}
+                  onChange={e => setPcForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
+                  className="mt-1"
+                />
               </div>
               <div>
-                <Label>{t('wallet.dateLabel')}</Label>
-                <Input name="date" type="date" defaultValue={todayStr()} required />
+                <Label>Date <span className="text-destructive">*</span></Label>
+                <Input
+                  type="date"
+                  value={pcForm.date}
+                  onChange={e => setPcForm(p => ({ ...p, date: e.target.value }))}
+                  className="mt-1"
+                />
               </div>
             </div>
-            <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? t('wallet.submitting') : t('wallet.submitRequest')}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddPcOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button onClick={handleAddPettyCash} disabled={submitting} className="bg-amber-600 hover:bg-amber-700">
+              {submitting ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" />Saving…</> : <><Banknote className="h-4 w-4 mr-2" />Create Entry</>}
             </Button>
-          </form>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1726,6 +1908,35 @@ export function WalletManager() {
               </div>
               <p className="text-xs text-muted-foreground">
                 Type: <strong>{editCategoryTarget.type}</strong> · Leave fields blank to keep current values.
+              </p>
+              <Button type="submit" disabled={submitting} className="w-full">
+                {submitting ? t('wallet.saving') : t('wallet.saveChanges')}
+              </Button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Account */}
+      <Dialog open={!!editAccountTarget} onOpenChange={open => { if (!open) setEditAccountTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5" />Edit Account
+            </DialogTitle>
+          </DialogHeader>
+          {editAccountTarget && (
+            <form onSubmit={handleUpdateAccount} className="space-y-4 py-2">
+              <div>
+                <Label>Account Name</Label>
+                <Input name="editAccountName" defaultValue={editAccountTarget.name} placeholder="Account name" />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input name="editAccountDesc" placeholder="Optional description" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Type: <strong>{editAccountTarget.type}</strong> · Leave Name blank to keep current value.
               </p>
               <Button type="submit" disabled={submitting} className="w-full">
                 {submitting ? t('wallet.saving') : t('wallet.saveChanges')}

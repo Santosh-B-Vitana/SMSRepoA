@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import {
   Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2
 } from "lucide-react";
 import { toast } from "sonner";
-import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount } from "@/services/api/feeApi";
+import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals } from "@/services/api/feeApi";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -33,6 +33,7 @@ import { FeeHeadsManager } from "@/components/fees/FeeHeadsManager";
 import { ReceiptTemplateManager } from "@/components/fees/ReceiptTemplateManager";
 import { BulkFeePaymentUpload } from "@/components/fees/BulkFeePaymentUpload";
 import { PromoteFeesDialog } from "@/components/fees/PromoteFeesDialog";
+import { AdvancedPagination } from "@/components/common/AdvancedPagination";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── India‑specific constants ─────────────────────────────
@@ -81,7 +82,7 @@ const CONCESSION_TYPES = [
 
 function inr(n: number | undefined | null) { 
   if (n === undefined || n === null || isNaN(n)) return "₹0";
-  return `₹${Math.floor(n).toLocaleString("en-IN")}`; 
+  return `₹${Math.round(n).toLocaleString("en-IN")}`; 
 }
 function daysOverdue(dueDate: string | undefined) {
   if (!dueDate) return 0;
@@ -442,15 +443,6 @@ function CollectPaymentDialog({
   // ── Derived values ──
   const structure = structures.find(s => s.id === activeRecord.feeStructureId);
   const feeHeads = FEE_HEADS.filter(h => structure && (structure as any)[h.key] > 0);
-  // Include transport & hostel pro-rata module fees in the outstanding balance
-  const outstanding = (activeRecord.pendingAmount ?? 0) + (activeRecord.transportFee ?? 0) + (activeRecord.hostelFee ?? 0);
-
-  // ── Term schedule ──
-  const termSched = parseSchedule(structure?.installmentDueDates);
-  // Scale term amounts to reflect applied concession so "Amount to Collect" shows net (post-discount) amounts
-  const scaledTermSched = scaleSchedule(termSched, activeRecord.totalAmount ?? 0, activeRecord.discountAmount ?? 0, activeRecord.paidAmount ?? 0);
-  const termStatuses = scaledTermSched.length > 1 ? computeTermStatuses(scaledTermSched, activeRecord.paidAmount ?? 0) : [];
-  const dueTerm = termStatuses.length > 0 ? getCurrentDueTerm(scaledTermSched, activeRecord.paidAmount ?? 0) : null;
 
   // Compute adjustment delta from headOverrides.
   // Use confirmedOverrides as the base (not gross) so that re-editing a saved head
@@ -460,17 +452,48 @@ function CollectPaymentDialog({
     const base = confirmedOverrides[key] ?? gross; // delta from last saved state
     return acc + (base - overrideNet);
   }, 0);
-  // Extra charges increase effective outstanding temporarily (they'll be saved to fee record before payment)
-  const adjustedOutstanding = Math.max(0, outstanding - adjustmentDelta + totalExtraCharges);
+
+  // Compute true gross fee sum from the CURRENT structure's fee heads with all overrides applied.
+  // This is the single source of truth for display — it matches what the fee head table shows and
+  // will be correct even when the stored FeeRecord.TotalAmount is stale (e.g. structure was edited
+  // after the record was created).
+  const structureFeeSum = feeHeads.reduce((sum, h) => {
+    const gross = (structure as any)[h.key] as number;
+    const net = headOverrides[h.key] ?? confirmedOverrides[h.key] ?? gross;
+    return sum + net;
+  }, 0);
+
+  // Module fees (pro-rata transport + hostel, tracked separately from school fees)
+  const moduleFeeTotal = (activeRecord.transportFee ?? 0) + (activeRecord.hostelFee ?? 0);
+
+  // ── Term schedule ──
+  const termSched = parseSchedule(structure?.installmentDueDates);
+  // Scale term amounts proportionally to reflect applied concession.
+  // Use structureFeeSum (the authoritative gross) so the ratio is always correct.
+  const scaledTermSched = scaleSchedule(termSched, structureFeeSum || (activeRecord.totalAmount ?? 0), activeRecord.discountAmount ?? 0, activeRecord.paidAmount ?? 0);
+  const termStatuses = scaledTermSched.length > 1 ? computeTermStatuses(scaledTermSched, activeRecord.paidAmount ?? 0) : [];
+  const dueTerm = termStatuses.length > 0 ? getCurrentDueTerm(scaledTermSched, activeRecord.paidAmount ?? 0) : null;
+
+  // School-fee total payable = structure fee heads (with overrides) - discount + late fee + extra charges
+  const schoolFeePayable = structureFeeSum
+    - (activeRecord.discountAmount ?? 0)
+    + (activeRecord.lateFeeAmount ?? 0)
+    + totalExtraCharges;
+
+  // Grand total outstanding = school fees + module fees - amount already paid
+  // This is the accounting-correct formula: Outstanding = Total Payable - Amount Paid
+  const adjustedOutstanding = Math.max(0, schoolFeePayable + moduleFeeTotal - (activeRecord.paidAmount ?? 0));
 
   const amt = parseFloat(amount) || 0;
   const afterPayment = Math.max(0, adjustedOutstanding - amt);
-  const collectedPct = activeRecord.totalAmount
-    ? Math.min(100, Math.round((activeRecord.paidAmount / (activeRecord.totalAmount + (activeRecord.lateFeeAmount ?? 0))) * 100))
+  // Collection progress uses the same authoritative total (school fees + module fees + late fee)
+  const totalPayableForProgress = (structureFeeSum || (activeRecord.totalAmount ?? 0)) + (activeRecord.lateFeeAmount ?? 0) + moduleFeeTotal;
+  const collectedPct = totalPayableForProgress > 0
+    ? Math.min(100, Math.round(((activeRecord.paidAmount ?? 0) / totalPayableForProgress) * 100))
     : 0;
-  const maxMoreConcession = Math.max(0, outstanding * 0.75 - (activeRecord.discountAmount ?? 0));
+  const maxMoreConcession = Math.max(0, structureFeeSum * 0.75 - (activeRecord.discountAmount ?? 0));
   const concessionCalcAmt = concessionMode === "percent"
-    ? Math.round((outstanding * (parseFloat(concessionValue) || 0)) / 100)
+    ? Math.round((adjustedOutstanding * (parseFloat(concessionValue) || 0)) / 100)
     : (parseFloat(concessionValue) || 0);
   const payments: any[] = (activeRecord as any).payments ?? [];
   const isDigital = method === "cashfree";
@@ -908,7 +931,7 @@ function CollectPaymentDialog({
                       <tfoot className="border-t-2 border-border">
                         <tr className="font-semibold">
                           <td className="pt-2 text-sm">{t('fees.subTotal')}</td>
-                          <td className="pt-2 text-right tabular-nums text-sm">{inr((activeRecord.totalAmount ?? 0) - adjustmentDelta - (activeRecord.discountAmount ?? 0))}</td>
+                          <td className="pt-2 text-right tabular-nums text-sm">{inr(structureFeeSum)}</td>
                           <td />
                         </tr>
                         {(activeRecord.discountAmount ?? 0) > 0 && (
@@ -948,7 +971,7 @@ function CollectPaymentDialog({
                         <tr className="bg-muted/50">
                           <td className="py-2 px-1.5 rounded-l font-bold text-sm">{t('fees.totalPayable')}</td>
                           <td className="py-2 px-1.5 rounded-r font-bold text-sm text-right tabular-nums">
-                            {inr((activeRecord.totalAmount ?? 0) - (activeRecord.discountAmount ?? 0) + (activeRecord.lateFeeAmount ?? 0) - adjustmentDelta + totalExtraCharges)}
+                            {inr(schoolFeePayable)}
                           </td>
                           <td />
                         </tr>
@@ -1008,7 +1031,7 @@ function CollectPaymentDialog({
                     ))}
                     <div className="col-span-2 flex justify-between py-2 font-bold text-red-700 border-t-2 border-red-200">
                       <span>{t('fees.outstandingBalance')}</span>
-                      <span className="text-lg tabular-nums">{inr(outstanding)}</span>
+                      <span className="text-lg tabular-nums">{inr(adjustedOutstanding)}</span>
                     </div>
                   </div>
                 )}
@@ -1605,7 +1628,7 @@ function CollectPaymentDialog({
                     {concessionOpen && (
                       <div className="px-4 pb-4 space-y-3 border-t pt-3">
                         <div className="p-2 rounded bg-blue-50 border border-blue-100 text-xs text-blue-700">
-                          75% cap: <strong>{inr(outstanding * 0.75)}</strong> &nbsp;|&nbsp;
+                          75% cap: <strong>{inr(structureFeeSum * 0.75)}</strong> &nbsp;|&nbsp;
                           Applied: <strong>{inr(activeRecord.discountAmount ?? 0)}</strong> &nbsp;|&nbsp;
                           Headroom: <strong>{inr(maxMoreConcession)}</strong>
                         </div>
@@ -4062,10 +4085,13 @@ export default function Fees() {
   const accessDenied   = !canViewFees;
 
   const { academicYear, availableYears } = useAcademicYear();
-  const [collectYear, setCollectYear] = useState("all-years"); // "all-years" = show all records
+  const [collectYear, setCollectYear] = useState<string | null>(null); // null = not yet initialized; "all-years" = show all records
   const [activeTab, setActiveTab] = useState("collect");
   const [feeHeadsOpen, setFeeHeadsOpen] = useState(false);
   const [records, setRecords] = useState<FeeRecord[]>([]);
+  const [feeRecordsPage, setFeeRecordsPage] = useState(1);
+  const [feeRecordsPageSize, setFeeRecordsPageSize] = useState(50);
+  const [feeRecordsTotal, setFeeRecordsTotal] = useState(0);
   const [structures, setStructures] = useState<FeeStructure[]>([]);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -4077,6 +4103,9 @@ export default function Fees() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickSearch, setQuickSearch] = useState("");
   const [quickRecord, setQuickRecord] = useState<FeeRecord | null>(null);
+
+  const [syncingStudents, setSyncingStudents] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
 
   const quickMatches = useMemo(() => {
     if (!quickSearch.trim() || quickSearch.length < 2) return [];
@@ -4102,17 +4131,20 @@ export default function Fees() {
     [records]
   );
 
-  const loadData = (silent = false) => {
+  const loadData = useCallback((silent = false, pageOverride?: number) => {
+    const activePage = pageOverride ?? feeRecordsPage;
     if (!silent) setLoading(true);
     Promise.all([
-      feeApi.getFeeRecords(1, 500, undefined, undefined, collectYear === "all-years" ? undefined : collectYear),
+      feeApi.getFeeRecords(activePage, feeRecordsPageSize, undefined, undefined, (!collectYear || collectYear === "all-years") ? undefined : collectYear),
       feeApi.getFeeStructures(),
     ]).then(([recordRes, structRes]) => {
       const raw: FeeRecord[] = (recordRes as any).feeRecords ?? (recordRes as any).items ?? (recordRes as any).records ?? [];
+      const total: number = (recordRes as any).total ?? raw.length;
       setRecords(raw);
+      setFeeRecordsTotal(total);
       setStructures(structRes || []);
     }).catch(() => {}).finally(() => setLoading(false));
-  };
+  }, [feeRecordsPage, feeRecordsPageSize, collectYear]);
 
   const loadStats = () => {
     setStatsLoading(true);
@@ -4152,9 +4184,11 @@ export default function Fees() {
     }
   };
 
-  // Sync collectYear with global year on first load only
-  useEffect(() => { if (academicYear && collectYear === "all-years") setCollectYear(academicYear); }, [academicYear]);
-  useEffect(() => { loadData(); loadStats(); loadRecentPayments(); }, [collectYear]);
+  // Sync collectYear with global year on first load only (don't fire loadData with all-years before context resolves)
+  useEffect(() => { if (academicYear && !collectYear) setCollectYear(academicYear); }, [academicYear]);
+  useEffect(() => { if (!collectYear) return; loadData(); loadStats(); loadRecentPayments(); }, [collectYear]);
+  // Re-fetch when page/pageSize changes
+  useEffect(() => { if (!collectYear) return; loadData(); }, [feeRecordsPage, feeRecordsPageSize]);
 
   const filteredRecords = useMemo(() => records.filter(r => {
     const ms = !search || r.studentName.toLowerCase().includes(search.toLowerCase()) ||
@@ -4239,6 +4273,48 @@ export default function Fees() {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{t('fees.btnRefresh')}
           </Button>
           {canManageFees && (
+            <Button
+              variant="outline" size="sm" className="gap-1.5"
+              disabled={syncingStudents}
+              onClick={async () => {
+                setSyncingStudents(true);
+                try {
+                  const result = await syncStudentFeeRecords(collectYear && collectYear !== "all-years" ? collectYear : undefined);
+                  toast.success(`Sync complete — ${result.created} student(s) added to fees, ${result.skipped} already enrolled.`);
+                  if (result.created > 0) loadData();
+                } catch {
+                  toast.error("Failed to sync students into fees.");
+                } finally {
+                  setSyncingStudents(false);
+                }
+              }}
+            >
+              <Users className={`h-3.5 w-3.5 ${syncingStudents ? "animate-pulse" : ""}`} />
+              {syncingStudents ? "Syncing…" : "Sync All Students"}
+            </Button>
+          )}
+          {canManageFees && (
+            <Button
+              variant="outline" size="sm" className="gap-1.5"
+              disabled={recalculating}
+              onClick={async () => {
+                setRecalculating(true);
+                try {
+                  const result = await recalculateFeeTotals();
+                  toast.success(`Recalculate complete — ${result.fixed_} record(s) corrected, ${result.skipped} already accurate.`);
+                  if (result.fixed_ > 0) loadData();
+                } catch {
+                  toast.error("Failed to recalculate fee totals.");
+                } finally {
+                  setRecalculating(false);
+                }
+              }}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${recalculating ? "animate-spin" : ""}`} />
+              {recalculating ? "Recalculating…" : "Recalculate Totals"}
+            </Button>
+          )}
+          {canManageFees && (
             <Button size="sm" className="gap-1.5" onClick={() => { setQuickSearch(""); setQuickRecord(null); setQuickOpen(true); }}>
               <Plus className="h-3.5 w-3.5" />{t('fees.quickCollect')}
             </Button>
@@ -4304,7 +4380,7 @@ export default function Fees() {
               <Input className="pl-9 h-9 text-sm" placeholder={t('fees.searchByNameOrAdmission')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {/* Academic year filter — "all-years" shows every record */}
-            <Select value={collectYear} onValueChange={setCollectYear}>
+            <Select value={collectYear ?? ""} onValueChange={setCollectYear}>
               <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm"><SelectValue placeholder={t('fees.allYears')} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all-years">{t('fees.allYears')}</SelectItem>
@@ -4666,6 +4742,16 @@ export default function Fees() {
                     })}
                   </TableBody>
                 </Table>
+              </div>
+              <div className="p-4 border-t">
+                <AdvancedPagination
+                  currentPage={feeRecordsPage}
+                  pageSize={feeRecordsPageSize}
+                  totalItems={feeRecordsTotal}
+                  onPageChange={(p) => { setFeeRecordsPage(p); }}
+                  onPageSizeChange={(s) => { setFeeRecordsPageSize(s); setFeeRecordsPage(1); }}
+                  pageSizeOptions={[25, 50, 100, 200]}
+                />
               </div>
             </>
           )}

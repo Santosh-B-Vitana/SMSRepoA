@@ -162,6 +162,11 @@ const settingsApi = {
     return apiClient.patch(`/settings/school/${schoolId}/contact`, req).then(() => undefined);
   },
 
+  /** PUT update current user's own first/last name in the UserLogin record */
+  updateMyProfile(data: { firstName: string; lastName: string }): Promise<void> {
+    return apiClient.put('/user-management/me', data).then(() => undefined);
+  },
+
   /** POST change the authenticated user's password */
   changePassword(req: ChangePasswordRequest): Promise<{ message: string }> {
     return apiClient

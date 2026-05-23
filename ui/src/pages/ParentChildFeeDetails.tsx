@@ -86,16 +86,35 @@ export default function ParentChildFeeDetails() {
     }
   };
 
-  // Use detailed record data (with transport/hostel) for totals
-  // Subtract applied discounts so the summary reflects the net payable (matching admin view)
+  // Helper: compute the authoritative fee sum for a record from the CURRENT structure fee heads
+  // (with any saved overrides applied). Fallback to stored totalAmount when no structure is linked.
+  const getComponentSum = (r: FeeRecord): number => {
+    const det = detailedRecords[r.id] ?? r;
+    const structure = r.feeStructureId ? feeStructures[r.feeStructureId] : null;
+    if (!structure) return det.totalAmount ?? 0;
+    const overrides: Record<string, number> = (() => {
+      if (!det.feeHeadOverrides) return {};
+      try { return JSON.parse(det.feeHeadOverrides) as Record<string, number>; } catch { return {}; }
+    })();
+    const sum = FEE_HEAD_CONFIG.reduce((s, h) => {
+      const effAmt = overrides[h.key] !== undefined ? overrides[h.key] : (structure as any)[h.key] as number;
+      return effAmt > 0 ? s + effAmt : s;
+    }, 0);
+    return sum || (det.totalAmount ?? 0); // fallback if structure has no fee heads set
+  };
+
+  // Use structure-based component sums for all aggregate totals so they match admin view
   const totalAmount = feeRecords.reduce((s, r) => {
     const det = detailedRecords[r.id] ?? r;
-    return s + (det.totalAmount - (det.discountAmount || 0)) + (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+    const compSum = getComponentSum(r);
+    return s + (compSum - (det.discountAmount || 0)) + (det.transportFee ?? 0) + (det.hostelFee ?? 0);
   }, 0);
   const paidAmount = feeRecords.reduce((s, r) => s + r.paidAmount, 0);
   const totalPending = feeRecords.reduce((s, r) => {
     const det = detailedRecords[r.id] ?? r;
-    return s + (det.pendingAmount ?? 0) + (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+    const compSum = getComponentSum(r);
+    const moduleTotal = (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+    return s + Math.max(0, compSum - (det.discountAmount || 0) + (det.lateFeeAmount ?? 0) + moduleTotal - (det.paidAmount ?? 0));
   }, 0);
   const pendingAmount = totalPending;
   const discountAmount = feeRecords.reduce((s, r) => s + (r.discountAmount || 0), 0);
@@ -197,9 +216,25 @@ export default function ParentChildFeeDetails() {
                 const transportFee = det.transportFee ?? 0;
                 const hostelFee = det.hostelFee ?? 0;
                 const moduleTotal = transportFee + hostelFee;
-                // Net fee = gross minus any applied concession/discount (matches admin view)
-                const effectiveTotal = (det.totalAmount - (det.discountAmount || 0)) + moduleTotal;
-                const effectivePending = (det.pendingAmount ?? 0) + moduleTotal;
+                // Net fee = structure fee heads (with overrides) minus discount + module fees.
+                // This function mirrors the admin view: effectiveTotal always equals what
+                // the fee head table sums to, never the stale stored totalAmount.
+                const computeEffectiveTotals = () => {
+                  const ov: Record<string, number> = (() => {
+                    if (!det.feeHeadOverrides) return {};
+                    try { return JSON.parse(det.feeHeadOverrides) as Record<string, number>; } catch { return {}; }
+                  })();
+                  const cs = structure
+                    ? FEE_HEAD_CONFIG.reduce((s, h) => {
+                        const effAmt = ov[h.key] !== undefined ? ov[h.key] : (structure as any)[h.key] as number;
+                        return effAmt > 0 ? s + effAmt : s;
+                      }, 0) || (det.totalAmount ?? 0)
+                    : (det.totalAmount ?? 0);
+                  const eff = (cs - (det.discountAmount || 0)) + moduleTotal;
+                  const pend = Math.max(0, cs - (det.discountAmount || 0) + (det.lateFeeAmount ?? 0) + moduleTotal - (det.paidAmount ?? 0));
+                  return { cs, eff, pend };
+                };
+                const { cs: cardComponentSum, eff: effectiveTotal, pend: effectivePending } = computeEffectiveTotals();
                 const isExpanded = expandedRecord === record.id;
 
                 // Parse per-student fee head overrides (e.g. library fee ₹1500→₹1000)
@@ -303,7 +338,7 @@ export default function ParentChildFeeDetails() {
                       const terms = parseTermSchedule(structure);
                       if (terms.length === 0) return null;
                       // Scale term amounts to reflect applied concession (paid terms keep gross; remaining scale proportionally)
-                      const scaledTerms = scaleTermSchedule(terms, det.totalAmount, det.discountAmount || 0, record.paidAmount);
+                      const scaledTerms = scaleTermSchedule(terms, cardComponentSum || (det.totalAmount ?? 0), det.discountAmount || 0, record.paidAmount);
                       const statuses = getTermStatuses(scaledTerms, record.paidAmount);
                       let cumulative = 0;
                       return (
@@ -465,20 +500,10 @@ export default function ParentChildFeeDetails() {
                               </span>
                               <span>{"\u20B9"}{componentSum.toLocaleString("en-IN")}</span>
                             </div>
-                            {/* Show gap if record total doesn't match component sum */}
-                            {record.totalAmount > componentSum && (
-                              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  Other fee heads
-                                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded">(not itemised)</span>
-                                </span>
-                                <span>+ {"\u20B9"}{(record.totalAmount - componentSum).toLocaleString("en-IN")}</span>
-                              </div>
-                            )}
-                            {/* Fee structure total */}
+                            {/* Fee structure total (always use componentSum — the authoritative structure-based value) */}
                             <div className="flex items-center justify-between text-sm text-muted-foreground font-medium">
                               <span>Fee Structure Total</span>
-                              <span>{"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</span>
+                              <span>{"\u20B9"}{componentSum.toLocaleString("en-IN")}</span>
                             </div>
                             {/* Module fees */}
                             {moduleTotal > 0 && (

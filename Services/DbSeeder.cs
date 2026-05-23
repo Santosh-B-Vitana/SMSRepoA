@@ -333,11 +333,12 @@ namespace SmsApi.Services
             if (_schoolId == Guid.Empty)
                 _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
 
-            // Idempotency: skip if Teacher login for amit.k@demo.edu already exists with correct role
-            if (await _context.UserLogins.IgnoreQueryFilters()
-                    .AnyAsync(u => u.Email == "amit.k@demo.edu" && u.SchoolId == _schoolId && u.Role == "Teacher"))
+            // Idempotency: skip only if Teacher login exists AND LinkedEntityId is already set
+            var existingAmit = await _context.UserLogins.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == "amit.k@demo.edu" && u.SchoolId == _schoolId && u.Role == "Teacher");
+            if (existingAmit?.LinkedEntityId != null)
             {
-                _logger.LogInformation("✅ Teacher user logins already seeded, skipping");
+                _logger.LogInformation("✅ Teacher user logins already seeded with LinkedEntityId, skipping");
                 return;
             }
 

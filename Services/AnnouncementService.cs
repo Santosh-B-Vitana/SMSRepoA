@@ -714,7 +714,7 @@ namespace SmsApi.Services
         }
         private async Task NotifyParentsAsync(Announcement announcement)
         {
-            IQueryable<Guid> parentLoginIds;
+            List<Guid> loginIds;
 
             switch (announcement.TargetAudience)
             {
@@ -722,12 +722,15 @@ namespace SmsApi.Services
                 case AnnouncementConstants.AudienceParents:
                 case AnnouncementConstants.AudienceStudents:
                 {
-                    parentLoginIds = _context.Guardians
-                        .Where(g => g.SchoolId == announcement.SchoolId
-                                    && g.HasPortalAccess
-                                    && g.UserLoginId != null)
-                        .Select(g => g.UserLoginId!.Value)
-                        .Distinct();
+                    // Fetch all parent UserLogins for this school directly — avoids relying on
+                    // Guardian/GuardianStudents (new normalised tables that may be unpopulated).
+                    loginIds = await _context.UserLogins
+                        .Where(u => u.SchoolId == announcement.SchoolId
+                                    && u.Role == "Parent"
+                                    && !u.IsDeleted)
+                        .Select(u => u.Id)
+                        .Distinct()
+                        .ToListAsync();
                     break;
                 }
 
@@ -741,15 +744,24 @@ namespace SmsApi.Services
                         .Select(e => e.StudentId)
                         .Distinct()
                         .ToListAsync();
-                    parentLoginIds = _context.GuardianStudents
-                        .Where(gs => studentIds.Contains(gs.StudentId))
-                        .Join(_context.Guardians,
-                            gs => gs.GuardianId,
-                            g  => g.Id,
-                            (gs, g) => g)
-                        .Where(g => g.HasPortalAccess && g.UserLoginId != null)
-                        .Select(g => g.UserLoginId!.Value)
-                        .Distinct();
+
+                    // Collect guardian emails for those students (legacy StudentGuardians table).
+                    var guardianEmails = await _context.StudentGuardians
+                        .Where(g => g.SchoolId == announcement.SchoolId
+                                    && studentIds.Contains(g.StudentId)
+                                    && g.Email != null)
+                        .Select(g => g.Email!)
+                        .Distinct()
+                        .ToListAsync();
+
+                    loginIds = await _context.UserLogins
+                        .Where(u => u.SchoolId == announcement.SchoolId
+                                    && u.Role == "Parent"
+                                    && !u.IsDeleted
+                                    && guardianEmails.Contains(u.Email))
+                        .Select(u => u.Id)
+                        .Distinct()
+                        .ToListAsync();
                     break;
                 }
 
@@ -763,23 +775,29 @@ namespace SmsApi.Services
                         .Select(e => e.StudentId)
                         .Distinct()
                         .ToListAsync();
-                    parentLoginIds = _context.GuardianStudents
-                        .Where(gs => studentIds.Contains(gs.StudentId))
-                        .Join(_context.Guardians,
-                            gs => gs.GuardianId,
-                            g  => g.Id,
-                            (gs, g) => g)
-                        .Where(g => g.HasPortalAccess && g.UserLoginId != null)
-                        .Select(g => g.UserLoginId!.Value)
-                        .Distinct();
+
+                    var guardianEmails = await _context.StudentGuardians
+                        .Where(g => g.SchoolId == announcement.SchoolId
+                                    && studentIds.Contains(g.StudentId)
+                                    && g.Email != null)
+                        .Select(g => g.Email!)
+                        .Distinct()
+                        .ToListAsync();
+
+                    loginIds = await _context.UserLogins
+                        .Where(u => u.SchoolId == announcement.SchoolId
+                                    && u.Role == "Parent"
+                                    && !u.IsDeleted
+                                    && guardianEmails.Contains(u.Email))
+                        .Select(u => u.Id)
+                        .Distinct()
+                        .ToListAsync();
                     break;
                 }
 
                 default:
                     return; // Staff-only or unknown audience
             }
-
-            var loginIds = await parentLoginIds.ToListAsync();
             if (loginIds.Count == 0) return;
 
             var shortContent = announcement.Content.Length > 200

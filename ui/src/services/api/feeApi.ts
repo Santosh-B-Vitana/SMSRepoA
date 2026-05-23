@@ -560,6 +560,26 @@ export const seedFeeStructures = async (academicYear?: string): Promise<{ create
 };
 
 /**
+ * Backfill fee records for all active students who don't yet have one for the given
+ * academic year.  Uses class-based fee structure matching and respects transport/hostel flags.
+ * Safe to call multiple times — already-enrolled students are skipped.
+ */
+export const syncStudentFeeRecords = async (academicYear?: string): Promise<{ created: number; skipped: number; academicYear: string; message: string }> => {
+  const params = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : "";
+  const response = await apiClient.post(`${BASE_PATH}/sync-students${params}`);
+  return response.data;
+};
+
+/**
+ * Fix stale TotalAmount on fee records whose linked structure was updated after assignment.
+ * Safe to re-run — records that already match are skipped.
+ */
+export const recalculateFeeTotals = async (): Promise<{ fixed_: number; skipped: number; message: string }> => {
+  const response = await apiClient.post(`${BASE_PATH}/recalculate-totals`);
+  return response.data;
+};
+
+/**
  * Increases the outstanding balance so the admin can collect the full amount in one transaction.
  */
 export const addExtraCharges = async (

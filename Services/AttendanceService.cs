@@ -848,6 +848,18 @@ namespace SmsApi.Services
                 .ThenByDescending(a => a.UpdatedAt)
                 .ToListAsync();
 
+            // Pre-load leave type names for records that have a LeaveTypeId
+            var leaveTypeIds = rawAttendances
+                .Where(a => a.LeaveTypeId.HasValue)
+                .Select(a => a.LeaveTypeId!.Value)
+                .Distinct()
+                .ToList();
+            var leaveTypeNames = leaveTypeIds.Count > 0
+                ? await _context.LeaveTypes
+                    .Where(lt => leaveTypeIds.Contains(lt.Id))
+                    .ToDictionaryAsync(lt => lt.Id, lt => lt.Name)
+                : new Dictionary<Guid, string>();
+
             // Deduplicate client-side: keep the latest record per (StaffId, Date) combination
             var attendances = rawAttendances
                 .GroupBy(a => new { a.StaffId, Date = a.Date.Date })
@@ -863,6 +875,9 @@ namespace SmsApi.Services
                     CheckInTime = a.CheckInTime.HasValue ? a.CheckInTime.Value.TimeOfDay : (TimeSpan?)null,
                     CheckOutTime = a.CheckOutTime.HasValue ? a.CheckOutTime.Value.TimeOfDay : (TimeSpan?)null,
                     Remarks = a.Remarks,
+                    LeaveTypeId = a.LeaveTypeId,
+                    LeaveTypeName = a.LeaveTypeId.HasValue && leaveTypeNames.TryGetValue(a.LeaveTypeId.Value, out var ltName) ? ltName : null,
+                    LeaveDeducted = a.LeaveDeducted,
                     CreatedAt = a.CreatedAt,
                     UpdatedAt = a.UpdatedAt
                 })
@@ -891,26 +906,183 @@ namespace SmsApi.Services
                 CheckInTime = request.CheckInTime.HasValue ? request.Date.Date.Add(request.CheckInTime.Value) : (DateTime?)null,
                 CheckOutTime = request.CheckOutTime.HasValue ? request.Date.Date.Add(request.CheckOutTime.Value) : (DateTime?)null,
                 Remarks = request.Remarks,
+                LeaveTypeId = request.LeaveTypeId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             _context.StaffAttendances.Add(attendance);
+
+            // When status = "leave" with a leave type: create an auto-approved leave record
+            // (visible in staff's "My Leave") and deduct the leave balance.
+            if (request.Status.Equals("leave", StringComparison.OrdinalIgnoreCase) && request.LeaveTypeId.HasValue)
+            {
+                await HandleAdminLeaveMarkingAsync(attendance, request.SchoolId, request.StaffId, request.Date.Date, request.LeaveTypeId.Value);
+            }
+
             await _context.SaveChangesAsync();
 
-            return new StaffAttendanceResponse
+            // Reload leave type name for response
+            string? leaveTypeName = null;
+            if (attendance.LeaveTypeId.HasValue)
             {
-                Id = attendance.Id,
-                SchoolId = attendance.SchoolId,
-                StaffId = attendance.StaffId,
-                Date = attendance.Date,
-                Status = attendance.Status,
-                CheckInTime = attendance.CheckInTime.HasValue ? attendance.CheckInTime.Value.TimeOfDay : (TimeSpan?)null,
-                CheckOutTime = attendance.CheckOutTime.HasValue ? attendance.CheckOutTime.Value.TimeOfDay : (TimeSpan?)null,
-                Remarks = attendance.Remarks,
-                CreatedAt = attendance.CreatedAt,
-                UpdatedAt = attendance.UpdatedAt
-            };
+                var lt = await _context.LeaveTypes.FindAsync(attendance.LeaveTypeId.Value);
+                leaveTypeName = lt?.Name;
+            }
+
+            return MapToStaffAttendanceResponse(attendance, leaveTypeName);
+        }
+
+        // Marker embedded in ApproverRemarks to identify admin-created leave records
+        private const string AdminAttendanceMarker = "[admin-attendance]";
+
+        /// <summary>
+        /// Called when admin marks attendance as "leave" with a leave type.
+        /// Creates an auto-approved StaffLeaveRequest (so staff can see it in "My Leave")
+        /// and deducts the leave balance. Skips if a staff-submitted approved request already covers the day.
+        /// </summary>
+        private async Task HandleAdminLeaveMarkingAsync(StaffAttendance attendance, Guid schoolId, Guid staffId, DateTime date, Guid leaveTypeId)
+        {
+            // Resolve UserLogin.Id for this staff member (admin-created requests use Login ID so
+            // they appear in "My Leave" which filters by UserLogin.Id)
+            var userLoginId = await _context.UserLogins
+                .Where(u => u.LinkedEntityId == staffId && u.SchoolId == schoolId && !u.IsDeleted)
+                .Select(u => (Guid?)u.Id)
+                .FirstOrDefaultAsync();
+
+            // All IDs that could be ApplicantId for this staff
+            var applicantIds = userLoginId.HasValue
+                ? new[] { staffId, userLoginId.Value }
+                : new[] { staffId };
+
+            // Check if a staff-submitted approved request already covers this day
+            // (exclude our own admin-created records to avoid false positive)
+            var hasStaffSubmittedLeave = await _context.LeaveRequests
+                .AnyAsync(lr => lr.SchoolId == schoolId &&
+                               applicantIds.Contains(lr.ApplicantId) &&
+                               lr.Status.ToLower() == "approved" &&
+                               lr.LeaveTypeId == leaveTypeId &&
+                               lr.StartDate.Date <= date.Date &&
+                               lr.EndDate.Date >= date.Date &&
+                               !(lr.ApproverRemarks != null && lr.ApproverRemarks.Contains(AdminAttendanceMarker)));
+
+            if (!hasStaffSubmittedLeave)
+            {
+                // Create auto-approved leave record visible in staff's "My Leave"
+                var applicantId = userLoginId ?? staffId;
+                var leaveRequest = new Models.Entities.StaffLeaveRequest
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    LeaveNumber = $"ADM-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}",
+                    ApplicantId = applicantId,
+                    ApplicantType = "Staff",
+                    LeaveTypeId = leaveTypeId,
+                    StartDate = date.Date,
+                    EndDate = date.Date,
+                    TotalDays = 1,
+                    Reason = "Leave marked by administrator",
+                    Status = "approved",
+                    ApplicationDate = date.Date,
+                    ApprovedDate = DateTime.UtcNow,
+                    ApproverRemarks = AdminAttendanceMarker,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.LeaveRequests.Add(leaveRequest);
+                await DeductLeaveBalanceAsync(schoolId, staffId, leaveTypeId, date.Year.ToString(), 1);
+                attendance.LeaveDeducted = true;
+            }
+            else
+            {
+                // Staff-submitted request covers this day — balance already deducted via normal approval
+                attendance.LeaveDeducted = true;
+            }
+        }
+
+        /// <summary>
+        /// Cancels the admin-created leave record (if any) for this staff/date/leaveType and restores the balance.
+        /// If no admin record found, still restores the balance (handles all removal cases).
+        /// </summary>
+        private async Task CancelAdminLeaveAndRestoreAsync(Guid schoolId, Guid staffId, Guid leaveTypeId, DateTime date)
+        {
+            var userLoginId = await _context.UserLogins
+                .Where(u => u.LinkedEntityId == staffId && u.SchoolId == schoolId && !u.IsDeleted)
+                .Select(u => (Guid?)u.Id)
+                .FirstOrDefaultAsync();
+
+            var applicantIds = userLoginId.HasValue
+                ? new[] { staffId, userLoginId.Value }
+                : new[] { staffId };
+
+            // Find and remove the admin-created leave request for this date
+            var adminLeave = await _context.LeaveRequests
+                .Where(lr => lr.SchoolId == schoolId &&
+                            applicantIds.Contains(lr.ApplicantId) &&
+                            lr.LeaveTypeId == leaveTypeId &&
+                            lr.StartDate.Date == date.Date &&
+                            lr.EndDate.Date == date.Date &&
+                            lr.ApproverRemarks != null && lr.ApproverRemarks.Contains(AdminAttendanceMarker))
+                .FirstOrDefaultAsync();
+
+            if (adminLeave != null)
+                _context.LeaveRequests.Remove(adminLeave);
+
+            // Always restore the balance (whether admin-created or staff-submitted)
+            await RestoreLeaveBalanceAsync(schoolId, staffId, leaveTypeId, date.Year.ToString(), 1);
+        }
+
+        private async Task DeductLeaveBalanceAsync(Guid schoolId, Guid staffId, Guid leaveTypeId, string academicYear, int days)
+        {
+            var balance = await _context.LeaveBalances
+                .FirstOrDefaultAsync(lb => lb.UserId == staffId &&
+                                          lb.UserType == "Staff" &&
+                                          lb.LeaveTypeId == leaveTypeId &&
+                                          lb.AcademicYear == academicYear &&
+                                          lb.SchoolId == schoolId);
+
+            if (balance == null)
+            {
+                var leaveType = await _context.LeaveTypes
+                    .FirstOrDefaultAsync(lt => lt.Id == leaveTypeId && lt.SchoolId == schoolId);
+                var allowed = leaveType?.MaxDaysPerYear ?? 30;
+                balance = new Models.Entities.LeaveBalance
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    UserId = staffId,
+                    UserType = "Staff",
+                    LeaveTypeId = leaveTypeId,
+                    AcademicYear = academicYear,
+                    TotalAllowed = allowed,
+                    Used = 0,
+                    Available = allowed,
+                    CarriedForward = 0,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.LeaveBalances.Add(balance);
+            }
+
+            balance.Used += days;
+            balance.Available = balance.TotalAllowed - balance.Used;
+            balance.UpdatedAt = DateTime.UtcNow;
+        }
+
+        private async Task RestoreLeaveBalanceAsync(Guid schoolId, Guid staffId, Guid leaveTypeId, string academicYear, int days)
+        {
+            var balance = await _context.LeaveBalances
+                .FirstOrDefaultAsync(lb => lb.UserId == staffId &&
+                                          lb.UserType == "Staff" &&
+                                          lb.LeaveTypeId == leaveTypeId &&
+                                          lb.AcademicYear == academicYear &&
+                                          lb.SchoolId == schoolId);
+            if (balance != null)
+            {
+                balance.Used = Math.Max(0, balance.Used - days);
+                balance.Available = balance.TotalAllowed - balance.Used;
+                balance.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
         private static string NormalizeValue(string? value) => value?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -922,6 +1094,48 @@ namespace SmsApi.Services
 
             if (attendance == null)
                 throw new KeyNotFoundException($"Attendance record {id} not found.");
+
+            var oldStatus = attendance.Status;
+            var wasLeaveDeducted = attendance.LeaveDeducted;
+            var oldLeaveTypeId = attendance.LeaveTypeId;
+            var academicYear = attendance.Date.Year.ToString();
+
+            var newIsLeave = request.Status.Equals("leave", StringComparison.OrdinalIgnoreCase);
+            var oldIsLeave = oldStatus.Equals("leave", StringComparison.OrdinalIgnoreCase);
+
+            // Status changing away from "leave" — cancel admin leave record + restore balance
+            if (oldIsLeave && wasLeaveDeducted && oldLeaveTypeId.HasValue && !newIsLeave)
+            {
+                await CancelAdminLeaveAndRestoreAsync(schoolId, attendance.StaffId, oldLeaveTypeId.Value, attendance.Date);
+                attendance.LeaveDeducted = false;
+                attendance.LeaveTypeId = null;
+            }
+            // Status changing to "leave" (was not leave before) — create leave record + deduct
+            else if (newIsLeave && !oldIsLeave && request.LeaveTypeId.HasValue)
+            {
+                await HandleAdminLeaveMarkingAsync(attendance, schoolId, attendance.StaffId, attendance.Date, request.LeaveTypeId.Value);
+                attendance.LeaveTypeId = request.LeaveTypeId;
+            }
+            // Status staying "leave" but leave type changed — swap: cancel old + create new
+            else if (newIsLeave && oldIsLeave && request.LeaveTypeId.HasValue &&
+                     request.LeaveTypeId != oldLeaveTypeId && wasLeaveDeducted)
+            {
+                if (oldLeaveTypeId.HasValue)
+                    await CancelAdminLeaveAndRestoreAsync(schoolId, attendance.StaffId, oldLeaveTypeId.Value, attendance.Date);
+                await HandleAdminLeaveMarkingAsync(attendance, schoolId, attendance.StaffId, attendance.Date, request.LeaveTypeId.Value);
+                attendance.LeaveTypeId = request.LeaveTypeId;
+            }
+            // Status staying "leave", leave type being set/kept, balance not yet deducted — create leave record + deduct
+            else if (newIsLeave && request.LeaveTypeId.HasValue && !wasLeaveDeducted)
+            {
+                await HandleAdminLeaveMarkingAsync(attendance, schoolId, attendance.StaffId, attendance.Date, request.LeaveTypeId.Value);
+                attendance.LeaveTypeId = request.LeaveTypeId;
+            }
+            // Leave type updated but deduction already done — just keep the reference
+            else if (newIsLeave && request.LeaveTypeId.HasValue)
+            {
+                attendance.LeaveTypeId = request.LeaveTypeId;
+            }
 
             attendance.Status = request.Status;
             attendance.CheckInTime = request.CheckInTime.HasValue
@@ -935,6 +1149,18 @@ namespace SmsApi.Services
 
             await _context.SaveChangesAsync();
 
+            string? leaveTypeName = null;
+            if (attendance.LeaveTypeId.HasValue)
+            {
+                var lt = await _context.LeaveTypes.FindAsync(attendance.LeaveTypeId.Value);
+                leaveTypeName = lt?.Name;
+            }
+
+            return MapToStaffAttendanceResponse(attendance, leaveTypeName);
+        }
+
+        private static StaffAttendanceResponse MapToStaffAttendanceResponse(StaffAttendance attendance, string? leaveTypeName = null)
+        {
             return new StaffAttendanceResponse
             {
                 Id = attendance.Id,
@@ -945,6 +1171,9 @@ namespace SmsApi.Services
                 CheckInTime = attendance.CheckInTime?.TimeOfDay,
                 CheckOutTime = attendance.CheckOutTime?.TimeOfDay,
                 Remarks = attendance.Remarks,
+                LeaveTypeId = attendance.LeaveTypeId,
+                LeaveTypeName = leaveTypeName,
+                LeaveDeducted = attendance.LeaveDeducted,
                 CreatedAt = attendance.CreatedAt,
                 UpdatedAt = attendance.UpdatedAt
             };

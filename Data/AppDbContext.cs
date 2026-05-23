@@ -897,6 +897,11 @@ namespace SmsApi.Data
                     .HasForeignKey(a => a.StaffId)
                     .OnDelete(DeleteBehavior.Restrict);
 
+                entity.HasOne(a => a.LeaveType)
+                    .WithMany()
+                    .HasForeignKey(a => a.LeaveTypeId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
                 entity.HasIndex(e => new { e.SchoolId, e.StaffId, e.Date }).IsUnique();
             });
         }

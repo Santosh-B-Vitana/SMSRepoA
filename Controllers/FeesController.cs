@@ -232,6 +232,71 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Backfill fee records for all active students who don't yet have one for the given
+        /// academic year.  Uses each student's class to find the best matching fee structure
+        /// and respects their transport/hostel flags.  Safe to call multiple times.
+        /// </summary>
+        [HttpPost("sync-students")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant")]
+        public async Task<ActionResult> SyncStudentFeeRecords([FromQuery] string? academicYear = null)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                if (string.IsNullOrWhiteSpace(academicYear))
+                {
+                    academicYear = await _context.AcademicYears
+                        .Where(y => y.SchoolId == schoolId && y.IsCurrent)
+                        .Select(y => y.Name)
+                        .FirstOrDefaultAsync();
+                }
+                if (string.IsNullOrWhiteSpace(academicYear))
+                    return BadRequest(new { message = "Could not determine academic year. Please supply ?academicYear=YYYY-YYYY." });
+
+                var (created, skipped) = await _feeService.SyncStudentFeeRecordsAsync(schoolId, academicYear);
+                return Ok(new
+                {
+                    created,
+                    skipped,
+                    academicYear,
+                    message = $"{created} student(s) imported into fees, {skipped} already had records or had no matching fee structure."
+                });
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to sync student fee records.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Fix stale TotalAmount on fee records whose linked structure was updated after assignment.
+        /// Safe to re-run — records that already match their structure are skipped unchanged.
+        /// </summary>
+        [HttpPost("recalculate-totals")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant")]
+        public async Task<ActionResult> RecalculateFeeTotals()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var (fixed_, skipped) = await _feeService.RecalculateFeeTotalsAsync(schoolId);
+                return Ok(new
+                {
+                    fixed_,
+                    skipped,
+                    message = $"{fixed_} record(s) corrected, {skipped} already accurate or skipped."
+                });
+            }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to recalculate fee totals.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Add ad-hoc extra charges (hostel, library fine, misc) to a student's fee record.
         /// Increases the outstanding balance so the admin can collect the full amount.
         /// </summary>

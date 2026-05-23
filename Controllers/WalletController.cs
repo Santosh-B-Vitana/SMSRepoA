@@ -119,6 +119,64 @@ namespace SmsApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Update a finance account's name or description
+        /// </summary>
+        [HttpPut("accounts/{accountId}")]
+        [ProducesResponseType(typeof(FinanceAccountDto), 200)]
+        [ProducesResponseType(404)]
+        public async Task<ActionResult<FinanceAccountDto>> UpdateAccount(
+            Guid accountId, [FromBody] UpdateFinanceAccountDto dto)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var result = await _service.UpdateAccountAsync(schoolId, accountId, dto);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { message = "Account not found" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating account {AccountId}", accountId);
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Soft-delete a finance account (only if it has no transactions)
+        /// </summary>
+        [HttpDelete("accounts/{accountId}")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(typeof(object), 400)]
+        public async Task<ActionResult> DeleteAccount(Guid accountId)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var result = await _service.DeleteAccountAsync(schoolId, accountId);
+                if (!result)
+                    return NotFound(new { message = "Account not found" });
+                return NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting account {AccountId}", accountId);
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
         // ========== TRANSACTIONS ==========
 
         /// <summary>
@@ -417,7 +475,10 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                var staffId = GetUserId();
+                // Resolve the actual StaffMember.Id (UserLogin.Id ≠ StaffMember.Id).
+                // Fall back to UserLogin.Id for admins with no linked staff profile —
+                // ApprovedByStaffId has no FK constraint so any Guid is safe to store.
+                var staffId = await ResolveStaffIdAsync() ?? GetUserId();
                 var result = await _service.ApprovePettyCashAsync(schoolId, entryId, dto, staffId);
                 return Ok(result);
             }

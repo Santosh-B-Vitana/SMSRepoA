@@ -586,6 +586,7 @@ public class AuthController : ControllerBase
         LastName = userLogin.LastName,
         Role = userLogin.Role,
         Designation = designation,
+        LinkedEntityId = userLogin.LinkedEntityId,
     };
 
     private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null) => new()
@@ -598,5 +599,6 @@ public class AuthController : ControllerBase
         Designation = designation,
         SchoolId = userLogin.SchoolId,
         RequirePasswordChange = userLogin.RequirePasswordChange,
+        LinkedEntityId = userLogin.LinkedEntityId,
     };
 }

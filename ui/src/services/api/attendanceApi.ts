@@ -82,6 +82,9 @@ export interface StaffAttendanceResponse {
   checkInTime?: string;
   checkOutTime?: string;
   remarks?: string;
+  leaveTypeId?: string;
+  leaveTypeName?: string;
+  leaveDeducted?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +97,7 @@ export interface CreateStaffAttendanceRequest {
   checkInTime?: string;
   checkOutTime?: string;
   remarks?: string;
+  leaveTypeId?: string;
 }
 
 export interface UpdateStaffAttendanceRequest {
@@ -101,6 +105,7 @@ export interface UpdateStaffAttendanceRequest {
   checkInTime?: string;
   checkOutTime?: string;
   remarks?: string;
+  leaveTypeId?: string;
 }
 
 // API Service

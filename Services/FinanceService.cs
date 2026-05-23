@@ -15,6 +15,8 @@ namespace SmsApi.Services
         // Accounts
         Task<List<FinanceAccountDto>> GetAccountsAsync(Guid schoolId);
         Task<FinanceAccountDto> CreateAccountAsync(Guid schoolId, CreateFinanceAccountDto dto);
+        Task<FinanceAccountDto> UpdateAccountAsync(Guid schoolId, Guid accountId, UpdateFinanceAccountDto dto);
+        Task<bool> DeleteAccountAsync(Guid schoolId, Guid accountId);
         
         // Transactions
         Task<PaginatedResponse<FinanceTransactionDto>> GetTransactionsAsync(
@@ -154,6 +156,69 @@ namespace SmsApi.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating account for school {SchoolId}", schoolId);
+                throw;
+            }
+        }
+
+        public async Task<FinanceAccountDto> UpdateAccountAsync(Guid schoolId, Guid accountId, UpdateFinanceAccountDto dto)
+        {
+            try
+            {
+                var account = await _context.FinanceAccounts
+                    .FirstOrDefaultAsync(a => a.Id == accountId && a.SchoolId == schoolId && a.IsActive);
+                if (account == null) throw new KeyNotFoundException("Account not found");
+
+                if (!string.IsNullOrWhiteSpace(dto.Name))
+                {
+                    var duplicate = await _context.FinanceAccounts
+                        .AnyAsync(a => a.SchoolId == schoolId && a.Id != accountId
+                                       && a.Name.ToLower() == dto.Name.ToLower() && a.IsActive);
+                    if (duplicate) throw new InvalidOperationException("An account with this name already exists.");
+                    account.Name = dto.Name.Trim();
+                }
+                if (dto.Description != null) account.Description = dto.Description;
+                account.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                return new FinanceAccountDto
+                {
+                    Id = account.Id,
+                    Name = account.Name,
+                    Type = account.Type,
+                    ParentAccountId = account.ParentAccountId,
+                    Balance = account.Balance,
+                    IsActive = account.IsActive
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating account {AccountId}", accountId);
+                throw;
+            }
+        }
+
+        public async Task<bool> DeleteAccountAsync(Guid schoolId, Guid accountId)
+        {
+            try
+            {
+                var account = await _context.FinanceAccounts
+                    .FirstOrDefaultAsync(a => a.Id == accountId && a.SchoolId == schoolId && a.IsActive);
+                if (account == null) return false;
+
+                var hasTransactions = await _context.FinanceTransactions
+                    .AnyAsync(t => t.AccountId == accountId && t.SchoolId == schoolId);
+                if (hasTransactions)
+                    throw new InvalidOperationException("Cannot delete an account that has transactions. Remove all linked transactions first.");
+
+                account.IsActive = false;
+                account.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting account {AccountId}", accountId);
                 throw;
             }
         }
@@ -496,34 +561,51 @@ namespace SmsApi.Services
 
             try
             {
-                var query = from pc in _context.PettyCashEntries
-                            join req in _context.StaffMembers on pc.RequestedByStaffId equals req.Id
-                            join app in _context.StaffMembers on pc.ApprovedByStaffId equals app.Id into appGroup
-                            from approver in appGroup.DefaultIfEmpty()
-                            where pc.SchoolId == schoolId
-                            select new { pc, req, approver };
+                // Query entries without joining StaffMembers — EF Core's global query filter
+                // on StaffMembers (IsDeleted + SchoolId) can be applied as a WHERE clause on
+                // LEFT JOINs, effectively turning them into INNER JOINs and hiding all entries
+                // whose RequestedByStaffId doesn't match a live staff record (e.g. admin users).
+                var baseQuery = _context.PettyCashEntries
+                    .Where(pc => pc.SchoolId == schoolId);
 
-                var totalCount = await query.CountAsync();
+                var totalCount = await baseQuery.CountAsync();
 
-                var items = await query
-                    .OrderByDescending(x => x.pc.Date)
+                var entries = await baseQuery
+                    .OrderByDescending(pc => pc.Date)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
-                    .Select(x => new PettyCashEntryDto
-                    {
-                        Id = x.pc.Id,
-                        Date = x.pc.Date,
-                        Amount = x.pc.Amount,
-                        Purpose = x.pc.Purpose,
-                        RequestedByName = $"{x.req.FirstName} {x.req.LastName}",
-                        ApprovedByName = x.approver != null ? $"{x.approver.FirstName} {x.approver.LastName}" : null,
-                        Status = x.pc.Status,
-                        ReceiptUrl = x.pc.ReceiptUrl,
-                        ApprovalRemarks = x.pc.ApprovalRemarks,
-                        ApprovedAt = x.pc.ApprovedAt,
-                        CreatedAt = x.pc.CreatedAt
-                    })
                     .ToListAsync();
+
+                // Collect all referenced staff IDs and resolve names in a single query,
+                // ignoring global filters so soft-deleted / cross-school staff still resolve.
+                var staffIds = entries
+                    .SelectMany(e => new[] { (Guid?)e.RequestedByStaffId, e.ApprovedByStaffId })
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var staffNames = staffIds.Count > 0
+                    ? await _context.StaffMembers
+                        .IgnoreQueryFilters()
+                        .Where(s => staffIds.Contains(s.Id))
+                        .ToDictionaryAsync(s => s.Id, s => $"{s.FirstName} {s.LastName}")
+                    : new Dictionary<Guid, string>();
+
+                var items = entries.Select(e => new PettyCashEntryDto
+                {
+                    Id = e.Id,
+                    Date = e.Date,
+                    Amount = e.Amount,
+                    Purpose = e.Purpose,
+                    RequestedByName = staffNames.TryGetValue(e.RequestedByStaffId, out var reqName) ? reqName : "Admin",
+                    ApprovedByName = e.ApprovedByStaffId.HasValue && staffNames.TryGetValue(e.ApprovedByStaffId.Value, out var appName) ? appName : null,
+                    Status = e.Status,
+                    ReceiptUrl = e.ReceiptUrl,
+                    ApprovalRemarks = e.ApprovalRemarks,
+                    ApprovedAt = e.ApprovedAt,
+                    CreatedAt = e.CreatedAt
+                }).ToList();
 
                 return new PaginatedResponse<PettyCashEntryDto>
                 {
@@ -550,9 +632,12 @@ namespace SmsApi.Services
                 if (dto.Amount <= 0 || dto.Amount > 50000)
                     throw new InvalidOperationException("Petty cash amount must be between 0.01 and 50000");
 
+                // Use the staff member specified in the DTO (if provided and valid), otherwise fall back to the caller
+                var resolvedStaffId = dto.StaffId.HasValue ? dto.StaffId.Value : staffId;
+
                 // VALIDATION 2: Staff member lookup (optional — admin users may not have a staff profile)
                 var staff = await _context.StaffMembers
-                    .FirstOrDefaultAsync(s => s.Id == staffId && s.SchoolId == schoolId);
+                    .FirstOrDefaultAsync(s => s.Id == resolvedStaffId && s.SchoolId == schoolId);
                 var requesterName = staff != null ? $"{staff.FirstName} {staff.LastName}" : "Admin";
 
                 var entry = new PettyCashEntry
@@ -562,7 +647,7 @@ namespace SmsApi.Services
                     Date = dto.Date,
                     Amount = dto.Amount,
                     Purpose = dto.Purpose,
-                    RequestedByStaffId = staffId,
+                    RequestedByStaffId = resolvedStaffId,
                     Status = "PENDING",
                     ReceiptUrl = dto.ReceiptUrl,
                     CreatedAt = DateTime.UtcNow,
@@ -612,11 +697,28 @@ namespace SmsApi.Services
                 if (entry.RequestedByStaffId == staffId)
                     throw new InvalidOperationException("Cannot approve your own petty cash request");
 
-                // VALIDATION 3: Staff member must exist
+                // VALIDATION 3: Resolve approver — use IgnoreQueryFilters in case the staff record
+                // is soft-deleted, and fall back to the UserLogin name for admins who have no
+                // linked StaffMember profile (ApprovedByStaffId has no FK constraint).
                 var staff = await _context.StaffMembers
-                    .FirstOrDefaultAsync(s => s.Id == staffId && s.SchoolId == schoolId);
-                if (staff == null)
-                    throw new InvalidOperationException("Staff member not found");
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Id == staffId);
+                string approverName;
+                if (staff != null)
+                {
+                    approverName = $"{staff.FirstName} {staff.LastName}";
+                }
+                else
+                {
+                    // Approver is an admin/principal whose UserLogin.Id was passed — look up by login
+                    var userLogin = await _context.Set<Models.Entities.UserLogin>()
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(u => u.Id == staffId);
+                    approverName = userLogin != null
+                        ? $"{userLogin.FirstName} {userLogin.LastName}".Trim()
+                        : "Admin";
+                    if (string.IsNullOrWhiteSpace(approverName)) approverName = userLogin?.Email ?? "Admin";
+                }
 
                 entry.Status = dto.Status.ToUpper();
                 entry.ApprovedByStaffId = staffId;
@@ -626,7 +728,25 @@ namespace SmsApi.Services
 
                 await _context.SaveChangesAsync();
 
-                var requester = await _context.StaffMembers.FindAsync(entry.RequestedByStaffId);
+                // Resolve requester name — also use IgnoreQueryFilters to avoid the LEFT→INNER JOIN issue
+                var requester = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Id == entry.RequestedByStaffId);
+                string requesterName;
+                if (requester != null)
+                {
+                    requesterName = $"{requester.FirstName} {requester.LastName}";
+                }
+                else
+                {
+                    var reqLogin = await _context.Set<Models.Entities.UserLogin>()
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(u => u.Id == entry.RequestedByStaffId);
+                    requesterName = reqLogin != null
+                        ? $"{reqLogin.FirstName} {reqLogin.LastName}".Trim()
+                        : "Unknown";
+                    if (string.IsNullOrWhiteSpace(requesterName)) requesterName = reqLogin?.Email ?? "Unknown";
+                }
 
                 return new PettyCashEntryDto
                 {
@@ -634,8 +754,8 @@ namespace SmsApi.Services
                     Date = entry.Date,
                     Amount = entry.Amount,
                     Purpose = entry.Purpose,
-                    RequestedByName = requester != null ? $"{requester.FirstName} {requester.LastName}" : "Unknown",
-                    ApprovedByName = $"{staff.FirstName} {staff.LastName}",
+                    RequestedByName = requesterName,
+                    ApprovedByName = approverName,
                     Status = entry.Status,
                     ReceiptUrl = entry.ReceiptUrl,
                     ApprovalRemarks = entry.ApprovalRemarks,

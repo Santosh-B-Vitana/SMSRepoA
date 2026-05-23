@@ -516,6 +516,7 @@ export function AnnouncementManager() {
                 <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('announcements.all')}</SelectItem>
+                  {PRIORITIES.map(p => (
                     <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                   ))}
                 </SelectContent>
