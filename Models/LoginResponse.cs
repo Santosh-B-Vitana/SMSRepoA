@@ -30,6 +30,10 @@ public class UserInfo
     /// Null for admin/super-admin users who have no Staff record.
     /// </summary>
     public Guid? LinkedEntityId { get; set; }
+    /// <summary>
+    /// S3 public URL of the staff member's profile photo, if one has been uploaded.
+    /// </summary>
+    public string? ProfilePhoto { get; set; }
 }
 
 public class RefreshTokenRequest

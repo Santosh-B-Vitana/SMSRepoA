@@ -6,6 +6,8 @@ using SmsApi.Services;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using SmsApi.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace SmsApi.Controllers
 {
@@ -16,11 +18,13 @@ namespace SmsApi.Controllers
     {
         private readonly ISchoolFeaturePermissionService _service;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
 
-        public SchoolFeaturePermissionsController(ISchoolFeaturePermissionService service, ITenantContext tenant)
+        public SchoolFeaturePermissionsController(ISchoolFeaturePermissionService service, ITenantContext tenant, AppDbContext db)
         {
             _service = service;
             _tenant = tenant;
+            _db = db;
         }
 
         /// <summary>
@@ -273,6 +277,51 @@ namespace SmsApi.Controllers
             {
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
+        }
+
+        /// <summary>Upload/replace a school's logo image (Super Admin only).</summary>
+        [HttpPost("schools/{schoolId}/logo")]
+        [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
+        [RequestSizeLimit(10 * 1024 * 1024)]
+        public async Task<ActionResult> UploadSchoolLogo(
+            Guid schoolId,
+            IFormFile file,
+            [FromServices] IFileStorageService fileStorage)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No file provided." });
+
+            var school = await _db.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                return NotFound(new { message = "School not found" });
+
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var allowed = new HashSet<string> { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+            if (!allowed.Contains(ext))
+                return BadRequest(new { message = "Only JPG, PNG, WEBP, GIF files are allowed." });
+
+            if (file.Length > 5 * 1024 * 1024)
+                return BadRequest(new { message = "Logo size must be 5 MB or less." });
+
+            var previousLogo = school.Logo;
+            var key = fileStorage.BuildAssetKey($"schools/{schoolId}/branding/logo-{Guid.NewGuid()}{ext}");
+
+            await using var stream = file.OpenReadStream();
+            var saved = await fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                return StatusCode(500, new { message = "Failed to upload school logo." });
+
+            var logoUrl = fileStorage.GetPublicUrl(key);
+            school.Logo = logoUrl;
+            school.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            if (!string.IsNullOrWhiteSpace(previousLogo) && !string.Equals(previousLogo, logoUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                _ = fileStorage.DeleteAsync(previousLogo);
+            }
+
+            return Ok(new { logoUrl });
         }
 
         /// <summary>Toggle school active status (Super Admin only)</summary>

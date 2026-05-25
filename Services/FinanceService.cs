@@ -1369,53 +1369,7 @@ namespace SmsApi.Services
                     _logger.LogError(ex, "Error aggregating donations");
                 }
 
-                // 5. PETTY CASH APPROVED (Cash income)
-                try
-                {
-                    var pettyCashThisMonth = await _context.PettyCashEntries
-                        .Where(p => p.SchoolId == schoolId && p.Status == "APPROVED"
-                            && p.Date >= thisMonthStart && p.Date < thisMonthStart.AddMonths(1))
-                        .SumAsync(p => p.Amount);
-
-                    var pettyCashLastMonth = await _context.PettyCashEntries
-                        .Where(p => p.SchoolId == schoolId && p.Status == "APPROVED"
-                            && p.Date >= lastMonthStart && p.Date < lastMonthEnd.AddDays(1))
-                        .SumAsync(p => p.Amount);
-
-                    var pettyCashYTD = await _context.PettyCashEntries
-                        .Where(p => p.SchoolId == schoolId && p.Status == "APPROVED" && p.Date >= yearStart)
-                        .SumAsync(p => p.Amount);
-
-                    var pettyCashCount = await _context.PettyCashEntries
-                        .Where(p => p.SchoolId == schoolId && p.Status == "APPROVED")
-                        .CountAsync();
-
-                    var pettyCashPending = await _context.PettyCashEntries
-                        .Where(p => p.SchoolId == schoolId && p.Status == "PENDING")
-                        .SumAsync(p => p.Amount);
-
-                    var lastPettyCashDate = await _context.PettyCashEntries
-                        .Where(p => p.SchoolId == schoolId && p.Status == "APPROVED")
-                        .OrderByDescending(p => p.Date)
-                        .Select(p => p.Date)
-                        .FirstOrDefaultAsync();
-
-                    sources.Add(new IncomeSourceDto
-                    {
-                        SourceName = "Petty Cash Approvals",
-                        SourceCategory = "PETTY_CASH",
-                        ThisMonth = pettyCashThisMonth,
-                        LastMonth = pettyCashLastMonth,
-                        YearToDate = pettyCashYTD,
-                        Pending = pettyCashPending,
-                        TransactionCount = pettyCashCount,
-                        LastTransactionDate = lastPettyCashDate == default ? null : lastPettyCashDate
-                    });
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error aggregating petty cash");
-                }
+                // Note: Petty cash is an expense workflow and should not be counted as income.
 
                 // Calculate totals
                 var result = new AggregatedIncomeDto

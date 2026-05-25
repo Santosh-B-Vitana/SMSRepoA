@@ -1,7 +1,40 @@
 # sms-api — Technical Document
 
 > **Version 2.9** · ASP.NET Core 8 · .NET 8 · React 19 · SQL Server · **Release Candidate**  
-> **Last Updated:** May 21, 2026 (Session 10) | **Project:** SMSRepoA
+> **Last Updated:** May 25, 2026 (Session 11) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 25, 2026 (Session 11)
+
+| Area | Change |
+|------|--------|
+| **`Controllers/SettingsController.cs` — public branding endpoint** | Added anonymous `GET /api/settings/public-branding` to support pre-login school identity/branding. Resolution order: query `schoolCode`, query `host`, request host subdomain. Includes safe fallback payload when unresolved and logo fallback from `SchoolSettings` (`logo_url` / `school_logo_url`). |
+| **`ui/src/services/api/settingsApi.ts`** | Added `PublicSchoolBrandingResponse` type and `getPublicSchoolBranding()` method used by unauthenticated login surfaces. |
+| **`ui/src/contexts/SchoolContext.tsx`** | Added resilient branding flow for logged-out state: fetch public branding, cache in `localStorage` (`school_branding_cache`), and gracefully fallback to cache on failures. Also keeps fail-safe default context behavior to prevent hard crash when `useSchool` is consumed outside provider composition. |
+| **`ui/src/pages/Login.tsx`** | Reworked right-panel UX into role-first unified login for Admin/Staff/Parent with role card selection and polished role-specific copy. Super admin remains a dedicated route (`/super-admin-login`) with explicit back-to-school-login path and state reset. Added larger school logo treatment and elevated school name styling in role-selection step. |
+| **`ui/src/App.tsx`** | Unified auth entrypoints by routing `/super-admin-login` to the same login component while preserving role-restricted post-login dashboards and route guards. |
+| **`Services/FinanceService.cs`** | Corrected `GetAggregatedIncomeSourcesAsync` to avoid classifying petty cash as income source. This removes reporting inflation in finance income tabs. |
+| **`ui/src/components/wallet/WalletManager.tsx` + `ui/src/pages/Finance.tsx`** | UI-level guardrails added: `PETTY_CASH` filtered from income-source lists and totals recomputed from visible rows, matching backend aggregation semantics. |
+| **`Controllers/WalletController.cs`** | Documentation comments aligned with corrected income-source semantics (petty cash excluded from income aggregation). |
+| **Code hygiene** | Removed remaining `cms1` example reference from settings-controller comments to avoid tenant-specific confusion in support tooling and docs. |
+
+### Login + Branding flow (current architecture)
+
+1. User lands on `/login`.
+2. `SchoolContext` tries `GET /api/settings/public-branding` using query/host metadata.
+3. Returned name/logo is cached and rendered before authentication.
+4. User selects Admin/Staff/Parent role and authenticates.
+5. Post-login role checks validate token role against selected portal before redirect.
+6. Super admin continues via dedicated `/super-admin-login` entry.
+
+### Support verification checklist (Session 11 changes)
+
+1. Open `/login` and verify role cards render (Admin/Staff/Parent).
+2. Confirm school logo/name resolves from configured school branding.
+3. Open `/super-admin-login` and verify back navigation returns to school login.
+4. Confirm finance income tabs do not include petty cash in sources/totals.
+5. Confirm no stale tenant examples (`cms1`) remain in code comments/docs.
 
 ---
 

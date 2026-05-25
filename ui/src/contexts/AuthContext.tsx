@@ -7,6 +7,7 @@ import {
   maskEmail 
 } from '@/utils/authValidation';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 export type UserRole = 'super_admin' | 'admin' | 'staff' | 'parent';
 
@@ -98,6 +99,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   sessionExpiresAt: number | null;
   refreshSession: () => void;
+  refreshCurrentUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -194,6 +196,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => clearInterval(interval);
   }, [sessionExpiresAt]);
 
+  // Backfill avatar: when a stored session doesn't have the photo yet (e.g. sessions
+  // created before the profilePhoto field was added), call /auth/me once to get it.
+  useEffect(() => {
+    if (!user || user.avatar) return; // already has avatar, nothing to do
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+    const apiBase = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:5092/api';
+    axios.get(`${apiBase}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        const me = res.data?.data ?? res.data;
+        const photo: string | undefined = me?.profilePhoto || undefined;
+        if (photo) {
+          setUser(prev => {
+            if (!prev) return prev;
+            const updated = { ...prev, avatar: photo };
+            // Persist into sessionStorage so this survives page refreshes
+            const stored = getStoredSession();
+            if (stored) storeSession({ ...stored, user: updated });
+            return updated;
+          });
+        }
+      })
+      .catch(() => { /* silently ignore — avatar is cosmetic */ });
+  }, [user?.id]);
+
   const login = useCallback(async (email: string, password: string): Promise<void> => {
     setLoading(true);
     const normalizedEmail = email.toLowerCase().trim();
@@ -225,10 +252,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         data = response.data?.data ?? response.data;
       } catch (axiosError: any) {
         recordFailedAttempt(normalizedEmail);
-        const msg =
+        let msg =
           axiosError?.response?.data?.message ??
           axiosError?.message ??
           'Invalid email or password';
+
+        const normalized = String(msg).toLowerCase();
+        const isBillingBlocked =
+          normalized.includes('subscription') ||
+          normalized.includes('billing') ||
+          normalized.includes('suspended beyond grace period') ||
+          normalized.includes('account suspended due to') ||
+          normalized.includes('school account is inactive');
+
+        if (isBillingBlocked) {
+          msg = 'Account suspended due to billing. Please pay or renew your plan to continue.';
+          toast.error(msg, { description: 'Admin login is revoked until billing is made active.' });
+        }
+
         throw new Error(msg);
       }
 
@@ -259,6 +300,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         designation: backendUser.designation
           ? backendUser.designation
           : normalizeDesignation(rawRole),
+        avatar: backendUser.profilePhoto || undefined,
         schoolId: backendUser.schoolId ? String(backendUser.schoolId) : undefined,
         requirePasswordChange: backendUser.requirePasswordChange === true,
         linkedEntityId: backendUser.linkedEntityId ? String(backendUser.linkedEntityId) : undefined,
@@ -330,6 +372,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [user]);
 
+  const refreshCurrentUser = useCallback(async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:5092/api';
+    const res = await axios.get(`${apiBase}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const me = res.data?.data ?? res.data;
+
+    const roleRaw = String(me?.role ?? '').toLowerCase();
+    const mappedRole: UserRole = roleRaw === 'super_admin' || roleRaw === 'superadmin'
+      ? 'super_admin'
+      : roleRaw === 'admin' || roleRaw === 'administrator'
+        ? 'admin'
+        : roleRaw === 'parent' || roleRaw === 'guardian'
+          ? 'parent'
+          : 'staff';
+
+    setUser((prev) => {
+      const updated: User = {
+        id: String(me.id),
+        name: `${me.firstName ?? ''} ${me.lastName ?? ''}`.trim() || me.email,
+        email: me.email,
+        role: mappedRole,
+        designation: me.designation ? me.designation : normalizeDesignation(String(me.role ?? '')),
+        avatar: me.profilePhoto || undefined,
+        schoolId: me.schoolId ? String(me.schoolId) : prev?.schoolId,
+        requirePasswordChange: me.requirePasswordChange === true,
+        linkedEntityId: me.linkedEntityId ? String(me.linkedEntityId) : undefined,
+      };
+
+      const stored = getStoredSession();
+      if (stored) {
+        storeSession({ ...stored, user: updated });
+      }
+      return updated;
+    });
+  }, []);
+
   const value: AuthContextType = {
     user,
     loading,
@@ -338,6 +420,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated: !!user,
     sessionExpiresAt,
     refreshSession,
+    refreshCurrentUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

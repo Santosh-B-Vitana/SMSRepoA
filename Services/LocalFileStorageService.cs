@@ -133,6 +133,12 @@ public class LocalFileStorageService : IFileStorageService
     }
 
     /// <summary>
+    /// For local file storage, BuildAssetKey simply normalises the path separators.
+    /// There is no root folder prefix — the base path is the root.
+    /// </summary>
+    public string BuildAssetKey(string relativePath) => relativePath.TrimStart('/').Replace('\\', '/');
+
+    /// <summary>
     /// Local storage does not support pre-signed URLs.
     /// Returns the direct upload path for internal use.
     /// </summary>
@@ -144,7 +150,7 @@ public class LocalFileStorageService : IFileStorageService
         var safeExtension = string.IsNullOrEmpty(rawExtension) ? string.Empty
             : "." + rawExtension.TrimStart('.').ToLowerInvariant().Replace("/", "").Replace("\\", "");
 
-        var key = $"{schoolId}/{folder}/{Guid.NewGuid()}{safeExtension}";
+        var key = BuildAssetKey($"schools/{schoolId}/{folder}/{Guid.NewGuid()}{safeExtension}");
         // For local storage, the "upload URL" is just the API upload endpoint
         return ($"/api/documents/upload?key={Uri.EscapeDataString(key)}", key);
     }

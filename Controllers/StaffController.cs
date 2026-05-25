@@ -327,16 +327,30 @@ namespace SmsApi.Controllers
 
         [HttpPost("{id}/documents")]
         [Authorize(Roles = "Admin,Principal,HRManager")]
-        public async Task<ActionResult<StaffDocumentDto>> UploadDocument(Guid id, [FromForm] string documentType, IFormFile file)
+        public async Task<ActionResult<StaffDocumentDto>> UploadDocument(
+            Guid id,
+            [FromForm] string documentType,
+            IFormFile file,
+            [FromServices] IFileValidationService fileValidationService)
         {
+            var allowedDocumentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "appointment_letter", "contract", "resume", "id_proof", "address_proof",
+                "aadhar", "pan", "passport", "degree_certificate", "experience_certificate",
+                "salary_slip", "joining_report", "medical_certificate", "background_check", "other"
+            };
+            if (string.IsNullOrWhiteSpace(documentType) || !allowedDocumentTypes.Contains(documentType))
+                return BadRequest(new { message = $"Invalid document type. Allowed: {string.Join(", ", allowedDocumentTypes)}" });
+
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 if (file == null || file.Length == 0)
                     return BadRequest(new { message = "No file uploaded." });
 
-                if (file.Length > 10 * 1024 * 1024) // 10MB limit
-                    return BadRequest(new { message = "File size exceeds 10MB limit." });
+                var (isValid, error) = await fileValidationService.ValidateAsync(file);
+                if (!isValid)
+                    return BadRequest(new { message = error });
 
                 using var memoryStream = new MemoryStream();
                 await file.CopyToAsync(memoryStream);
@@ -354,6 +368,47 @@ namespace SmsApi.Controllers
                 return NotFound(new { message = ex.Message });
             }
             catch (Exception) { return StatusCode(500, new { message = "An error occurred while uploading the document." });
+            }
+        }
+
+        /// <summary>
+        /// Upload or replace a staff member's profile photo.
+        /// Stores the image in S3 under SMS-Test/schools/{schoolId}/staff/{id}/photos/
+        /// </summary>
+        [HttpPost("{id}/photo")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
+        public async Task<ActionResult> UploadPhoto(
+            Guid id,
+            IFormFile file,
+            [FromServices] IFileValidationService fileValidationService)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                if (file == null || file.Length == 0)
+                    return BadRequest(new { message = "No file uploaded." });
+
+                var (isValid, error) = await fileValidationService.ValidateAsync(file);
+                if (!isValid)
+                    return BadRequest(new { message = error });
+
+                using var memoryStream = new MemoryStream();
+                await file.CopyToAsync(memoryStream);
+                var fileData = memoryStream.ToArray();
+
+                var photoUrl = await _staffService.UploadPhotoAsync(id, schoolId, file.FileName, fileData);
+                return Ok(new { photoUrl });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Forbid(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred while uploading the photo." });
             }
         }
 

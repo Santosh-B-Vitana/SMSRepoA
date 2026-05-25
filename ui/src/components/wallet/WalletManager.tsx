@@ -188,6 +188,18 @@ export function WalletManager() {
 
   const incCats = categories.filter(c => c.type === "INCOME");
   const expCats = categories.filter(c => c.type === "EXPENSE");
+  const incomeSources = (aggregatedIncome?.sources ?? []).filter(s => s.sourceCategory !== "PETTY_CASH");
+  const incomeTotals = incomeSources.reduce(
+    (acc, source) => {
+      acc.thisMonth += source.thisMonth;
+      acc.lastMonth += source.lastMonth;
+      acc.yearToDate += source.yearToDate;
+      acc.pending += source.pending;
+      acc.transactions += source.transactionCount;
+      return acc;
+    },
+    { thisMonth: 0, lastMonth: 0, yearToDate: 0, pending: 0, transactions: 0 }
+  );
 
   // ─── Loaders ───────────────────────────────────────────────────────────────
 
@@ -1090,25 +1102,25 @@ export function WalletManager() {
                 <Card>
                   <CardContent className="pt-5">
                     <p className="text-sm text-muted-foreground">{t('wallet.thisMonth')}</p>
-                    <p className="text-2xl font-bold text-emerald-600">{fmt(aggregatedIncome.totalThisMonth)}</p>
+                    <p className="text-2xl font-bold text-emerald-600">{fmt(incomeTotals.thisMonth)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-5">
                     <p className="text-sm text-muted-foreground">{t('wallet.lastMonth')}</p>
-                    <p className="text-2xl font-bold">{fmt(aggregatedIncome.totalLastMonth)}</p>
+                    <p className="text-2xl font-bold">{fmt(incomeTotals.lastMonth)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-5">
                     <p className="text-sm text-muted-foreground">{t('wallet.yearToDate')}</p>
-                    <p className="text-2xl font-bold text-teal-600">{fmt(aggregatedIncome.totalYearToDate)}</p>
+                    <p className="text-2xl font-bold text-teal-600">{fmt(incomeTotals.yearToDate)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-5">
                     <p className="text-sm text-muted-foreground">{t('wallet.pending')}</p>
-                    <p className="text-2xl font-bold text-amber-600">{fmt(aggregatedIncome.totalPending)}</p>
+                    <p className="text-2xl font-bold text-amber-600">{fmt(incomeTotals.pending)}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -1120,7 +1132,7 @@ export function WalletManager() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {aggregatedIncome.sources.length === 0 ? (
+                  {incomeSources.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <Wallet className="h-8 w-8 mx-auto mb-2 opacity-40" />
                       <p>{t('wallet.noIncomeSourcesYet')}</p>
@@ -1138,14 +1150,13 @@ export function WalletManager() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {aggregatedIncome.sources.map(source => (
+                        {incomeSources.map(source => (
                           <TableRow key={source.sourceCategory}>
                             <TableCell className="font-medium flex items-center gap-2">
                               {source.sourceCategory === "FEE" && <Banknote className="h-4 w-4 text-blue-500" />}
                               {source.sourceCategory === "STORE" && <ShoppingBag className="h-4 w-4 text-violet-500" />}
                               {source.sourceCategory === "LIBRARY" && <Receipt className="h-4 w-4 text-orange-500" />}
                               {source.sourceCategory === "DONATION" && <Heart className="h-4 w-4 text-red-500" />}
-                              {source.sourceCategory === "PETTY_CASH" && <Wallet className="h-4 w-4 text-amber-500" />}
                               {source.sourceName}
                             </TableCell>
                             <TableCell className="text-right font-semibold text-emerald-600">{fmt(source.thisMonth)}</TableCell>

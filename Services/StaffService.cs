@@ -21,6 +21,7 @@ namespace SmsApi.Services
         Task<bool> DeleteStaffAsync(Guid id, Guid schoolId);
         Task<StaffStatsResponse> GetStaffStatsAsync(Guid schoolId);
         Task<StaffDocumentDto> UploadDocumentAsync(Guid staffId, Guid schoolId, string documentType, string fileName, byte[] fileData);
+        Task<string> UploadPhotoAsync(Guid staffId, Guid schoolId, string fileName, byte[] fileData);
         Task<bool> DeleteDocumentAsync(Guid documentId, Guid schoolId);
         Task<List<string>> GetDepartmentsAsync(Guid schoolId);
         Task<List<string>> GetDesignationsAsync(Guid schoolId);
@@ -62,6 +63,7 @@ namespace SmsApi.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<StaffService> _logger;
+        private readonly IFileStorageService _fileStorage;
 
         private static readonly HashSet<string> ValidGenders = new(StringComparer.OrdinalIgnoreCase)
             { "male", "female", "other", "prefer_not_to_say" };
@@ -70,10 +72,11 @@ namespace SmsApi.Services
         private static readonly HashSet<string> ValidEmploymentTypes = new(StringComparer.OrdinalIgnoreCase)
             { "permanent", "contract", "part_time", "probation", "intern", "consultant" };
 
-        public StaffService(AppDbContext context, ILogger<StaffService> logger)
+        public StaffService(AppDbContext context, ILogger<StaffService> logger, IFileStorageService fileStorage)
         {
             _context = context;
             _logger = logger;
+            _fileStorage = fileStorage;
         }
 
         // â”€â”€ PRIVATE HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1248,13 +1251,22 @@ namespace SmsApi.Services
             if (staff == null)
                 throw new InvalidOperationException("Staff member not found.");
 
-            var fileUrl = $"/uploads/staff/{staffId}/documents/{fileName}";
+            // Structured S3 key: SMS-Test/schools/{schoolId}/staff/{staffId}/documents/{type}/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/staff/{staffId}/documents/{documentType}/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload document to cloud storage.");
+
+            var fileUrl = _fileStorage.GetPublicUrl(key);
 
             var document = new StaffDocument
             {
                 Id = Guid.NewGuid(),
                 StaffId = staffId,
-                Name = documentType,
+                Name = fileName,
                 Type = documentType,
                 Url = fileUrl,
                 UploadedAt = DateTime.UtcNow
@@ -1262,6 +1274,8 @@ namespace SmsApi.Services
 
             _context.StaffDocuments.Add(document);
             await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Staff document uploaded: staffId={StaffId}, type={Type}, key={Key}", staffId, documentType, key);
 
             return new StaffDocumentDto
             {
@@ -1273,6 +1287,35 @@ namespace SmsApi.Services
             };
         }
 
+        public async Task<string> UploadPhotoAsync(Guid staffId, Guid schoolId, string fileName, byte[] fileData)
+        {
+            var staff = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.Id == staffId && s.SchoolId == schoolId);
+
+            if (staff == null)
+                throw new InvalidOperationException("Staff member not found.");
+
+            // Delete the previous photo from storage if one exists
+            if (!string.IsNullOrEmpty(staff.ProfilePhoto))
+                await _fileStorage.DeleteAsync(staff.ProfilePhoto);
+
+            // Structured S3 key: SMS-Test/schools/{schoolId}/staff/{staffId}/photos/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/staff/{staffId}/photos/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload photo to cloud storage.");
+
+            var photoUrl = _fileStorage.GetPublicUrl(key);
+            staff.ProfilePhoto = photoUrl;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Staff photo uploaded: staffId={StaffId}, key={Key}", staffId, key);
+            return photoUrl;
+        }
+
         public async Task<bool> DeleteDocumentAsync(Guid documentId, Guid schoolId)
         {
             var document = await _context.StaffDocuments
@@ -1280,6 +1323,10 @@ namespace SmsApi.Services
                 .FirstOrDefaultAsync(d => d.Id == documentId && d.Staff!.SchoolId == schoolId);
 
             if (document == null) return false;
+
+            // Delete from S3 storage (accepts full URL or key — service handles extraction)
+            if (!string.IsNullOrEmpty(document.Url))
+                await _fileStorage.DeleteAsync(document.Url);
 
             _context.StaffDocuments.Remove(document);
             await _context.SaveChangesAsync();

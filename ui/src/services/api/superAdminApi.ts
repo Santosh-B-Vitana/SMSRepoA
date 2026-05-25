@@ -2,7 +2,7 @@
  * Super Admin API Service
  * All calls to /api/school-feature-permissions/* (super admin endpoints)
  */
-import { apiGet, apiPost, apiPut, apiPatch } from "@/lib/apiClient";
+import { apiClient, apiGet, apiPost, apiPut, apiPatch } from "@/lib/apiClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +83,16 @@ export const updateSchool = (
   data: { name?: string; address?: string; phone?: string; email?: string; logo?: string }
 ): Promise<SchoolDetail> =>
   apiPut(`/school-feature-permissions/schools/${schoolId}`, data);
+
+export const uploadSchoolLogo = (schoolId: string, file: File): Promise<{ logoUrl: string }> => {
+  const form = new FormData();
+  form.append('file', file);
+  return apiClient
+    .post<{ logoUrl: string }>(`/school-feature-permissions/schools/${schoolId}/logo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    .then((r) => r.data);
+};
 
 export const toggleSchoolStatus = (schoolId: string): Promise<{ schoolId: string; isActive: boolean }> =>
   apiPatch(`/school-feature-permissions/schools/${schoolId}/toggle-status`);

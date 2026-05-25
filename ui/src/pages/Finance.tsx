@@ -460,6 +460,33 @@ export default function Finance() {
       .slice(0, 6);
   }, [stats]);
 
+  const visibleIncomeSources = useMemo(
+    () => (incomeSources?.sources ?? []).filter((s) => s.sourceCategory !== "PETTY_CASH"),
+    [incomeSources]
+  );
+
+  const visibleIncomeTotals = useMemo(
+    () =>
+      visibleIncomeSources.reduce(
+        (acc, source) => {
+          acc.totalThisMonth += source.thisMonth;
+          acc.totalLastMonth += source.lastMonth;
+          acc.totalYearToDate += source.yearToDate;
+          acc.totalPending += source.pending;
+          acc.totalTransactions += source.transactionCount;
+          return acc;
+        },
+        {
+          totalThisMonth: 0,
+          totalLastMonth: 0,
+          totalYearToDate: 0,
+          totalPending: 0,
+          totalTransactions: 0,
+        }
+      ),
+    [visibleIncomeSources]
+  );
+
   const budgetData = useMemo(() =>
     report?.budgetSummary?.slice(0, 8).map((b) => ({
       name:    b.categoryName.length > 14 ? b.categoryName.substring(0, 13) + "…" : b.categoryName,
@@ -849,7 +876,7 @@ export default function Finance() {
               <CardDescription>Month-over-month comparison for all income streams</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              {!incomeSources?.sources?.length ? (
+              {!visibleIncomeSources.length ? (
                 <div className="text-center py-10 text-muted-foreground">
                   <ShoppingCart className="h-10 w-10 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No income source data available</p>
@@ -867,7 +894,7 @@ export default function Finance() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {incomeSources.sources.map((s, i) => (
+                    {visibleIncomeSources.map((s, i) => (
                       <TableRow key={i}>
                         <TableCell>
                           <div>
@@ -888,11 +915,11 @@ export default function Finance() {
                   <tfoot>
                     <tr className="border-t bg-muted/30 font-semibold">
                       <td className="px-4 py-3 text-sm">Total</td>
-                      <td className="px-4 py-3 text-right text-sm text-green-600">{fmt(incomeSources.totalThisMonth)}</td>
-                      <td className="px-4 py-3 text-right text-sm">{fmt(incomeSources.totalLastMonth)}</td>
-                      <td className="px-4 py-3 text-right text-sm">{fmt(incomeSources.totalYearToDate)}</td>
-                      <td className="px-4 py-3 text-right text-sm text-amber-600">{fmt(incomeSources.totalPending)}</td>
-                      <td className="px-4 py-3 text-center text-sm">{incomeSources.totalTransactions}</td>
+                      <td className="px-4 py-3 text-right text-sm text-green-600">{fmt(visibleIncomeTotals.totalThisMonth)}</td>
+                      <td className="px-4 py-3 text-right text-sm">{fmt(visibleIncomeTotals.totalLastMonth)}</td>
+                      <td className="px-4 py-3 text-right text-sm">{fmt(visibleIncomeTotals.totalYearToDate)}</td>
+                      <td className="px-4 py-3 text-right text-sm text-amber-600">{fmt(visibleIncomeTotals.totalPending)}</td>
+                      <td className="px-4 py-3 text-center text-sm">{visibleIncomeTotals.totalTransactions}</td>
                     </tr>
                   </tfoot>
                 </Table>

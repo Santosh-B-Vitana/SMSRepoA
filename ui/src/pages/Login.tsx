@@ -1,14 +1,14 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSchool } from '../contexts/SchoolContext';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Loader2, Eye, EyeOff, Sun, Moon, Monitor,
   Shield, Users, GraduationCap, AlertTriangle, ArrowRight,
-  Lock, CheckCircle2,
+  Lock, CheckCircle2, Building2, ImagePlus, ArrowLeft,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -23,8 +23,17 @@ const PORTALS = [
   { id: 'admin',  label: 'Admin',  full: 'Welcome back',   icon: Shield,        accent: '#3B82F6', accentDark: '#2563EB' },
   { id: 'staff',  label: 'Staff',  full: 'Staff Portal',   icon: GraduationCap, accent: '#0EA5E9', accentDark: '#0284C7' },
   { id: 'parent', label: 'Parent', full: 'Parent Portal',  icon: Users,         accent: '#8B5CF6', accentDark: '#7C3AED' },
+  { id: 'super_admin', label: 'Super Admin', full: 'Super Admin Portal', icon: Shield, accent: '#2563EB', accentDark: '#1D4ED8' },
 ] as const;
 type PortalId = typeof PORTALS[number]['id'];
+type MainPortalId = Exclude<PortalId, 'super_admin'>;
+
+const isPortalId = (value: string): value is PortalId =>
+  PORTALS.some((portal) => portal.id === value);
+
+const MAIN_PORTALS = PORTALS.filter((portal) => portal.id !== 'super_admin') as Array<
+  Extract<(typeof PORTALS)[number], { id: MainPortalId }>
+>;
 
 /* ── Dot-grid background decoration ────────────────────────────────────── */
 function MeshBg() {
@@ -66,6 +75,7 @@ export default function Login() {
   const [fieldErrors,   setFieldErrors]   = useState<{ email?: string; password?: string }>({});
   const [rateLimitWarn, setRateLimitWarn] = useState<string | null>(null);
   const [loginType,     setLoginType]     = useState<PortalId>('admin');
+  const [selectedPortal, setSelectedPortal] = useState<MainPortalId | null>(null);
   const loginTypeRef = useRef<PortalId>('admin');
   loginTypeRef.current = loginType;
 
@@ -74,6 +84,7 @@ export default function Login() {
   const { t } = useLanguage();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -81,15 +92,40 @@ export default function Login() {
   }, [searchParams]);
 
   useEffect(() => {
+    const portalFromQuery = (searchParams.get('portal') || '').toLowerCase();
+    if (isPortalId(portalFromQuery)) {
+      setLoginType(portalFromQuery);
+      if (portalFromQuery !== 'super_admin') {
+        setSelectedPortal(portalFromQuery);
+      } else {
+        setSelectedPortal(null);
+      }
+      return;
+    }
+
+    if (location.pathname === '/super-admin-login') {
+      setLoginType('super_admin');
+      setSelectedPortal(null);
+      return;
+    }
+
+    setLoginType((prev) => (prev === 'super_admin' ? 'admin' : prev));
+  }, [searchParams, location.pathname]);
+
+  useEffect(() => {
     if (!isAuthenticated || !user) return;
     const role = user.role?.toLowerCase() ?? '';
-    const isStaff  = ['staff', 'teacher'].includes(role);
+    const isStaff  = role === 'staff';
     const isParent = role === 'parent';
+    const isSuperAdmin = role === 'super_admin';
     const portal   = loginTypeRef.current;
     if (portal === 'parent' && !isParent) { setError('This portal is for parents/guardians only.'); logout(); return; }
     if (portal === 'staff'  && !isStaff)  { setError('This portal is for school staff only.');      logout(); return; }
-    if (portal === 'admin'  && (isStaff || isParent)) {
-      setError(isStaff ? 'Staff must use the Staff Login.' : 'Parents must use the Parent Portal.');
+    if (portal === 'super_admin' && !isSuperAdmin) { setError('This portal is for super admins only.'); logout(); return; }
+    if (portal === 'admin'  && (isStaff || isParent || isSuperAdmin)) {
+      if (isStaff) setError('Staff must use the Staff Login.');
+      else if (isParent) setError('Parents must use the Parent Portal.');
+      else setError('Super admins must use the Super Admin Portal.');
       logout(); return;
     }
     const routes: Record<string, string> = { staff: '/staff-dashboard', admin: '/admin-dashboard', parent: '/parent-dashboard', super_admin: '/super-admin-dashboard' };
@@ -128,15 +164,71 @@ export default function Login() {
     { email: 'admin@vitanaschools.edu', role: 'Admin',   password: 'admin-dev-change-me', portal: 'admin'  as PortalId },
     { email: 'amit.k@demo.edu',         role: 'Teacher', password: 'Teacher@123',          portal: 'staff'  as PortalId },
     { email: 'aj@gmail.com',            role: 'Parent',  password: 'Veda#834Nh7J',         portal: 'parent' as PortalId },
+    { email: 'superadmin@vitana.in',    role: 'Super Admin', password: 'SuperAdmin@123',   portal: 'super_admin' as PortalId },
   ];
 
   const ap = PORTALS.find(p => p.id === loginType)!;
+  const schoolName = schoolInfo?.name?.trim() || 'Your School';
+  const hasSchoolLogo = Boolean(schoolInfo?.logoUrl);
+  const schoolInitial = schoolName.charAt(0).toUpperCase();
+  const brandedSignInLabel = schoolInfo?.name
+    ? (loginType === 'super_admin' ? 'Continue to Super Admin Console' : `Sign in to ${schoolInfo.name}`)
+    : `Continue to ${ap.label} Portal`;
 
   const subtitles: Record<PortalId, string> = {
-    admin:  'Administration Console',
-    staff:  'For principals, teachers, wardens & support staff',
-    parent: "Track your child's progress, attendance & fees",
+    admin:  'School leadership, operations and institutional oversight',
+    staff:  'Teaching, attendance, classes and day-to-day academic workflows',
+    parent: "Progress, attendance, communication and fee visibility for families",
+    super_admin: 'Internal platform governance for the Vitana operations team',
   };
+
+  const roleExperience: Record<PortalId, {
+    eyebrow: string;
+    heading: string;
+    helper: string;
+    chipA: string;
+    chipB: string;
+    emailPlaceholder: string;
+    passwordPlaceholder: string;
+  }> = {
+    admin: {
+      eyebrow: 'Administration Workspace',
+      heading: 'Lead your school with confidence',
+      helper: 'Access admissions, finance, academics and operational controls from one secure place.',
+      chipA: 'Leadership Ready',
+      chipB: 'Institution Controls',
+      emailPlaceholder: 'admin@school.edu',
+      passwordPlaceholder: 'Enter your admin password',
+    },
+    staff: {
+      eyebrow: 'Staff Workspace',
+      heading: 'Run classes and campus workflows smoothly',
+      helper: 'Open your daily teaching, attendance, timetable and communication tools in seconds.',
+      chipA: 'Academic Workflow',
+      chipB: 'Attendance First',
+      emailPlaceholder: 'staff@school.edu',
+      passwordPlaceholder: 'Enter your staff password',
+    },
+    parent: {
+      eyebrow: 'Parent Workspace',
+      heading: 'Stay connected to your child\'s journey',
+      helper: 'Track progress, attendance, announcements and fee updates with complete clarity.',
+      chipA: 'Family Insights',
+      chipB: 'Real-time Updates',
+      emailPlaceholder: 'parent@email.com',
+      passwordPlaceholder: 'Enter your parent password',
+    },
+    super_admin: {
+      eyebrow: 'Internal Access',
+      heading: 'Platform control for Vitana operations',
+      helper: 'Manage tenant-level governance, configuration and platform stewardship.',
+      chipA: 'Platform Governance',
+      chipB: 'Internal Team Only',
+      emailPlaceholder: 'superadmin@vitana.in',
+      passwordPlaceholder: 'Enter your super admin password',
+    },
+  };
+
 
   return (
     <div className="min-h-screen flex">
@@ -327,49 +419,159 @@ export default function Login() {
         <div className="flex-1 flex items-center justify-center px-6 py-10 lg:px-12">
           <div className="w-full max-w-[400px]">
 
-            {/* Portal tab switcher */}
-            <div className="flex relative border-b border-border mb-8">
-              {PORTALS.map(p => {
-                const Icon = p.icon;
-                const active = loginType === p.id;
-                return (
-                  <button key={p.id} type="button"
-                    onClick={() => { setLoginType(p.id); setError(''); setFieldErrors({}); }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition-colors relative ${
-                      active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5 shrink-0" />
-                    {p.label}
-                    {active && (
-                      <span className="absolute bottom-[-1px] left-1/2 -translate-x-1/2 h-[2.5px] w-full rounded-full transition-all duration-300"
-                        style={{ background: ap.accent }} />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Identity selection step */}
+            {loginType !== 'super_admin' && !selectedPortal ? (
+              <div>
+                <div className="mb-6">
+                  <div className="mb-4">
+                    <div className="h-20 w-20 rounded-2xl overflow-hidden border border-border bg-muted/30 flex items-center justify-center shadow-sm">
+                      {hasSchoolLogo ? (
+                        <img src={schoolInfo?.logoUrl} alt={schoolName} className="h-16 w-16 object-contain" />
+                      ) : (
+                        <div className="relative flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
+                          <Building2 className="h-7 w-7 text-blue-600/70 dark:text-blue-300/70" />
+                          <span className="absolute bottom-2 right-2 text-xs font-bold text-blue-700/80 dark:text-blue-200/80">{schoolInitial}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-            {/* Heading */}
-            <div className="mb-7">
-              {schoolInfo?.logoUrl && (
-                <div className="mb-4 h-12 w-12 rounded-xl overflow-hidden border border-border bg-muted/40 flex items-center justify-center">
-                  <img src={schoolInfo.logoUrl} alt={schoolInfo.name} className="h-10 w-10 object-contain" />
+                  <h2 className="text-[1.35rem] font-semibold text-foreground/80 leading-none tracking-tight">Welcome to</h2>
+                  <div className="mt-1.5 relative inline-block">
+                    <div
+                      className="absolute -inset-x-2 -inset-y-1 rounded-xl blur-md"
+                      style={{ background: `linear-gradient(90deg, ${ap.accent}22, ${ap.accentDark}16)` }}
+                      aria-hidden="true"
+                    />
+                    <h3
+                      className="relative text-[2.15rem] leading-[1.04] tracking-[-0.02em] font-black"
+                      style={{
+                        background: `linear-gradient(92deg, ${ap.accentDark} 0%, ${ap.accent} 45%, #0EA5E9 100%)`,
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                      }}
+                    >
+                      {schoolName}
+                    </h3>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground mt-2">Choose how you would like to sign in. We will tailor the experience to your role.</p>
                 </div>
-              )}
-              <h2 className="text-[1.85rem] font-black text-foreground tracking-tight leading-none">{schoolInfo?.name ?? ap.full}</h2>
-              <p className="text-sm text-muted-foreground mt-1.5">{subtitles[loginType]}</p>
-            </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                <div className="grid gap-3">
+                  {MAIN_PORTALS.map((portal) => {
+                    const Icon = portal.icon;
+                    return (
+                      <button
+                        key={portal.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPortal(portal.id);
+                          setLoginType(portal.id);
+                          setError('');
+                          setFieldErrors({});
+                        }}
+                        className="group w-full rounded-2xl border border-border/70 bg-card px-4 py-4 text-left transition-all duration-200 hover:border-primary/50 hover:shadow-md hover:shadow-primary/10"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl flex items-center justify-center"
+                              style={{ background: `linear-gradient(135deg, ${portal.accent}20, ${portal.accentDark}22)` }}>
+                              <Icon className="h-4.5 w-4.5" style={{ color: portal.accentDark }} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-foreground">I am {portal.label}</p>
+                              <p className="text-xs text-muted-foreground">{subtitles[portal.id]}</p>
+                            </div>
+                          </div>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6 text-center">
+                  <Link to="/super-admin-login" className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                    Super Admin sign-in (internal team)
+                  </Link>
+                </div>
+
+              </div>
+            ) : (
+              <>
+                {/* Heading */}
+                <div className="mb-7">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (loginType === 'super_admin') {
+                        setError('');
+                        setFieldErrors({});
+                        setSelectedPortal(null);
+                        setLoginType('admin');
+                        navigate('/login', { replace: true });
+                        return;
+                      }
+                      setSelectedPortal(null);
+                      setError('');
+                      setFieldErrors({});
+                    }}
+                    className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" /> {loginType === 'super_admin' ? 'Back to school login' : 'Back to role selection'}
+                  </button>
+
+                  <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-card/70 p-4 mb-4">
+                    <div className="absolute -top-10 -right-8 h-24 w-24 rounded-full blur-2xl"
+                      style={{ background: `${ap.accent}30` }} />
+                    <div className="absolute -bottom-10 -left-8 h-20 w-20 rounded-full blur-2xl"
+                      style={{ background: `${ap.accentDark}25` }} />
+                    <div className="relative">
+                      <p className="text-[10px] uppercase tracking-[0.2em] font-bold" style={{ color: ap.accentDark }}>{roleExperience[loginType].eyebrow}</p>
+                      <h3 className="text-base font-extrabold text-foreground mt-1">{roleExperience[loginType].heading}</h3>
+                      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{roleExperience[loginType].helper}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ borderColor: `${ap.accent}55`, color: ap.accentDark, background: `${ap.accent}12` }}>{roleExperience[loginType].chipA}</span>
+                        <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ borderColor: `${ap.accent}45`, color: ap.accentDark, background: `${ap.accent}0D` }}>{roleExperience[loginType].chipB}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-xl overflow-hidden border border-border bg-muted/40 flex items-center justify-center">
+                      {hasSchoolLogo ? (
+                        <img src={schoolInfo?.logoUrl} alt={schoolName} className="h-10 w-10 object-contain" />
+                      ) : (
+                        <div className="relative flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
+                          <Building2 className="h-5 w-5 text-blue-600/70 dark:text-blue-300/70" />
+                          <span className="absolute bottom-1 right-1 text-[10px] font-bold text-blue-700/80 dark:text-blue-200/80">{schoolInitial}</span>
+                        </div>
+                      )}
+                    </div>
+                    {!hasSchoolLogo && (
+                      <Link to="/login?portal=super_admin" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
+                        <ImagePlus className="h-3.5 w-3.5" /> Add school logo
+                      </Link>
+                    )}
+                  </div>
+                  <h2 className="text-[1.85rem] font-black text-foreground tracking-tight leading-none">{schoolInfo?.name ?? ap.full}</h2>
+                  {!hasSchoolLogo && (
+                    <p className="text-xs text-muted-foreground mt-2">No school logo configured yet. Add one in School Management for stronger branding.</p>
+                  )}
+
+                </div>
+
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-4" noValidate>
 
               <div className="space-y-1.5">
                 <label htmlFor="email" className="text-[13px] font-semibold text-foreground">Email address</label>
                 <Input
                   id="email" type="email" value={email}
                   onChange={e => { setEmail(e.target.value); if (fieldErrors.email) setFieldErrors(p => ({ ...p, email: undefined })); }}
-                  placeholder="you@school.edu"
+                  placeholder={roleExperience[loginType].emailPlaceholder}
                   required autoComplete="email"
                   aria-invalid={!!fieldErrors.email}
                   className={`h-11 rounded-xl bg-muted/30 border-border placeholder:text-muted-foreground/50 focus-visible:ring-1 transition-all text-sm ${
@@ -389,7 +591,7 @@ export default function Login() {
                   <Input
                     id="password" type={showPassword ? 'text' : 'password'} value={password}
                     onChange={e => { setPassword(e.target.value); if (fieldErrors.password) setFieldErrors(p => ({ ...p, password: undefined })); }}
-                    placeholder="Enter your password"
+                    placeholder={roleExperience[loginType].passwordPlaceholder}
                     required autoComplete="current-password"
                     aria-invalid={!!fieldErrors.password}
                     className={`h-11 rounded-xl bg-muted/30 border-border placeholder:text-muted-foreground/50 pr-11 focus-visible:ring-1 transition-all text-sm ${
@@ -428,44 +630,43 @@ export default function Login() {
                 style={{ background: `linear-gradient(135deg, ${ap.accent} 0%, ${ap.accentDark} 100%)`, boxShadow: `0 4px 24px ${ap.accent}40` }}>
                 {loading
                   ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</>
-                  : <>Sign in to {schoolInfo?.name ?? ap.full} <ArrowRight className="ml-1.5 h-4 w-4" /></>
+                  : <>{brandedSignInLabel} <ArrowRight className="ml-1.5 h-4 w-4" /></>
                 }
               </Button>
-            </form>
+                </form>
 
-            {/* Demo credentials */}
-            {demos.filter(d => d.portal === loginType).length > 0 && (
-              <div className="mt-6 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Demo Access</span>
-                </div>
-                {demos.filter(d => d.portal === loginType).map((du, i) => (
-                  <div key={i} className="flex items-center justify-between py-1.5">
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{du.role}</p>
-                      <p className="text-[11px] text-muted-foreground leading-tight">{du.email}</p>
+                {/* Demo credentials */}
+                {demos.filter(d => d.portal === loginType).length > 0 && (
+                  <div className="mt-6 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Demo Access</span>
                     </div>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => fillDemo(du.email, du.password)}
-                      className="h-7 px-3 text-[11px] font-semibold rounded-lg hover:border-primary/50 hover:text-primary transition-colors">
-                      Use
-                    </Button>
+                    {demos.filter(d => d.portal === loginType).map((du, i) => (
+                      <div key={i} className="flex items-center justify-between py-1.5">
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">{du.role}</p>
+                          <p className="text-[11px] text-muted-foreground leading-tight">{du.email}</p>
+                        </div>
+                        <Button type="button" variant="outline" size="sm"
+                          onClick={() => fillDemo(du.email, du.password)}
+                          className="h-7 px-3 text-[11px] font-semibold rounded-lg hover:border-primary/50 hover:text-primary transition-colors">
+                          Use
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                )}
 
-            {/* Footer links */}
-            <div className="mt-5 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Lock className="h-3 w-3 text-emerald-500" />
-                Secured with 256-bit SSL
-              </span>
-              <Link to="/super-admin-login" className="hover:text-primary transition-colors font-medium">
-                {t('auth.superAdminAccess')}
-              </Link>
-            </div>
+                {/* Footer links */}
+                <div className="mt-5 flex items-center text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="h-3 w-3 text-emerald-500" />
+                    Secured with 256-bit SSL
+                  </span>
+                </div>
+              </>
+            )}
 
             <p className="mt-8 text-center text-[11px] text-muted-foreground lg:hidden">© 2026 Vitana Private Limited</p>
           </div>

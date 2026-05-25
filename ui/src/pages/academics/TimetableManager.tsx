@@ -27,7 +27,7 @@ interface PeriodSlot {
   endTime: string;
 }
 
-const PERIOD_SLOTS: PeriodSlot[] = [
+const DEFAULT_PERIOD_SLOTS: PeriodSlot[] = [
   { periodNumber: 1, label: "P1", startTime: "08:00", endTime: "08:45" },
   { periodNumber: 2, label: "P2", startTime: "08:45", endTime: "09:30" },
   { periodNumber: 3, label: "P3", startTime: "09:45", endTime: "10:30" },
@@ -38,7 +38,21 @@ const PERIOD_SLOTS: PeriodSlot[] = [
   { periodNumber: 8, label: "P8", startTime: "14:00", endTime: "14:45" },
 ];
 
-// break row shown BEFORE period at this index (0-based in PERIOD_SLOTS)
+const MAX_PERIODS = 9;
+
+const toSeconds = (hhmm: string) => `${hhmm}:00`;
+
+const addMinutes = (hhmm: string, minutes: number) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  d.setMinutes(d.getMinutes() + minutes);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+const normalizeSlotLabel = (periodNumber: number) => `P${periodNumber}`;
+
+// break row shown BEFORE period at this index (0-based in rendered period slots)
 const BREAK_BEFORE_IDX: Record<number, { label: string; time: string }> = {
   2: { label: "Short Break",  time: "9:30 – 9:45 AM" },
   5: { label: "Lunch Break",  time: "12:00 – 12:30 PM" },
@@ -85,11 +99,15 @@ export default function TimetableManager() {
   // Timetable data
   const [activeTimetable, setActiveTimetable] = useState<TimetableRecord | null>(null);
   const [periodsMap, setPeriodsMap]           = useState<Record<string, TimetablePeriod>>({});
+  const [periodSlots, setPeriodSlots]         = useState<PeriodSlot[]>(DEFAULT_PERIOD_SLOTS);
 
   // Edit cell dialog
   const [editCell, setEditCell]   = useState<{ day: string; period: number } | null>(null);
   const [editForm, setEditForm]   = useState({ subjectId: "", teacherId: "", room: "", notes: "" });
   const [cellSaving, setCellSaving] = useState(false);
+  const [timeEditDialog, setTimeEditDialog] = useState<{ open: boolean; slot: PeriodSlot | null }>({ open: false, slot: null });
+  const [timeEditForm, setTimeEditForm] = useState({ startTime: "", endTime: "" });
+  const [timeSaving, setTimeSaving] = useState(false);
 
   // Loading flags
   const [loadingFilters, setLoadingFilters]     = useState(true);
@@ -154,7 +172,7 @@ export default function TimetableManager() {
 
   // Subject in cells with teacher assignments count
   const assignedCount = Object.values(periodsMap).filter(p => p.subjectId).length;
-  const totalSlots = PERIOD_SLOTS.length * DAYS.length;
+  const totalSlots = periodSlots.length * DAYS.length;
 
   // ─── Initial data load ───────────────────────────────────────────────────
   useEffect(() => {
@@ -215,6 +233,7 @@ export default function TimetableManager() {
     if (!selectedClassObj || !selectedYear || !selectedSection) {
       setActiveTimetable(null);
       setPeriodsMap({});
+      setPeriodSlots(DEFAULT_PERIOD_SLOTS);
       setResolvedSectionId(undefined);
       return;
     }
@@ -246,16 +265,42 @@ export default function TimetableManager() {
       const tt = (res.timetables || []).find(
         t => normalizeYear(t.academicYear) === normalizeYear(selectedYear)
       ) ?? null;
-      if (!tt) { setActiveTimetable(null); setPeriodsMap({}); return; }
+      if (!tt) { setActiveTimetable(null); setPeriodsMap({}); setPeriodSlots(DEFAULT_PERIOD_SLOTS); return; }
       setActiveTimetable(tt);
 
       // 3. Load all periods for this timetable.
       const periodsRes = await timetableApi.getPeriods(tt.id);
       const map: Record<string, TimetablePeriod> = {};
-      for (const p of periodsRes.periods || []) {
+      const periods = periodsRes.periods || [];
+      for (const p of periods) {
         map[`${p.dayOfWeek}-${p.periodNumber}`] = p;
       }
       setPeriodsMap(map);
+
+      const distinctNumbers = [...new Set(periods.map(p => p.periodNumber))]
+        .filter(n => n >= 1 && n <= MAX_PERIODS)
+        .sort((a, b) => a - b);
+
+      if (distinctNumbers.length === 0) {
+        setPeriodSlots(DEFAULT_PERIOD_SLOTS);
+      } else {
+        const highestPeriodNumber = Math.max(...distinctNumbers);
+        const allNumbers = Array.from({ length: highestPeriodNumber }, (_, i) => i + 1);
+
+        const slots = allNumbers.map((periodNumber) => {
+          const sample = periods.find(p => p.periodNumber === periodNumber);
+          const fallback = DEFAULT_PERIOD_SLOTS.find(s => s.periodNumber === periodNumber);
+          const start = sample?.startTime?.slice(0, 5) ?? fallback?.startTime ?? "08:00";
+          const end = sample?.endTime?.slice(0, 5) ?? fallback?.endTime ?? addMinutes(start, 45);
+          return {
+            periodNumber,
+            label: normalizeSlotLabel(periodNumber),
+            startTime: start,
+            endTime: end,
+          };
+        });
+        setPeriodSlots(slots);
+      }
     } catch {
       toast.error("Failed to load timetable");
     } finally {
@@ -288,6 +333,7 @@ export default function TimetableManager() {
       });
       setActiveTimetable(tt);
       setPeriodsMap({});
+      setPeriodSlots(DEFAULT_PERIOD_SLOTS);
       toast.success("Timetable initialized — click any cell to assign subjects");
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? "Failed to initialize timetable";
@@ -323,7 +369,11 @@ export default function TimetableManager() {
   const handleSaveCell = async (forceOverride = false) => {
     if (!editCell || !activeTimetable || !editForm.subjectId) return;
     const key    = `${editCell.day}-${editCell.period}`;
-    const slot   = PERIOD_SLOTS.find(s => s.periodNumber === editCell.period)!;
+    const slot   = periodSlots.find(s => s.periodNumber === editCell.period);
+    if (!slot) {
+      toast.error("Invalid period slot");
+      return;
+    }
     const existing = periodsMap[key];
     setCellSaving(true);
     try {
@@ -394,6 +444,152 @@ export default function TimetableManager() {
     }
   };
 
+  const handleAddPeriodRow = async () => {
+    if (!activeTimetable) return;
+    if (periodSlots.length >= MAX_PERIODS) {
+      toast.info(`Maximum ${MAX_PERIODS} periods are allowed`);
+      return;
+    }
+
+    const nextPeriodNumber = Math.max(0, ...periodSlots.map(s => s.periodNumber)) + 1;
+    const previousSlot = periodSlots[periodSlots.length - 1] ?? DEFAULT_PERIOD_SLOTS[0];
+    const start = previousSlot ? previousSlot.endTime : "08:00";
+    const end = addMinutes(start, 45);
+    const newSlot: PeriodSlot = {
+      periodNumber: nextPeriodNumber,
+      label: normalizeSlotLabel(nextPeriodNumber),
+      startTime: start,
+      endTime: end,
+    };
+
+    setCellSaving(true);
+    try {
+      await Promise.all(
+        DAYS.map(async (day) => {
+          const key = `${day}-${newSlot.periodNumber}`;
+          const existing = periodsMap[key];
+          if (existing) {
+            await timetableApi.updatePeriod(existing.id, {
+              StartTime: toSeconds(newSlot.startTime),
+              EndTime: toSeconds(newSlot.endTime),
+              PeriodType: existing.periodType ?? "lecture",
+            });
+            return;
+          }
+
+          await timetableApi.createPeriod({
+            TimetableId: activeTimetable.id,
+            DayOfWeek: day,
+            PeriodNumber: newSlot.periodNumber,
+            StartTime: toSeconds(newSlot.startTime),
+            EndTime: toSeconds(newSlot.endTime),
+            PeriodType: "lecture",
+          });
+        })
+      );
+
+      await loadTimetableData();
+      toast.success(`Period ${newSlot.label} added`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.message ?? "Failed to add new period";
+      toast.error(msg);
+    } finally {
+      setCellSaving(false);
+    }
+  };
+
+  const handleDeleteLastPeriodRow = async () => {
+    if (!activeTimetable || periodSlots.length <= 1) return;
+
+    const lastSlot = periodSlots[periodSlots.length - 1];
+    const hasAssignedSubjects = Object.values(periodsMap).some(
+      p => p.periodNumber === lastSlot.periodNumber && !!p.subjectId
+    );
+
+    if (hasAssignedSubjects) {
+      const proceed = confirm(
+        `Period ${lastSlot.label} contains assigned subjects. Delete this period from all days?`
+      );
+      if (!proceed) return;
+    }
+
+    const toDelete = Object.values(periodsMap).filter(p => p.periodNumber === lastSlot.periodNumber);
+    setCellSaving(true);
+    try {
+      await Promise.all(toDelete.map(p => timetableApi.deletePeriod(p.id)));
+      setPeriodSlots(prev => prev.slice(0, -1));
+      setPeriodsMap(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => {
+          if (next[k].periodNumber === lastSlot.periodNumber) {
+            delete next[k];
+          }
+        });
+        return next;
+      });
+      toast.success(`Period ${lastSlot.label} removed`);
+    } catch {
+      toast.error("Failed to delete period");
+    } finally {
+      setCellSaving(false);
+    }
+  };
+
+  const openPeriodTimeEditor = (slot: PeriodSlot) => {
+    setTimeEditDialog({ open: true, slot });
+    setTimeEditForm({ startTime: slot.startTime, endTime: slot.endTime });
+  };
+
+  const handleSavePeriodTime = async () => {
+    if (!activeTimetable || !timeEditDialog.slot) return;
+    if (!timeEditForm.startTime || !timeEditForm.endTime) {
+      toast.error("Start time and end time are required");
+      return;
+    }
+    if (timeEditForm.startTime >= timeEditForm.endTime) {
+      toast.error("End time must be after start time");
+      return;
+    }
+
+    const slot = timeEditDialog.slot;
+    const existingForSlot = Object.values(periodsMap).filter(p => p.periodNumber === slot.periodNumber);
+    setTimeSaving(true);
+
+    try {
+      // Keep period timings consistent for this period number across all weekdays.
+      await Promise.all(
+        DAYS.map(async (day) => {
+          const existing = existingForSlot.find(p => p.dayOfWeek === day);
+          if (existing) {
+            await timetableApi.updatePeriod(existing.id, {
+              StartTime: toSeconds(timeEditForm.startTime),
+              EndTime: toSeconds(timeEditForm.endTime),
+              PeriodType: existing.periodType ?? "lecture",
+            });
+            return;
+          }
+          await timetableApi.createPeriod({
+            TimetableId: activeTimetable.id,
+            DayOfWeek: day,
+            PeriodNumber: slot.periodNumber,
+            StartTime: toSeconds(timeEditForm.startTime),
+            EndTime: toSeconds(timeEditForm.endTime),
+            PeriodType: "lecture",
+          });
+        })
+      );
+
+      await loadTimetableData();
+      setTimeEditDialog({ open: false, slot: null });
+      toast.success(`Updated timing for ${slot.label}`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to update period timing";
+      toast.error(msg);
+    } finally {
+      setTimeSaving(false);
+    }
+  };
+
   const handleExportCSV = () => {
     if (!activeTimetable) return;
 
@@ -401,7 +597,7 @@ export default function TimetableManager() {
     const header = ["Period", "Time", ...DAYS];
 
     const rows: string[][] = [];
-    PERIOD_SLOTS.forEach(slot => {
+    periodSlots.forEach(slot => {
       const row: string[] = [
         slot.label,
         `${slot.startTime}-${slot.endTime}`,
@@ -444,6 +640,7 @@ export default function TimetableManager() {
       await timetableApi.delete(activeTimetable.id);
       setActiveTimetable(null);
       setPeriodsMap({});
+      setPeriodSlots(DEFAULT_PERIOD_SLOTS);
       toast.success("Timetable deleted");
     } catch {
       toast.error("Failed to delete timetable");
@@ -524,6 +721,30 @@ export default function TimetableManager() {
 
             {activeTimetable && (
               <>
+                <div className="inline-flex items-center rounded-md border h-9 px-2.5 gap-2 bg-background">
+                  <span className="text-xs text-muted-foreground">Periods:</span>
+                  <span className="text-sm font-semibold min-w-[20px] text-center">{periodSlots.length}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={handleDeleteLastPeriodRow}
+                    disabled={cellSaving || periodSlots.length <= 1}
+                    title="Remove last period"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={handleAddPeriodRow}
+                    disabled={cellSaving || periodSlots.length >= MAX_PERIODS}
+                    title="Add period"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -665,7 +886,7 @@ export default function TimetableManager() {
                 </tr>
               </thead>
               <tbody>
-                {PERIOD_SLOTS.map((slot, idx) => (
+                {periodSlots.map((slot, idx) => (
                   <tr key={slot.periodNumber + "-wrapper"} className="contents">
                     {/* Break row before this period? */}
                     {BREAK_BEFORE_IDX[idx] && (
@@ -690,9 +911,16 @@ export default function TimetableManager() {
                     >
                       <td className="px-3 py-2 font-bold text-xs text-primary border-r">{slot.label}</td>
                       <td className="px-2 py-2 text-[11px] text-muted-foreground font-mono border-r whitespace-nowrap">
-                        {slot.startTime}
-                        <br />
-                        <span className="opacity-60">{slot.endTime}</span>
+                        <button
+                          type="button"
+                          onClick={() => openPeriodTimeEditor(slot)}
+                          className="text-left hover:text-foreground transition-colors"
+                          title={`Edit time for ${slot.label}`}
+                        >
+                          {slot.startTime}
+                          <br />
+                          <span className="opacity-60">{slot.endTime}</span>
+                        </button>
                       </td>
 
                       {DAYS.map(day => {
@@ -750,7 +978,7 @@ export default function TimetableManager() {
             <span>
               <span className="font-semibold text-foreground">{classSubjects.length}</span> subjects configured
             </span>
-            <span className="ml-auto text-[11px]">Click any cell to assign · Click filled cell to edit or clear</span>
+            <span className="ml-auto text-[11px]">Click a time to edit timing · Use +/- to add/remove periods · Click any cell to assign</span>
           </div>
         </Card>
       )}
@@ -765,11 +993,11 @@ export default function TimetableManager() {
                   <span>{editCell.day}</span>
                   <span className="text-muted-foreground font-normal">·</span>
                   <span>Period {editCell.period}</span>
-                  {PERIOD_SLOTS.find(s => s.periodNumber === editCell.period) && (
+                  {periodSlots.find(s => s.periodNumber === editCell.period) && (
                     <span className="text-xs text-muted-foreground font-normal ml-1">
-                      ({PERIOD_SLOTS.find(s => s.periodNumber === editCell.period)?.startTime}
+                      ({periodSlots.find(s => s.periodNumber === editCell.period)?.startTime}
                       {" – "}
-                      {PERIOD_SLOTS.find(s => s.periodNumber === editCell.period)?.endTime})
+                      {periodSlots.find(s => s.periodNumber === editCell.period)?.endTime})
                     </span>
                   )}
                 </>
@@ -901,6 +1129,74 @@ export default function TimetableManager() {
                 disabled={cellSaving}
               >
                 Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Period Time Dialog ── */}
+      <Dialog
+        open={timeEditDialog.open}
+        onOpenChange={(open) => {
+          if (!open && !timeSaving) {
+            setTimeEditDialog({ open: false, slot: null });
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Edit Time · {timeEditDialog.slot?.label}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                  Start Time
+                </Label>
+                <Input
+                  type="time"
+                  value={timeEditForm.startTime}
+                  onChange={(e) => setTimeEditForm(f => ({ ...f, startTime: e.target.value }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                  End Time
+                </Label>
+                <Input
+                  type="time"
+                  value={timeEditForm.endTime}
+                  onChange={(e) => setTimeEditForm(f => ({ ...f, endTime: e.target.value }))}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              This updates the selected period timing for all weekdays.
+            </p>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setTimeEditDialog({ open: false, slot: null })}
+                disabled={timeSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSavePeriodTime}
+                disabled={timeSaving || !timeEditForm.startTime || !timeEditForm.endTime}
+              >
+                {timeSaving
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+                  : "Save Time"
+                }
               </Button>
             </div>
           </div>

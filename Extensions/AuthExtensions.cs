@@ -64,6 +64,57 @@ public static class AuthExtensions
                         return;
                     }
 
+                    // Billing policy for school admin sessions:
+                    // - Inactive/Suspended billing blocks access.
+                    // - Expired beyond 14 days grace auto-transitions to Suspended and blocks access.
+                    var normalizedRole = login.Role?.Trim().ToLowerInvariant();
+                    var isAdminRole = normalizedRole is "admin" or "administrator" or "schooladmin" or "school_admin" or "school admin";
+                    if (isAdminRole && login.SchoolId != Guid.Empty)
+                    {
+                        var school = await db.Schools
+                            .IgnoreQueryFilters()
+                            .FirstOrDefaultAsync(s => s.Id == login.SchoolId && !s.IsDeleted);
+
+                        if (school == null)
+                        {
+                            context.Fail("School account not found.");
+                            return;
+                        }
+
+                        if (!school.IsActive)
+                        {
+                            context.Fail("School account is inactive.");
+                            return;
+                        }
+
+                        var billingStatus = (school.BillingStatus ?? "Active").Trim().ToLowerInvariant();
+                        var nowUtc = DateTime.UtcNow;
+
+                        if (school.BillingExpiryDate.HasValue)
+                        {
+                            var graceCutoff = school.BillingExpiryDate.Value.Date.AddDays(14);
+                            if (nowUtc.Date > graceCutoff)
+                            {
+                                if (billingStatus is not "inactive" and not "suspended")
+                                {
+                                    school.BillingStatus = "Suspended";
+                                    school.UpdatedAt = nowUtc;
+                                    await db.SaveChangesAsync();
+                                    billingStatus = "suspended";
+                                }
+
+                                context.Fail("Subscription expired beyond grace period.");
+                                return;
+                            }
+                        }
+
+                        if (billingStatus is "inactive" or "suspended")
+                        {
+                            context.Fail("School subscription is inactive or suspended.");
+                            return;
+                        }
+                    }
+
                     // For staff/teacher roles: also verify the linked StaffMember is still active.
                     // This blocks existing sessions immediately when a staff member is deactivated,
                     // even if the UserLogin.Status has not yet been updated.

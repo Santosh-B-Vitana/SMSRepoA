@@ -610,7 +610,7 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
-        /// Get aggregated income sources (Fee, Library, Store, Donations, Petty Cash)
+        /// Get aggregated income sources (Fee, Library, Store, Donations)
         /// </summary>
         [HttpGet("income-sources")]
         [ProducesResponseType(typeof(AggregatedIncomeDto), 200)]

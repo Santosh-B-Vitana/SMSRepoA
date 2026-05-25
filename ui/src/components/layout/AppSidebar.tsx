@@ -20,21 +20,6 @@ type NavItem = {
   moduleKey?: ModuleName;
 }
 
-/** Remove nav items whose module is disabled, then strip orphaned section labels. */
-function filterByModules(items: NavItem[], isModuleEnabled: (m: ModuleName) => boolean): NavItem[] {
-  const visible = items.filter(item =>
-    item.isLabel || !item.moduleKey || isModuleEnabled(item.moduleKey)
-  );
-  // Strip labels that have no visible non-label items in their section
-  return visible.filter((item, idx) => {
-    if (!item.isLabel) return true;
-    const rest = visible.slice(idx + 1);
-    const nextLabelIdx = rest.findIndex(i => i.isLabel);
-    const sectionItems = nextLabelIdx === -1 ? rest : rest.slice(0, nextLabelIdx);
-    return sectionItems.some(i => !i.isLabel);
-  });
-}
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user } = useAuth()
   const { t } = useLanguage()
@@ -90,8 +75,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "Advanced Analytics", url: "/advanced-analytics", icon: BarChart3, moduleKey: "analytics" },
       ];
 
-      // Super admin always sees everything; for admin apply module filters
-      return user.role === 'super_admin' ? adminItems : filterByModules(adminItems, isModuleEnabled);
+      // Keep module items visible even when disabled so users can open the existing
+      // ModuleRestricted page and understand why access is blocked.
+      return adminItems;
     }
 
     if (user.role === 'staff') {
@@ -329,9 +315,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Apply school-level feature toggles: hide items whose module is disabled,
-      // then strip any section labels that have no visible children.
-      return filterByModules(staffItems, isModuleEnabled);
+      // Keep module items visible even when disabled so users see the menu entry
+      // and can open the existing ModuleRestricted page.
+      return staffItems;
     }
 
     if (user.role === 'parent') {

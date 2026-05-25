@@ -71,9 +71,8 @@ namespace SmsApi.Models.DTOs
 
         public string? AuthorAvatar { get; set; }
 
-        [Required]
-        [MinLength(1)]
-        public string Content { get; set; } = string.Empty;
+        [MaxLength(5000)]
+        public string? Content { get; set; }
 
         [MaxLength(20)]
         public string? MediaType { get; set; }
@@ -97,9 +96,8 @@ namespace SmsApi.Models.DTOs
     /// </summary>
     public class UpdateSchoolConnectPostRequest
     {
-        [Required]
-        [MinLength(1)]
-        public string Content { get; set; } = string.Empty;
+        [MaxLength(5000)]
+        public string? Content { get; set; }
 
         [MaxLength(20)]
         public string? MediaType { get; set; }

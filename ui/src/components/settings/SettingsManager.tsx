@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Settings,
@@ -17,6 +17,7 @@ import {
   Globe,
   Clock,
   Calendar,
+  Camera,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -97,16 +98,20 @@ function SettingRow({
 // ─── Profile Tab ──────────────────────────────────────────────────────────────
 
 function ProfileTab({ userId }: { userId: string }) {
-  const { user } = useAuth();
+  const { user, refreshCurrentUser } = useAuth();
+  const { schoolInfo } = useSchool();
   const [settings, setSettings] = useState<UserSettingResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [bio, setBio] = useState("");
   const [jobTitle, setJobTitle] = useState("");
+  const [profilePhoto, setProfilePhoto] = useState("");
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -118,14 +123,26 @@ function ProfileTab({ userId }: { userId: string }) {
       setPhone(getSetting(s, "profile_phone", ""));
       setBio(getSetting(s, "profile_bio", ""));
       setJobTitle(getSetting(s, "profile_job_title", ""));
+
+      const customPhoto = getSetting(s, "profile_photo_url", "");
+      const role = String(user?.role ?? "").toLowerCase();
+      const adminDefaultPhoto = role === "admin" || role === "super_admin"
+        ? (schoolInfo?.logoUrl ?? "")
+        : "";
+      setProfilePhoto(customPhoto || user?.avatar || adminDefaultPhoto || "");
     } catch {
       // pre-populate from auth context on load failure
       setFirstName(user?.name?.split(" ")[0] ?? "");
       setLastName(user?.name?.split(" ").slice(1).join(" ") ?? "");
+      const role = String(user?.role ?? "").toLowerCase();
+      const adminDefaultPhoto = role === "admin" || role === "super_admin"
+        ? (schoolInfo?.logoUrl ?? "")
+        : "";
+      setProfilePhoto(user?.avatar || adminDefaultPhoto || "");
     } finally {
       setLoading(false);
     }
-  }, [userId, user]);
+  }, [userId, user, schoolInfo?.logoUrl]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -152,12 +169,31 @@ function ProfileTab({ userId }: { userId: string }) {
           buildUserSetting("profile_job_title", jobTitle, "profile"),
         ],
       });
+
+      await refreshCurrentUser();
       toast.success("Profile updated successfully");
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? "Failed to save profile";
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePhotoChange(file?: File) {
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const res = await settingsApi.uploadMyProfilePhoto(file);
+      setProfilePhoto(res.photoUrl);
+      await refreshCurrentUser();
+      toast.success("Profile photo updated");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to upload profile photo";
+      toast.error(msg);
+    } finally {
+      setUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
 
@@ -183,13 +219,47 @@ function ProfileTab({ userId }: { userId: string }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
-            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
-              {(firstName[0] ?? user?.name?.[0] ?? "?").toUpperCase()}
+            <div className="relative">
+              <div className="h-16 w-16 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
+                {profilePhoto ? (
+                  <img
+                    src={profilePhoto}
+                    alt="Profile"
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  (firstName[0] ?? user?.name?.[0] ?? "?").toUpperCase()
+                )}
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full"
+                disabled={uploadingPhoto}
+                onClick={() => photoInputRef.current?.click()}
+                title="Change profile photo"
+              >
+                {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              </Button>
             </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              className="hidden"
+              onChange={(e) => handlePhotoChange(e.target.files?.[0])}
+            />
             <div>
               <p className="font-semibold">{firstName} {lastName}</p>
               <p className="text-sm text-muted-foreground">{user?.email}</p>
               <Badge variant="secondary" className="mt-1 capitalize">{user?.role}</Badge>
+              <p className="text-xs text-muted-foreground mt-1">
+                For admins, school logo is used as the default profile photo.
+              </p>
             </div>
           </div>
 

@@ -77,11 +77,20 @@ Seq Logs: `http://localhost:5341`
 | [docs/TECHNICAL_DOCUMENT.md](docs/TECHNICAL_DOCUMENT.md) | Architecture, stack, database schema, configuration |
 | [docs/FUNCTIONAL_DOCUMENT.md](docs/FUNCTIONAL_DOCUMENT.md) | Complete feature reference for all modules |
 | [docs/API_DOCS.md](docs/API_DOCS.md) | REST API reference with request/response examples |
+| [docs/AI_SUPPORT_RUNBOOK.md](docs/AI_SUPPORT_RUNBOOK.md) | Fast triage runbook for AI-assisted support (login, branding, RBAC, finance) |
 | [docs/CODING_AGENT_GUIDELINES.md](docs/CODING_AGENT_GUIDELINES.md) | Patterns for developers and AI coding agents |
 | [docs/DEFAULT_CREDENTIALS.md](docs/DEFAULT_CREDENTIALS.md) | Dev credentials, JWT config, test factory setup |
 | [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | Docker, cloud deployment, env vars, migrations |
 | [docs/TESTING_INFRASTRUCTURE.md](docs/TESTING_INFRASTRUCTURE.md) | Test setup, unit/integration patterns, known issues |
 | [docs/MODULE_STATUS.md](docs/MODULE_STATUS.md) | Production readiness status per module |
+
+### Support Notes (Latest)
+
+- Unified login UX for Admin/Staff/Parent: `ui/src/pages/Login.tsx`
+- Dedicated super admin route retained: `/super-admin-login`
+- Public pre-login school branding endpoint: `GET /api/settings/public-branding`
+- Branding cache + fallback in `SchoolContext` for stable login identity
+- Finance correction: petty cash excluded from aggregated income sources
 
 ---
 

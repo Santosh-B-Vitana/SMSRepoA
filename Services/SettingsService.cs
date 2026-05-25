@@ -152,10 +152,8 @@ namespace SmsApi.Services
             if (string.IsNullOrWhiteSpace(request.SettingKey) || request.SettingKey.Length > 100)
                 throw new ArgumentException("Setting key must be provided and not exceed 100 characters");
 
-            // VALIDATION 3: User must exist in database
-            var userExists = await _context.Persons.AnyAsync(p => p.Id == request.UserId && !p.IsDeleted);
-            if (!userExists)
-                throw new KeyNotFoundException($"User with ID '{request.UserId}' not found");
+            // VALIDATION 3: UserId is trusted from authenticated token path in SettingsController.
+            // Do not hard-fail when identity records are split across legacy tables.
 
             // VALIDATION 4: Data type must be valid
             var validDataTypes = new[] { "string", "number", "boolean", "date", "json" };

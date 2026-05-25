@@ -32,6 +32,7 @@ export default function SchoolManagement() {
   const [viewSchool, setViewSchool] = useState<SchoolListItem | null>(null);
   const [editSchool, setEditSchool] = useState<SchoolDetail | null>(null);
   const [editForm, setEditForm] = useState<SchoolForm>(emptyForm);
+  const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [addDialog, setAddDialog] = useState(false);
   const [addForm, setAddForm] = useState<SchoolForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -76,24 +77,33 @@ export default function SchoolManagement() {
   const openEditDialog = (school: SchoolListItem) => {
     setEditSchool(school as unknown as SchoolDetail);
     setEditForm({ name: school.name, schoolCode: school.schoolCode, address: school.address ?? "", phone: school.phone ?? "", email: school.email ?? "", logo: school.logo ?? "" });
+    setEditLogoFile(null);
   };
 
   const handleEditSchool = async () => {
     if (!editSchool) return;
     try {
       setSubmitting(true);
+      let logoUrl = editForm.logo || undefined;
+
+      if (editLogoFile) {
+        const upload = await superAdminApi.uploadSchoolLogo(editSchool.id, editLogoFile);
+        logoUrl = upload.logoUrl;
+      }
+
       await superAdminApi.updateSchool(editSchool.id, {
         name: editForm.name || undefined,
         address: editForm.address || undefined,
         phone: editForm.phone || undefined,
         email: editForm.email || undefined,
-        logo: editForm.logo || undefined,
+        logo: logoUrl,
       });
       toast.success("School updated");
       setEditSchool(null);
+      setEditLogoFile(null);
       await fetchSchools();
-    } catch {
-      toast.error("Failed to update school");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to update school");
     } finally {
       setSubmitting(false);
     }
@@ -279,17 +289,39 @@ export default function SchoolManagement() {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editSchool} onOpenChange={() => setEditSchool(null)}>
+      <Dialog open={!!editSchool} onOpenChange={() => { setEditSchool(null); setEditLogoFile(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Edit School</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1"><Label>Name</Label><Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label>School Logo</Label>
+              <div className="flex items-center gap-3">
+                {editForm.logo
+                  ? <img src={editForm.logo} alt="School logo" className="h-14 w-14 rounded object-cover border" />
+                  : <div className="h-14 w-14 rounded bg-primary/10 flex items-center justify-center"><Building2 className="h-7 w-7 text-primary" /></div>
+                }
+                <div className="flex-1">
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                    onChange={e => {
+                      const file = e.target.files?.[0] ?? null;
+                      setEditLogoFile(file);
+                      if (file) {
+                        setEditForm(f => ({ ...f, logo: URL.createObjectURL(file) }));
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Upload a new image to replace existing logo in storage.</p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-1"><Label>Address</Label><Textarea value={editForm.address} onChange={e => setEditForm(f => ({ ...f, address: e.target.value }))} rows={2} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Phone</Label><Input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
               <div className="space-y-1"><Label>Email</Label><Input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
             </div>
-            <div className="space-y-1"><Label>Logo URL</Label><Input value={editForm.logo} onChange={e => setEditForm(f => ({ ...f, logo: e.target.value }))} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSchool(null)}>Cancel</Button>

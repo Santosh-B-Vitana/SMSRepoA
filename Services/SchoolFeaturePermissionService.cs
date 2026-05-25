@@ -59,20 +59,24 @@ namespace SmsApi.Services
         public async Task<List<SchoolListDto>> GetAllSchoolsAsync()
         {
             var schools = await _context.Schools
-                .Where(s => s.IsActive)
                 .Select(s => new SchoolListDto
                 {
                     Id = s.Id,
                     Name = s.Name,
                     SchoolCode = s.SchoolCode,
+                    Address = s.Address,
+                    Phone = s.Phone,
+                    Email = s.Email,
+                    Logo = s.Logo,
                     IsActive = s.IsActive,
                     EnabledModulesCount = _context.SchoolFeaturePermissions
                         .Count(p => p.SchoolId == s.Id && p.IsEnabled),
                     TotalModulesCount = _defaultModules.Length,
                     IsOnboarded = _context.UserLogins
-                        .Any(u => u.SchoolId == s.Id && u.Role == "Admin")
+                        .Any(u => u.SchoolId == s.Id && u.Role.ToLower() == "admin")
                 })
-                .OrderBy(s => s.Name)
+                .OrderByDescending(s => s.IsActive)
+                .ThenBy(s => s.Name)
                 .ToListAsync();
 
             return schools;
@@ -81,7 +85,7 @@ namespace SmsApi.Services
         public async Task<SchoolPermissionsResponse> GetSchoolPermissionsAsync(Guid schoolId)
         {
             var school = await _context.Schools
-                .FirstOrDefaultAsync(s => s.Id == schoolId && s.IsActive);
+                .FirstOrDefaultAsync(s => s.Id == schoolId);
 
             if (school == null)
                 throw new KeyNotFoundException($"School with ID {schoolId} not found");
@@ -127,7 +131,7 @@ namespace SmsApi.Services
                 throw new ArgumentException("School ID is required.", nameof(request.SchoolId));
 
             var school = await _context.Schools
-                .FirstOrDefaultAsync(s => s.Id == request.SchoolId && s.IsActive);
+                .FirstOrDefaultAsync(s => s.Id == request.SchoolId);
 
             if (school == null)
                 throw new KeyNotFoundException($"School with ID {request.SchoolId} not found");
@@ -184,7 +188,7 @@ namespace SmsApi.Services
                 throw new ArgumentException("At least one module must be provided.", nameof(request.Modules));
 
             var school = await _context.Schools
-                .FirstOrDefaultAsync(s => s.Id == request.SchoolId && s.IsActive);
+                .FirstOrDefaultAsync(s => s.Id == request.SchoolId);
 
             if (school == null)
                 throw new KeyNotFoundException($"School with ID {request.SchoolId} not found");
@@ -329,6 +333,29 @@ namespace SmsApi.Services
                 throw new KeyNotFoundException($"School {schoolId} not found.");
 
             school.IsActive = !school.IsActive;
+
+            var schoolAdmins = await _context.UserLogins
+                .Where(u => !u.IsDeleted
+                            && u.SchoolId == schoolId
+                            && (u.Role.ToLower() == "admin" || u.Role.ToLower() == "administrator"))
+                .ToListAsync();
+
+            foreach (var admin in schoolAdmins)
+            {
+                if (!school.IsActive)
+                {
+                    admin.Status = StatusConstants.UserStatus.Inactive;
+                    admin.RefreshTokenHash = null;
+                    admin.RefreshTokenExpiry = null;
+                }
+                else if (admin.Status == StatusConstants.UserStatus.Inactive)
+                {
+                    admin.Status = StatusConstants.UserStatus.Active;
+                }
+
+                admin.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _context.SaveChangesAsync();
             return school.IsActive;
         }

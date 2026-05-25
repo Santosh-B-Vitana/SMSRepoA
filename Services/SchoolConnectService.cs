@@ -154,10 +154,12 @@ namespace SmsApi.Services
         public async Task<SchoolConnectPostResponse> CreatePostAsync(CreateSchoolConnectPostRequest request)
         {
             // Validation
-            if (string.IsNullOrWhiteSpace(request.Content))
-                throw new InvalidOperationException("Post content is required");
+            var hasContent = !string.IsNullOrWhiteSpace(request.Content);
+            var hasMedia = !string.IsNullOrWhiteSpace(request.MediaUrl);
+            if (!hasContent && !hasMedia)
+                throw new InvalidOperationException("Post must have content or media");
 
-            if (request.Content.Length > 5000)
+            if (request.Content != null && request.Content.Length > 5000)
                 throw new InvalidOperationException("Post content cannot exceed 5000 characters");
 
             var validVisibilities = new[] { "public", "class", "group", "staff", "parent", "private" };
@@ -182,7 +184,7 @@ namespace SmsApi.Services
                 AuthorName = request.AuthorName,
                 AuthorRole = request.AuthorRole,
                 AuthorAvatar = request.AuthorAvatar,
-                Content = request.Content,
+                Content = request.Content ?? string.Empty,
                 MediaType = request.MediaType,
                 MediaUrl = request.MediaUrl,
                 Visibility = request.Visibility,
@@ -210,9 +212,9 @@ namespace SmsApi.Services
             if (post == null)
                 throw new KeyNotFoundException("Post not found or you don't have permission to edit");
 
-            post.Content = request.Content;
-            post.MediaType = request.MediaType;
-            post.MediaUrl = request.MediaUrl;
+            post.Content = request.Content ?? post.Content;
+            post.MediaType = request.MediaType ?? post.MediaType;
+            post.MediaUrl = request.MediaUrl ?? post.MediaUrl;
             post.Visibility = request.Visibility ?? post.Visibility;
             post.TargetClassId = request.TargetClassId;
             post.TargetGroupId = request.TargetGroupId;

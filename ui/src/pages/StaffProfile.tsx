@@ -66,6 +66,47 @@ import { useToast } from "@/hooks/use-toast";
 import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 
+const STAFF_DOCUMENT_TYPES: Array<{ value: string; label: string }> = [
+  { value: "appointment_letter", label: "Appointment Letter" },
+  { value: "contract", label: "Contract" },
+  { value: "resume", label: "Resume" },
+  { value: "id_proof", label: "ID Proof" },
+  { value: "address_proof", label: "Address Proof" },
+  { value: "aadhar", label: "Aadhar" },
+  { value: "pan", label: "PAN" },
+  { value: "passport", label: "Passport" },
+  { value: "degree_certificate", label: "Degree Certificate" },
+  { value: "experience_certificate", label: "Experience Certificate" },
+  { value: "salary_slip", label: "Salary Slip" },
+  { value: "joining_report", label: "Joining Report" },
+  { value: "medical_certificate", label: "Medical Certificate" },
+  { value: "background_check", label: "Background Check" },
+  { value: "other", label: "Other" },
+];
+
+const STAFF_CERTIFICATE_TYPES: Array<{ value: string; label: string }> = [
+  { value: "degree_certificate", label: "Degree Certificate" },
+  { value: "experience_certificate", label: "Experience Certificate" },
+  { value: "medical_certificate", label: "Medical Certificate" },
+  { value: "background_check", label: "Background Check Certificate" },
+  { value: "other", label: "Other Certificate" },
+];
+
+const CERTIFICATE_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  STAFF_CERTIFICATE_TYPES.map((t) => [t.value, t.label])
+);
+
+const isCertificateType = (type?: string) => {
+  if (!type) return false;
+  const certificateTypes = new Set([
+    "degree_certificate",
+    "experience_certificate",
+    "medical_certificate",
+    "background_check",
+  ]);
+  return certificateTypes.has(type) || type.includes("certificate");
+};
+
 export default function StaffProfile() {
   const { user } = useAuth();
   const { schoolInfo } = useSchool();
@@ -110,14 +151,9 @@ export default function StaffProfile() {
     const file = e.target.files?.[0];
     if (!file || !staff) return;
     try {
-      // Convert to base64 for local preview; backend upload not yet implemented
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        setStaff({ ...staff, photoUrl: dataUrl, profilePhoto: dataUrl });
-        toast({ title: t('staffProfilePage.photoUpdated'), description: t('staffProfilePage.photoSavedSuccess') });
-      };
-      reader.readAsDataURL(file);
+      const result = await staffApi.uploadPhoto(staff.id, file);
+      setStaff({ ...staff, photoUrl: result.photoUrl, profilePhoto: result.photoUrl });
+      toast({ title: t('staffProfilePage.photoUpdated'), description: t('staffProfilePage.photoSavedSuccess') });
     } catch (err) {
       console.error(err);
       toast({ title: t('staffProfilePage.uploadFailed'), description: t('staffProfilePage.couldNotSavePhoto'), variant: "destructive" });
@@ -128,6 +164,12 @@ export default function StaffProfile() {
   const [showIdCardDialog, setShowIdCardDialog] = useState(false);
   const [showExperienceCertDialog, setShowExperienceCertDialog] = useState(false);
   const [showSalaryCertDialog, setShowSalaryCertDialog] = useState(false);
+  const [staffDocuments, setStaffDocuments] = useState<RealStaff["documents"]>([]);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>("other");
+  const [selectedCertificateType, setSelectedCertificateType] = useState<string>("degree_certificate");
 
   const handleDocumentGeneration = (type: string) => {
     if (type === "ID Card") {
@@ -142,6 +184,7 @@ export default function StaffProfile() {
   useEffect(() => {
     if (id) {
       fetchStaff();
+      fetchStaffDocuments();
       fetchAssignedClasses();
       fetchStaffAttendance();
       fetchChildrenInSchool();
@@ -261,6 +304,62 @@ export default function StaffProfile() {
       setStaff(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStaffDocuments = async () => {
+    if (!id) return;
+    try {
+      const docs = await staffApi.getDocuments(id);
+      setStaffDocuments(Array.isArray(docs) ? docs : []);
+    } catch {
+      setStaffDocuments([]);
+    }
+  };
+
+  const handleStaffDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    setUploadingDocument(true);
+    try {
+      const uploaded = await staffApi.uploadDocument(id, selectedDocumentType, file);
+      setStaffDocuments((prev) => [uploaded, ...(prev ?? [])]);
+      toast({ title: "Document uploaded", description: "Staff document saved to S3 successfully." });
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload staff document.", variant: "destructive" });
+    } finally {
+      setUploadingDocument(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleStaffDocumentDelete = async (documentId: string) => {
+    if (!confirm("Delete this document?")) return;
+    setDeletingDocumentId(documentId);
+    try {
+      await staffApi.deleteDocument(documentId);
+      setStaffDocuments((prev) => (prev ?? []).filter((d) => d.id !== documentId));
+      toast({ title: "Document deleted" });
+    } catch {
+      toast({ title: "Delete failed", description: "Could not delete document.", variant: "destructive" });
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  };
+
+  const handleCertificateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    setUploadingCertificate(true);
+    try {
+      const uploaded = await staffApi.uploadDocument(id, selectedCertificateType, file);
+      setStaffDocuments((prev) => [uploaded, ...(prev ?? [])]);
+      toast({ title: "Certificate uploaded", description: "Staff certificate saved to S3 successfully." });
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload certificate.", variant: "destructive" });
+    } finally {
+      setUploadingCertificate(false);
+      e.target.value = "";
     }
   };
 
@@ -1272,12 +1371,35 @@ export default function StaffProfile() {
 
               {/* Uploaded Documents Section */}
               <div className="border-t pt-4">
-                <h4 className="font-medium mb-3">Uploaded Documents</h4>
-                {(staff.documents ?? []).length === 0 ? (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                  <h4 className="font-medium">Uploaded Documents</h4>
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedDocumentType} onValueChange={setSelectedDocumentType}>
+                      <SelectTrigger className="w-[190px] h-8 text-xs">
+                        <SelectValue placeholder="Document type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STAFF_DOCUMENT_TYPES.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <label className="cursor-pointer inline-flex items-center px-3 h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90">
+                      {uploadingDocument ? "Uploading..." : "Upload"}
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleStaffDocumentUpload}
+                        disabled={uploadingDocument}
+                      />
+                    </label>
+                  </div>
+                </div>
+                {(staffDocuments ?? []).length === 0 ? (
                   <div className="text-center py-4 text-muted-foreground text-sm">No documents uploaded yet.</div>
                 ) : (
                 <div className="space-y-2">
-                  {(staff.documents ?? []).map((doc) => (
+                  {(staffDocuments ?? []).map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         <FileText className="h-4 w-4 text-muted-foreground" />
@@ -1286,13 +1408,28 @@ export default function StaffProfile() {
                           <p className="text-xs text-muted-foreground">{doc.type} • {new Date(doc.uploadedAt).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      {doc.url && (
-                        <Button size="sm" variant="ghost" asChild>
-                          <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                            <Download className="h-4 w-4" />
-                          </a>
+                      <div className="flex items-center gap-1">
+                        {doc.url && (
+                          <Button size="sm" variant="ghost" asChild>
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" title="Download">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={deletingDocumentId === doc.id}
+                          onClick={() => handleStaffDocumentDelete(doc.id)}
+                          title="Delete"
+                        >
+                          {deletingDocumentId === doc.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-destructive" />
+                          )}
                         </Button>
-                      )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1310,12 +1447,81 @@ export default function StaffProfile() {
                 Certificates & Achievements
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No certificates available</p>
-                <p className="text-sm">Teaching certificates and achievements will appear here</p>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Upload and manage staff certificates (stored in S3).
+                </p>
+                <div className="flex items-center gap-2">
+                  <Select value={selectedCertificateType} onValueChange={setSelectedCertificateType}>
+                    <SelectTrigger className="w-[220px] h-8 text-xs">
+                      <SelectValue placeholder="Certificate type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STAFF_CERTIFICATE_TYPES.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label className="cursor-pointer inline-flex items-center px-3 h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90">
+                    {uploadingCertificate ? "Uploading..." : "Upload"}
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={handleCertificateUpload}
+                      disabled={uploadingCertificate}
+                    />
+                  </label>
+                </div>
               </div>
+
+              {(staffDocuments ?? []).filter((d) => isCertificateType(d.type)).length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No certificates uploaded yet</p>
+                  <p className="text-sm">Use the upload option above to add certificates</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(staffDocuments ?? [])
+                    .filter((d) => isCertificateType(d.type))
+                    .map((doc) => (
+                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium text-sm">{doc.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {CERTIFICATE_TYPE_LABEL[doc.type] ?? doc.type} • {new Date(doc.uploadedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {doc.url && (
+                            <Button size="sm" variant="ghost" asChild>
+                              <a href={doc.url} target="_blank" rel="noopener noreferrer" title="Download">
+                                <Download className="h-4 w-4" />
+                              </a>
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={deletingDocumentId === doc.id}
+                            onClick={() => handleStaffDocumentDelete(doc.id)}
+                            title="Delete"
+                          >
+                            {deletingDocumentId === doc.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-destructive" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

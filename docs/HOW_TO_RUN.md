@@ -1,6 +1,6 @@
 # How to Run Backend & Frontend — SMS API
 
-> **Quick Start Guide** | Last Updated: May 14, 2026
+> **Quick Start Guide** | Last Updated: May 25, 2026
 
 ---
 
@@ -54,6 +54,10 @@ npm run dev
 - Open browser to **http://localhost:8080**
 - Login as staff: `suresh.nair` / `Staff@123` or admin: `admin` / `Admin1234!`
 - School code: `DEMO001`
+
+**Current login entry points:**
+- School unified login: `http://localhost:8080/login` (Admin / Staff / Parent)
+- Dedicated super admin login: `http://localhost:8080/super-admin-login`
 
 ---
 

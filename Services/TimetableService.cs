@@ -375,7 +375,20 @@ namespace SmsApi.Services
             };
 
             _context.TimetablePeriods.Add(period);
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                if (detail.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
+                    detail.Contains("unique", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("A period already exists for this timetable on this day with this period number");
+                }
+                throw;
+            }
 
             return MapToPeriodResponse(period);
         }

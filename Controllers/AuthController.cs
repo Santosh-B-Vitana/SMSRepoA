@@ -191,6 +191,15 @@ public class AuthController : ControllerBase
             }
         }
 
+        // Billing guard for school admin accounts.
+        var (billingAllowed, billingMessage) = await EnforceAdminBillingPolicyAsync(userLogin);
+        if (!billingAllowed)
+        {
+            _logger.LogWarning("Admin login blocked by billing policy for {Email} (SchoolId: {SchoolId})",
+                userLogin.Email, userLogin.SchoolId);
+            return Unauthorized(new { message = billingMessage ?? "School subscription is not active. Contact support." });
+        }
+
         // Successful login - check 2FA first
         if (userLogin.TwoFactorEnabled && !string.IsNullOrEmpty(userLogin.TwoFactorSecret))
         {
@@ -228,7 +237,7 @@ public class AuthController : ControllerBase
         userLogin.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var designation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        var (designation, profilePhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
         var userModel = MapToUserModel(userLogin, designation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
@@ -241,7 +250,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = BuildUserInfo(userLogin, designation)
+            User = BuildUserInfo(userLogin, designation, profilePhoto)
         });
     }
 
@@ -269,6 +278,10 @@ public class AuthController : ControllerBase
             if (userLogin.Status is "inactive" or "suspended")
                 return Unauthorized(new { message = $"Account is {userLogin.Status}. Contact your administrator." });
 
+            var (billingAllowed, billingMessage) = await EnforceAdminBillingPolicyAsync(userLogin);
+            if (!billingAllowed)
+                return Unauthorized(new { message = billingMessage ?? "School subscription is not active. Contact support." });
+
             if (userLogin.RefreshTokenExpiry == null || userLogin.RefreshTokenExpiry < DateTime.UtcNow)
                 return Unauthorized(new { message = "Refresh token has expired. Please log in again." });
 
@@ -283,7 +296,7 @@ public class AuthController : ControllerBase
             userLogin.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var refreshDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+            var (refreshDesignation, refreshPhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
             var userModel = MapToUserModel(userLogin, refreshDesignation);
             var newAccessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
             var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
@@ -293,7 +306,7 @@ public class AuthController : ControllerBase
                 Token = newAccessToken,
                 RefreshToken = newRawRefreshToken,
                 Expiration = DateTime.UtcNow.AddMinutes(expMins),
-                User = BuildUserInfo(userLogin, refreshDesignation)
+                User = BuildUserInfo(userLogin, refreshDesignation, refreshPhoto)
             });
         }
         catch (Exception ex)
@@ -343,8 +356,8 @@ public class AuthController : ControllerBase
         if (userLogin == null)
             return NotFound(new { message = "User not found" });
 
-        var meDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
-        return Ok(BuildUserInfo(userLogin, meDesignation));
+        var (meDesignation, mePhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        return Ok(BuildUserInfo(userLogin, meDesignation, mePhoto));
     }
 
     /// <summary>
@@ -438,7 +451,7 @@ public class AuthController : ControllerBase
         userLogin.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var twoFaDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        var (twoFaDesignation, twoFaPhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
         var userModel = MapToUserModel(userLogin, twoFaDesignation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
@@ -450,7 +463,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = BuildUserInfo(userLogin, twoFaDesignation)
+            User = BuildUserInfo(userLogin, twoFaDesignation, twoFaPhoto)
         });
     }
 
@@ -566,16 +579,112 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Enforces school billing policy for admin accounts.
+    /// 1) Inactive/Suspended billing => block login/refresh.
+    /// 2) Expiry older than 14 days => auto-suspend and block.
+    /// </summary>
+    private async Task<(bool allowed, string? message)> EnforceAdminBillingPolicyAsync(UserLogin userLogin)
+    {
+        if (!IsSchoolAdminRole(userLogin.Role))
+            return (true, null);
+
+        if (userLogin.SchoolId == Guid.Empty)
+            return (false, "School account is not configured for this login.");
+
+        var school = await _context.Schools
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.Id == userLogin.SchoolId && !s.IsDeleted);
+
+        if (school == null)
+            return (false, "School account not found. Contact support.");
+
+        if (!school.IsActive)
+            return (false, "School account is inactive. Please contact support to reactivate access.");
+
+        var status = (school.BillingStatus ?? "Active").Trim().ToLowerInvariant();
+        var nowUtc = DateTime.UtcNow;
+
+        if (school.BillingExpiryDate.HasValue)
+        {
+            var graceCutoff = school.BillingExpiryDate.Value.Date.AddDays(14);
+            if (nowUtc.Date > graceCutoff)
+            {
+                if (status is not "inactive" and not "suspended")
+                {
+                    school.BillingStatus = "Suspended";
+                    school.UpdatedAt = nowUtc;
+                    await _context.SaveChangesAsync();
+                }
+
+                return (false, "Account suspended due to unpaid subscription. Please renew your plan to continue.");
+            }
+        }
+
+        if (status == "inactive")
+            return (false, "Account suspended due to billing status Inactive. Please contact support to reactivate.");
+
+        if (status == "suspended")
+            return (false, "Account suspended due to billing status Suspended. Please clear billing and reactivate.");
+
+        return (true, null);
+    }
+
+    private static bool IsSchoolAdminRole(string? role)
+    {
+        var normalized = role?.Trim().ToLowerInvariant();
+        return normalized is "admin" or "administrator" or "schooladmin" or "school_admin" or "school admin";
+    }
+
+    /// <summary>
     /// Looks up the Staff member with a matching email to get their actual designation
     /// (e.g. "Principal", "Mathematics Teacher"). Returns null if no staff record found.
     /// </summary>
-    private async Task<string?> ResolveDesignationAsync(string email, Guid schoolId)
+    private async Task<(string? Designation, string? ProfilePhoto)> ResolveDesignationAsync(string email, Guid schoolId)
     {
-        if (string.IsNullOrWhiteSpace(email)) return null;
-        return await _context.StaffMembers
-            .Where(s => s.SchoolId == schoolId && s.Email.ToLower() == email.ToLower() && !s.IsDeleted)
-            .Select(s => s.Designation)
+        if (string.IsNullOrWhiteSpace(email)) return (null, null);
+        var normalizedEmail = email.ToLower();
+
+        var staff = await _context.StaffMembers
+            .Where(s => s.SchoolId == schoolId && s.Email.ToLower() == normalizedEmail && !s.IsDeleted)
+            .Select(s => new { s.Designation, s.ProfilePhoto })
             .FirstOrDefaultAsync();
+
+        if (!string.IsNullOrWhiteSpace(staff?.ProfilePhoto))
+            return (staff.Designation, staff.ProfilePhoto);
+
+        var user = await _context.UserLogins
+            .IgnoreQueryFilters()
+            .Where(u => u.SchoolId == schoolId && u.Email.ToLower() == normalizedEmail && !u.IsDeleted)
+            .Select(u => new { u.Id, u.Role })
+            .FirstOrDefaultAsync();
+
+        if (user != null)
+        {
+            var customPhoto = await _context.UserSettings
+                .Where(s => s.UserId == user.Id && s.SettingKey == "profile_photo_url" && !s.IsDeleted)
+                .OrderByDescending(s => s.UpdatedAt)
+                .Select(s => s.SettingValue)
+                .FirstOrDefaultAsync();
+
+            if (!string.IsNullOrWhiteSpace(customPhoto))
+                return (staff?.Designation, customPhoto);
+
+            var role = (user.Role ?? string.Empty).ToLower();
+            var useSchoolLogo = role is "admin" or "administrator" or "super_admin";
+            if (useSchoolLogo)
+            {
+                var schoolLogo = await _context.Schools
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Id == schoolId && !s.IsDeleted)
+                    .Select(s => s.Logo)
+                    .FirstOrDefaultAsync();
+
+                if (!string.IsNullOrWhiteSpace(schoolLogo))
+                    return (staff?.Designation, schoolLogo);
+            }
+        }
+
+        return (staff?.Designation, null);
     }
 
     private static User MapToUserModel(UserLogin userLogin, string? designation = null) => new()
@@ -589,7 +698,7 @@ public class AuthController : ControllerBase
         LinkedEntityId = userLogin.LinkedEntityId,
     };
 
-    private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null) => new()
+    private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null, string? profilePhoto = null) => new()
     {
         Id = userLogin.Id,
         Email = userLogin.Email,
@@ -600,5 +709,6 @@ public class AuthController : ControllerBase
         SchoolId = userLogin.SchoolId,
         RequirePasswordChange = userLogin.RequirePasswordChange,
         LinkedEntityId = userLogin.LinkedEntityId,
+        ProfilePhoto = profilePhoto,
     };
 }

@@ -103,12 +103,14 @@ namespace SmsApi.Services
         private readonly AppDbContext _context;
         private readonly ILogger<StudentService> _logger;
         private readonly IAlumniService _alumniService;
+        private readonly IFileStorageService _fileStorage;
 
-        public StudentService(AppDbContext context, ILogger<StudentService> logger, IAlumniService alumniService)
+        public StudentService(AppDbContext context, ILogger<StudentService> logger, IAlumniService alumniService, IFileStorageService fileStorage)
         {
             _context = context;
             _logger = logger;
             _alumniService = alumniService;
+            _fileStorage = fileStorage;
         }
 
         // ── PII Masking helpers ──────────────────────────────────────────────
@@ -1345,15 +1347,24 @@ namespace SmsApi.Services
             if (student == null)
                 throw new InvalidOperationException("Student not found.");
 
-            // In production, upload to Azure Blob Storage, AWS S3, or local file system
-            var photoUrl = $"/uploads/students/{studentId}/photo/{fileName}";
-            
-            // TODO: Implement actual file upload logic
-            // await _fileStorageService.UploadAsync(photoUrl, fileData);
+            // Delete the previous photo from storage if one exists
+            if (!string.IsNullOrEmpty(student.PhotoUrl))
+                await _fileStorage.DeleteAsync(student.PhotoUrl);
 
+            // Structured S3 key: SMS-Test/schools/{schoolId}/students/{studentId}/photos/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/students/{studentId}/photos/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload photo to cloud storage.");
+
+            var photoUrl = _fileStorage.GetPublicUrl(key);
             student.PhotoUrl = photoUrl;
             await _context.SaveChangesAsync();
 
+            _logger.LogInformation("Student photo uploaded: studentId={StudentId}, key={Key}", studentId, key);
             return photoUrl;
         }
 
@@ -1365,10 +1376,16 @@ namespace SmsApi.Services
             if (student == null)
                 throw new InvalidOperationException("Student not found.");
 
-            var fileUrl = $"/uploads/students/{studentId}/documents/{fileName}";
-            
-            // TODO: Implement actual file upload logic
-            // await _fileStorageService.UploadAsync(fileUrl, fileData);
+            // Structured S3 key: SMS-Test/schools/{schoolId}/students/{studentId}/documents/{type}/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/students/{studentId}/documents/{documentType}/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload document to cloud storage.");
+
+            var fileUrl = _fileStorage.GetPublicUrl(key);
 
             var document = new StudentDocument
             {
@@ -1383,6 +1400,8 @@ namespace SmsApi.Services
 
             _context.StudentDocuments.Add(document);
             await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Student document uploaded: studentId={StudentId}, type={Type}, key={Key}", studentId, documentType, key);
 
             return new StudentDocumentDto
             {
@@ -1426,8 +1445,9 @@ namespace SmsApi.Services
             if (document == null)
                 return false;
 
-            // TODO: Delete actual file from storage
-            // await _fileStorageService.DeleteAsync(document.FileUrl);
+            // Delete from S3 storage (accepts full URL or key — service handles extraction)
+            if (!string.IsNullOrEmpty(document.FileUrl))
+                await _fileStorage.DeleteAsync(document.FileUrl);
 
             _context.StudentDocuments.Remove(document);
             await _context.SaveChangesAsync();

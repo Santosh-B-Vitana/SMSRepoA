@@ -55,9 +55,12 @@ export function Header() {
   const { user } = useAuth();
   const { t } = useLanguage();
   const { schoolInfo } = useSchool();
+  const { selectedSchool } = useSuperAdminSchool();
   const { currentYear, availableYears, setCurrentYear } = useAcademicYear();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === "super_admin";
+  const headerSchoolName = (isSuperAdmin ? selectedSchool?.name : undefined) || schoolInfo?.name || 'School Management System';
+  const headerSchoolLogo = (isSuperAdmin ? selectedSchool?.logo : undefined) || schoolInfo?.logoUrl;
 
   return (
   <header className="flex h-14 sm:h-16 lg:h-18 items-center gap-2 sm:gap-4 border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 sm:px-4 lg:px-6 sticky top-0 z-40">
@@ -73,19 +76,23 @@ export function Header() {
       </button>
       {/* Professional school branding with modern design */}
       <div className="flex items-center gap-3 flex-1 min-w-0 header-school-info">
-        {schoolInfo?.logoUrl && (
-          <div className="relative group">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl blur-md group-hover:blur-lg transition-all opacity-0 group-hover:opacity-100"></div>
-            <img 
-              src={schoolInfo.logoUrl} 
-              alt={`${schoolInfo.name} Logo`}
-              className="relative w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 object-contain rounded-xl shadow-lg flex-shrink-0 transition-all duration-150 group-hover:scale-110 ring-2 ring-border group-hover:ring-primary/50"
+        <div className="relative group shrink-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl blur-md group-hover:blur-lg transition-all opacity-0 group-hover:opacity-100"></div>
+          {headerSchoolLogo ? (
+            <img
+              src={headerSchoolLogo}
+              alt={`${headerSchoolName} Logo`}
+              className="relative w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 object-contain rounded-xl shadow-lg transition-all duration-150 group-hover:scale-110 ring-2 ring-border group-hover:ring-primary/50 bg-background"
             />
-          </div>
-        )}
+          ) : (
+            <div className="relative w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-xl border-2 border-border bg-muted/40 flex items-center justify-center">
+              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-muted-foreground" />
+            </div>
+          )}
+        </div>
         <div className="min-w-0 flex-1 overflow-hidden">
           <h1 className="font-bold text-base sm:text-lg lg:text-xl bg-gradient-to-r from-primary via-primary/90 to-primary/70 bg-clip-text text-transparent truncate">
-            {schoolInfo?.name || 'School Management System'}
+            {headerSchoolName}
           </h1>
           <p className="text-[10px] sm:text-xs text-muted-foreground/80 hidden sm:block tracking-wide">
             Excellence • Innovation • Growth

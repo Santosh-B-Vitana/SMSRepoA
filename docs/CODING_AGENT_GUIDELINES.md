@@ -1,9 +1,35 @@
 # Coding Agent Guidelines — SMS API
 
-**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 19, 2026 (Session 8)  
+**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 25, 2026 (Session 11)  
 **Status:** Production Release Candidate
 
 This is the primary instruction set for AI coding agents and developers performing bug fixes, maintenance, and feature work. Follow these architectural patterns to maintain code quality and system integrity.
+
+---
+
+## 0. AI Support First-Read (Before Any Edit)
+
+For quick support tasks, read these in order:
+
+1. `docs/AI_SUPPORT_RUNBOOK.md` (latest triage playbook)
+2. `docs/TECHNICAL_DOCUMENT.md` (latest session changelog)
+3. `docs/MODULE_STATUS.md` (module readiness and constraints)
+
+### High-impact current behaviors (must preserve)
+
+- Unified login UX is role-first (Admin/Staff/Parent) in `ui/src/pages/Login.tsx`.
+- Super admin remains a dedicated entry route (`/super-admin-login`).
+- Pre-login branding is provided by anonymous `GET /api/settings/public-branding`.
+- `SchoolContext` caches branding (`school_branding_cache`) and falls back safely.
+- Finance aggregated income must exclude petty cash.
+
+### Non-negotiables for AI edits
+
+1. Keep RBAC enforcement server-side (`[Authorize]`, role claims, tenant filters).
+2. Do not treat UI role selection as a security boundary.
+3. Avoid tenant-specific literals (for example, hardcoded school codes/domains) in comments or docs.
+4. After login/branding edits, verify both `/login` and `/super-admin-login` flows.
+5. After finance aggregation edits, verify backend + UI totals match.
 
 ---
 

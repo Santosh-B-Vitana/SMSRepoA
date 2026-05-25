@@ -19,7 +19,6 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 // ── Eagerly load auth pages (always needed on first paint) ────────────────────
 import Login from "@/pages/Login";
-import SuperAdminLogin from "@/pages/SuperAdminLogin";
 import NotFound from "@/pages/NotFound";
 
 // ── Lazily load all other pages (downloaded only when the user navigates there) ─
@@ -143,7 +142,7 @@ function App() {
                   {/* ── Public routes (no auth required) ──────────────────── */}
                   <Route path="/" element={<Login />} />
                   <Route path="/login" element={<Login />} />
-                  <Route path="/super-admin-login" element={<SuperAdminLogin />} />
+                  <Route path="/super-admin-login" element={<Login />} />
 
                   {/* ── Protected: admin / super_admin ────────────────────── */}
                   <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Dashboard /></Layout></ProtectedRoute>} />

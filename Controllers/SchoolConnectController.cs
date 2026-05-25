@@ -571,7 +571,8 @@ namespace SmsApi.Controllers
         /// Returns the public URL to embed in the post.
         /// </summary>
         [HttpPost("upload")]
-        [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB
+        [RequestSizeLimit(100 * 1024 * 1024)] // 100 MB
+        [RequestFormLimits(MultipartBodyLengthLimit = 100 * 1024 * 1024)]
         public async Task<ActionResult<UploadMediaResponse>> UploadMedia(IFormFile file)
         {
             try
@@ -579,13 +580,26 @@ namespace SmsApi.Controllers
                 if (file == null || file.Length == 0)
                     return BadRequest(new { message = "No file provided." });
 
-                var (isValid, errorMessage) = await _fileValidation.ValidateAsync(file);
-                if (!isValid)
-                    return BadRequest(new { message = errorMessage });
+                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+                var videoExts = new[] { ".mp4", ".mov", ".webm", ".avi" };
+                var imageExts = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+
+                // For non-video files use the standard file validation
+                if (!videoExts.Contains(ext))
+                {
+                    var (isValid, errorMessage) = await _fileValidation.ValidateAsync(file);
+                    if (!isValid)
+                        return BadRequest(new { message = errorMessage });
+                }
+                else
+                {
+                    // Basic size cap for videos: 100 MB
+                    if (file.Length > 100 * 1024 * 1024)
+                        return BadRequest(new { message = "Video file exceeds the 100 MB limit." });
+                }
 
                 var schoolId = GetSchoolId();
-                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-                var key = $"{schoolId}/school-connect/{Guid.NewGuid()}{ext}";
+                var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/school-connect/{Guid.NewGuid()}{ext}");
 
                 using var stream = file.OpenReadStream();
                 var saved = await _fileStorage.SaveFileAsync(key, stream);
@@ -594,9 +608,9 @@ namespace SmsApi.Controllers
 
                 var url = _fileStorage.GetPublicUrl(key);
 
-                // Determine media type from extension
-                var imageExts = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-                var mediaType = imageExts.Contains(ext) ? "image" : "document";
+                string mediaType = imageExts.Contains(ext) ? "image"
+                    : videoExts.Contains(ext) ? "video"
+                    : "document";
 
                 return Ok(new UploadMediaResponse
                 {

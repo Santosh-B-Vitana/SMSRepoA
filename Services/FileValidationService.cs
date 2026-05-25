@@ -12,8 +12,8 @@ namespace SmsApi.Services
 
     public class FileValidationService : IFileValidationService
     {
-        private readonly string[] _allowedExtensions = { ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".txt", ".csv" };
-        private const long MaxFileSizeBytes = 5 * 1024 * 1024; // 5MB
+        private readonly string[] _allowedExtensions = { ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".doc", ".docx", ".txt", ".csv", ".mp4", ".mov", ".webm", ".avi" };
+        private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100MB
 
         public async Task<(bool IsValid, string? ErrorMessage)> ValidateAsync(IFormFile file)
         {
@@ -62,10 +62,16 @@ namespace SmsApi.Services
                 { ".jpg", new[] { "image/jpeg" } },
                 { ".jpeg", new[] { "image/jpeg" } },
                 { ".png", new[] { "image/png" } },
+                { ".gif", new[] { "image/gif" } },
+                { ".webp", new[] { "image/webp" } },
                 { ".doc", new[] { "application/msword" } },
                 { ".docx", new[] { "application/vnd.openxmlformats-officedocument.wordprocessingml.document" } },
                 { ".txt", new[] { "text/plain" } },
-                { ".csv", new[] { "text/csv" } }
+                { ".csv", new[] { "text/csv", "application/csv", "text/comma-separated-values" } },
+                { ".mp4", new[] { "video/mp4" } },
+                { ".mov", new[] { "video/quicktime", "video/mp4" } },
+                { ".webm", new[] { "video/webm" } },
+                { ".avi", new[] { "video/x-msvideo", "video/avi" } }
             };
 
             if (!validMimes.ContainsKey(extension))
@@ -96,7 +102,19 @@ namespace SmsApi.Services
                          fileBytes[0] == 0xD0 && fileBytes[1] == 0xCF &&
                          fileBytes[2] == 0x11 && fileBytes[3] == 0xE0, // OLE
                          
-                ".docx" or ".txt" or ".csv" => true, // Less strict validation for text-based files
+                ".docx" or ".txt" or ".csv" or ".gif" or ".webp" => true, // Less strict validation
+                // MP4/MOV: 'ftyp' at byte offset 4
+                ".mp4" or ".mov" => fileBytes.Length >= 8 &&
+                                    fileBytes[4] == 0x66 && fileBytes[5] == 0x74 &&
+                                    fileBytes[6] == 0x79 && fileBytes[7] == 0x70,
+                // WebM: EBML header 0x1A 0x45 0xDF 0xA3
+                ".webm" => fileBytes.Length >= 4 &&
+                           fileBytes[0] == 0x1A && fileBytes[1] == 0x45 &&
+                           fileBytes[2] == 0xDF && fileBytes[3] == 0xA3,
+                // AVI: RIFF header
+                ".avi" => fileBytes.Length >= 4 &&
+                          fileBytes[0] == 0x52 && fileBytes[1] == 0x49 &&
+                          fileBytes[2] == 0x46 && fileBytes[3] == 0x46,
                 _ => true
             };
         }

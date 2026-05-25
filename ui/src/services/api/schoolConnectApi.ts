@@ -82,7 +82,7 @@ export interface CreatePostDto {
 
 export interface UploadMediaResponse {
   url: string;
-  mediaType: 'image' | 'document';
+  mediaType: 'image' | 'video' | 'document';
   fileName: string;
   fileSizeBytes: number;
 }

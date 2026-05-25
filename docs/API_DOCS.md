@@ -1,6 +1,6 @@
 # API Documentation — SMS API
 
-**Last Updated:** May 21, 2026 | **Version:** 1.2.0 | **Project:** SMSRepoA  
+**Last Updated:** May 25, 2026 | **Version:** 1.3.0 | **Project:** SMSRepoA  
 **Base URL:** `http://localhost:5092` (dev) | `https://api.your-domain.com` (prod)  
 **Format:** JSON | **Authentication:** JWT Bearer Token
 
@@ -9,6 +9,7 @@
 ## Index
 
 - [Authentication](#authentication)
+- [Settings and Branding](#settings-and-branding)
 - [Students](#students)
 - [Fees](#fees)
 - [Billing Management](#billing-management)
@@ -67,6 +68,56 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```
 
 Tokens expire after 60 minutes (configurable in `JwtSettings:ExpirationInMinutes`).
+
+---
+
+## Settings and Branding
+
+### Public School Branding (No Auth)
+
+**Endpoint:** `GET /api/Settings/public-branding`  
+**Auth:** Not required (`[AllowAnonymous]`)
+
+Returns school name/logo metadata for pre-login pages.
+
+**Resolution order:**
+1. `schoolCode` query parameter
+2. `host` query parameter
+3. request host subdomain (`schoola.example.com` -> `schoola`)
+
+**Request Example:**
+```bash
+curl "http://localhost:5092/api/Settings/public-branding?schoolCode=demo001"
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Ajith's International Schools",
+  "logoUrl": "https://cdn.example.com/schools/demo001/logo.png",
+  "schoolCode": "DEMO001",
+  "status": "active"
+}
+```
+
+**Fallback Response (School Not Resolved):**
+```json
+{
+  "id": null,
+  "name": "VEDA",
+  "logoUrl": null,
+  "schoolCode": null,
+  "status": "active"
+}
+```
+
+### Current School Profile (Authenticated)
+
+**Endpoint:** `GET /api/Settings/school/me`  
+**Auth:** Required
+
+Returns the current school profile used by authenticated UI surfaces (header/sidebar/settings).
 
 ---
 

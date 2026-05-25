@@ -55,6 +55,9 @@ import {
   Eye,
   Upload,
   FileText,
+  ZoomIn,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -275,6 +278,7 @@ function PostCard({
   const [editContent, setEditContent] = useState(post.content);
   const [editTags, setEditTags] = useState(post.tags.join(", "));
   const [savingEdit, setSavingEdit] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const isAdminRole = ["super_admin", "admin", "Principal", "Admin"].includes(currentUserRole);
   const canEdit = post.authorId === currentUserId;
@@ -370,6 +374,8 @@ function PostCard({
       const updated = await schoolConnectApi.updatePost(post.id, {
         content: editContent,
         visibility: post.visibility,
+        mediaType: post.mediaType,
+        mediaUrl: post.mediaUrl,
         tags: editTags
           ? editTags
               .split(",")
@@ -497,13 +503,45 @@ function PostCard({
         {!editing && post.mediaUrl && (
           <div className="mb-3 rounded-lg overflow-hidden border bg-muted/30">
             {post.mediaType === "image" ? (
-              <img
+              <>
+                <div
+                  className="relative group cursor-zoom-in"
+                  onClick={() => setLightboxOpen(true)}
+                >
+                  <img
+                    src={post.mediaUrl}
+                    alt="Post media"
+                    className="w-full max-h-80 object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                    <ZoomIn className="h-8 w-8 text-white opacity-0 group-hover:opacity-80 transition-opacity duration-200 drop-shadow-lg" />
+                  </div>
+                </div>
+                {/* Lightbox */}
+                <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+                  <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/95 border-0 overflow-hidden flex items-center justify-center">
+                    <button
+                      onClick={() => setLightboxOpen(false)}
+                      className="absolute top-3 right-3 z-50 h-9 w-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <img
+                      src={post.mediaUrl}
+                      alt="Post media"
+                      className="max-w-[93vw] max-h-[90vh] object-contain rounded"
+                    />
+                  </DialogContent>
+                </Dialog>
+              </>
+            ) : post.mediaType === "video" ? (
+              <video
                 src={post.mediaUrl}
-                alt="Post media"
-                className="w-full max-h-80 object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
+                controls
+                className="w-full max-h-80"
               />
             ) : post.mediaType === "link" ? (
               <a
@@ -516,10 +554,32 @@ function PostCard({
                 <span className="truncate">{post.mediaUrl}</span>
               </a>
             ) : (
-              <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
-                <Image className="h-4 w-4" />
-                <span className="truncate">{post.mediaUrl}</span>
-              </div>
+              /* document / pdf / any other uploaded file */
+              (() => {
+                const rawUrl = post.mediaUrl;
+                // Resolve legacy relative /files/ paths to the API server origin
+                const resolvedUrl = rawUrl.startsWith("/")
+                  ? `${((import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:5092/api").replace(/\/api$/, "")}${rawUrl}`
+                  : rawUrl;
+                const filename = decodeURIComponent(resolvedUrl.split("/").pop()?.split("?")[0] ?? "file");
+                const isPdf = filename.toLowerCase().endsWith(".pdf");
+                return (
+                  <a
+                    href={resolvedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-3 hover:bg-muted/60 transition-colors group"
+                  >
+                    <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate text-foreground group-hover:text-primary transition-colors">{filename}</p>
+                      <p className="text-xs text-muted-foreground">{isPdf ? "PDF Document" : "File"} · Click to open</p>
+                    </div>
+                  </a>
+                );
+              })()
             )}
           </div>
         )}
@@ -714,6 +774,7 @@ function ComposeBox({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string | null>(null);
 
   // Link URL state
   const [showLinkInput, setShowLinkInput] = useState(false);
@@ -748,33 +809,44 @@ function ComposeBox({
     setShowLinkInput(false);
     setLinkUrl("");
     setSelectedFile(file);
+    setImagePreview(null);
+    setVideoPreview(null);
     if (file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onload = (ev) => setImagePreview(ev.target?.result as string);
       reader.readAsDataURL(file);
-    } else {
-      setImagePreview(null);
+    } else if (file.type.startsWith("video/")) {
+      setVideoPreview(URL.createObjectURL(file));
     }
   }
 
   function clearFile() {
+    if (videoPreview) URL.revokeObjectURL(videoPreview);
     setSelectedFile(null);
     setImagePreview(null);
+    setVideoPreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function submit() {
     const text = content.trim();
-    if (!text) return;
+    const hasMedia = !!selectedFile || (showLinkInput && !!linkUrl.trim());
+    if (!text && !hasMedia) return;
     setSubmitting(true);
     try {
       let mediaUrl: string | undefined;
-      let mediaType: "image" | "link" | "document" | undefined;
+      let mediaType: "image" | "video" | "link" | "document" | undefined;
 
       if (selectedFile) {
-        const result = await schoolConnectApi.uploadMedia(selectedFile);
-        mediaUrl = result.url;
-        mediaType = result.mediaType as "image" | "document";
+        try {
+          const result = await schoolConnectApi.uploadMedia(selectedFile);
+          mediaUrl = result.url;
+          mediaType = result.mediaType;
+        } catch (uploadErr: unknown) {
+          const msg = (uploadErr as { response?: { data?: { message?: string } } })?.response?.data?.message;
+          toast.error(msg ?? "Failed to upload media. Please try again.");
+          return;
+        }
       } else if (showLinkInput && linkUrl.trim()) {
         mediaUrl = linkUrl.trim();
         mediaType = "link";
@@ -869,16 +941,6 @@ function ComposeBox({
               )}
             </div>
 
-            {/* Post textarea */}
-            <Textarea
-              autoFocus
-              placeholder="What is on your mind?"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="resize-none min-h-[100px] text-sm"
-              maxLength={5000}
-            />
-
             {/* File preview / selected file display */}
             {selectedFile && (
               <div className="relative rounded-md border bg-muted/30 p-2">
@@ -887,6 +949,12 @@ function ComposeBox({
                     src={imagePreview}
                     alt="Preview"
                     className="max-h-48 rounded object-contain w-full"
+                  />
+                ) : videoPreview ? (
+                  <video
+                    src={videoPreview}
+                    controls
+                    className="max-h-48 rounded w-full"
                   />
                 ) : (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -907,6 +975,16 @@ function ComposeBox({
                 </Button>
               </div>
             )}
+
+            {/* Post textarea */}
+            <Textarea
+              autoFocus
+              placeholder="What is on your mind?"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="resize-none min-h-[80px] text-sm"
+              maxLength={5000}
+            />
 
             {/* Link URL input */}
             {showLinkInput && !selectedFile && (
@@ -944,7 +1022,7 @@ function ComposeBox({
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
-                  accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.doc,.docx,.txt,.csv"
+                  accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.avi,.pdf,.doc,.docx,.txt,.csv"
                   onChange={handleFileChange}
                 />
                 <Button
@@ -986,7 +1064,7 @@ function ComposeBox({
                   className="h-7 px-3 text-xs"
                   onClick={submit}
                   disabled={
-                    !content.trim() ||
+                    (!content.trim() && !selectedFile && !(showLinkInput && linkUrl.trim())) ||
                     submitting ||
                     (visibility === "class" && !targetClassId)
                   }

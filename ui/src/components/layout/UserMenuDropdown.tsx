@@ -85,6 +85,41 @@ interface BackendUser {
 function AccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
   const { schoolInfo } = useSchool();
+  const [billing, setBilling] = useState<SchoolBilling | null>(null);
+  const [loadingBilling, setLoadingBilling] = useState(false);
+  const showBillingForUser = user?.role === "admin";
+
+  const expiryDate = billing?.billingExpiryDate ? new Date(billing.billingExpiryDate) : null;
+  const expiryLabel = expiryDate
+    ? expiryDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : null;
+  const graceEndDate = expiryDate
+    ? new Date(expiryDate.getTime() + (14 * 24 * 60 * 60 * 1000))
+    : null;
+  const graceEndLabel = graceEndDate
+    ? graceEndDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : null;
+  const daysUntilExpiry = expiryDate
+    ? Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const showFifteenDayWarning = daysUntilExpiry !== null && daysUntilExpiry > 0 && daysUntilExpiry <= 15;
+  const isExpiredNow = daysUntilExpiry !== null && daysUntilExpiry <= 0;
+
+  useEffect(() => {
+    if (!open || !schoolInfo?.id || !showBillingForUser) return;
+    setLoadingBilling(true);
+    getSchoolBilling(schoolInfo.id)
+      .then(setBilling)
+      .catch(() => setBilling(null))
+      .finally(() => setLoadingBilling(false));
+  }, [open, schoolInfo?.id, showBillingForUser]);
+
+  const billingStatusClass =
+    billing?.billingStatus === "Active"
+      ? "text-emerald-700"
+      : billing?.billingStatus === "Trial"
+        ? "text-amber-700"
+        : "text-red-700";
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -97,34 +132,101 @@ function AccountDialog({ open, onClose }: { open: boolean; onClose: () => void }
           <DialogDescription>Your account information.</DialogDescription>
         </DialogHeader>
 
-        {/* Avatar + identity strip */}
-        <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/40 border">
-          <Avatar className="h-14 w-14 rounded-xl shadow-md ring-2 ring-background">
-            <AvatarImage src={user?.avatar ?? ""} alt={user?.name ?? ""} />
-            <AvatarFallback className="rounded-xl text-base font-bold bg-gradient-to-br from-primary/20 to-primary/5">
-              {user?.name ? getUserInitials(user.name) : "U"}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold truncate">{user?.name}</p>
-            <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
-            <div className="flex gap-2 mt-1.5 flex-wrap">
-              <Badge className={`text-xs ${ROLE_COLORS[user?.role ?? ""] ?? ""}`}>
-                {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
-              </Badge>
-              <Badge variant="outline" className="text-xs text-green-600 border-green-300">
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                Active
-              </Badge>
-              {schoolInfo?.name && (
-                <Badge variant="secondary" className="text-xs">
-                  <Building2 className="h-3 w-3 mr-1" />
-                  {schoolInfo.name}
-                </Badge>
-              )}
+        {/* Profile header */}
+        <div className="rounded-xl border bg-card p-4">
+          <div className="flex items-start gap-4">
+            <Avatar className="h-14 w-14 rounded-xl border bg-background">
+              <AvatarImage src={user?.avatar ?? ""} alt={user?.name ?? ""} />
+              <AvatarFallback className="rounded-xl text-base font-semibold">
+                {user?.name ? getUserInitials(user.name) : "U"}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-semibold text-foreground truncate">{user?.name}</p>
+              <p className="text-sm text-muted-foreground truncate mt-0.5">{user?.email}</p>
+
+              <div className="mt-3 grid grid-cols-[120px_1fr] gap-y-2 text-sm">
+                <span className="text-muted-foreground">Role</span>
+                <span className="font-medium text-foreground">{ROLE_LABELS[user?.role ?? ""] ?? user?.role}</span>
+
+                <span className="text-muted-foreground">Account Status</span>
+                <span className="font-medium text-emerald-700 inline-flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Active
+                </span>
+
+                {schoolInfo?.name && (
+                  <>
+                    <span className="text-muted-foreground">School</span>
+                    <span className="font-medium text-foreground truncate">{schoolInfo.name}</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
+
+        {showBillingForUser && (
+          <div className="rounded-xl border bg-card p-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Subscription</p>
+
+            {loadingBilling ? (
+              <div className="text-sm text-muted-foreground inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading billing details
+              </div>
+            ) : (
+              <div className="grid grid-cols-[150px_1fr] gap-y-2 text-sm">
+                <span className="text-muted-foreground">Plan</span>
+                <span className="font-medium text-foreground">{billing?.billingPlan ?? "Not configured"}</span>
+
+                <span className="text-muted-foreground">Billing Status</span>
+                <span className={`font-medium ${billingStatusClass}`}>{billing?.billingStatus ?? "Not configured"}</span>
+
+                {expiryLabel && (
+                  <>
+                    <span className="text-muted-foreground">Subscription Expiry</span>
+                    <span className={`font-medium ${isExpiredNow ? "text-red-700" : showFifteenDayWarning ? "text-amber-700" : "text-foreground"}`}>
+                      {expiryLabel}
+                    </span>
+                  </>
+                )}
+
+                {graceEndLabel && (
+                  <>
+                    <span className="text-muted-foreground">Grace period ends</span>
+                    <span className={`font-medium ${isExpiredNow ? "text-red-700" : "text-foreground"}`}>{graceEndLabel}</span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showBillingForUser && !loadingBilling && showFifteenDayWarning && (
+          <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-200">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription>
+              Subscription will expire in <strong>{daysUntilExpiry} day{daysUntilExpiry === 1 ? "" : "s"}</strong>. Renew soon to avoid access suspension.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {showBillingForUser && !loadingBilling && isExpiredNow && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Subscription is expired. Admin access will remain blocked until billing is reactivated.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {!showBillingForUser && (
+          <div className="rounded-lg border bg-background p-3 text-sm">
+            <p className="text-muted-foreground">Subscription details are visible to school admins only.</p>
+          </div>
+        )}
 
         <div className="flex justify-end pt-1">
           <Button variant="outline" onClick={onClose}>Close</Button>

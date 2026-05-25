@@ -30,12 +30,43 @@ interface SchoolContextType {
   refreshSchoolInfo: () => Promise<void>;
 }
 
-const SchoolContext = createContext<SchoolContextType | undefined>(undefined);
+const SCHOOL_BRANDING_CACHE_KEY = 'school_branding_cache';
+
+function readCachedSchoolInfo(): SchoolInfo | null {
+  try {
+    const raw = localStorage.getItem(SCHOOL_BRANDING_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SchoolInfo;
+    if (!parsed?.id || !parsed?.name) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedSchoolInfo(info: SchoolInfo): void {
+  try {
+    localStorage.setItem(SCHOOL_BRANDING_CACHE_KEY, JSON.stringify(info));
+  } catch {
+    // Non-blocking cache write.
+  }
+}
+
+const defaultSchoolContext: SchoolContextType = {
+  schoolInfo: null,
+  loading: false,
+  error: null,
+  refreshSchoolInfo: async () => {},
+};
+
+const SchoolContext = createContext<SchoolContextType>(defaultSchoolContext);
 
 export const useSchool = () => {
   const context = useContext(SchoolContext);
-  if (context === undefined) {
-    throw new Error('useSchool must be used within a SchoolProvider');
+  if (context === defaultSchoolContext) {
+    // Fail-safe for unexpected provider composition issues.
+    // Keeps the app usable instead of crashing the whole UI.
+    console.warn('useSchool called outside SchoolProvider; using default fallback context.');
   }
   return context;
 };
@@ -45,26 +76,54 @@ interface SchoolProviderProps {
 }
 
 export const SchoolProvider: React.FC<SchoolProviderProps> = ({ children }) => {
-  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
+  const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(() => readCachedSchoolInfo());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const auth = useAuth();
 
   const refreshSchoolInfo = async () => {
-    // Only fetch when authenticated; clear while logged out
+    // Only fetch when authenticated; while logged out retain cached branding
+    // so login pages can still show school name/logo after session expiry.
     if (!auth?.user) {
-      setSchoolInfo(null);
-      setLoading(false);
+      try {
+        setLoading(true);
+        const url = new URL(window.location.href);
+        const schoolCodeFromQuery = url.searchParams.get('schoolCode') || url.searchParams.get('school');
+        const branding = await settingsApi.getPublicSchoolBranding({
+          schoolCode: schoolCodeFromQuery || undefined,
+          host: window.location.hostname,
+        });
+
+        if (branding?.id && branding?.name) {
+          const publicInfo: SchoolInfo = {
+            id: branding.id,
+            name: branding.name,
+            logoUrl: branding.logoUrl,
+            status: branding.status,
+          };
+          setSchoolInfo(publicInfo);
+          writeCachedSchoolInfo(publicInfo);
+        } else {
+          setSchoolInfo(prev => prev ?? readCachedSchoolInfo());
+        }
+      } catch {
+        setSchoolInfo(prev => prev ?? readCachedSchoolInfo());
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     try {
       setLoading(true);
       setError(null);
       const info = await settingsApi.getSchoolInfo();
-      setSchoolInfo(info as SchoolInfo);
+      const typedInfo = info as SchoolInfo;
+      setSchoolInfo(typedInfo);
+      writeCachedSchoolInfo(typedInfo);
     } catch (err) {
       setError('Failed to load school information');
       console.error('Error fetching school info:', err);
+      setSchoolInfo(prev => prev ?? readCachedSchoolInfo());
     } finally {
       setLoading(false);
     }

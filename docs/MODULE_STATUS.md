@@ -1,6 +1,6 @@
 # Module Status — SMS API
 
-**Last Updated:** May 21, 2026 (Session 10) | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 25, 2026 (Session 11) | **Project:** SMSRepoA (Release Candidate)  
 **Test Suite:** 724/724 unit tests passing
 
 ---
@@ -22,7 +22,7 @@
 |--------|--------|-----------|-------|
 | **Super Admin Portal** | ✅ Production Ready | ✅ | School listing, onboarding wizard, module permissions; **IsOnboarded detection (Session 9)** — `GetAllSchoolsAsync` now derives `IsOnboarded` from the presence of an Admin `UserLogin` for the school (no DB migration needed); School Management table shows a green `🚀 Onboarded` badge per school and disables the Setup button for already-onboarded schools; wizard shows a `🚫` blocking message and prevents re-running setup on onboarded schools; **Billing Management (Session 10)** — super admin dashboard has a dedicated Billing tab listing all schools with plan, status, expiry, days-until-expiry; inline edit form lets super admin update plan/status/expiry/reminder days; header dropdown Billing menu item opens role-aware dialog |
 | **Billing Management** | ✅ Production Ready | ✅ | **New — Session 10 (May 21 2026).** Super admin manages school subscriptions: plan (Standard / Pro / Enterprise), status (Active / Inactive / Suspended / Trial), expiry date, renewal reminder days. Admin dashboard shows a billing notification toast once per session (sessionStorage-gated) when subscription is expiring or expired — severity: `info` (healthy) / `warning` (within reminder window) / `critical` (≤ 7 days or expired). Admin user header dropdown Billing item opens a read-only view with plan badge, expiry info, amber/red warning banner. All powered by 3 new REST endpoints on `SchoolFeaturePermissionsController`. DB migration adds 4 columns to `Schools` table. |
-| **Auth / JWT** | ✅ Production Ready | ✅ | Role-based, brute-force lockout, Redis-backed; principal role can now switch academic year context; **Staff deactivation guard (May 16 2026)** — login blocked if `StaffMember.Status = "inactive"` (live DB check, mirrors parent guard); `OnTokenValidated` kills existing sessions immediately on deactivation |
+| **Auth / JWT** | ✅ Production Ready | ✅ | Role-based, brute-force lockout, Redis-backed; principal role can now switch academic year context; **Staff deactivation guard (May 16 2026)** — login blocked if `StaffMember.Status = "inactive"` (live DB check, mirrors parent guard); `OnTokenValidated` kills existing sessions immediately on deactivation; **Unified login UX (May 25 2026)** — Admin/Staff/Parent now use one role-first login screen while keeping role-claim validation and route guards authoritative |
 | **Student Management** | ✅ Production Ready | ✅ | Full CRUD, ID cards, PDF export; Staff Parent tab (GuardianStaffId) added May 2026 |
 | **Staff Management** | ✅ Production Ready | ✅ | 6-step registration, payroll, contracts; Children linking (edit mode) added May 2026; PAN uppercase fix; **Two-step Deactivation Dialog (May 16 2026)** — step 1 shows pending assignment count, step 2 shows confirmation + downloadable Experience Certificate / Relieving Letter / No Dues Certificate; **UserLogin sync fix** — `DeactivateStaff` now reliably marks `UserLogin.Status = "inactive"` + clears refresh token via `LinkedEntityId` lookup |
 | **Admissions** | ✅ Production Ready | ✅ | 5-step wizard, RTE support, CSV export; **Admin sidebar re-enabled (Session 9)** — module visible in PEOPLE & ENROLLMENT nav for admin/super_admin; `admissionService.ts` auth migrated from `localStorage.token` to `sessionStorage auth_session`; table actions upgraded with dedicated Enroll (for approved applications), Edit, and Delete buttons |
@@ -35,10 +35,12 @@
 | **Payroll** | ✅ Production Ready | 30/30 | Salary slips, allowances, deductions |
 | **Assignments** | ✅ Production Ready | 40/40 | Homework, submissions, grading; Staff assignments page fully rewritten — class-grouped with per-class colour coding, section sub-tabs, clickable cards with submission/grading detail sheet; tiles refresh live after grading; **Parent notifications** on grade (and on new assignment) — end-to-end via `StudentGuardians → UserLogins` email join |
 | **Examinations** | ✅ Production Ready | ✅ | Marks entry, grade reports, rank generation; **Hall Tickets** (bulk-generate with prefix, per-class filter, CSV export, print); **Co-Scholastic Grading** (A+→E grade per area per term, area CRUD); **Promote Exam Structure** — added May 2026; **Exam Marks Entry (admin + staff)** — end-to-end fixed May 13, 2026; **Exams tab in My Classes** — shows all class exams (not just assigned); **ExamResultsTab Class + Section filter (May 16 2026)** — replaced status dropdown with Class + Section cascading filter, loads results per class/section |
-| **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash |
+| **Finance / Budget** | ✅ Production Ready | ✅ | Income, expenses, petty cash; **Aggregation correction (May 25 2026)** — petty cash is excluded from aggregated income sources and income tab totals are recomputed from visible rows only |
 | **Reports** | ✅ Production Ready | ✅ | PDF/CSV export for all modules |
 | **Staff-Student Guardian Relationship** | ✅ Production Ready | ✅ | GuardianStaffId on Student entity; bidirectional link/unlink UI; fee concession eligible |
 | **Notifications** | ✅ Production Ready | ✅ | Real DB-backed; parent receives notifications for: Fee reminders, Exam, Announcements, Attendance, **Assignment Graded** (new May 13 2026), New Assignment. `GET /api/notifications/my` returns unread count + paginated list. Parent portal bell icon + Notifications page both real (no mock data). |
+
+| **School Branding (Pre-login)** | ✅ Production Ready | ✅ | Anonymous endpoint `GET /api/settings/public-branding` resolves school identity from query/host/subdomain and feeds unified login branding via `SchoolContext`; fallback branding is returned safely when school cannot be resolved |
 
 ---
 
