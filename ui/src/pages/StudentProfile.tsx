@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
+import { StudentFeeTab } from "@/components/fees/StudentFeeTab";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
 import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto, StudentExitResponse } from "@/services/api/studentApi";
 import {
@@ -928,29 +928,12 @@ export default function StudentProfile() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {profileSummary?.fee && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-muted rounded-lg">
-                  <div className="text-center">
-                    <div className="text-lg font-bold">₹{profileSummary.fee.totalAmount.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">Total Fees</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-green-600">₹{profileSummary.fee.paidAmount.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">Paid</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-red-500">₹{profileSummary.fee.pendingAmount.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">Pending</div>
-                  </div>
-                  <div className="text-center">
-                    <Badge variant={profileSummary.fee.status === 'paid' ? 'default' : profileSummary.fee.status === 'overdue' ? 'destructive' : 'secondary'}>
-                      {profileSummary.fee.status}
-                    </Badge>
-                    <div className="text-xs text-muted-foreground mt-1">{profileSummary.fee.academicYear}</div>
-                  </div>
-                </div>
-              )}
-              <ParentFeePayment studentId={student?.id || ""} />
+              <StudentFeeTab
+                studentId={student?.id || ""}
+                studentName={student?.name}
+                studentClass={student?.class}
+                siblings={siblings}
+              />
 
               {/* Staff Child Discount Panel — only for Admin/Principal when guardian is a staff member */}
               {guardianStaff && isAdmin && (

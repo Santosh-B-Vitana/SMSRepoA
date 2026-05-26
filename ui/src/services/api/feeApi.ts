@@ -49,6 +49,8 @@ export interface FeeStructure {
   updatedAt: string;
   /** Number of student fee records linked to this structure. 0 = not yet assigned to any student. */
   assignedStudentCount?: number;
+  /** Whether this fee structure is active and usable for assignments. Defaults true. */
+  isActive?: boolean;
 }
 
 export interface CreateFeeStructureDto {
@@ -1127,6 +1129,64 @@ export const deleteConcessionType = async (id: string): Promise<void> => {
   await apiClient.delete(`${CONCESSION_TYPES_PATH}/${id}`);
 };
 
+// ─── FeeHead & FeeStructureComponent DTOs ─────────────────────────────────
+export interface FeeHead {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  displayOrder: number;
+  isActive: boolean;
+  isVisibleOnReceipt: boolean;
+  isMandatory: boolean;
+}
+
+export interface FeeStructureComponent {
+  id: string;
+  feeHeadId: string;
+  feeHeadName: string;
+  feeHeadCode: string;
+  amount: number;
+  remarks?: string;
+}
+
+export const getStructureComponents = async (structureId: string): Promise<FeeStructureComponent[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/structures/${structureId}/components`);
+  return response.data || [];
+};
+
+export const setStructureComponents = async (
+  structureId: string,
+  components: Array<{ feeHeadId: string; amount: number; remarks?: string }>
+): Promise<{ message: string; total: number }> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${structureId}/components`, components);
+  return response.data;
+};
+
+export interface ClassFeeStructureLink {
+  id: string;
+  className: string;
+}
+
+export const getLinkedClasses = async (structureId: string): Promise<ClassFeeStructureLink[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/structures/${structureId}/classes`);
+  return response.data;
+};
+
+export const linkClass = async (structureId: string, className: string): Promise<ClassFeeStructureLink> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${structureId}/classes`, { ClassName: className });
+  return response.data;
+};
+
+export const unlinkClass = async (structureId: string, className: string): Promise<void> => {
+  await apiClient.delete(`${BASE_PATH}/structures/${structureId}/classes/${encodeURIComponent(className)}`);
+};
+
+export const toggleStructureActive = async (structureId: string): Promise<{ id: string; isActive: boolean }> => {
+  const response = await apiClient.patch(`${BASE_PATH}/structures/${structureId}/toggle-active`);
+  return response.data;
+};
+
 // Export all functions as a single object for convenience
 export const feeApi = {
   getFeeStructures,
@@ -1184,6 +1244,11 @@ export const feeApi = {
   seedFeeStructures,
   applyFeeHeadOverrides,
   removeDiscount,
+  getLinkedClasses,
+  linkClass,
+  unlinkClass,
+  getStructureComponents,
+  setStructureComponents,
 };
 
 export default feeApi;

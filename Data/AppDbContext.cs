@@ -89,6 +89,7 @@ namespace SmsApi.Data
         public DbSet<FeeStructureComponent> FeeStructureComponents { get; set; }
         public DbSet<FeeTerm> FeeTerms { get; set; }
         public DbSet<ReceiptTemplate> ReceiptTemplates { get; set; }
+        public DbSet<ClassFeeStructure> ClassFeeStructures { get; set; }
 
         // Examinations
         public DbSet<Exam> Examinations { get; set; }
@@ -1060,6 +1061,24 @@ namespace SmsApi.Data
                 var jsonType = Database.ProviderName?.Contains("Npgsql") == true
                     ? "jsonb" : "nvarchar(max)";
                 entity.Property(r => r.ColumnConfigJson).HasColumnType(jsonType);
+            });
+
+            // ── ClassFeeStructure ──────────────────────────────────────────────
+            modelBuilder.Entity<ClassFeeStructure>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(c => c.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // One structure cannot be linked to the same class twice
+                entity.HasIndex(e => new { e.FeeStructureId, e.ClassName }).IsUnique();
+                entity.HasIndex(e => e.SchoolId);
             });
         }
 

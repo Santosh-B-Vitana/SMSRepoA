@@ -474,21 +474,6 @@ export function TransportManager() {
         (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
       )
     : routes;
-    }
-  }
-
-  const activeRoutes = routes.filter(r => r.status === "active").length;
-  const totalStudents = routesTotal > 0 ? routes.reduce((a, r) => a + r.studentsAssigned, 0) : students.length;
-  const totalCapacity = routes.reduce((a, r) => a + r.capacity, 0);
-
-  // Local search filter within current page for routes
-  const filteredRoutes = routesSearch
-    ? routes.filter(r =>
-        r.routeName.toLowerCase().includes(routesSearch.toLowerCase()) ||
-        r.routeNumber.toLowerCase().includes(routesSearch.toLowerCase()) ||
-        (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
-      )
-    : routes;
 
   if (accessDenied) {
     return (

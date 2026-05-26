@@ -2097,6 +2097,170 @@ namespace SmsApi.Controllers
         }
 
         // ═══════════════════════════════════════════════════════════════════════
+        // TOGGLE ACTIVE — Mark a fee structure as active or inactive
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>Toggle a fee structure's active/inactive state.</summary>
+        [HttpPatch("structures/{id}/toggle-active")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant")]
+        public async Task<ActionResult> ToggleFeeStructureActive(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var structure = await _context.FeeStructures
+                    .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+                if (structure == null) return NotFound(new { message = "Fee structure not found." });
+
+                structure.IsActive = !structure.IsActive;
+                structure.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { id = structure.Id, isActive = structure.IsActive });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ToggleFeeStructureActive failed for id={Id}", id);
+                return StatusCode(500, new { message = "Failed to toggle structure active state." });
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // CLASS-FEE-STRUCTURE — Multi-class assignment for a fee structure
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>List all classes linked to a fee structure.</summary>
+        [HttpGet("structures/{structureId}/classes")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult<List<ClassFeeStructureResponse>>> GetLinkedClasses(Guid structureId)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var structure = await _context.FeeStructures
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Id == structureId && s.SchoolId == schoolId && !s.IsDeleted);
+                if (structure == null) return NotFound(new { message = "Fee structure not found." });
+
+                var links = await _context.ClassFeeStructures
+                    .IgnoreQueryFilters()
+                    .Where(c => c.FeeStructureId == structureId && c.SchoolId == schoolId && !c.IsDeleted)
+                    .OrderBy(c => c.ClassName)
+                    .Select(c => new ClassFeeStructureResponse { Id = c.Id, ClassName = c.ClassName })
+                    .ToListAsync();
+
+                return Ok(links);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetLinkedClasses failed for structureId={StructureId}", structureId);
+                return StatusCode(500, new { message = "Failed to fetch linked classes.", detail = ex.Message });
+            }
+        }
+
+        /// <summary>Link a class to a fee structure.</summary>
+        [HttpPost("structures/{structureId}/classes")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant")]
+        public async Task<ActionResult<ClassFeeStructureResponse>> LinkClass(Guid structureId, [FromBody] LinkClassRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.ClassName))
+                return BadRequest(new { message = "ClassName is required." });
+
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Verify structure exists — use IgnoreQueryFilters to bypass global soft-delete filter
+                // and check IsDeleted manually so we get a clear error if structure doesn't exist at all.
+                var structure = await _context.FeeStructures
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Id == structureId && s.SchoolId == schoolId && !s.IsDeleted);
+                if (structure == null) return NotFound(new { message = "Fee structure not found." });
+
+                var className = request.ClassName.Trim();
+
+                // Enforce: each class can only be linked to ONE structure at a time.
+                // Check if this class is already actively linked to a DIFFERENT structure in this school.
+                var existingInOther = await _context.ClassFeeStructures
+                    .IgnoreQueryFilters()
+                    .Where(c => c.SchoolId == schoolId && c.ClassName == className && !c.IsDeleted && c.FeeStructureId != structureId)
+                    .FirstOrDefaultAsync();
+
+                if (existingInOther != null)
+                {
+                    var otherName = await _context.FeeStructures
+                        .IgnoreQueryFilters()
+                        .Where(f => f.Id == existingInOther.FeeStructureId && !f.IsDeleted)
+                        .Select(f => f.Name)
+                        .FirstOrDefaultAsync();
+                    return Conflict(new { message = $"'{className}' is already linked to '{otherName ?? "another structure"}'. Unlink it there first." });
+                }
+
+                // IgnoreQueryFilters is CRITICAL here: the global soft-delete filter hides
+                // previously-unlinked (IsDeleted=true) rows, but the unique index on
+                // (FeeStructureId, ClassName) still covers them. Without IgnoreQueryFilters,
+                // we would miss the soft-deleted row, try to INSERT a duplicate, and get a
+                // unique-constraint violation → 500.
+                var existing = await _context.ClassFeeStructures
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(c => c.FeeStructureId == structureId && c.ClassName == className);
+
+                if (existing != null)
+                {
+                    if (!existing.IsDeleted)
+                        return Ok(new ClassFeeStructureResponse { Id = existing.Id, ClassName = existing.ClassName });
+
+                    // Reactivate the soft-deleted record instead of inserting a new one
+                    existing.IsDeleted = false;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    return Ok(new ClassFeeStructureResponse { Id = existing.Id, ClassName = existing.ClassName });
+                }
+
+                var link = new ClassFeeStructure
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    FeeStructureId = structureId,
+                    ClassName = className,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+                _context.ClassFeeStructures.Add(link);
+                await _context.SaveChangesAsync();
+
+                return Ok(new ClassFeeStructureResponse { Id = link.Id, ClassName = link.ClassName });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "LinkClass failed for structureId={StructureId} className={ClassName}", structureId, request?.ClassName);
+                return StatusCode(500, new { message = "Failed to link class.", detail = ex.Message });
+            }
+        }
+
+        /// <summary>Unlink a class from a fee structure.</summary>
+        [HttpDelete("structures/{structureId}/classes/{className}")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant")]
+        public async Task<ActionResult> UnlinkClass(Guid structureId, string className)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var link = await _context.ClassFeeStructures
+                    .FirstOrDefaultAsync(c => c.FeeStructureId == structureId && c.ClassName == className
+                                              && c.SchoolId == schoolId && !c.IsDeleted);
+                if (link == null) return NotFound(new { message = "Link not found." });
+
+                link.IsDeleted = true;
+                link.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = $"Class '{className}' unlinked from structure." });
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to unlink class." }); }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
         // PROMOTE FEES — Copy fee structure to next academic year
         // ═══════════════════════════════════════════════════════════════════════
 
@@ -2650,5 +2814,16 @@ public class BulkFeePaymentResult
     public List<string> Errors { get; set; } = new();
 }
 
+public class ClassFeeStructureResponse
+{
+    public Guid Id { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+}
 
+public class LinkClassRequest
+{
+    [Required]
+    [MaxLength(50)]
+    public string ClassName { get; set; } = string.Empty;
+}
 

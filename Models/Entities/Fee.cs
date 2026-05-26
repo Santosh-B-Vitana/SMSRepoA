@@ -26,6 +26,9 @@ namespace SmsApi.Models.Entities
         public decimal TotalAmount { get; set; }
         
         public string? Description { get; set; }
+
+        /// <summary>Whether this fee structure is active and usable for assignments.</summary>
+        public bool IsActive { get; set; } = true;
         
         // Fee Components
         [Column(TypeName = "decimal(12,2)")]
@@ -354,6 +357,32 @@ namespace SmsApi.Models.Entities
 
         [MaxLength(500)]
         public string? Remarks { get; set; }
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ClassFeeStructure — Many-to-many join table linking a FeeStructure to one
+    // or more class names (e.g. "5", "10", "LKG").
+    // Enables a single fee structure to be applied across multiple classes.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class ClassFeeStructure : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        /// <summary>The fee structure being linked to a class.</summary>
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        /// <summary>Class identifier string (e.g. "5", "10", "LKG").</summary>
+        [Required]
+        [MaxLength(50)]
+        public string ClassName { get; set; } = string.Empty;
 
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }

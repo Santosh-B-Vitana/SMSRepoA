@@ -31,9 +31,12 @@ export function FeeHeadsManager() {
     setLoading(true);
     try {
       const data = await feeApi.getFeeHeads();
-      setHeads(data);
-    } catch {
-      toast({ title: "Failed to load fee heads", variant: "destructive" });
+      console.log('Loaded fee heads:', data);
+      setHeads(data || []);
+    } catch (e: any) {
+      console.error('Error loading fee heads:', e?.response?.data || e?.message || e);
+      toast({ title: "Failed to load fee heads", description: e?.response?.data?.message || e?.message || "Unknown error", variant: "destructive" });
+      setHeads([]);
     } finally {
       setLoading(false);
     }

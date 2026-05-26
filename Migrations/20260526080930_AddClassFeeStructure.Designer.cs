@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SmsApi.Data;
 
@@ -11,9 +12,11 @@ using SmsApi.Data;
 namespace SmsApi.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260526080930_AddClassFeeStructure")]
+    partial class AddClassFeeStructure
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2349,56 +2352,6 @@ namespace SmsApi.Migrations
                     b.ToTable("Classes");
                 });
 
-            modelBuilder.Entity("SmsApi.Models.Entities.ClassFeeStructure", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ClassName")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("FeeStructureId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
-
-                    b.Property<Guid>("SchoolId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SchoolId");
-
-                    b.HasIndex("FeeStructureId", "ClassName")
-                        .IsUnique();
-
-                    b.ToTable("ClassFeeStructures");
-                });
-
             modelBuilder.Entity("SmsApi.Models.Entities.ClassSettings", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4205,9 +4158,6 @@ namespace SmsApi.Migrations
 
                     b.Property<string>("InstallmentDueDates")
                         .HasColumnType("text");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -13564,25 +13514,6 @@ namespace SmsApi.Migrations
                         .IsRequired();
 
                     b.Navigation("BoardConfig");
-
-                    b.Navigation("School");
-                });
-
-            modelBuilder.Entity("SmsApi.Models.Entities.ClassFeeStructure", b =>
-                {
-                    b.HasOne("SmsApi.Models.Entities.FeeStructure", "FeeStructure")
-                        .WithMany()
-                        .HasForeignKey("FeeStructureId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SmsApi.Models.Entities.School", "School")
-                        .WithMany()
-                        .HasForeignKey("SchoolId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("FeeStructure");
 
                     b.Navigation("School");
                 });

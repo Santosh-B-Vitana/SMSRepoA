@@ -118,6 +118,9 @@ namespace SmsApi.Models.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
+        /// <summary>Whether this fee structure is active and usable for assignments.</summary>
+        public bool IsActive { get; set; }
+
         /// <summary>Number of fee records (students) linked to this structure. 0 = not yet assigned.</summary>
         public int AssignedStudentCount { get; set; }
     }

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
+import { StudentFeeTab } from "@/components/fees/StudentFeeTab";
 import { Student, StudentBasic, studentApi } from "@/services/api/studentApi";
 import { Users, ExternalLink } from "lucide-react";
 
@@ -179,7 +179,7 @@ export default function StudentDetail() {
             </TabsContent>
 
             <TabsContent value="fee">
-              <ParentFeePayment studentId={student.id} />
+              <StudentFeeTab studentId={student.id} />
             </TabsContent>
           </Tabs>
         </CardContent>

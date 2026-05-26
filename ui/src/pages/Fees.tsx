@@ -17,10 +17,10 @@ import {
   Printer, Tag, BarChart3, Loader2, Calendar, Building2,
   QrCode, ChevronDown, ChevronUp, Send, Pencil, Trash2,
   FileText, CalendarDays, CreditCard, Banknote, Filter, Link2, PackagePlus,
-  Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2
+  Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2, X, GraduationCap
 } from "lucide-react";
 import { toast } from "sonner";
-import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals } from "@/services/api/feeApi";
+import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, FeeHead, FeeStructureComponent, toggleStructureActive } from "@/services/api/feeApi";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -2297,6 +2297,17 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const [assigning, setAssigning] = useState<string | null>(null); // structureId being assigned
   const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set()); // recently successfully assigned
   const [seeding, setSeeding] = useState(false);
+  const [linkedClassesMap, setLinkedClassesMap] = useState<Record<string, ClassFeeStructureLink[]>>({});
+  const [linkedClassesLoading, setLinkedClassesLoading] = useState<Set<string>>(new Set());
+  const [expandedLinkedClasses, setExpandedLinkedClasses] = useState<Set<string>>(new Set());
+  const [addingClassFor, setAddingClassFor] = useState<string | null>(null); // structureId
+  const [newClassInput, setNewClassInput] = useState("");
+  const [togglingActive, setTogglingActive] = useState<string | null>(null); // structureId being toggled
+  const [editLinkedClasses, setEditLinkedClasses] = useState<ClassFeeStructureLink[]>([]); // linked classes shown in edit dialog
+  const [editLinkedClassesLoading, setEditLinkedClassesLoading] = useState(false);
+  const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
+  const [selectedComponents, setSelectedComponents] = useState<Array<{ feeHeadId: string; feeHeadName: string; amount: number; remarks?: string }>>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
 
   const handleSeedStructures = async () => {
     if (!tabYear) { toast.error("Select an academic year first"); return; }
@@ -2318,6 +2329,67 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   // Sync tabYear when parent academicYear prop changes
   useEffect(() => { if (academicYear) setTabYear(academicYear); }, [academicYear]);
 
+  const toggleLinkedClasses = async (structureId: string) => {
+    const isOpen = expandedLinkedClasses.has(structureId);
+    if (isOpen) {
+      setExpandedLinkedClasses(prev => { const s = new Set(prev); s.delete(structureId); return s; });
+      return;
+    }
+    setExpandedLinkedClasses(prev => new Set(prev).add(structureId));
+    if (linkedClassesMap[structureId]) return; // already loaded
+    setLinkedClassesLoading(prev => new Set(prev).add(structureId));
+    try {
+      const classes = await getLinkedClasses(structureId);
+      setLinkedClassesMap(prev => ({ ...prev, [structureId]: classes }));
+    } catch {
+      toast.error("Failed to load linked classes");
+    } finally {
+      setLinkedClassesLoading(prev => { const s = new Set(prev); s.delete(structureId); return s; });
+    }
+  };
+
+  const handleLinkClass = async (structureId: string) => {
+    const cn = newClassInput.trim();
+    if (!cn) return;
+    try {
+      const linked = await linkClass(structureId, cn);
+      const updatedClasses = [...(linkedClassesMap[structureId] ?? []), linked];
+      setLinkedClassesMap(prev => ({ ...prev, [structureId]: updatedClasses }));
+      setNewClassInput("");
+      setAddingClassFor(null);
+      const classNames = updatedClasses.map(c => c.className).join(", ");
+      toast.success(`Classes linked to structure: ${classNames}`);
+    } catch (e: any) {
+      console.error("Link class error:", e?.response?.data || e?.message || e);
+      const errMsg = e?.response?.data?.message || e?.message || "Failed to link class";
+      toast.error(errMsg);
+    }
+  };
+
+  const handleUnlinkClass = async (structureId: string, link: ClassFeeStructureLink) => {
+    try {
+      await unlinkClass(structureId, link.className);
+      setLinkedClassesMap(prev => ({ ...prev, [structureId]: (prev[structureId] ?? []).filter(c => c.id !== link.id) }));
+      toast.success(`Class "${link.className}" unlinked`);
+    } catch (e: any) {
+      console.error("Unlink class error:", e?.response?.data || e?.message || e);
+      toast.error(e?.response?.data?.message ?? "Failed to unlink class");
+    }
+  };
+
+  const handleToggleActive = async (s: FeeStructure) => {
+    setTogglingActive(s.id);
+    try {
+      const result = await toggleStructureActive(s.id);
+      setStructures(prev => prev.map(x => x.id === s.id ? { ...x, isActive: result.isActive } : x));
+      toast.success(`"${s.name}" marked as ${result.isActive ? "active" : "inactive"}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to toggle status");
+    } finally {
+      setTogglingActive(null);
+    }
+  };
+
   const availableStandards = Array.from(new Set(allClasses.map(c => c.standard))).sort(
     (a, b) => (parseInt(a.replace(/\D/g, "")) || 0) - (parseInt(b.replace(/\D/g, "")) || 0)
   );
@@ -2332,9 +2404,19 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   // Reload structures when tabYear changes
   useEffect(() => {
     setLoading(true);
-    academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(() => {});
+    academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(e => console.error('Failed to load classes:', e));
     feeApi.getFeeStructures(undefined, tabYear || undefined)
-      .then(r => setStructures(r || [])).catch(() => {}).finally(() => setLoading(false));
+      .then(r => setStructures(r || [])).catch(e => console.error('Failed to load structures:', e)).finally(() => setLoading(false));
+    // Also load fee heads
+    feeApi.getFeeHeads()
+      .then(r => {
+        console.log('Loaded fee heads:', r);
+        setFeeHeads(r || []);
+      })
+      .catch(e => {
+        console.error('Failed to load fee heads:', e);
+        setFeeHeads([]);
+      });
   }, [tabYear]);
 
   // When installment plan changes or total fee changes, rebuild the term schedule
@@ -2349,9 +2431,11 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
     setEditing(null);
     setForm({ installmentCount: count, academicYear: tabYear });
     setTermSchedule(defaultTermSchedule(count, tabYear, 0));
+    setSelectedComponents([]);
     setShowDialog(true);
   };
-  const openEdit = (s: FeeStructure) => {
+  
+  const openEdit = async (s: FeeStructure) => {
     const existing = parseSchedule(s.installmentDueDates);
     setTermSchedule(existing.length > 0 ? existing : defaultTermSchedule(s.installmentCount, s.academicYear, s.totalAmount));
     setEditing(s);
@@ -2363,6 +2447,29 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       uniformFee: s.uniformFee, booksFee: s.booksFee, miscellaneous: s.miscellaneous,
       installmentCount: s.installmentCount,
     });
+    // Load existing components
+    setComponentsLoading(true);
+    try {
+      const comps = await getStructureComponents(s.id);
+      setSelectedComponents(comps.map(c => ({ feeHeadId: c.feeHeadId, feeHeadName: c.feeHeadName, amount: c.amount, remarks: c.remarks })));
+    } catch (e) {
+      console.error("Failed to load components:", e);
+      setSelectedComponents([]);
+    } finally {
+      setComponentsLoading(false);
+    }
+    // Load linked classes for display in dialog
+    setEditLinkedClassesLoading(true);
+    setEditLinkedClasses([]);
+    try {
+      const cls = linkedClassesMap[s.id] ?? await getLinkedClasses(s.id);
+      setEditLinkedClasses(cls);
+      if (!linkedClassesMap[s.id]) setLinkedClassesMap(prev => ({ ...prev, [s.id]: cls }));
+    } catch {
+      setEditLinkedClasses([]);
+    } finally {
+      setEditLinkedClassesLoading(false);
+    }
     setShowDialog(true);
   };
 
@@ -2406,11 +2513,14 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         installmentCount: form.installmentCount || 1,
         installmentDueDates: termSchedule.length > 0 ? JSON.stringify(termSchedule) : undefined,
       } as CreateFeeStructureDto;
+      let structureId: string;
       if (editing) {
         await feeApi.updateFeeStructure(editing.id, payload);
+        structureId = editing.id;
         toast.success("Fee structure updated");
       } else {
         const res = await feeApi.createFeeStructure(payload);
+        structureId = (res as any).id;
         const autoAssigned: number = (res as any).autoAssigned ?? 0;
         const autoSkipped: number  = (res as any).autoSkipped  ?? 0;
         if (autoAssigned > 0) {
@@ -2422,6 +2532,18 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
           toast.success(
             `Fee structure created. No active students found in Class ${form.class} yet — use "Assign to Class" once students are enrolled.`
           );
+        }
+      }
+      // Save components
+      if (selectedComponents.length > 0) {
+        try {
+          await setStructureComponents(
+            structureId,
+            selectedComponents.map(c => ({ feeHeadId: c.feeHeadId, amount: c.amount, remarks: c.remarks }))
+          );
+        } catch (e) {
+          console.error("Failed to save components:", e);
+          toast.warning("Structure saved but some components failed to save");
         }
       }
       const updated = await feeApi.getFeeStructures(undefined, tabYear || undefined);
@@ -2491,7 +2613,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
             const isAssigned = assignedIds.has(s.id) || (s.assignedStudentCount ?? 0) > 0;
             const justAssigned = assignedIds.has(s.id);
             return (
-            <Card key={s.id} className={`transition-shadow hover:shadow-md ${isAssigned ? "border-green-200" : ""}`}>
+            <Card key={s.id} className={`transition-shadow hover:shadow-md ${isAssigned ? "border-green-200" : ""} ${s.isActive === false ? "opacity-60" : ""}`}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0 mr-2">
@@ -2511,6 +2633,24 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                         Not assigned
                       </span>
                     )}
+                    <button
+                      type="button"
+                      title={s.isActive === false ? "Mark as Active" : "Mark as Inactive"}
+                      disabled={togglingActive === s.id || !fsCanEdit}
+                      onClick={() => handleToggleActive(s)}
+                      className={`inline-flex items-center gap-1 rounded-full text-[10px] font-semibold px-2 py-0.5 border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                        s.isActive === false
+                          ? "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                      }`}
+                    >
+                      {togglingActive === s.id
+                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        : s.isActive === false
+                          ? <><span className="w-2 h-2 rounded-full bg-gray-400 inline-block mr-0.5" />Inactive</>
+                          : <><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block mr-0.5" />Active</>
+                      }
+                    </button>
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground mb-2">
@@ -2568,6 +2708,105 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
+
+                {/* Linked Classes section */}
+                <div className="mt-2 border-t pt-2">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                    onClick={() => toggleLinkedClasses(s.id)}
+                  >
+                    <GraduationCap className="h-3.5 w-3.5" />
+                    <span className="font-medium">Linked Classes</span>
+                    {linkedClassesMap[s.id]?.length ? (
+                      <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1.5 py-0">{linkedClassesMap[s.id].length}</Badge>
+                    ) : null}
+                    {expandedLinkedClasses.has(s.id)
+                      ? <ChevronUp className="h-3 w-3 ml-auto" />
+                      : <ChevronDown className="h-3 w-3 ml-auto" />}
+                  </button>
+
+                  {expandedLinkedClasses.has(s.id) && (
+                    <div className="mt-2 space-y-2">
+                      {linkedClassesLoading.has(s.id) ? (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(linkedClassesMap[s.id] ?? []).length === 0 ? (
+                              <span className="text-xs text-muted-foreground italic">No classes linked yet</span>
+                            ) : (
+                              (linkedClassesMap[s.id] ?? []).map(link => (
+                                <span
+                                  key={link.id}
+                                  className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-medium px-2 py-0.5"
+                                >
+                                  {link.className}
+                                  {fsCanManage && (
+                                    <button
+                                      type="button"
+                                      className="ml-0.5 text-indigo-400 hover:text-red-500 transition-colors"
+                                      onClick={() => handleUnlinkClass(s.id, link)}
+                                      title={`Unlink ${link.className}`}
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                          {fsCanManage && (
+                            addingClassFor === s.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <Select
+                                  value={newClassInput}
+                                  onValueChange={setNewClassInput}
+                                >
+                                  <SelectTrigger className="h-7 text-xs flex-1">
+                                    <SelectValue placeholder="Select class" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {availableStandards
+                                      .filter(cls => !(linkedClassesMap[s.id] ?? []).some(l => l.className === cls))
+                                      .map(cls => <SelectItem key={cls} value={cls}>{cls}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs px-2"
+                                  onClick={() => handleLinkClass(s.id)}
+                                  disabled={!newClassInput}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs px-2"
+                                  onClick={() => { setAddingClassFor(null); setNewClassInput(""); }}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-[11px] text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-2 gap-1"
+                                onClick={() => { setAddingClassFor(s.id); setNewClassInput(""); }}
+                              >
+                                <Plus className="h-3 w-3" /> Link Class
+                              </Button>
+                            )
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
             );
@@ -2584,6 +2823,30 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* Linked Classes (edit mode only) */}
+            {editing && (
+              <div className="col-span-2 p-3 rounded-lg bg-indigo-50 border border-indigo-200">
+                <div className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <GraduationCap className="h-3.5 w-3.5" />
+                  Linked Classes
+                </div>
+                {editLinkedClassesLoading ? (
+                  <div className="flex items-center gap-1.5 text-xs text-indigo-600">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+                  </div>
+                ) : editLinkedClasses.length === 0 ? (
+                  <span className="text-xs text-indigo-500 italic">No classes linked yet</span>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {editLinkedClasses.map(link => (
+                      <span key={link.id} className="inline-flex items-center gap-1 rounded-full bg-white text-indigo-700 border border-indigo-300 text-[11px] font-medium px-2.5 py-0.5 shadow-sm">
+                        {link.className}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="col-span-2 grid grid-cols-3 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.structureName')} *</Label>
@@ -2635,6 +2898,53 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                 </div>
               </div>
             ))}
+
+            {/* Custom Fee Heads Section */}
+            {feeHeads.length > 0 && (
+              <div className="col-span-2">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 border-b pb-1">Custom Fee Heads from Fee Types</div>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto bg-gray-50 p-3 rounded-lg border">
+                  {feeHeads.length === 0 ? (
+                    <div className="text-xs text-muted-foreground italic">No custom fee heads created yet</div>
+                  ) : (
+                    feeHeads.map(fh => {
+                      const isSelected = selectedComponents.some(c => c.feeHeadId === fh.id);
+                      const comp = selectedComponents.find(c => c.feeHeadId === fh.id);
+                      return (
+                        <div key={fh.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedComponents([...selectedComponents, { feeHeadId: fh.id, feeHeadName: fh.name, amount: 0 }]);
+                              } else {
+                                setSelectedComponents(selectedComponents.filter(c => c.feeHeadId !== fh.id));
+                              }
+                            }}
+                          />
+                          <label className="flex-1 text-sm font-medium cursor-pointer">{fh.name}</label>
+                          {isSelected && (
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
+                              <Input
+                                className="h-7 text-xs pl-5 w-[100px]"
+                                type="number"
+                                min={0}
+                                value={comp?.amount ?? ""}
+                                onChange={(e) => setSelectedComponents(prev => prev.map(c => c.feeHeadId === fh.id ? { ...c, amount: parseFloat(e.target.value) || 0 } : c))}
+                                placeholder="Amount"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Total */}
             <div className="col-span-2 flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
@@ -4087,7 +4397,8 @@ export default function Fees() {
   const { academicYear, availableYears } = useAcademicYear();
   const [collectYear, setCollectYear] = useState<string | null>(null); // null = not yet initialized; "all-years" = show all records
   const [activeTab, setActiveTab] = useState("collect");
-  const [feeHeadsOpen, setFeeHeadsOpen] = useState(false);
+  const [feeSetupSubTab, setFeeSetupSubTab] = useState("structure");
+  const [analyticsSubTab, setAnalyticsSubTab] = useState("overview");
   const [records, setRecords] = useState<FeeRecord[]>([]);
   const [feeRecordsPage, setFeeRecordsPage] = useState(1);
   const [feeRecordsPageSize, setFeeRecordsPageSize] = useState(50);
@@ -4342,33 +4653,15 @@ export default function Fees() {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-9 h-auto">
+        <TabsList className="grid w-full grid-cols-3 h-auto">
           <TabsTrigger value="collect" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
             <Receipt className="h-4 w-4" /><span>{t('fees.collectFee')}</span>
           </TabsTrigger>
-          <TabsTrigger value="overview" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <CalendarDays className="h-4 w-4" /><span>{t('fees.tabs.daySummary')}</span>
+          <TabsTrigger value="fee-setup" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+            <Building2 className="h-4 w-4" /><span>Fee Setup</span>
           </TabsTrigger>
-          <TabsTrigger value="structure" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Building2 className="h-4 w-4" /><span>{t('fees.feeStructure')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="defaulters" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <AlertTriangle className="h-4 w-4" /><span>{t('fees.tabs.defaulters')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="reminders" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <BellRing className="h-4 w-4" /><span>{t('fees.tabs.reminders')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="concessions" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Tag className="h-4 w-4" /><span>{t('fees.concession')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="bulkpayment" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Upload className="h-4 w-4" /><span>{t('fees.tabs.bulkUpload')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="receipttemplates" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <FileText className="h-4 w-4" /><span>{t('fees.tabs.receipts')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="reports" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <BarChart3 className="h-4 w-4" /><span>{t('fees.tabs.reports')}</span>
+          <TabsTrigger value="analytics" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+            <BarChart3 className="h-4 w-4" /><span>Reports</span>
           </TabsTrigger>
         </TabsList>
 
@@ -4757,140 +5050,174 @@ export default function Fees() {
           )}
         </TabsContent>
 
-        {/* ── Day Summary Tab ───────────────────────────────── */}
-        <TabsContent value="overview" className="mt-4">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
-              <CalendarDays className="h-5 w-5 text-blue-600 shrink-0" />
-              <div className="text-sm text-blue-800">
-                <span className="font-medium">{t('fees.daySummaryToday')} </span>
-                {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              </div>
-            </div>
+        {/* ── Fee Setup Group ──────────────────────────────── */}
+        <TabsContent value="fee-setup" className="mt-4">
+          <Tabs value={feeSetupSubTab} onValueChange={setFeeSetupSubTab}>
+            <TabsList className="grid w-full grid-cols-4 h-auto mb-1">
+              <TabsTrigger value="structure" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <Building2 className="h-4 w-4" /><span>{t('fees.feeStructure')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="feetypes" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <Tags className="h-4 w-4" /><span>Fee Types</span>
+              </TabsTrigger>
+              <TabsTrigger value="reminders" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <BellRing className="h-4 w-4" /><span>{t('fees.tabs.reminders')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="concessions" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <Tag className="h-4 w-4" /><span>{t('fees.concession')}</span>
+              </TabsTrigger>
+            </TabsList>
 
-            {/* Recent payments */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">{t('fees.recentPayments')}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {recentPaymentsLoading ? (
-                  <div className="text-center p-8 text-muted-foreground text-sm">Loading...</div>
-                ) : recentPayments.length === 0 ? (
-                  <div className="text-center p-8 text-muted-foreground text-sm">{t('fees.noPaymentsFound')}</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{t('fees.colStudent')}</TableHead>
-                          <TableHead>{t('fees.class')}</TableHead>
-                          <TableHead>{t('fees.colMethod')}</TableHead>
-                          <TableHead className="text-right">{t('fees.totalAmount')}</TableHead>
-                          <TableHead>{t('fees.colDate')}</TableHead>
-                          <TableHead>{t('fees.colReceipt')}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {recentPayments.map((p: any, i: number) => (
-                          <TableRow key={p.id ?? i}>
-                            <TableCell className="font-medium">{p.studentName}</TableCell>
-                            <TableCell>{p.class}</TableCell>
-                            <TableCell className="capitalize">
-                              <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
-                                {PAYMENT_METHODS.find(m => m.value === p.method)?.icon ?? "💵"} {p.method ?? "cash"}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right font-semibold text-green-600">{inr(p.amount)}</TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {p.date ? new Date(p.date).toLocaleDateString("en-IN") : "—"}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{p.receiptNumber ?? "—"}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* ── Fee Structure Sub-Tab ── */}
+            <TabsContent value="structure" className="mt-4">
+              {canManageFees && (
+                <div className="flex justify-end items-center gap-2 mb-3">
+                  <PromoteFeesDialog structures={structures} onPromoted={() => loadData(true)} />
+                </div>
+              )}
+              <FeeStructureTab academicYear={academicYear ?? ""} />
+            </TabsContent>
 
-            {/* Cashfree info */}
-            <Card className="border border-indigo-200 bg-indigo-50/50">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                    <span className="text-xl">🔗</span>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-indigo-800">Cashfree Online Gateway Active</div>
-                    <div className="text-sm text-indigo-700 mt-0.5">
-                      Select "Online Gateway (Cashfree)" when collecting fees to accept UPI, Cards, Net Banking and Wallets.
-                      A Cashfree checkout window opens and the receipt is generated only after confirmed payment.
-                    </div>
+            {/* ── Fee Types Sub-Tab ── */}
+            <TabsContent value="feetypes" className="mt-4">
+              <FeeHeadsManager />
+            </TabsContent>
+
+            {/* ── Reminders Sub-Tab ── */}
+            <TabsContent value="reminders" className="mt-4">
+              <RemindersTab canManage={canManageFees} />
+            </TabsContent>
+
+            {/* ── Concessions Sub-Tab ── */}
+            <TabsContent value="concessions" className="mt-4">
+              <ConcessionsTab academicYear={academicYear ?? ""} />
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        {/* ── Reports Group ─────────────────────────────────── */}
+        <TabsContent value="analytics" className="mt-4">
+          <Tabs value={analyticsSubTab} onValueChange={setAnalyticsSubTab}>
+            <TabsList className="grid w-full grid-cols-5 h-auto mb-1">
+              <TabsTrigger value="overview" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <CalendarDays className="h-4 w-4" /><span>{t('fees.tabs.daySummary')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="defaulters" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <AlertTriangle className="h-4 w-4" /><span>{t('fees.tabs.defaulters')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="bulkpayment" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <Upload className="h-4 w-4" /><span>{t('fees.tabs.bulkUpload')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="receipttemplates" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <FileText className="h-4 w-4" /><span>{t('fees.tabs.receipts')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="reports" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <BarChart3 className="h-4 w-4" /><span>{t('fees.tabs.reports')}</span>
+              </TabsTrigger>
+            </TabsList>
+
+            {/* ── Day Summary Sub-Tab ── */}
+            <TabsContent value="overview" className="mt-4">
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                  <CalendarDays className="h-5 w-5 text-blue-600 shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <span className="font-medium">{t('fees.daySummaryToday')} </span>
+                    {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
 
-        {/* ── Fee Structure Tab ─────────────────────────────── */}
-        <TabsContent value="structure" className="mt-4">
-          {canManageFees && (
-            <div className="flex justify-end items-center gap-2 mb-3">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setFeeHeadsOpen(true)}>
-                <Tags className="h-3.5 w-3.5" />{t('fees.manageFeeHeads')}
-              </Button>
-              <PromoteFeesDialog structures={structures} onPromoted={() => loadData(true)} />
-            </div>
-          )}
-          <FeeStructureTab academicYear={academicYear ?? ""} />
-        </TabsContent>
+                {/* Recent payments */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{t('fees.recentPayments')}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {recentPaymentsLoading ? (
+                      <div className="text-center p-8 text-muted-foreground text-sm">Loading...</div>
+                    ) : recentPayments.length === 0 ? (
+                      <div className="text-center p-8 text-muted-foreground text-sm">{t('fees.noPaymentsFound')}</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{t('fees.colStudent')}</TableHead>
+                              <TableHead>{t('fees.class')}</TableHead>
+                              <TableHead>{t('fees.colMethod')}</TableHead>
+                              <TableHead className="text-right">{t('fees.totalAmount')}</TableHead>
+                              <TableHead>{t('fees.colDate')}</TableHead>
+                              <TableHead>{t('fees.colReceipt')}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {recentPayments.map((p: any, i: number) => (
+                              <TableRow key={p.id ?? i}>
+                                <TableCell className="font-medium">{p.studentName}</TableCell>
+                                <TableCell>{p.class}</TableCell>
+                                <TableCell className="capitalize">
+                                  <span className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                                    {PAYMENT_METHODS.find(m => m.value === p.method)?.icon ?? "💵"} {p.method ?? "cash"}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right font-semibold text-green-600">{inr(p.amount)}</TableCell>
+                                <TableCell className="text-muted-foreground text-sm">
+                                  {p.date ? new Date(p.date).toLocaleDateString("en-IN") : "—"}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{p.receiptNumber ?? "—"}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-        {/* ── Concessions Tab ───────────────────────────────── */}
-        <TabsContent value="concessions" className="mt-4">
-          <ConcessionsTab academicYear={academicYear ?? ""} />
-        </TabsContent>
+                {/* Cashfree info */}
+                <Card className="border border-indigo-200 bg-indigo-50/50">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                        <span className="text-xl">🔗</span>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-indigo-800">Cashfree Online Gateway Active</div>
+                        <div className="text-sm text-indigo-700 mt-0.5">
+                          Select "Online Gateway (Cashfree)" when collecting fees to accept UPI, Cards, Net Banking and Wallets.
+                          A Cashfree checkout window opens and the receipt is generated only after confirmed payment.
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
 
-        {/* ── Defaulters Tab ────────────────────────────────── */}
-        <TabsContent value="defaulters" className="mt-4">
-          <DefaultersTab canManage={canManageFees} />
-        </TabsContent>
+            {/* ── Defaulters Sub-Tab ── */}
+            <TabsContent value="defaulters" className="mt-4">
+              <DefaultersTab canManage={canManageFees} />
+            </TabsContent>
 
-        {/* ── Fee Reminders Tab ─────────────────────────────── */}
-        <TabsContent value="reminders" className="mt-4">
-          <RemindersTab canManage={canManageFees} />
-        </TabsContent>
+            {/* ── Bulk Upload Sub-Tab ── */}
+            <TabsContent value="bulkpayment" className="mt-4">
+              <BulkFeePaymentUpload />
+            </TabsContent>
 
-        {/* ── Bulk Payment Upload Tab ───────────────────────── */}
-        <TabsContent value="bulkpayment" className="mt-4">
-          <BulkFeePaymentUpload />
-        </TabsContent>
+            {/* ── Receipts Sub-Tab ── */}
+            <TabsContent value="receipttemplates" className="mt-4">
+              <ReceiptTemplateManager />
+            </TabsContent>
 
-        {/* ── Receipt Templates Tab ─────────────────────────── */}
-        <TabsContent value="receipttemplates" className="mt-4">
-          <ReceiptTemplateManager />
-        </TabsContent>
-
-        {/* ── Reports Tab ───────────────────────────────────── */}
-        <TabsContent value="reports" className="mt-4">
-          <ReportsTab records={records} academicYear={academicYear ?? ""} />
+            {/* ── Reports Sub-Tab ── */}
+            <TabsContent value="reports" className="mt-4">
+              <ReportsTab records={records} academicYear={academicYear ?? ""} />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
 
-      {/* ── Fee Heads Manager Dialog ──────────────────────── */}
-      <Dialog open={feeHeadsOpen} onOpenChange={setFeeHeadsOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Tags className="h-5 w-5" />Fee Heads
-            </DialogTitle>
-            <DialogDescription>Configure fee head categories and labels used across fee structures.</DialogDescription>
-          </DialogHeader>
-          <FeeHeadsManager />
-        </DialogContent>
-      </Dialog>
+
 
       {/* ── Collect Payment Dialog ─────────────────────────── */}
       <CollectPaymentDialog

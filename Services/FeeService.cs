@@ -138,6 +138,7 @@ namespace SmsApi.Services
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
+                    IsActive = f.IsActive,
 
                     // How many student fee records are linked to this structure
                     AssignedStudentCount = _context.FeeRecords.Count(r => r.FeeStructureId == f.Id)
@@ -181,7 +182,8 @@ namespace SmsApi.Services
                     
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
-                    UpdatedAt = f.UpdatedAt
+                    UpdatedAt = f.UpdatedAt,
+                    IsActive = f.IsActive
                 })
                 .FirstOrDefaultAsync();
         }
