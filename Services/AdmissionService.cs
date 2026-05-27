@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -35,12 +36,14 @@ namespace SmsApi.Services
         // Documents
         Task<List<AdmissionDocumentDto>> GetDocumentsAsync(Guid schoolId, Guid admissionId);
         Task<AdmissionDocumentDto> UploadDocumentAsync(Guid schoolId, Guid admissionId, CreateAdmissionDocumentDto dto);
+        Task<string> UploadPhotoAsync(Guid schoolId, Guid id, string fileName, byte[] fileData);
     }
 
     public class AdmissionService : IAdmissionService
     {
         private readonly AppDbContext _context;
         private readonly ILogger<AdmissionService> _logger;
+        private readonly IFileStorageService _fileStorage;
 
         // Valid admission status values and their allowed transitions
         private static readonly string[] ValidStatuses = { "pending", "approved", "rejected", "waitlisted", "enrolled", "interviewed" };
@@ -68,10 +71,11 @@ namespace SmsApi.Services
             ["11"] = 16, ["12"] = 17
         };
 
-        public AdmissionService(AppDbContext context, ILogger<AdmissionService> logger)
+        public AdmissionService(AppDbContext context, ILogger<AdmissionService> logger, IFileStorageService fileStorage)
         {
             _context = context;
             _logger = logger;
+            _fileStorage = fileStorage;
         }
 
         // ========== APPLICATION MANAGEMENT ==========
@@ -1025,6 +1029,37 @@ namespace SmsApi.Services
                 _logger.LogError(ex, "Error uploading document for admission {AdmissionId}", admissionId);
                 throw;
             }
+        }
+
+        // ========== PHOTO UPLOAD ==========
+
+        public async Task<string> UploadPhotoAsync(Guid schoolId, Guid id, string fileName, byte[] fileData)
+        {
+            var admission = await _context.Admissions
+                .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.Id == id);
+
+            if (admission == null)
+                throw new InvalidOperationException("Admission application not found.");
+
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/admissions/{id}/photos/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload photo to cloud storage.");
+
+            var photoUrl = _fileStorage.GetPublicUrl(key);
+
+            // Store photo URL in the JSON remarks blob
+            var additionalData = ParseAdditionalData(admission.Remarks);
+            additionalData["PhotoUrl"] = photoUrl;
+            admission.Remarks = JsonSerializer.Serialize(additionalData);
+            admission.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Admission photo uploaded: admissionId={Id}, key={Key}", id, key);
+            return photoUrl;
         }
 
         // ========== HELPER METHODS ==========

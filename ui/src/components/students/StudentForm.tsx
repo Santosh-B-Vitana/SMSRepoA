@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { DOCUMENT_TYPES } from "./StudentDocumentUpload";
 import {
   Upload, Trash2, FileText, X, ChevronLeft, ChevronRight,
-  User, GraduationCap, Users, CreditCard, BookOpen, Heart, CheckCircle2, Camera,
+  User, GraduationCap, Users, CreditCard, BookOpen, Heart, CheckCircle2, Camera, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -187,6 +187,10 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   // Board filter for the Enrollment step
   const [selectedBoard, setSelectedBoard] = useState("");
   const [availableBoards, setAvailableBoards] = useState<{ id: string; name: string }[]>([]);
+  // Sibling search
+  const [siblingSearch, setSiblingSearch] = useState("");
+  const [siblingDropdownOpen, setSiblingDropdownOpen] = useState(false);
+  const siblingSearchRef = useRef<HTMLDivElement>(null);
 
   interface PendingDoc { docType: string; file: File; }
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
@@ -589,14 +593,49 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
           </div>
           <div className="border-t pt-5 space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Siblings in School</p>
-            <Select value="" onValueChange={v => { if (v && !formData.siblings.includes(v)) set({ siblings: [...formData.siblings, v] }); }}>
-              <SelectTrigger><SelectValue placeholder="Link a sibling studying here" /></SelectTrigger>
-              <SelectContent>
-                {(allStudents as any[]).filter((s: any) => !formData.siblings.includes(s.id)).map((s: any) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name} — Class {s.class}-{s.section}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Searchable sibling picker */}
+            <div className="relative" ref={siblingSearchRef}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search student by name or class…"
+                  value={siblingSearch}
+                  onChange={e => { setSiblingSearch(e.target.value); setSiblingDropdownOpen(true); }}
+                  onFocus={() => setSiblingDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setSiblingDropdownOpen(false), 150)}
+                />
+              </div>
+              {siblingDropdownOpen && siblingSearch.trim().length >= 1 && (() => {
+                const q = siblingSearch.toLowerCase();
+                const matched = (allStudents as any[]).filter((s: any) =>
+                  !formData.siblings.includes(s.id) &&
+                  (s.name?.toLowerCase().includes(q) ||
+                   `${s.class}-${s.section}`.toLowerCase().includes(q) ||
+                   s.admissionNumber?.toLowerCase().includes(q))
+                ).slice(0, 10);
+                if (matched.length === 0) return null;
+                return (
+                  <div className="absolute z-20 top-full mt-1 left-0 right-0 border rounded-lg bg-background shadow-lg max-h-56 overflow-y-auto">
+                    {matched.map((s: any) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2.5 hover:bg-muted text-sm flex items-center justify-between gap-2"
+                        onMouseDown={() => {
+                          set({ siblings: [...formData.siblings, s.id] });
+                          setSiblingSearch("");
+                          setSiblingDropdownOpen(false);
+                        }}
+                      >
+                        <span className="font-medium">{s.name}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">Class {s.class}-{s.section}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
             {formData.siblings.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {formData.siblings.map(sid => {

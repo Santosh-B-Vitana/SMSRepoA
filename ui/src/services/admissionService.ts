@@ -38,6 +38,7 @@ export interface AdmissionFull extends Admission {
   previousClass?: string;
   previousMarks?: number;
   interviewNotes?: string;
+  photoUrl?: string;
   documents: AdmissionDocument[];
 }
 
@@ -203,6 +204,17 @@ class AdmissionService {
       documentName,
       fileUrl,
     });
+    return response.data;
+  }
+
+  async uploadPhoto(admissionId: string, file: File): Promise<{ photoUrl: string }> {
+    const data = new FormData();
+    data.append('file', file);
+    const response = await apiClient.post(
+      `/admissions/applications/${admissionId}/photo`,
+      data,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
     return response.data;
   }
 }

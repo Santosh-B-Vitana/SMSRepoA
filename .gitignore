@@ -64,3 +64,4 @@ $RECYCLE.BIN/
 logs/
 artifacts/buildcheck/
 
+node_modules

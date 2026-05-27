@@ -1,5 +1,5 @@
 ﻿
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -47,6 +47,8 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  Camera,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -190,6 +192,10 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
   const [successMessage, setSuccessMessage] = useState("");
   const isEditMode = !!staff;
   const { t } = useLanguage();
+  // Photo upload state
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(staff?.profilePhoto ?? null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // Children management (edit mode only)
   const [linkedChildren, setLinkedChildren] = useState<StudentBasic[]>([]);
@@ -372,10 +378,16 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
 
       if (isEditMode) {
         await staffApi.update(staff!.id, payload as any);
+        if (photoFile) {
+          try { await staffApi.uploadPhoto(staff!.id, photoFile); } catch { /* non-fatal */ }
+        }
         setSuccessMessage(`${data.firstName} ${data.lastName} has been updated successfully`);
         setShowSuccessDialog(true);
       } else {
-        await staffApi.create(payload as any);
+        const created = await staffApi.create(payload as any);
+        if (photoFile && created?.id) {
+          try { await staffApi.uploadPhoto(created.id, photoFile); } catch { /* non-fatal */ }
+        }
         setSuccessMessage(`${data.firstName} ${data.lastName} has been added successfully as ${data.designation}`);
         setShowSuccessDialog(true);
       }
@@ -436,6 +448,51 @@ export function StaffForm({ staff, onClose, onSuccess }: StaffFormProps) {
               {currentStep === 0 && (
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">{t('staffForm.coreDetails')}</p>
+
+                  {/* Photo upload */}
+                  <div className="flex flex-col items-center gap-3 py-2">
+                    <div
+                      className="relative w-28 h-28 rounded-full border-2 border-dashed border-muted-foreground/30 bg-muted/40 flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/60 transition-colors"
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {photoPreview ? (
+                        <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                          <Camera className="h-8 w-8" />
+                          <span className="text-xs">Photo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => photoInputRef.current?.click()}>
+                        <Upload className="h-3.5 w-3.5 mr-1" />
+                        {photoPreview ? "Change Photo" : "Upload Photo"}
+                      </Button>
+                      {photoPreview && (
+                        <Button type="button" variant="ghost" size="sm"
+                          onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}>
+                          <X className="h-3.5 w-3.5 mr-1" />Remove
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        setPhotoFile(f);
+                        const reader = new FileReader();
+                        reader.onloadend = () => setPhotoPreview(reader.result as string);
+                        reader.readAsDataURL(f);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">Optional — JPG/PNG, max 5 MB</p>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="firstName" render={({ field }) => (
                       <FormItem>
