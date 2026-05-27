@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
 using SmsApi.Models.Entities;
@@ -9,11 +10,38 @@ public class ReceiptService : IReceiptService
 {
     private readonly AppDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public ReceiptService(AppDbContext context, IConfiguration configuration)
+    public ReceiptService(AppDbContext context, IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
     {
         _context = context;
         _configuration = configuration;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    /// <summary>
+    /// Converts a relative URL (e.g. /files/schools/.../logo.jpg) to an absolute URL
+    /// so that &lt;img&gt; tags work in receipt popups opened from a different origin/port.
+    /// </summary>
+    private string ResolveUrl(string? relativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(relativeUrl)) return string.Empty;
+        if (relativeUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            relativeUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            relativeUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return relativeUrl;
+
+        // Try configured server URL first (overrides auto-detection in reverse-proxy scenarios)
+        var configured = _configuration["App:ServerUrl"] ?? _configuration["ServerUrl"] ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.TrimEnd('/') + "/" + relativeUrl.TrimStart('/');
+
+        // Fall back to current request origin
+        var req = _httpContextAccessor.HttpContext?.Request;
+        if (req != null)
+            return $"{req.Scheme}://{req.Host}{(relativeUrl.StartsWith('/') ? relativeUrl : "/" + relativeUrl)}";
+
+        return relativeUrl;
     }
 
     public async Task<byte[]> GeneratePaymentReceiptPdfAsync(Guid paymentId, Guid schoolId)
@@ -118,6 +146,7 @@ public class ReceiptService : IReceiptService
         var schoolAddr   = school?.Address ?? "";
         var schoolPhone  = school?.Phone  ?? "";
         var schoolEmail  = school?.Email  ?? "";
+        var schoolLogo   = ResolveUrl(school?.Logo);
 
         var studentName  = student?.Name             ?? "N/A";
         var admNo        = student?.AdmissionNumber  ?? "N/A";
@@ -250,13 +279,22 @@ public class ReceiptService : IReceiptService
     gap: 22px;
   }}
   .school-logo {{
-    width: 64px; height: 64px; border-radius: 50%;
+    width: 68px; height: 68px; border-radius: 50%;
     background: rgba(255,255,255,0.15);
-    border: 2px solid rgba(255,255,255,0.35);
+    border: 2.5px solid rgba(255,255,255,0.45);
     display: flex; align-items: center; justify-content: center;
     font-family: 'Playfair Display', serif;
     font-size: 22px; font-weight: 700;
     color: #fff; letter-spacing: 1px; flex-shrink: 0;
+    overflow: hidden;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.08);
+  }}
+  .school-logo img {{
+    width: 100%; height: 100%;
+    object-fit: contain;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.95);
+    padding: 4px;
   }}
   .school-info {{ flex: 1; }}
   .school-name {{
@@ -463,7 +501,11 @@ public class ReceiptService : IReceiptService
 
   <!-- ── HEADER ── -->
   <div class='header'>
-    <div class='school-logo'>{initials}</div>
+    <div class='school-logo'>
+      {(schoolLogo.Length > 0
+        ? $"<img src='{System.Web.HttpUtility.HtmlAttributeEncode(schoolLogo)}' alt='{System.Web.HttpUtility.HtmlEncode(schoolName)} logo' loading='eager' />"
+        : System.Web.HttpUtility.HtmlEncode(initials))}
+    </div>
     <div class='school-info'>
       <div class='school-name'>{System.Web.HttpUtility.HtmlEncode(schoolName)}</div>
       <div class='school-meta'>

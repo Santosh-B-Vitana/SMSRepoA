@@ -122,12 +122,31 @@ export interface PublicSchoolBrandingResponse {
   status: 'active' | 'inactive';
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Convert a relative logo path (e.g. /files/schools/.../logo.jpg) returned by the
+ * backend into an absolute URL so that <img src> works regardless of which port the
+ * frontend is running on.  Already-absolute URLs (http/https/data/blob) are returned
+ * unchanged.
+ */
+function resolveLogoUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+  const apiOrigin = (apiClient.defaults.baseURL ?? 'http://localhost:5092/api')
+    .replace(/\/api\/?$/, '');
+  return `${apiOrigin}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
 // ─── API methods ──────────────────────────────────────────────────────────────
 
 const settingsApi = {
   /** GET basic profile info for the current user's school (name, logo, address, etc.) */
   getSchoolInfo(): Promise<{ id: string; name: string; logoUrl?: string; address?: string; phone?: string; email?: string; status: 'active' | 'inactive' }> {
-    return apiClient.get('/settings/school/me').then((r) => r.data);
+    return apiClient.get('/settings/school/me').then((r) => ({
+      ...r.data,
+      logoUrl: resolveLogoUrl(r.data.logoUrl),
+    }));
   },
 
   /** GET public school branding for login pages using schoolCode or host subdomain */
@@ -139,7 +158,10 @@ const settingsApi = {
           host: params?.host,
         },
       })
-      .then((r) => r.data);
+      .then((r) => ({
+        ...r.data,
+        logoUrl: resolveLogoUrl(r.data.logoUrl),
+      }));
   },
 
   /** GET all school settings, optionally filtered by category */

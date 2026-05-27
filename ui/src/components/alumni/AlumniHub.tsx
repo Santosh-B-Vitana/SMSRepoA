@@ -1426,8 +1426,10 @@ function DonationsTab() {
         paymentMethod: "Bank Transfer", receiptNumber: "", isAnonymous: false, message: "",
       });
       load(1);
-    } catch {
-      toast.error("Failed to record donation");
+    } catch (err: unknown) {
+      const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "Failed to record donation";
+      console.error("Donation error:", err);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }

@@ -1278,7 +1278,7 @@ export default function StaffProfile() {
                 address: schoolInfo?.address,
                 phone: schoolInfo?.phone,
                 email: schoolInfo?.email,
-                logoUrl: schoolInfo?.logo,
+                logoUrl: schoolInfo?.logoUrl,
               }}
             />
           )}
@@ -1301,7 +1301,7 @@ export default function StaffProfile() {
                 address: schoolInfo?.address,
                 phone: schoolInfo?.phone,
                 email: schoolInfo?.email,
-                logoUrl: schoolInfo?.logo,
+                logoUrl: schoolInfo?.logoUrl,
                 principalName: schoolInfo?.principalName,
               }}
             />
@@ -1327,7 +1327,7 @@ export default function StaffProfile() {
                 address: schoolInfo?.address,
                 phone: schoolInfo?.phone,
                 email: schoolInfo?.email,
-                logoUrl: schoolInfo?.logo,
+                logoUrl: schoolInfo?.logoUrl,
                 principalName: schoolInfo?.principalName,
               }}
             />

@@ -1629,7 +1629,7 @@ export default function StudentProfile() {
                 address: schoolInfo?.address,
                 phone: schoolInfo?.phone,
                 email: schoolInfo?.email,
-                logoUrl: schoolInfo?.logo,
+                logoUrl: schoolInfo?.logoUrl,
               }}
             />
           )}
@@ -1661,7 +1661,7 @@ export default function StudentProfile() {
                 address: schoolInfo?.address,
                 phone: schoolInfo?.phone,
                 email: schoolInfo?.email,
-                logoUrl: schoolInfo?.logo,
+                logoUrl: schoolInfo?.logoUrl,
                 principalName: schoolInfo?.principalName,
               }}
             />
