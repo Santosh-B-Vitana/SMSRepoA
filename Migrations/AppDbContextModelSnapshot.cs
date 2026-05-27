@@ -4159,6 +4159,10 @@ namespace SmsApi.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsActive")
+                        .HasDefaultValue(true)
+                        .HasColumnType("bit");
+
                     b.Property<decimal>("LabFee")
                         .HasColumnType("decimal(12,2)");
 

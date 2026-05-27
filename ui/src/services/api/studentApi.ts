@@ -410,7 +410,7 @@ export const studentApi = {
     apiGet<GuardianStaffDto | null>(`/students/${studentId}/guardian-staff`),
 
   setGuardianStaff: (studentId: string, staffId: string | null) =>
-    apiPost<{ message: string }>(`/students/${studentId}/guardian-staff`, { staffId }),
+    apiPut<{ message: string }>(`/students/${studentId}/guardian-staff`, { staffId }),
 
   // ── Exit (Dropout / Passout) ─────────────────────────────────────────────
   getExitClearance: (studentId: string) =>

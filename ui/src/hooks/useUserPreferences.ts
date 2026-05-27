@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface UserPreferences {
   theme?: 'light' | 'dark' | 'system';
@@ -15,7 +16,7 @@ export interface UserPreferences {
   tableView?: 'comfortable' | 'compact';
 }
 
-const PREFERENCES_KEY = 'user_preferences';
+const BASE_PREFERENCES_KEY = 'user_preferences';
 
 const defaultPreferences: UserPreferences = {
   theme: 'system',
@@ -31,23 +32,37 @@ const defaultPreferences: UserPreferences = {
   tableView: 'comfortable',
 };
 
-export function useUserPreferences() {
-  const [preferences, setPreferences] = useState<UserPreferences>(() => {
-    const stored = localStorage.getItem(PREFERENCES_KEY);
-    if (stored) {
-      try {
-        return { ...defaultPreferences, ...JSON.parse(stored) };
-      } catch (e) {
-        console.error('Failed to parse preferences:', e);
-      }
+function loadPreferences(key: string): UserPreferences {
+  const stored = localStorage.getItem(key);
+  if (stored) {
+    try {
+      return { ...defaultPreferences, ...JSON.parse(stored) };
+    } catch (e) {
+      console.error('Failed to parse preferences:', e);
     }
-    return defaultPreferences;
-  });
+  }
+  return defaultPreferences;
+}
 
-  // Save preferences to localStorage
+export function useUserPreferences() {
+  const { user } = useAuth();
+  const preferencesKey = user?.id
+    ? `${BASE_PREFERENCES_KEY}_${user.id}`
+    : BASE_PREFERENCES_KEY;
+
+  const [preferences, setPreferences] = useState<UserPreferences>(() =>
+    loadPreferences(preferencesKey)
+  );
+
+  // Reload preferences whenever the active user changes (login / logout / switch)
   useEffect(() => {
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
-  }, [preferences]);
+    setPreferences(loadPreferences(preferencesKey));
+  }, [preferencesKey]);
+
+  // Persist preferences to the user-scoped key on every change
+  useEffect(() => {
+    localStorage.setItem(preferencesKey, JSON.stringify(preferences));
+  }, [preferences, preferencesKey]);
 
   const updatePreference = useCallback(<K extends keyof UserPreferences>(
     key: K,
@@ -62,8 +77,8 @@ export function useUserPreferences() {
 
   const resetPreferences = useCallback(() => {
     setPreferences(defaultPreferences);
-    localStorage.removeItem(PREFERENCES_KEY);
-  }, []);
+    localStorage.removeItem(preferencesKey);
+  }, [preferencesKey]);
 
   return {
     preferences,

@@ -394,7 +394,7 @@ function buildIdCardHtml(
 <meta charset="UTF-8"/>
 <title>ID Card — ${f.name}</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   body { background:#f0f0f0; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:24px; font-family:Inter,Arial,sans-serif; }
   .card-wrap { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; }
   .card-label { text-align:center; font-size:10px; color:#666; margin-top:6px; text-transform:uppercase; letter-spacing:.5px; }

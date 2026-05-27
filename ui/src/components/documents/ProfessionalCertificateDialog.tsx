@@ -669,7 +669,7 @@ function buildCertificateHtml(
 <title>${CERT_LABELS[certType]} — ${f.studentName || f.staffName || ''}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap');
-  * { margin:0; padding:0; box-sizing:border-box; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   body { font-family:'Inter', Arial, sans-serif; background:#f5f5f0; min-height:100vh; display:flex; align-items:flex-start; justify-content:center; padding:20px; }
   .cert-page { width:794px; min-height:1123px; background:#fff; position:relative; box-shadow:0 4px 24px rgba(0,0,0,.15); }
   .outer-border { position:absolute; inset:8px; border:3px solid #${t.bg}; pointer-events:none; z-index:10; }

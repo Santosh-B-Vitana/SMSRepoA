@@ -70,6 +70,8 @@ namespace SmsApi.Models.Entities
         public string? InstallmentAmounts { get; set; } // JSON array
         
         public string? InstallmentDueDates { get; set; } // JSON array
+
+        public bool IsActive { get; set; } = true;
         
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
@@ -81,7 +83,9 @@ namespace SmsApi.Models.Entities
         /// </summary>
         public decimal ComputeTotalFromComponents() =>
             TuitionFee + AdmissionFee + ExamFee + LibraryFee + LabFee + SportsFee +
-            TransportFee + HostelFee + UniformFee + BooksFee + DevelopmentFee + Miscellaneous;
+            UniformFee + BooksFee + DevelopmentFee + Miscellaneous;
+            // TransportFee and HostelFee are excluded — they are per-student charges
+            // calculated individually based on bus route and hostel room assignment.
     }
 
     public class FeeRecord : BaseEntity

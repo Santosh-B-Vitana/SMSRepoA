@@ -474,21 +474,6 @@ export function TransportManager() {
         (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
       )
     : routes;
-    }
-  }
-
-  const activeRoutes = routes.filter(r => r.status === "active").length;
-  const totalStudents = routesTotal > 0 ? routes.reduce((a, r) => a + r.studentsAssigned, 0) : students.length;
-  const totalCapacity = routes.reduce((a, r) => a + r.capacity, 0);
-
-  // Local search filter within current page for routes
-  const filteredRoutes = routesSearch
-    ? routes.filter(r =>
-        r.routeName.toLowerCase().includes(routesSearch.toLowerCase()) ||
-        r.routeNumber.toLowerCase().includes(routesSearch.toLowerCase()) ||
-        (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
-      )
-    : routes;
 
   if (accessDenied) {
     return (
@@ -569,6 +554,7 @@ export function TransportManager() {
               {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
             </CardContent></Card>
           ) : (
+            <>
             <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
               <Table>
                 <TableHeader>
@@ -627,6 +613,7 @@ export function TransportManager() {
                 />
               </div>
             )}
+            </>
           )}
         </TabsContent>
 

@@ -153,6 +153,8 @@ function clearSession(): void {
   localStorage.removeItem('authToken');
   localStorage.removeItem('schoolId');
   localStorage.removeItem('currentUser'); // Legacy cleanup
+  localStorage.removeItem('currentUserId');
+  window.dispatchEvent(new Event('vitanaUserChanged'));
 }
 
 export const useAuth = () => {
@@ -329,6 +331,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (userWithoutPassword.schoolId) {
         localStorage.setItem('schoolId', userWithoutPassword.schoolId);
       }
+      // Store userId so user-scoped preference keys work in contexts outside AuthProvider
+      localStorage.setItem('currentUserId', userWithoutPassword.id);
+      window.dispatchEvent(new Event('vitanaUserChanged'));
       setUser(userWithoutPassword);
       setSessionExpiresAt(session.expiresAt);
 
@@ -352,7 +357,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
-    clearSession();
+    clearSession(); // also removes currentUserId and dispatches vitanaUserChanged
     localStorage.removeItem('authToken');
     localStorage.removeItem('schoolId');
     setUser(null);

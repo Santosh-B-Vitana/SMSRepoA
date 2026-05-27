@@ -7084,13 +7084,33 @@ const translations = {
 };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<Language>(() => {
-    const stored = localStorage.getItem('language');
+  /** Returns a user-scoped key so each account has its own language preference. */
+  function getScopedLangKey(): string {
+    const userId = localStorage.getItem('currentUserId');
+    return userId ? `language_${userId}` : 'language';
+  }
+
+  const [language, setLanguageState] = useState<Language>(() => {
+    const stored = localStorage.getItem(getScopedLangKey());
     return (stored as Language) || 'en';
   });
 
+  // Re-load language when a different user logs in or out
   useEffect(() => {
-    localStorage.setItem('language', language);
+    const handleUserChange = () => {
+      const stored = localStorage.getItem(getScopedLangKey()) as Language | null;
+      setLanguageState(stored || 'en');
+    };
+    window.addEventListener('vitanaUserChanged', handleUserChange);
+    return () => window.removeEventListener('vitanaUserChanged', handleUserChange);
+  }, []);
+
+  const setLanguage = (lang: Language) => {
+    localStorage.setItem(getScopedLangKey(), lang);
+    setLanguageState(lang);
+  };
+
+  useEffect(() => {
     document.documentElement.lang = language;
     // Force a re-render by dispatching a custom event
     window.dispatchEvent(new CustomEvent('languageChange', { detail: language }));

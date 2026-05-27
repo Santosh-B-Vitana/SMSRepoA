@@ -2035,6 +2035,76 @@ namespace SmsApi.Controllers
             catch (Exception) { return StatusCode(500, new { message = "Failed to save components." }); }
         }
 
+        /// <summary>Add or remove a class from a fee structure's linked class list.</summary>
+        [HttpPatch("structures/{id}/classes")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult> UpdateLinkedClasses(Guid id, [FromBody] UpdateLinkedClassRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var structure = await _context.FeeStructures
+                    .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId && !s.IsDeleted);
+                if (structure == null) return NotFound(new { message = "Fee structure not found." });
+
+                // Split current class list
+                var classes = structure.Class
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList();
+
+                if (!string.IsNullOrWhiteSpace(request.AddClass))
+                {
+                    var c = request.AddClass.Trim();
+
+                    // Enforce: a class may only be linked to ONE fee structure per academic year
+                    var allOtherStructures = await _context.FeeStructures
+                        .Where(fs => fs.Id != id && fs.SchoolId == schoolId && !fs.IsDeleted
+                                     && fs.AcademicYear == structure.AcademicYear)
+                        .Select(fs => new { fs.Id, fs.Name, fs.Class })
+                        .ToListAsync();
+
+                    var conflict = allOtherStructures.FirstOrDefault(fs =>
+                        fs.Class.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                .Any(cls => string.Equals(cls, c, StringComparison.OrdinalIgnoreCase)));
+
+                    if (conflict != null)
+                        return Conflict(new { message = $"Class '{c}' is already linked to fee structure '{conflict.Name}'. A class can only belong to one fee structure per academic year." });
+
+                    if (!classes.Contains(c, StringComparer.OrdinalIgnoreCase))
+                        classes.Add(c);
+                }
+                if (!string.IsNullOrWhiteSpace(request.RemoveClass))
+                {
+                    classes.RemoveAll(c => string.Equals(c, request.RemoveClass.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                structure.Class = string.Join(", ", classes);
+                structure.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { classes = structure.Class });
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to update linked classes." }); }
+        }
+
+        /// <summary>Toggle the active/inactive status of a fee structure</summary>
+        [HttpPost("structures/{id}/toggle-active")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant")]
+        public async Task<ActionResult> ToggleStructureActive(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var structure = await _context.FeeStructures.FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId && !s.IsDeleted);
+                if (structure == null) return NotFound(new { message = "Fee structure not found." });
+                structure.IsActive = !structure.IsActive;
+                structure.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return Ok(new { isActive = structure.IsActive });
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to toggle structure status." }); }
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // FEE TERMS — Named installments with due dates (Q1, Q2, Annual, etc.)
         // ═══════════════════════════════════════════════════════════════════════

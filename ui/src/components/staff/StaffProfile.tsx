@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { staffApi, Staff } from "@/services/api/staffApi";
+import { StaffChildDto } from "@/services/api/studentApi";
 import { payrollApi, PayrollRecordBasic } from "@/services/api/payrollApi";
 import { useToast } from "@/hooks/use-toast";
 import { StaffForm } from "./StaffForm"; // Import StaffForm
@@ -21,6 +22,7 @@ export default function StaffProfile() {
   const [leaves, setLeaves] = useState<StaffLeave[]>([]);
   const [performance, setPerformance] = useState<StaffPerformance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [linkedChildren, setLinkedChildren] = useState<StaffChildDto[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -48,6 +50,13 @@ export default function StaffProfile() {
         // No backend endpoints for leaves/performance — show empty state
         setLeaves([]);
         setPerformance([]);
+        // Load linked children
+        try {
+          const children = await staffApi.getChildren(id);
+          setLinkedChildren(children);
+        } catch {
+          setLinkedChildren([]);
+        }
       } catch {
         toast({ title: "Error", description: "Failed to load staff member", variant: "destructive" });
       } finally {
@@ -484,6 +493,55 @@ export default function StaffProfile() {
           )}
         </CardContent>
       </Card>
+      {/* Children in School Section */}
+      {linkedChildren.length > 0 && (
+        <Card className="mb-6 shadow border border-gray-100">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <User className="h-5 w-5 text-purple-600" />
+              <CardTitle>Children in School</CardTitle>
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold">{linkedChildren.length}</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {linkedChildren.map(child => (
+                <div
+                  key={child.id}
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-purple-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full overflow-hidden bg-purple-100 flex items-center justify-center flex-shrink-0">
+                      {child.photoUrl
+                        ? <img src={child.photoUrl} alt={child.name} className="w-full h-full object-cover" />
+                        : <span className="text-purple-700 font-bold text-sm">{child.name?.charAt(0) || '?'}</span>
+                      }
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm">{child.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {child.admissionNumber ? `${child.admissionNumber} · ` : ''}
+                        Class {child.class}-{child.section}
+                        {child.rollNumber ? ` · Roll ${child.rollNumber}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      child.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    }`}>{child.status}</span>
+                    <button
+                      className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-100"
+                      onClick={() => navigate(`/students/${child.id}`)}
+                    >View →</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Leave Management Section */}
       <Card className="mb-6 shadow border border-gray-100">
         <CardHeader className="flex flex-row items-center justify-between">

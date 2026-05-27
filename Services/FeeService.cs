@@ -140,7 +140,9 @@ namespace SmsApi.Services
                     UpdatedAt = f.UpdatedAt,
 
                     // How many student fee records are linked to this structure
-                    AssignedStudentCount = _context.FeeRecords.Count(r => r.FeeStructureId == f.Id)
+                    AssignedStudentCount = _context.FeeRecords.Count(r => r.FeeStructureId == f.Id),
+
+                    IsActive = f.IsActive
                 })
                 .ToListAsync();
 
@@ -181,7 +183,9 @@ namespace SmsApi.Services
                     
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
-                    UpdatedAt = f.UpdatedAt
+                    UpdatedAt = f.UpdatedAt,
+
+                    IsActive = f.IsActive
                 })
                 .FirstOrDefaultAsync();
         }
@@ -2094,6 +2098,8 @@ namespace SmsApi.Services
                     throw new ArgumentException("Fee structure name cannot exceed 100 characters.");
                 structure.Name = request.Name.Trim();
             }
+            if (request.Class != null)
+                structure.Class = request.Class.Trim();
             if (request.AcademicYear != null)
             {
                 if (request.AcademicYear.Length > 20)

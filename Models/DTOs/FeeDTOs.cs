@@ -61,6 +61,10 @@ namespace SmsApi.Models.DTOs
         [MaxLength(100)]
         public string? Name { get; set; }
 
+        /// <summary>Comma-separated class list, e.g. "5A, 5B" — replaces the current class(es).</summary>
+        [MaxLength(200)]
+        public string? Class { get; set; }
+
         [MaxLength(20)]
         public string? AcademicYear { get; set; }
 
@@ -84,6 +88,15 @@ namespace SmsApi.Models.DTOs
         public string? InstallmentDueDates { get; set; }
 
         public string? Description { get; set; }
+    }
+
+    /// <summary>Request body for adding/removing a class from a fee structure's class list.</summary>
+    public class UpdateLinkedClassRequest
+    {
+        /// <summary>Class name to add to the structure's class list.</summary>
+        public string? AddClass { get; set; }
+        /// <summary>Class name to remove from the structure's class list.</summary>
+        public string? RemoveClass { get; set; }
     }
 
     public class FeeStructureResponse
@@ -120,6 +133,8 @@ namespace SmsApi.Models.DTOs
 
         /// <summary>Number of fee records (students) linked to this structure. 0 = not yet assigned.</summary>
         public int AssignedStudentCount { get; set; }
+
+        public bool IsActive { get; set; } = true;
     }
 
     // Fee Record DTOs

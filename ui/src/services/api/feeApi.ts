@@ -34,8 +34,6 @@ export interface FeeStructure {
   libraryFee: number;
   labFee: number;
   sportsFee: number;
-  transportFee: number;
-  hostelFee: number;
   uniformFee: number;
   booksFee: number;
   developmentFee: number;
@@ -49,6 +47,7 @@ export interface FeeStructure {
   updatedAt: string;
   /** Number of student fee records linked to this structure. 0 = not yet assigned to any student. */
   assignedStudentCount?: number;
+  isActive?: boolean;
 }
 
 export interface CreateFeeStructureDto {
@@ -62,8 +61,6 @@ export interface CreateFeeStructureDto {
   libraryFee?: number;
   labFee?: number;
   sportsFee?: number;
-  transportFee?: number;
-  hostelFee?: number;
   uniformFee?: number;
   booksFee?: number;
   developmentFee?: number;
@@ -1125,6 +1122,76 @@ export const updateConcessionType = async (id: string, dto: Partial<CreateConces
 
 export const deleteConcessionType = async (id: string): Promise<void> => {
   await apiClient.delete(`${CONCESSION_TYPES_PATH}/${id}`);
+};
+
+// ========== FEE STRUCTURE COMPONENTS ==========
+
+export interface FeeStructureComponent {
+  id?: string;
+  feeHeadId: string;
+  feeHeadName: string;
+  feeHeadCode?: string;
+  amount: number;
+  remarks?: string;
+}
+
+export interface CreateFeeStructureComponentDto {
+  feeHeadId: string;
+  amount: number;
+  remarks?: string;
+}
+
+export const getStructureComponents = async (structureId: string): Promise<FeeStructureComponent[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/structures/${structureId}/components`);
+  return response.data ?? [];
+};
+
+export const setStructureComponents = async (structureId: string, components: CreateFeeStructureComponentDto[]): Promise<{ message: string; total: number }> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${structureId}/components`, components);
+  return response.data;
+};
+
+// ========== LINKED CLASSES ==========
+
+/** A link between a fee structure and one of the classes it covers. */
+export interface ClassFeeStructureLink {
+  /** Unique key for UI rendering — `${structureId}-${className}` */
+  id: string;
+  structureId: string;
+  className: string;
+}
+
+/**
+ * Returns the class(es) linked to a fee structure.
+ * A structure's `class` field is stored as a comma-separated list, e.g. "5A, 5B".
+ */
+export const getLinkedClasses = async (structureId: string): Promise<ClassFeeStructureLink[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/structures/${structureId}`);
+  const s = response.data;
+  if (!s?.class) return [];
+  return (s.class as string)
+    .split(',')
+    .map((c: string) => c.trim())
+    .filter(Boolean)
+    .map((className: string) => ({ id: `${structureId}-${className}`, structureId, className }));
+};
+
+/** Link a class to a fee structure by patching the backend class list. */
+export const linkClass = async (structureId: string, className: string): Promise<ClassFeeStructureLink> => {
+  await apiClient.patch(`${BASE_PATH}/structures/${structureId}/classes`, { addClass: className });
+  return { id: `${structureId}-${className}`, structureId, className };
+};
+
+/** Unlink a class from a fee structure by patching the backend class list. */
+export const unlinkClass = async (structureId: string, className: string): Promise<void> => {
+  await apiClient.patch(`${BASE_PATH}/structures/${structureId}/classes`, { removeClass: className });
+};
+
+// ========== TOGGLE STRUCTURE ACTIVE ==========
+
+export const toggleStructureActive = async (structureId: string): Promise<{ isActive: boolean }> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${structureId}/toggle-active`);
+  return response.data;
 };
 
 // Export all functions as a single object for convenience
