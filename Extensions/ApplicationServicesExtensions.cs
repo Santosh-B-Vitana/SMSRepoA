@@ -42,6 +42,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IExaminationService, ExaminationService>();
         services.AddScoped<IExaminationReportService, ExaminationReportService>();
         services.AddScoped<IExamSetupService, ExamSetupService>();
+        services.AddScoped<IHallTicketService, HallTicketService>();
         services.AddScoped<IAcademicsService, AcademicsService>();
         services.AddScoped<IAcademicYearContextService, AcademicYearContextService>();
         services.AddScoped<IBoardConfigurationService, BoardConfigurationService>();
@@ -62,9 +63,14 @@ public static class ApplicationServicesExtensions
         // ── Campus modules ─────────────────────────────────────────────────
         services.AddScoped<ILibraryService, LibraryService>();
         services.AddScoped<ITransportService, TransportService>();
+        services.AddScoped<IVehicleService, VehicleService>();
+        services.AddScoped<IDISEReportService, DISEReportService>();
+        services.AddScoped<ISyllabusService, SyllabusService>();
         services.AddScoped<IHostelService, HostelService>();
         services.AddScoped<IHealthService, HealthService>();
         services.AddScoped<IPayrollService, PayrollService>();
+        services.AddScoped<IOnlineExamService, OnlineExamService>();
+        services.AddScoped<IStaffTaxService, StaffTaxService>();
 
         // ── Communication & notifications ──────────────────────────────────
         services.AddScoped<INotificationService, NotificationService>();
@@ -96,6 +102,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IVisitorManagementService, VisitorManagementService>();
         services.AddScoped<IVisitorService, VisitorService>();
         services.AddScoped<IAlumniService, AlumniService>();
+        services.AddScoped<IDisciplineService, DisciplineService>();
 
         // ── Settings & compliance ──────────────────────────────────────────
         services.AddScoped<ISettingsService, SettingsService>();

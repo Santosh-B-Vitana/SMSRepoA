@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Student, studentApi } from "@/services/api/studentApi";
 import { academicApi, ClassResponse, AcademicYearResponse } from "@/services/api/academicApi";
-import { boardApi } from "@/services/api/boardApi";
+import { boardApi, SchoolBoardConfigResponse } from "@/services/api/boardApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { toast } from "sonner";
 import { DOCUMENT_TYPES } from "./StudentDocumentUpload";
@@ -186,7 +186,7 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(globalCurrentYear?.name ?? "");
   // Board filter for the Enrollment step
   const [selectedBoard, setSelectedBoard] = useState("");
-  const [availableBoards, setAvailableBoards] = useState<{ id: string; name: string }[]>([]);
+  const [availableBoards, setAvailableBoards] = useState<SchoolBoardConfigResponse[]>([]);
   // Sibling search
   const [siblingSearch, setSiblingSearch] = useState("");
   const [siblingDropdownOpen, setSiblingDropdownOpen] = useState(false);
@@ -204,28 +204,11 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
       setAllStudents((student ? all.filter(s => s.id !== student.id) : all) as Student[]);
     }).catch(() => {});
     academicApi.listClasses(1, 500).then(r => {
-      const classes = r.classes || [];
-      setAllClasses(classes);
-      // Derive boards from classes that have boardConfigurationId set
-      const seen = new Set<string>();
-      const boards: { id: string; name: string }[] = [];
-      for (const c of classes) {
-        if (c.boardConfigurationId && !seen.has(c.boardConfigurationId)) {
-          seen.add(c.boardConfigurationId);
-          boards.push({ id: c.boardConfigurationId, name: c.boardName ?? c.boardConfigurationId });
-        }
-      }
-      // If no class has boardConfigurationId, try fetching boards from the board API
-      if (boards.length === 0) {
-        boardApi.getAllBoards().then(res => {
-          if (res.boards && res.boards.length > 1) {
-            // Only show board picker if there are multiple boards the school can use
-            setAvailableBoards(res.boards.map(b => ({ id: b.id, name: b.name })));
-          }
-        }).catch(() => {});
-      } else {
-        setAvailableBoards(boards);
-      }
+      setAllClasses(r.classes || []);
+    }).catch(() => {});
+    // Always load school-configured boards from the board API
+    boardApi.getSchoolBoards().then(res => {
+      setAvailableBoards(res.boards || []);
     }).catch(() => {});
     academicApi.listAcademicYears(1, 50).then(r => {
       const years = r.academicYears || [];
@@ -252,13 +235,12 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   // Classes are school-wide (not year-specific in DB) — filter by selected board.
   // "School Default" (selectedBoard = "") shows classes without a specific board assigned;
   // if none exist without a board, falls back to all classes.
-  const defaultBoardClasses = allClasses.filter(c => !c.boardConfigurationId);
+  // Classes filtered by selected board:
+  // - "" (School Default) → classes with no boardConfigurationId
+  // - specific board → only classes assigned to that board
   const filteredClasses = !selectedBoard
-    ? (defaultBoardClasses.length > 0 ? defaultBoardClasses : allClasses)
-    : allClasses.filter(c =>
-        c.boardConfigurationId === selectedBoard ||
-        (!c.boardConfigurationId && availableBoards.length > 0 && availableBoards[0]?.id === selectedBoard)
-      );
+    ? allClasses.filter(c => !c.boardConfigurationId)
+    : allClasses.filter(c => c.boardConfigurationId === selectedBoard);
 
   // Use standard (grade number like "10") falling back to name; filter out blanks
   const getStandard = (c: ClassResponse) => (c.standard || c.name || "").trim();
@@ -363,6 +345,9 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
           await Promise.allSettled(
             formData.siblings.map(sibId => studentApi.addSibling(created.id, sibId))
           );
+        }
+        if (created?.id && photoFile) {
+          try { await studentApi.uploadPhoto(created.id, photoFile); } catch { /* non-fatal */ }
         }
         if (created?.id && pendingDocs.length > 0) {
           for (const pd of pendingDocs) {
@@ -486,7 +471,9 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
                   <SelectContent>
                     <SelectItem value="school_default">School Default</SelectItem>
                     {availableBoards.map(b => (
-                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
+                        {b.boardName}{b.isDefault ? " (Default)" : ""}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -813,7 +800,6 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   return (
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto py-4 px-2"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]"

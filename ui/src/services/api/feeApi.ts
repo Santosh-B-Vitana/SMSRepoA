@@ -48,6 +48,8 @@ export interface FeeStructure {
   /** Number of student fee records linked to this structure. 0 = not yet assigned to any student. */
   assignedStudentCount?: number;
   isActive?: boolean;
+  boardConfigurationId?: string;
+  boardName?: string;
 }
 
 export interface CreateFeeStructureDto {
@@ -69,6 +71,7 @@ export interface CreateFeeStructureDto {
   installmentAmounts?: string;
   installmentDueDates?: string;  // JSON: TermSchedule[] rich format
   description?: string;
+  boardConfigurationId?: string;
 }
 
 export interface FeeRecord {
@@ -291,10 +294,11 @@ const BASE_PATH = '/fees';
 /**
  * Get all fee structures with optional class filter
  */
-export const getFeeStructures = async (classFilter?: string, academicYear?: string): Promise<FeeStructure[]> => {
+export const getFeeStructures = async (classFilter?: string, academicYear?: string, boardConfigurationId?: string): Promise<FeeStructure[]> => {
   const p = new URLSearchParams();
-  if (classFilter) p.append('class', classFilter);
+  if (classFilter) p.append('classFilter', classFilter);
   if (academicYear) p.append('academicYear', academicYear);
+  if (boardConfigurationId) p.append('boardConfigurationId', boardConfigurationId);
   const qs = p.toString();
   const response = await apiClient.get(`${BASE_PATH}/structures${qs ? '?' + qs : ''}`);
   return response.data;

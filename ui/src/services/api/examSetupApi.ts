@@ -255,6 +255,7 @@ export const getClassSubjectsForExam = (params: {
 export const getExamSetups = (params?: {
   academicYear?: string;
   classId?: string;
+  boardConfigurationId?: string;
   status?: string;
   page?: number;
   pageSize?: number;
@@ -391,3 +392,76 @@ export const getMyStudentMarks = (
     page,
     pageSize,
   });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// HALL TICKETS
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface HallTicketStudentDto {
+  enrollmentId: string;
+  studentId: string;
+  studentName: string;
+  admissionNo: string;
+  rollNo: string;
+  hallTicketNo: string;
+  className: string;
+  sectionName: string | null;
+}
+
+/** Fetches the list of students eligible for hall tickets (for the dialog). */
+export async function getHallTicketStudents(examSetupId: string): Promise<HallTicketStudentDto[]> {
+  const { apiClient } = await import('@/lib/apiClient');
+  const response = await apiClient.get<HallTicketStudentDto[]>(
+    `/examinations/exam-setup/${examSetupId}/hall-ticket-students`
+  );
+  return response.data;
+}
+
+/** Triggers a browser download for a single student's hall ticket PDF. */
+export async function downloadSingleHallTicket(
+  examSetupId: string,
+  enrollmentId: string,
+  studentName: string,
+): Promise<void> {
+  const { apiClient } = await import('@/lib/apiClient');
+  const response = await apiClient.get(
+    `/examinations/exam-setup/${examSetupId}/hall-tickets/${enrollmentId}`,
+    { responseType: 'blob' }
+  );
+  const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const disposition = response.headers['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+  a.download = match ? match[1].replace(/['"]/g, '') : `HallTicket_${studentName}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Downloads hall tickets for all enrolled students as a PDF blob and
+ * triggers a browser file download automatically.
+ */
+export async function downloadHallTickets(examSetupId: string, examName: string): Promise<void> {
+  const { apiClient } = await import('@/lib/apiClient');
+  const response = await apiClient.get(
+    `/examinations/exam-setup/${examSetupId}/hall-tickets`,
+    { responseType: 'blob' }
+  );
+  const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  // Try to get filename from Content-Disposition header, fallback to generated name
+  const disposition = response.headers['content-disposition'] as string | undefined;
+  const match = disposition?.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+  const filename = match ? match[1].replace(/['"]/g, '') : `HallTickets_${examName}.pdf`;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

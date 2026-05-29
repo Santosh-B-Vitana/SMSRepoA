@@ -85,7 +85,7 @@ namespace SmsApi.Services
         Task<HealthAlertDto> CreateHealthAlertAsync(Guid schoolId, CreateHealthAlertDto dto);
         Task<List<HealthAlertDto>> GetHealthAlertsAsync(Guid schoolId, string? severity, bool? isAcknowledged);
         Task<bool> AcknowledgeAlertAsync(Guid schoolId, Guid alertId, Guid userId);
-        Task<HealthStatsDto> GetHealthStatsAsync(Guid schoolId);
+        Task<HealthStatsDto> GetHealthStatsAsync(Guid schoolId, Guid? classTeacherUserId = null);
         Task<BMIResultDto> CalculateBMIAsync(decimal height, decimal weight);
     }
 
@@ -142,9 +142,9 @@ namespace SmsApi.Services
                                 .Distinct().ToList();
                         }
                     }
-                    // If we couldn't resolve the staff's CT assignment, return empty (deny by default)
+                    // If this staff has no class-teacher assignments, show all (they're a regular teacher/staff)
                     if (ctAllowedClasses == null || ctAllowedClasses.Count == 0)
-                        return new PaginatedResponse<HealthRecordBasicDto> { Items = new(), TotalCount = 0, Page = page, PageSize = pageSize, TotalPages = 0 };
+                        ctAllowedClasses = null; // fall through — no restriction
                 }
 
                 var query = _context.HealthRecords
@@ -862,14 +862,55 @@ namespace SmsApi.Services
 
         // ========== STATISTICS ==========
 
-        public async Task<HealthStatsDto> GetHealthStatsAsync(Guid schoolId)
+        public async Task<HealthStatsDto> GetHealthStatsAsync(Guid schoolId, Guid? classTeacherUserId = null)
         {
             try
             {
-                var records = await _context.HealthRecords
+                // Resolve class-teacher scope (same logic as GetHealthRecordsAsync)
+                List<string>? ctAllowedClasses = null;
+                List<string>? ctAllowedSections = null;
+                if (classTeacherUserId.HasValue)
+                {
+                    var userLogin = await _context.UserLogins
+                        .FirstOrDefaultAsync(ul => ul.Id == classTeacherUserId.Value && !ul.IsDeleted);
+                    if (userLogin != null)
+                    {
+                        var staffMember = await _context.StaffMembers
+                            .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == userLogin.Email && !s.IsDeleted);
+                        if (staffMember != null)
+                        {
+                            var ctAssignments = await _context.TeacherAssignments
+                                .Include(ta => ta.Class)
+                                .Include(ta => ta.Section)
+                                .Where(ta => ta.StaffId == staffMember.Id && ta.SchoolId == schoolId
+                                    && ta.IsClassTeacher && ta.Status == "active" && !ta.IsDeleted)
+                                .ToListAsync();
+                            ctAllowedClasses = ctAssignments
+                                .Where(ta => ta.Class != null)
+                                .Select(ta => ta.Class!.Name)
+                                .Distinct().ToList();
+                            ctAllowedSections = ctAssignments
+                                .Where(ta => ta.Section != null)
+                                .Select(ta => ta.Section!.Name)
+                                .Distinct().ToList();
+                        }
+                    }
+                    if (ctAllowedClasses == null || ctAllowedClasses.Count == 0)
+                        ctAllowedClasses = null;
+                }
+
+                var recordsQuery = _context.HealthRecords
                     .AsNoTracking()
-                    .Where(h => h.SchoolId == schoolId)
-                    .ToListAsync();
+                    .Where(h => h.SchoolId == schoolId);
+
+                if (ctAllowedClasses != null)
+                {
+                    recordsQuery = recordsQuery.Where(h => h.Student != null && ctAllowedClasses.Contains(h.Student.Class));
+                    if (ctAllowedSections != null && ctAllowedSections.Count > 0)
+                        recordsQuery = recordsQuery.Where(h => h.Student != null && ctAllowedSections.Contains(h.Student.Section));
+                }
+
+                var records = await recordsQuery.ToListAsync();
 
                 var totalRecords = records.Count;
                 var normalStatus = 0;

@@ -8,37 +8,42 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Edit, Trash2, GraduationCap, Settings, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Plus, Edit, Trash2, GraduationCap, Settings, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { boardApi, BoardConfigurationResponse } from "@/services/api/boardApi";
+import { boardApi, SchoolBoardConfigResponse } from "@/services/api/boardApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface GroupedClass {
+  key: string; // standard + boardConfigurationId
   standard: string;
+  boardConfigurationId?: string;
+  boardName?: string;
+  isDefaultBoard?: boolean;
   sections: number;
   totalStudents: number;
   classIds: string[];
-  boardName?: string;
 }
 
 export default function ClassManager() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { academicYear: globalYear, availableYears } = useAcademicYear();
   const [classes, setClasses] = useState<ClassResponse[]>([]);
   const [groupedClasses, setGroupedClasses] = useState<GroupedClass[]>([]);
-  const [boards, setBoards] = useState<BoardConfigurationResponse[]>([]);
+  const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [boardsLoading, setBoardsLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingClass, setEditingClass] = useState<ClassResponse | null>(null);
   const [formData, setFormData] = useState({
     standard: "",
-    section: "",
+    numberOfSections: 1,
     academicYear: globalYear || "2025-2026",
     boardConfigurationId: ""
   });
 
-  // Keep form default in sync with global year when it changes
   useEffect(() => {
     if (globalYear && !editingClass) {
       setFormData(prev => ({ ...prev, academicYear: globalYear }));
@@ -50,22 +55,28 @@ export default function ClassManager() {
       setLoading(true);
       const response = await academicApi.listClasses(1, 100);
       setClasses(response.classes || []);
-    } catch (error) {
+    } catch {
       toast.error("Failed to load classes");
       setClasses([]);
     } finally {
       setLoading(false);
     }
-  }, [globalYear]); // re-fetch when year changes — X-Academic-Year header is set automatically
+  }, [globalYear]);
 
-  const fetchBoards = useCallback(async () => {
+  const fetchSchoolBoards = useCallback(async () => {
     try {
       setBoardsLoading(true);
-      const response = await boardApi.getAllBoards();
-      setBoards(response.boards || []);
-    } catch (error) {
-      console.error("Failed to load boards:", error);
-      setBoards([]);
+      const response = await boardApi.getSchoolBoards();
+      setSchoolBoards(response.boards || []);
+      // Pre-select default board when no board is selected
+      const defaultBoard = response.boards?.find(b => b.isDefault);
+      if (defaultBoard) {
+        setFormData(prev => prev.boardConfigurationId ? prev : { ...prev, boardConfigurationId: defaultBoard.boardConfigurationId });
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch school boards:", error);
+      toast.error(error?.response?.data?.message || "Failed to load boards");
+      setSchoolBoards([]);
     } finally {
       setBoardsLoading(false);
     }
@@ -73,66 +84,86 @@ export default function ClassManager() {
 
   useEffect(() => {
     fetchClasses();
-    fetchBoards();
-  }, [fetchClasses, fetchBoards]);
+    fetchSchoolBoards();
+  }, [fetchClasses, fetchSchoolBoards]);
 
   useEffect(() => {
     const grouped: { [key: string]: GroupedClass } = {};
     classes.forEach((cls) => {
-      if (!grouped[cls.standard]) {
-        grouped[cls.standard] = {
+      const key = `${cls.standard}__${cls.boardConfigurationId ?? "none"}`;
+      if (!grouped[key]) {
+        const boardIsDefault = cls.boardConfigurationId
+          ? schoolBoards.some(b => b.boardConfigurationId === cls.boardConfigurationId && b.isDefault)
+          : false;
+        grouped[key] = {
+          key,
           standard: cls.standard,
+          boardConfigurationId: cls.boardConfigurationId,
+          boardName: cls.boardName,
+          isDefaultBoard: boardIsDefault,
           sections: 0,
           totalStudents: 0,
           classIds: [],
-          boardName: cls.boardName
         };
       }
-      grouped[cls.standard].sections += 1;
-      grouped[cls.standard].totalStudents += cls.totalStudents || 0;
-      grouped[cls.standard].classIds.push(cls.id);
-      if (cls.boardName) {
-        grouped[cls.standard].boardName = cls.boardName;
-      }
+      grouped[key].sections += 1;
+      grouped[key].totalStudents += cls.totalStudents || 0;
+      grouped[key].classIds.push(cls.id);
     });
     setGroupedClasses(Object.values(grouped).sort((a, b) => {
       const aNum = parseInt(a.standard.replace(/\D/g, "")) || 0;
       const bNum = parseInt(b.standard.replace(/\D/g, "")) || 0;
-      return aNum - bNum;
+      return aNum !== bNum ? aNum - bNum : (a.boardName ?? "").localeCompare(b.boardName ?? "");
     }));
-  }, [classes]);
+  }, [classes, schoolBoards]);
+
+  const resetForm = () => {
+    const defaultBoard = schoolBoards.find(b => b.isDefault);
+    setFormData({
+      standard: "",
+      numberOfSections: 1,
+      academicYear: globalYear || "2025-2026",
+      boardConfigurationId: defaultBoard?.boardConfigurationId ?? ""
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.standard || !formData.section) {
-      toast.error("Please fill in all required fields");
+    if (!formData.standard) {
+      toast.error("Please enter the class standard/name");
+      return;
+    }
+    if (!formData.boardConfigurationId) {
+      toast.error("Please select a board");
       return;
     }
     try {
-      const boardId = formData.boardConfigurationId === "__school_default__" ? undefined : formData.boardConfigurationId;
       if (editingClass) {
         await academicApi.updateClass(editingClass.id, {
+          schoolId: user?.schoolId,
           standard: formData.standard,
-          section: formData.section,
           academicYear: formData.academicYear,
-          boardConfigurationId: boardId
+          boardConfigurationId: formData.boardConfigurationId,
+          numberOfSections: formData.numberOfSections,
         });
         toast.success("Class updated successfully");
       } else {
         await academicApi.createClass({
+          schoolId: user?.schoolId,
           standard: formData.standard,
-          section: formData.section,
           academicYear: formData.academicYear,
-          boardConfigurationId: boardId
+          boardConfigurationId: formData.boardConfigurationId,
+          numberOfSections: formData.numberOfSections,
         });
         toast.success("Class created successfully");
       }
       setDialogOpen(false);
       setEditingClass(null);
-      setFormData({ standard: "", section: "", academicYear: globalYear || "2025-2026", boardConfigurationId: "__school_default__" });
+      resetForm();
       await fetchClasses();
     } catch (error: any) {
-      toast.error(error?.message || "Failed to save class");
+      const msg = error?.response?.data?.message ?? error?.message ?? "Failed to save class";
+      toast.error(msg);
     }
   };
 
@@ -140,9 +171,9 @@ export default function ClassManager() {
     setEditingClass(cls);
     setFormData({
       standard: cls.standard,
-      section: cls.section,
+      numberOfSections: 1,
       academicYear: cls.academicYear,
-      boardConfigurationId: cls.boardConfigurationId || "__school_default__"
+      boardConfigurationId: cls.boardConfigurationId || ""
     });
     setDialogOpen(true);
   };
@@ -154,10 +185,12 @@ export default function ClassManager() {
         toast.success("Class deleted successfully");
         await fetchClasses();
       } catch (error: any) {
-        toast.error(error?.message || "Failed to delete class");
+        toast.error(error?.response?.data?.message ?? error?.message ?? "Failed to delete class");
       }
     }
   };
+
+  const noBoardsConfigured = !boardsLoading && schoolBoards.length === 0;
 
   return (
     <Card>
@@ -168,16 +201,14 @@ export default function ClassManager() {
             Class Management
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            Create and manage classes for your school
+            Create and manage classes. Configure boards in Settings → Board first.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button
-              onClick={() => {
-                setEditingClass(null);
-                setFormData({ standard: "", section: "", academicYear: globalYear || "2025-2026", boardConfigurationId: "" });
-              }}
+              disabled={noBoardsConfigured}
+              onClick={() => { setEditingClass(null); resetForm(); }}
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Class
@@ -185,13 +216,11 @@ export default function ClassManager() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>
-                {editingClass ? "Edit Class" : "Add New Class"}
-              </DialogTitle>
+              <DialogTitle>{editingClass ? "Edit Class" : "Add New Class"}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label htmlFor="standard">Standard *</Label>
+                <Label htmlFor="standard">Standard / Class Name *</Label>
                 <Input
                   id="standard"
                   placeholder="e.g., Class 10"
@@ -201,18 +230,43 @@ export default function ClassManager() {
                 />
               </div>
               <div>
-                <Label htmlFor="section">Section *</Label>
+                <Label htmlFor="board">Board *</Label>
+                <Select
+                  value={formData.boardConfigurationId}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, boardConfigurationId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={boardsLoading ? "Loading boards..." : "Select a board"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {schoolBoards.map((sb) => (
+                      <SelectItem key={sb.boardConfigurationId} value={sb.boardConfigurationId}>
+                        {sb.boardName} ({sb.boardCode}){sb.isDefault ? " — Default" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="numberOfSections">Number of Sections *</Label>
+                <p className="text-xs text-muted-foreground mb-1">
+                  Sections A, B, C... will be created automatically
+                </p>
                 <Input
-                  id="section"
-                  placeholder="e.g., A"
-                  value={formData.section}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, section: e.target.value.toUpperCase() }))}
-                  required
+                  id="numberOfSections"
+                  type="number"
+                  min={1}
+                  max={26}
+                  value={formData.numberOfSections}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, numberOfSections: Math.max(1, parseInt(e.target.value) || 1) }))}
                 />
               </div>
               <div>
                 <Label htmlFor="academicYear">Academic Year *</Label>
-                <Select value={formData.academicYear} onValueChange={(value) => setFormData((prev) => ({ ...prev, academicYear: value }))}>
+                <Select
+                  value={formData.academicYear}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, academicYear: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select academic year" />
                   </SelectTrigger>
@@ -222,7 +276,6 @@ export default function ClassManager() {
                           <SelectItem key={y.id} value={y.name}>{y.name}</SelectItem>
                         ))
                       : (
-                          // Fallback if context hasn't loaded yet
                           <>
                             <SelectItem value="2024-2025">2024-2025</SelectItem>
                             <SelectItem value="2025-2026">2025-2026</SelectItem>
@@ -230,23 +283,6 @@ export default function ClassManager() {
                           </>
                         )
                     }
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="board">Board (Optional Override)</Label>
-                <p className="text-xs text-muted-foreground mb-2">Leave blank to use school's default board</p>
-                <Select value={formData.boardConfigurationId} onValueChange={(value) => setFormData((prev) => ({ ...prev, boardConfigurationId: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a board (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__school_default__">Use School Default</SelectItem>
-                    {boards.map((board) => (
-                      <SelectItem key={board.id} value={board.id}>
-                        {board.name} ({board.code})
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -263,6 +299,14 @@ export default function ClassManager() {
         </Dialog>
       </CardHeader>
       <CardContent>
+        {noBoardsConfigured && (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+            <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800">
+              No boards have been configured for your school. Go to <strong>Settings → Board</strong> to add boards before creating classes.
+            </p>
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -271,7 +315,7 @@ export default function ClassManager() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Class Name</TableHead>
+                <TableHead>Class / Standard</TableHead>
                 <TableHead>Board</TableHead>
                 <TableHead>Sections</TableHead>
                 <TableHead>Students</TableHead>
@@ -282,14 +326,23 @@ export default function ClassManager() {
               {groupedClasses.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    No classes created yet. Click "Add Class" to get started.
+                    No classes yet. Click "Add Class" to get started.
                   </TableCell>
                 </TableRow>
               ) : (
                 groupedClasses.map((group) => (
-                  <TableRow key={group.standard}>
+                  <TableRow key={group.key}>
                     <TableCell className="font-medium">{group.standard}</TableCell>
-                    <TableCell className="text-sm">{group.boardName || "School Default"}</TableCell>
+                    <TableCell>
+                      {group.boardName ? (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">{group.boardName}</Badge>
+                          {group.isDefaultBoard && <Badge className="text-xs bg-green-100 text-green-800 hover:bg-green-100">School Default</Badge>}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>{group.sections} {group.sections === 1 ? "section" : "sections"}</TableCell>
                     <TableCell>{group.totalStudents}</TableCell>
                     <TableCell className="text-right">
@@ -297,10 +350,7 @@ export default function ClassManager() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => {
-                            const firstClassId = group.classIds[0];
-                            navigate(`/academics/classes/${firstClassId}`);
-                          }}
+                          onClick={() => navigate(`/academics/classes/${group.classIds[0]}`)}
                         >
                           <Settings className="h-4 w-4" />
                         </Button>

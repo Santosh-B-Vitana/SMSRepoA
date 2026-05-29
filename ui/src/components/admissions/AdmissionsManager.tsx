@@ -296,7 +296,7 @@ export function AdmissionsManager() {
                   {t('admissions.newApplication')}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto p-0">
+              <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto p-0" onInteractOutside={(e) => e.preventDefault()}>
                 <AdmissionForm
                   key={formKey}
                   admission={editAdmission}

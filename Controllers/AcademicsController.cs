@@ -60,15 +60,23 @@ namespace SmsApi.Controllers
         {
             try
             {
+                System.Console.WriteLine($"[CreateClass] Received request: Standard='{request.Standard}', BoardConfigId='{request.BoardConfigurationId}', NumSections={request.NumberOfSections}, AcademicYear='{request.AcademicYear}'");
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 request.SchoolId = schoolId;
+                System.Console.WriteLine($"[CreateClass] SchoolId set to: {schoolId}");
                 var classEntity = await _academicsService.CreateClassAsync(request);
+                System.Console.WriteLine($"[CreateClass] Class created successfully with Id: {classEntity.Id}");
                 return CreatedAtAction(nameof(GetClassById), new { id = classEntity.Id }, classEntity);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
-            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+            catch (Exception ex) 
+            { 
+                System.Console.WriteLine($"[CreateClass] Exception: {ex.Message}");
+                System.Console.WriteLine($"[CreateClass] Stack: {ex.StackTrace}");
+                return StatusCode(500, new { message = "An error occurred.", details = ex.Message, innerException = ex.InnerException?.Message }); 
+            }
         }
 
         [HttpPut("classes/{id}")]
@@ -190,12 +198,16 @@ namespace SmsApi.Controllers
         [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<SubjectListResponse>> GetSubjects(
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? search = null,
+            [FromQuery] string? type = null,
+            [FromQuery] Guid? boardConfigurationId = null,
+            [FromQuery] bool noBoardOnly = false)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var result = await _academicsService.GetSubjectsAsync(schoolId, page, pageSize);
+                var result = await _academicsService.GetSubjectsAsync(schoolId, page, pageSize, search, type, boardConfigurationId, noBoardOnly);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }

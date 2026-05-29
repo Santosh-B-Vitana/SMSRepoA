@@ -120,6 +120,7 @@ namespace SmsApi.Models.DTOs
         public bool HasCustomGradingScale { get; set; }
         public bool HasCustomExamStructure { get; set; }
         public bool IsActive { get; set; }
+        public bool IsDefault { get; set; }
         public BoardConfigurationResponse Board { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -144,6 +145,23 @@ namespace SmsApi.Models.DTOs
 
         /// <summary>Provide a custom exam structure to override the board's default. Pass null to use board default.</summary>
         public List<BoardExamStructureEntryDto>? CustomExamStructure { get; set; }
+    }
+
+    /// <summary>Add a board to school's supported boards.</summary>
+    public class AddSchoolBoardRequest
+    {
+        [Required]
+        public Guid BoardConfigurationId { get; set; }
+
+        /// <summary>Mark this board as the school default. First board added is always default.</summary>
+        public bool SetAsDefault { get; set; } = false;
+    }
+
+    /// <summary>List of all boards configured for a school.</summary>
+    public class SchoolBoardListResponse
+    {
+        public List<SchoolBoardConfigResponse> Boards { get; set; } = new();
+        public int Total { get; set; }
     }
 
     // ── Board-aware Grade Result ───────────────────────────────────────────────

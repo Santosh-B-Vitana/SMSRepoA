@@ -57,11 +57,14 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                // Class Teachers can only see health records for students in their own class
-                Guid? ctUserId = null;
-                var designation = GetDesignation();
-                if (string.Equals(designation, "Class Teacher", StringComparison.OrdinalIgnoreCase))
-                    ctUserId = GetUserId();
+                // For any non-admin staff, pass userId so service can restrict to their CT sections.
+                // Admins/Principals/SuperAdmin see all. The service checks TeacherAssignments directly.
+                var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                var isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+                           || role.Equals("super_admin", StringComparison.OrdinalIgnoreCase)
+                           || role.Equals("Principal", StringComparison.OrdinalIgnoreCase)
+                           || role.Equals("HRManager", StringComparison.OrdinalIgnoreCase);
+                Guid? ctUserId = isAdmin ? null : GetUserId();
                 var result = await _service.GetHealthRecordsAsync(schoolId, filters, page, pageSize, ctUserId);
                 return Ok(result);
             }
@@ -385,7 +388,13 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                var result = await _service.GetHealthStatsAsync(schoolId);
+                var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                var isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+                           || role.Equals("super_admin", StringComparison.OrdinalIgnoreCase)
+                           || role.Equals("Principal", StringComparison.OrdinalIgnoreCase)
+                           || role.Equals("HRManager", StringComparison.OrdinalIgnoreCase);
+                Guid? ctUserId = isAdmin ? null : GetUserId();
+                var result = await _service.GetHealthStatsAsync(schoolId, ctUserId);
                 return Ok(result);
             }
             catch (Exception ex)

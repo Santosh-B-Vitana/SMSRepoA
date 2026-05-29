@@ -355,9 +355,6 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
           <CardTitle className="text-xl">
             {isEditMode ? "Edit Application" : "New Admission Application"}
           </CardTitle>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
         </div>
         <div className="space-y-2 mt-3">
           <div className="flex justify-between text-xs text-muted-foreground">

@@ -39,7 +39,7 @@ const BMI_COLOR: Record<string, string> = {
 
 // ─── Health Record Form ───────────────────────────────────────────────────────
 
-function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record?: HealthRecordFull; onClose: () => void; onSaved: () => void; allowedClasses?: string[] | null }) {
+function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record?: HealthRecordFull; onClose: () => void; onSaved: () => void; allowedClasses?: Array<{ className: string; sectionName?: string }> | null }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
   const isEdit = !!record;
@@ -74,7 +74,7 @@ function RecordFormDialog({ record, onClose, onSaved, allowedClasses }: { record
   useEffect(() => {
     if (isEdit) return;
     if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
-      Promise.all(allowedClasses.map(cn => studentApi.list({ classFilter: cn, pageSize: 200 })))
+      Promise.all(allowedClasses.map(a => studentApi.list({ classFilter: a.className, sectionFilter: a.sectionName, pageSize: 200 })))
         .then(results => setStudents(results.flatMap(r => r.students ?? [])))
         .catch(() => {});
     } else if (allowedClasses === null || allowedClasses === undefined) {
@@ -298,7 +298,7 @@ function ViewRecordDialog({ recordId, onClose, onEdit }: { recordId: string; onC
 
 // ─── Add Vaccination Dialog ───────────────────────────────────────────────────
 
-function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () => void; onSaved: () => void; allowedClasses?: string[] | null }) {
+function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () => void; onSaved: () => void; allowedClasses?: Array<{ className: string; sectionName?: string }> | null }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateVaccinationDto>({
@@ -309,7 +309,7 @@ function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () =
 
   useEffect(() => {
     if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
-      Promise.all(allowedClasses.map(cn => studentApi.list({ classFilter: cn, pageSize: 200 })))
+      Promise.all(allowedClasses.map(a => studentApi.list({ classFilter: a.className, sectionFilter: a.sectionName, pageSize: 200 })))
         .then(results => setStudents(results.flatMap(r => r.students ?? [])))
         .catch(() => {});
     } else if (allowedClasses === null || allowedClasses === undefined) {
@@ -382,7 +382,7 @@ function VaccinationDialog({ onClose, onSaved, allowedClasses }: { onClose: () =
 
 // ─── Create Alert Dialog ──────────────────────────────────────────────────────
 
-function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => void; onSaved: () => void; allowedClasses?: string[] | null }) {
+function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => void; onSaved: () => void; allowedClasses?: Array<{ className: string; sectionName?: string }> | null }) {
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateHealthAlertDto>({ studentId: "", alertType: "follow_up", severity: "medium", description: "" });
@@ -391,7 +391,7 @@ function AlertFormDialog({ onClose, onSaved, allowedClasses }: { onClose: () => 
 
   useEffect(() => {
     if (allowedClasses !== null && allowedClasses !== undefined && allowedClasses.length > 0) {
-      Promise.all(allowedClasses.map(cn => studentApi.list({ classFilter: cn, pageSize: 200 })))
+      Promise.all(allowedClasses.map(a => studentApi.list({ classFilter: a.className, sectionFilter: a.sectionName, pageSize: 200 })))
         .then(results => setStudents(results.flatMap(r => r.students ?? [])))
         .catch(() => {});
     } else if (allowedClasses === null || allowedClasses === undefined) {
@@ -475,8 +475,8 @@ export function HealthManager() {
   const { user } = useAuth();
   const { t } = useLanguage();
   // null = no restriction (admin / counselor / hostel warden)
-  // string[] = only show records for these class names (class teacher staff)
-  const [classTeacherClasses, setClassTeacherClasses] = useState<string[] | null>(null);
+  // Array = only show records for these class+section assignments (class teacher staff)
+  const [classTeacherClasses, setClassTeacherClasses] = useState<Array<{ className: string; sectionName?: string }> | null>(null);
 
   useEffect(() => {
     if (user?.role === 'staff') {
@@ -484,7 +484,7 @@ export function HealthManager() {
         .then(assignments => {
           const ctClasses = assignments
             .filter(a => a.isClassTeacher)
-            .map(a => a.className);
+            .map(a => ({ className: a.className, sectionName: a.sectionName }));
           setClassTeacherClasses(ctClasses);
         })
         .catch(() => setClassTeacherClasses([]));
@@ -514,20 +514,15 @@ export function HealthManager() {
     setRecordsLoading(true);
     try {
       const r = await healthApi.getRecords({ page: p, pageSize: PAGE_SIZE, searchQuery: search || undefined });
-      let items = r.items ?? [];
-      let count = r.totalCount ?? 0;
-      // For class teachers, filter records to only their assigned classes
-      if (classTeacherClasses !== null && classTeacherClasses.length > 0) {
-        const lower = classTeacherClasses.map(c => c.toLowerCase());
-        items = items.filter(rec => lower.some(c => rec.class.toLowerCase() === c));
-        count = items.length;
-      }
+      const items = r.items ?? [];
+      const count = r.totalCount ?? 0;
+      // Backend already handles class-teacher section filtering via JWT designation claim
       setRecords(items);
       setTotal(count);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load records");
     } finally { setRecordsLoading(false); }
-  }, [search, classTeacherClasses]);
+  }, [search]);
 
   const loadAlerts = useCallback(async () => {
     setAlertsLoading(true);

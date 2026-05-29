@@ -17,6 +17,7 @@ interface Subject {
   code: string;
   type: 'Core' | 'Elective' | 'Language' | 'Activity';
   board: string;
+  boardConfigurationId?: string;
   description?: string;
 }
 
@@ -41,9 +42,11 @@ interface Staff {
 
 interface SubjectsTabProps {
   classId: string;
+  /** BoardConfigurationId of the class. Used to filter subjects: school-default + board-specific. */
+  boardConfigurationId?: string;
 }
 
-export function SubjectsTab({ classId }: SubjectsTabProps) {
+export function SubjectsTab({ classId, boardConfigurationId }: SubjectsTabProps) {
   // Available subjects from school-level configuration
   const [availableSubjects, setAvailableSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +91,8 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
         name: s.name,
         code: s.code || "",
         type: (s.type || "Core") as Subject["type"],
-        board: s.board || "",
+        board: s.board || s.boardName || "",
+        boardConfigurationId: s.boardConfigurationId,
         description: s.description,
       })));
     } catch {
@@ -101,7 +105,8 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
           name: s.name,
           code: s.code || "",
           type: (s.type || "Core") as Subject["type"],
-          board: s.board || "",
+          board: s.board || s.boardName || "",
+          boardConfigurationId: s.boardConfigurationId,
           description: s.description,
         })));
       } catch {
@@ -154,8 +159,17 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
     }
   };
 
-  // Get unassigned subjects
-  const unassignedSubjects = availableSubjects.filter(
+  // Filter subjects eligible for this class:
+  // - School-default subjects (no boardConfigurationId) → always eligible
+  // - Board-specific subjects → only eligible if they match this class's board
+  const eligibleSubjects = availableSubjects.filter(s =>
+    !s.boardConfigurationId ||
+    !boardConfigurationId ||
+    s.boardConfigurationId === boardConfigurationId
+  );
+
+  // Get unassigned subjects (from eligible ones)
+  const unassignedSubjects = eligibleSubjects.filter(
     s => !assignedSubjects.find(as => as.subjectId === s.id)
   );
 

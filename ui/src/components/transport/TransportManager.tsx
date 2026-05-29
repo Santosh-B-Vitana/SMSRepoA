@@ -10,8 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X, ShieldOff } from "lucide-react";
-import { transportApi, TransportRoute, TransportStudent, TransportStudentListResponse, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
+import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X, ShieldOff, Truck, Navigation } from "lucide-react";
+import { transportApi, TransportRoute, TransportStudent, TransportStudentListResponse, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto, Vehicle, VehicleListResponse, CreateVehicleDto, TransportStop, CreateTransportStopDto } from "@/services/api/transportApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
 import { usePermissions } from "@/contexts/PermissionsContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -38,8 +38,23 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
     status: route?.status ?? "active",
   });
   const [saving, setSaving] = useState(false);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+
+  useEffect(() => {
+    transportApi.getVehicles("active").then(r => setVehicles(r.vehicles ?? [])).catch(() => {});
+  }, []);
 
   function set(k: keyof CreateRouteDto, v: string | number) { setForm(p => ({ ...p, [k]: v })); }
+
+  function handleVehicleSelect(regNumber: string) {
+    const v = vehicles.find(x => x.registrationNumber === regNumber);
+    setForm(p => ({
+      ...p,
+      vehicleNumber: regNumber,
+      driverName: v?.driverName ?? p.driverName,
+      driverPhone: v?.driverPhone ?? p.driverPhone,
+    }));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,7 +89,16 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
           </div>
           <div className="space-y-1.5">
             <Label>{t('transport.routeForm.vehicleNumber')}</Label>
-            <Input value={form.vehicleNumber ?? ""} onChange={e => set("vehicleNumber", e.target.value)} placeholder="TS 09 AB 1234" />
+            <Select value={form.vehicleNumber ?? ""} onValueChange={handleVehicleSelect}>
+              <SelectTrigger><SelectValue placeholder="Select a vehicle" /></SelectTrigger>
+              <SelectContent>
+                {vehicles.map(v => (
+                  <SelectItem key={v.id} value={v.registrationNumber}>
+                    {v.registrationNumber}{v.vehicleType ? ` (${v.vehicleType})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>{t('transport.routeForm.driverName')}</Label>
@@ -113,6 +137,199 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Stop Form Dialog ────────────────────────────────────────────────────────
+
+function StopFormDialog({ routeId, stop, nextOrder, onClose, onSaved }: { routeId: string; stop?: TransportStop; nextOrder?: number; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<CreateTransportStopDto>({
+    stopName: stop?.stopName ?? "",
+    stopOrder: stop?.stopOrder ?? nextOrder ?? 1,
+    landmark: stop?.landmark ?? "",
+    morningArrivalTime: stop?.morningArrivalTime ?? "",
+    eveningDepartureTime: stop?.eveningDepartureTime ?? "",
+    distanceKm: stop?.distanceKm ?? undefined,
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set<K extends keyof CreateTransportStopDto>(k: K, v: CreateTransportStopDto[K]) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.stopName.trim()) { toast.error("Stop name is required"); return; }
+    setSaving(true);
+    // Normalize time strings: HTML time inputs return "HH:MM"; backend TimeSpan needs "HH:MM:SS"
+    function toTimeSpan(t: string | undefined): string | undefined {
+      if (!t) return undefined;
+      return /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t;
+    }
+    const payload: CreateTransportStopDto = {
+      ...form,
+      morningArrivalTime: toTimeSpan(form.morningArrivalTime),
+      eveningDepartureTime: toTimeSpan(form.eveningDepartureTime),
+    };
+    try {
+      if (stop) {
+        await transportApi.updateStop(stop.id, payload);
+        toast.success("Stop updated");
+      } else {
+        await transportApi.createStop(routeId, payload);
+        toast.success("Stop added");
+      }
+      onSaved(); onClose();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save stop");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{stop ? "Edit Stop" : "Add Stop"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Stop Name *</Label>
+              <Input value={form.stopName} onChange={e => set("stopName", e.target.value)} placeholder="e.g., City Centre" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Stop Order</Label>
+              <Input type="number" min={1} value={form.stopOrder} onChange={e => set("stopOrder", Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Landmark</Label>
+            <Input value={form.landmark ?? ""} onChange={e => set("landmark", e.target.value)} placeholder="Near City Mall" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Morning Arrival</Label>
+              <Input type="time" value={form.morningArrivalTime ?? ""} onChange={e => set("morningArrivalTime", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Evening Departure</Label>
+              <Input type="time" value={form.eveningDepartureTime ?? ""} onChange={e => set("eveningDepartureTime", e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Distance from School (km)</Label>
+            <Input type="number" step="0.1" min={0} value={form.distanceKm ?? ""} onChange={e => set("distanceKm", e.target.value ? Number(e.target.value) : undefined)} />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving} className="gap-2">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{stop ? "Update" : "Add Stop"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Stops Dialog ─────────────────────────────────────────────────────────────
+
+function StopsDialog({ route, canEdit, onClose }: { route: TransportRoute; canEdit: boolean; onClose: () => void }) {
+  const [stops, setStops] = useState<TransportStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editStop, setEditStop] = useState<TransportStop | undefined>();
+
+  const loadStops = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await transportApi.getStops(route.id);
+      setStops((data ?? []).sort((a, b) => a.stopOrder - b.stopOrder));
+    } catch { toast.error("Failed to load stops"); }
+    finally { setLoading(false); }
+  }, [route.id]);
+
+  useEffect(() => { loadStops(); }, [loadStops]);
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this stop?")) return;
+    try {
+      await transportApi.deleteStop(id);
+      toast.success("Stop deleted");
+      loadStops();
+    } catch { toast.error("Failed to delete stop"); }
+  }
+
+  return (
+    <>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Navigation className="h-5 w-5" />
+            Stops — {route.routeName} ({route.routeNumber})
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : stops.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground">
+              <Navigation className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="font-medium">No stops added yet</p>
+              {canEdit && <Button className="mt-3 gap-1" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4" />Add First Stop</Button>}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-10">#</TableHead>
+                    <TableHead>Stop Name</TableHead>
+                    <TableHead>Landmark</TableHead>
+                    <TableHead>Morning</TableHead>
+                    <TableHead>Evening</TableHead>
+                    <TableHead>Distance</TableHead>
+                    {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stops.map(s => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium text-muted-foreground">{s.stopOrder}</TableCell>
+                      <TableCell className="font-medium">{s.stopName}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{s.landmark || '—'}</TableCell>
+                      <TableCell className="text-sm">{s.morningArrivalTime ? s.morningArrivalTime.slice(0, 5) : '—'}</TableCell>
+                      <TableCell className="text-sm">{s.eveningDepartureTime ? s.eveningDepartureTime.slice(0, 5) : '—'}</TableCell>
+                      <TableCell className="text-sm">{s.distanceKm != null ? `${s.distanceKm} km` : '—'}</TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => setEditStop(s)}><Pencil className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {canEdit && stops.length > 0 && (
+            <div className="flex justify-end">
+              <Button onClick={() => setShowAdd(true)} className="gap-1"><Plus className="h-4 w-4" />Add Stop</Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    {(showAdd || editStop) && (
+      <StopFormDialog
+        routeId={route.id}
+        stop={editStop}
+        nextOrder={stops.length + 1}
+        onClose={() => { setShowAdd(false); setEditStop(undefined); }}
+        onSaved={loadStops}
+      />
+    )}
+    </>
   );
 }
 
@@ -364,6 +581,130 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
   );
 }
 
+// ─── Vehicle Form Dialog ──────────────────────────────────────────────────────
+
+function VehicleFormDialog({ vehicle, onClose, onSaved }: { vehicle?: Vehicle; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<CreateVehicleDto>({
+    registrationNumber: vehicle?.registrationNumber ?? "",
+    make: vehicle?.make ?? "",
+    model: vehicle?.model ?? "",
+    year: vehicle?.year ?? undefined,
+    vehicleType: vehicle?.vehicleType ?? "bus",
+    seatingCapacity: vehicle?.seatingCapacity ?? 40,
+    color: vehicle?.color ?? "",
+    fuelType: vehicle?.fuelType ?? "diesel",
+    driverName: vehicle?.driverName ?? "",
+    driverPhone: vehicle?.driverPhone ?? "",
+    status: vehicle?.status ?? "active",
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(k: keyof CreateVehicleDto, v: string | number | undefined) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.registrationNumber.trim()) { toast.error("Registration number is required"); return; }
+    setSaving(true);
+    try {
+      if (vehicle) {
+        await transportApi.updateVehicle(vehicle.id, form);
+        toast.success("Vehicle updated");
+      } else {
+        await transportApi.createVehicle(form);
+        toast.success("Vehicle added");
+      }
+      onSaved(); onClose();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save vehicle");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{vehicle ? "Edit Vehicle" : "Add Vehicle"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Registration Number *</Label>
+            <Input value={form.registrationNumber} onChange={e => set("registrationNumber", e.target.value)} placeholder="TS 09 AB 1234" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Vehicle Type</Label>
+            <Select value={form.vehicleType} onValueChange={v => set("vehicleType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bus">Bus</SelectItem>
+                <SelectItem value="van">Van</SelectItem>
+                <SelectItem value="minibus">Mini Bus</SelectItem>
+                <SelectItem value="auto">Auto</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Make</Label>
+            <Input value={form.make ?? ""} onChange={e => set("make", e.target.value)} placeholder="Tata" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Model</Label>
+            <Input value={form.model ?? ""} onChange={e => set("model", e.target.value)} placeholder="Starbus" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Year</Label>
+            <Input type="number" value={form.year ?? ""} onChange={e => set("year", e.target.value ? Number(e.target.value) : undefined)} placeholder="2020" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Seating Capacity</Label>
+            <Input type="number" value={form.seatingCapacity} onChange={e => set("seatingCapacity", Number(e.target.value))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Fuel Type</Label>
+            <Select value={form.fuelType ?? "diesel"} onValueChange={v => set("fuelType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="diesel">Diesel</SelectItem>
+                <SelectItem value="petrol">Petrol</SelectItem>
+                <SelectItem value="cng">CNG</SelectItem>
+                <SelectItem value="electric">Electric</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Color</Label>
+            <Input value={form.color ?? ""} onChange={e => set("color", e.target.value)} placeholder="Yellow" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Driver Name</Label>
+            <Input value={form.driverName ?? ""} onChange={e => set("driverName", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Driver Phone</Label>
+            <Input value={form.driverPhone ?? ""} onChange={e => set("driverPhone", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select value={form.status} onValueChange={v => set("status", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="col-span-2">
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={saving} className="gap-2">
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}{vehicle ? "Update" : "Add Vehicle"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TransportManager() {
@@ -395,6 +736,14 @@ export function TransportManager() {
   const [editStudent, setEditStudent] = useState<TransportStudent | undefined>();
   const [tab, setTab] = useState("routes");
 
+  // ── Vehicles state ──────────────────────────────────────────────────────
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehiclesLoading, setVehiclesLoading] = useState(false);
+  const [vehiclesLoaded, setVehiclesLoaded] = useState(false);
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [editVehicle, setEditVehicle] = useState<Vehicle | undefined>();
+  const [stopsRoute, setStopsRoute] = useState<TransportRoute | undefined>();
+
   const loadRoutes = useCallback(async (page = 1) => {
     setRoutesLoading(true);
     try {
@@ -404,6 +753,17 @@ export function TransportManager() {
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load routes");
     } finally { setRoutesLoading(false); }
+  }, []);
+
+  const loadVehicles = useCallback(async () => {
+    setVehiclesLoading(true);
+    try {
+      const r = await transportApi.getVehicles();
+      setVehicles(r.vehicles ?? []);
+      setVehiclesLoaded(true);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load vehicles");
+    } finally { setVehiclesLoading(false); }
   }, []);
 
   const loadStudents = useCallback(async (page = 1, search = "") => {
@@ -421,7 +781,8 @@ export function TransportManager() {
 
   function handleTabChange(v: string) {
     setTab(v);
-    if (v === "students" && students.length === 0) loadStudents(1);
+    if (v === "students") loadStudents(studentsPage, studentsSearch);
+    if (v === "vehicles" && !vehiclesLoaded) loadVehicles();
   }
 
   function handleStudentsSearchChange(value: string) {
@@ -523,6 +884,7 @@ export function TransportManager() {
           <TabsList>
             <TabsTrigger value="routes" className="gap-1.5"><Route className="h-4 w-4" />{t('transport.tabs.busRoutes')}</TabsTrigger>
             <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />{t('transport.tabs.students')}</TabsTrigger>
+            <TabsTrigger value="vehicles" className="gap-1.5"><Truck className="h-4 w-4" />Vehicles</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             {tab === "routes" && (
@@ -539,6 +901,7 @@ export function TransportManager() {
             )}
             {tab === "routes" && canManageRoutes && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
             {tab === "students" && canManageRoutes && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.assignStudent')}</Button>}
+            {tab === "vehicles" && canManageRoutes && <Button onClick={() => setShowAddVehicle(true)} className="gap-1"><Plus className="h-4 w-4" />Add Vehicle</Button>}
           </div>
         </div>
 
@@ -591,7 +954,11 @@ export function TransportManager() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="secondary" size="sm" onClick={() => setStopsRoute(r)} className="gap-1">
+                            <Navigation className="h-3.5 w-3.5" />
+                            Stops
+                          </Button>
                           {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditRoute(r)}><Pencil className="h-4 w-4" /></Button>}
                           {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRoute(r.id)}><Trash2 className="h-4 w-4" /></Button>}
                         </div>
@@ -693,6 +1060,63 @@ export function TransportManager() {
             </>
           )}
         </TabsContent>
+
+        {/* Vehicles Tab */}
+        <TabsContent value="vehicles">
+          {vehiclesLoading ? (
+            <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+          ) : vehicles.length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">
+              <Truck className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No vehicles registered</p>
+              <p className="text-sm">Add vehicles to track compliance and assignments</p>
+              {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddVehicle(true)}><Plus className="h-4 w-4" />Add Vehicle</Button>}
+            </CardContent></Card>
+          ) : (
+            <div className="rounded-lg overflow-hidden border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Registration</TableHead>
+                    <TableHead>Make / Model</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Capacity</TableHead>
+                    <TableHead>Driver</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Compliance</TableHead>
+                    {(canEditRoutes || canDeleteRoutes) && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vehicles.map(v => (
+                    <TableRow key={v.id}>
+                      <TableCell className="font-mono font-medium">{v.registrationNumber}</TableCell>
+                      <TableCell>{v.make} {v.model}{v.year ? ` (${v.year})` : ''}</TableCell>
+                      <TableCell className="capitalize">{v.vehicleType}</TableCell>
+                      <TableCell>{v.seatingCapacity}</TableCell>
+                      <TableCell>{v.driverName ?? <span className="text-muted-foreground text-sm">—</span>}</TableCell>
+                      <TableCell><Badge variant={v.status === 'active' ? 'default' : 'outline'}>{v.status}</Badge></TableCell>
+                      <TableCell>
+                        {(v.complianceAlerts ?? []).length === 0
+                          ? <span className="text-green-600 text-sm">OK</span>
+                          : <Badge variant="destructive">{(v.complianceAlerts ?? []).length} alert{(v.complianceAlerts ?? []).length > 1 ? 's' : ''}</Badge>
+                        }
+                      </TableCell>
+                      {(canEditRoutes || canDeleteRoutes) && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditVehicle(v)}><Pencil className="h-4 w-4" /></Button>}
+                            {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => { if(confirm(`Delete vehicle ${v.registrationNumber}?`)) { try { await transportApi.deleteVehicle(v.id); loadVehicles(); } catch { toast.error('Failed to delete'); } } }}><Trash2 className="h-4 w-4" /></Button>}
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Dialogs */}
@@ -701,6 +1125,12 @@ export function TransportManager() {
       )}
       {showAssign && <AssignStudentDialog routes={routes} onClose={() => setShowAssign(false)} onSaved={() => { loadStudents(studentsPage, studentsSearch); loadRoutes(routesPage); }} />}
       {editStudent && <EditTransportStudentDialog assignment={editStudent} routes={routes} onClose={() => setEditStudent(undefined)} onSaved={() => { loadStudents(studentsPage, studentsSearch); loadRoutes(routesPage); }} />}
+      {(showAddVehicle || editVehicle) && (
+        <VehicleFormDialog vehicle={editVehicle} onClose={() => { setShowAddVehicle(false); setEditVehicle(undefined); }} onSaved={loadVehicles} />
+      )}
+      {stopsRoute && (
+        <StopsDialog route={stopsRoute} canEdit={canEditRoutes || canManageRoutes} onClose={() => setStopsRoute(undefined)} />
+      )}
     </div>
   );
 }

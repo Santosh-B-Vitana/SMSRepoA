@@ -68,6 +68,12 @@ namespace SmsApi.Models.Entities
         [MaxLength(20)]
         public string Status { get; set; } = "active";
         
+        // Inactive status tracking
+        [MaxLength(100)]
+        public string? InactiveReason { get; set; } // passed_out, dropped_out, transferred, admin_deactivation, etc.
+        
+        public DateTime? InactiveDate { get; set; } // When the student was marked inactive
+        
         [Required]
         public DateTime AdmissionDate { get; set; }
         

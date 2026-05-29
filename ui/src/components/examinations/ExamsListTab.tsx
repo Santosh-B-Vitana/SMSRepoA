@@ -33,15 +33,17 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Plus, Search, RefreshCw, Calendar, Clock, MapPin, User,
   PenLine, Trash2, Loader2, CheckCircle2, ChevronRight,
-  BookOpen, Eye, LayoutList,
+  BookOpen, Eye, LayoutList, Ticket,
 } from 'lucide-react';
 import { ExamCreationWizard } from './ExamCreationWizard';
+import { HallTicketsDialog } from './HallTicketsDialog';
 import {
-  getExamSetups, deleteExamSetup, updateExamSetup,
+  getExamSetups, deleteExamSetup, updateExamSetup, downloadHallTickets,
   type ExamSetupBasicDto, type ExamSetupDetailDto, type ExamSetupSubjectDto,
 } from '@/services/api/examSetupApi';
 import { getExamSetupById } from '@/services/api/examSetupApi';
 import { academicApi } from '@/services/api/academicApi';
+import { boardApi, type SchoolBoardConfigResponse } from '@/services/api/boardApi';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -291,13 +293,14 @@ function RescheduleDialog({
 // ─── Exam Card ────────────────────────────────────────────────────────────────
 
 function ExamCard({
-  setup, onEnterMarks, onViewTimetable, onReschedule, onDelete,
+  setup, onEnterMarks, onViewTimetable, onReschedule, onDelete, onDownloadHallTickets,
 }: {
   setup: ExamSetupBasicDto;
   onEnterMarks: () => void;
   onViewTimetable: () => void;
   onReschedule: () => void;
   onDelete: () => void;
+  onDownloadHallTickets: () => void;
 }) {
   const sc = STATUS_CFG[setup.status] ?? STATUS_CFG.draft;
   const currentStep = STATUS_TO_STEP[setup.status] ?? 0;
@@ -312,6 +315,9 @@ function ExamCard({
             <p className="text-xs text-muted-foreground mt-0.5">
               {setup.className}{setup.sectionName ? ` · ${setup.sectionName}` : ''} · {setup.academicYear}
             </p>
+            {setup.boardName && (
+              <Badge variant="outline" className="mt-1 text-[10px] px-1.5 py-0 bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400">{setup.boardName}</Badge>
+            )}
           </div>
           <Badge variant="outline" className={`text-xs shrink-0 ${sc.color}`}>{sc.label}</Badge>
         </div>
@@ -358,6 +364,14 @@ function ExamCard({
           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={onViewTimetable}>
             <Eye className="h-3 w-3" /> Timetable
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1 text-indigo-700 border-indigo-300 hover:bg-indigo-50 dark:text-indigo-400 dark:border-indigo-700 dark:hover:bg-indigo-950/30"
+            onClick={onDownloadHallTickets}
+          >
+            <Ticket className="h-3 w-3" /> Hall Tickets
+          </Button>
           {setup.status !== 'published' && (
             <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={onReschedule}>
               <Clock className="h-3 w-3" /> Reschedule
@@ -390,10 +404,13 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
 
   const [filterYear, setFilterYear] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterBoard, setFilterBoard] = useState('');
   const [search, setSearch] = useState('');
   const [years, setYears] = useState<string[]>([]);
+  const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
 
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [hallTicketsSetup, setHallTicketsSetup] = useState<ExamSetupBasicDto | null>(null);
   const [timetableSetup, setTimetableSetup] = useState<ExamSetupDetailDto | null>(null);
   const [rescheduleSetup, setRescheduleSetup] = useState<ExamSetupDetailDto | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -404,6 +421,9 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
     academicApi.listAcademicYears(1, 50)
       .then(res => setYears((res.academicYears ?? []).map(a => a.name)))
       .catch(() => {});
+    boardApi.getSchoolBoards()
+      .then(res => setSchoolBoards(res.boards ?? []))
+      .catch(() => {});
   }, []);
 
   const loadSetups = useCallback(async () => {
@@ -411,6 +431,7 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
     try {
       const res = await getExamSetups({
         academicYear: filterYear || undefined,
+        boardConfigurationId: filterBoard || undefined,
         status: filterStatus || undefined,
         page,
         pageSize: 20,
@@ -422,7 +443,7 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [filterYear, filterStatus, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterYear, filterBoard, filterStatus, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadSetups(); }, [loadSetups]);
 
@@ -448,6 +469,10 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
     } finally {
       setLoadingDetail(false);
     }
+  };
+
+  const handleDownloadHallTickets = (setup: ExamSetupBasicDto) => {
+    setHallTicketsSetup(setup);
   };
 
   const handleDelete = async () => {
@@ -503,6 +528,18 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
           </SelectContent>
         </Select>
 
+        {schoolBoards.length > 1 && (
+          <Select value={filterBoard || '__all__'} onValueChange={v => { setFilterBoard(v === '__all__' ? '' : v); setPage(1); }}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="All Boards" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All Boards</SelectItem>
+              {schoolBoards.map(b => <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>{b.boardName}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+
         <Button variant="outline" size="icon" onClick={loadSetups} disabled={loading}>
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </Button>
@@ -537,6 +574,7 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
               onViewTimetable={() => openTimetable(setup.id)}
               onReschedule={() => openReschedule(setup.id)}
               onDelete={() => setDeleteId(setup.id)}
+              onDownloadHallTickets={() => handleDownloadHallTickets(setup)}
             />
           ))}
         </div>
@@ -552,10 +590,16 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
       )}
 
       {/* Dialogs */}
+      <HallTicketsDialog
+        exam={hallTicketsSetup}
+        onClose={() => setHallTicketsSetup(null)}
+      />
+
       <ExamCreationWizard
         open={wizardOpen}
         onOpenChange={setWizardOpen}
         onCreated={() => loadSetups()}
+        boardConfigurationId={filterBoard || undefined}
       />
 
       <TimetableDialog

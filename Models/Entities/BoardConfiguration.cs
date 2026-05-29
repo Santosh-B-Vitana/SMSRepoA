@@ -113,6 +113,9 @@ namespace SmsApi.Models.Entities
 
         public bool IsActive { get; set; } = true;
 
+        /// <summary>True if this is the school's primary/default board.</summary>
+        public bool IsDefault { get; set; } = false;
+
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
 

@@ -25,6 +25,8 @@ export interface NotificationItem {
   readAt?: string;
   priority: string;
   createdAt: string;
+  /** For parent notifications: the student this notification relates to. */
+  studentId?: string;
 }
 
 export interface NotificationListResponse {
@@ -85,6 +87,7 @@ export const getMyNotifications = (params?: {
   pageSize?: number;
   unreadOnly?: boolean;
   type?: string;
+  studentId?: string;
 }) => apiGet<NotificationListResponse>("/notifications/my", params as Record<string, unknown>);
 
 /** Get quick unread count for badge */

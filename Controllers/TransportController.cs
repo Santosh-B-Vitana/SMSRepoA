@@ -224,5 +224,95 @@ namespace SmsApi.Controllers
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
+
+        // ── Route Stops ────────────────────────────────────────────────────
+
+        [HttpGet("routes/{routeId}/stops")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> GetStops(Guid routeId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var stops = await _transportService.GetStopsAsync(routeId, schoolId);
+            return Ok(stops);
+        }
+
+        [HttpGet("stops/{id:guid}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> GetStop(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var stop = await _transportService.GetStopByIdAsync(id, schoolId);
+            if (stop == null) return NotFound(new { message = "Stop not found." });
+            return Ok(stop);
+        }
+
+        [HttpPost("routes/{routeId}/stops")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> CreateStop(Guid routeId, [FromBody] CreateTransportStopRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            try
+            {
+                var stop = await _transportService.CreateStopAsync(routeId, schoolId, request);
+                return CreatedAtAction(nameof(GetStop), new { id = stop.Id }, stop);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("stops/{id:guid}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> UpdateStop(Guid id, [FromBody] UpdateTransportStopRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            try
+            {
+                var stop = await _transportService.UpdateStopAsync(id, schoolId, request);
+                if (stop == null) return NotFound(new { message = "Stop not found." });
+                return Ok(stop);
+            }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpDelete("stops/{id:guid}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> DeleteStop(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var deleted = await _transportService.DeleteStopAsync(id, schoolId);
+            if (!deleted) return NotFound(new { message = "Stop not found." });
+            return NoContent();
+        }
+
+        /// <summary>Reorder stops on a route — provide ordered list of stop IDs</summary>
+        [HttpPost("routes/{routeId}/stops/reorder")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> ReorderStops(Guid routeId, [FromBody] ReorderStopsRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            await _transportService.ReorderStopsAsync(routeId, schoolId, request);
+            return Ok(new { message = "Stops reordered successfully." });
+        }
+
+        /// <summary>Assign or unassign a vehicle to a route</summary>
+        [HttpPut("routes/{routeId}/vehicle")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement)]
+        public async Task<IActionResult> AssignVehicle(Guid routeId, [FromQuery] Guid? vehicleId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            try
+            {
+                var route = await _transportService.AssignVehicleToRouteAsync(routeId, schoolId, vehicleId);
+                if (route == null) return NotFound(new { message = "Route not found." });
+                return Ok(route);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
     }
 }

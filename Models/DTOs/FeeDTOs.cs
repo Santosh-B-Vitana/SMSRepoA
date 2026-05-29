@@ -54,6 +54,8 @@ namespace SmsApi.Models.DTOs
         public string? InstallmentDueDates { get; set; } // JSON array
 
         public string? Description { get; set; }
+
+        public Guid? BoardConfigurationId { get; set; }
     }
 
     public class UpdateFeeStructureRequest
@@ -88,6 +90,8 @@ namespace SmsApi.Models.DTOs
         public string? InstallmentDueDates { get; set; }
 
         public string? Description { get; set; }
+
+        public Guid? BoardConfigurationId { get; set; }
     }
 
     /// <summary>Request body for adding/removing a class from a fee structure's class list.</summary>
@@ -106,6 +110,8 @@ namespace SmsApi.Models.DTOs
         public string Name { get; set; } = string.Empty;
         public string Class { get; set; } = string.Empty;
         public string AcademicYear { get; set; } = string.Empty;
+        public Guid? BoardConfigurationId { get; set; }
+        public string? BoardName { get; set; }
 
         // Fee Components
         public decimal TuitionFee { get; set; }

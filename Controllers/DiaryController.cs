@@ -30,6 +30,41 @@ namespace SmsApi.Controllers
         private Guid SchoolId() => _tenant.GetEffectiveSchoolId();
         private Guid UserId() => _tenant.UserId;
 
+        /// <summary>
+        /// Returns all (parentUserLoginId, studentId) pairs for the given student,
+        /// covering both the legacy StudentGuardians-email path and the new GuardianStudents path.
+        /// </summary>
+        private async Task<List<(Guid ParentId, Guid StudentId)>> GetParentStudentPairsForStudentAsync(Guid schoolId, Guid studentId)
+        {
+            // Path 1 (legacy): StudentGuardians email → UserLogins
+            var guardianEmails = await _db.StudentGuardians
+                .Where(sg => sg.StudentId == studentId && sg.SchoolId == schoolId && sg.Email != null)
+                .Select(sg => sg.Email!.ToLower())
+                .Distinct()
+                .ToListAsync();
+
+            var legacyIds = guardianEmails.Any()
+                ? await _db.UserLogins
+                    .Where(ul => ul.SchoolId == schoolId && guardianEmails.Contains(ul.Email.ToLower()))
+                    .Select(ul => ul.Id)
+                    .Distinct()
+                    .ToListAsync()
+                : new List<Guid>();
+
+            // Path 2 (new): GuardianStudents → Guardian.UserLoginId
+            var newIds = await _db.GuardianStudents
+                .Where(gs => gs.StudentId == studentId && gs.SchoolId == schoolId)
+                .Join(_db.Guardians, gs => gs.GuardianId, g => g.Id, (gs, g) => g.UserLoginId)
+                .Where(uid => uid.HasValue)
+                .Select(uid => uid!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            return legacyIds.Union(newIds).Distinct()
+                .Select(uid => (ParentId: uid, StudentId: studentId))
+                .ToList();
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         // DTOs (inline — no extra file needed for this feature)
         // ─────────────────────────────────────────────────────────────────────
@@ -359,45 +394,18 @@ namespace SmsApi.Controllers
             if (entry.NotifyParent && entry.IsVisibleToParent)
             {
                 var notifSchoolId = SchoolId();
-                List<Guid> parentUserIds;
+                // Build list of (parentUserId, studentId) pairs so each notification is tagged
+                // with the correct child — enabling per-child filtering on the parent portal.
+                List<(Guid ParentId, Guid StudentId)> parentStudentPairs;
 
                 if (entry.DiaryType == "individual" && entry.StudentId.HasValue)
                 {
-                    // Path 1 (legacy): StudentGuardians email → UserLogins
-                    var guardianEmails = await _db.StudentGuardians
-                        .Where(sg => sg.StudentId == entry.StudentId.Value &&
-                                     sg.SchoolId == notifSchoolId &&
-                                     sg.Email != null)
-                        .Select(sg => sg.Email!.ToLower())
-                        .Distinct()
-                        .ToListAsync();
-
-                    var legacyIds = guardianEmails.Any()
-                        ? await _db.UserLogins
-                            .Where(ul => ul.SchoolId == notifSchoolId &&
-                                         guardianEmails.Contains(ul.Email.ToLower()))
-                            .Select(ul => ul.Id)
-                            .Distinct()
-                            .ToListAsync()
-                        : new List<Guid>();
-
-                    // Path 2 (new): GuardianStudents → Guardian.UserLoginId (direct portal link)
-                    var newGuardianIds = await _db.GuardianStudents
-                        .Where(gs => gs.StudentId == entry.StudentId.Value && gs.SchoolId == notifSchoolId)
-                        .Join(_db.Guardians,
-                              gs => gs.GuardianId,
-                              g => g.Id,
-                              (gs, g) => g.UserLoginId)
-                        .Where(uid => uid.HasValue)
-                        .Select(uid => uid!.Value)
-                        .Distinct()
-                        .ToListAsync();
-
-                    parentUserIds = legacyIds.Union(newGuardianIds).Distinct().ToList();
+                    var sid = entry.StudentId.Value;
+                    parentStudentPairs = await GetParentStudentPairsForStudentAsync(notifSchoolId, sid);
                 }
                 else if (entry.DiaryType == "class" && entry.ClassId.HasValue)
                 {
-                    // Class-wide entry: collect all student IDs via FK enrollment + legacy string fallback
+                    // Collect all student IDs enrolled in this class/section
                     var classStudentIds = await _db.StudentEnrollments
                         .Where(se => se.SchoolId == notifSchoolId &&
                                      se.ClassId == entry.ClassId.Value &&
@@ -407,7 +415,7 @@ namespace SmsApi.Controllers
                         .Distinct()
                         .ToListAsync();
 
-                    // Legacy string-based fallback
+                    // Legacy string-based student fallback
                     var classEntity = await _db.Classes
                         .Where(c => c.Id == entry.ClassId.Value)
                         .Select(c => new { c.Name })
@@ -420,53 +428,30 @@ namespace SmsApi.Controllers
                                 .Select(s => s.Name)
                                 .FirstOrDefaultAsync()
                             : null;
-                        var legacyIds = await _db.Students
+                        var legacyStudentIds = await _db.Students
                             .Where(s => s.SchoolId == notifSchoolId &&
                                         s.Class == classEntity.Name &&
                                         (sectionName == null || s.Section == sectionName))
                             .Select(s => s.Id)
                             .ToListAsync();
-                        classStudentIds = classStudentIds.Union(legacyIds).Distinct().ToList();
+                        classStudentIds = classStudentIds.Union(legacyStudentIds).Distinct().ToList();
                     }
 
-                    // Path 1 (legacy): StudentGuardians email → UserLogins
-                    var classGuardianEmails = await _db.StudentGuardians
-                        .Where(sg => classStudentIds.Contains(sg.StudentId) &&
-                                     sg.SchoolId == notifSchoolId &&
-                                     sg.Email != null)
-                        .Select(sg => sg.Email!.ToLower())
-                        .Distinct()
-                        .ToListAsync();
-
-                    var legacyClassIds = classGuardianEmails.Any()
-                        ? await _db.UserLogins
-                            .Where(ul => ul.SchoolId == notifSchoolId &&
-                                         classGuardianEmails.Contains(ul.Email.ToLower()))
-                            .Select(ul => ul.Id)
-                            .Distinct()
-                            .ToListAsync()
-                        : new List<Guid>();
-
-                    // Path 2 (new): GuardianStudents → Guardian.UserLoginId (direct portal link)
-                    var newClassGuardianIds = await _db.GuardianStudents
-                        .Where(gs => classStudentIds.Contains(gs.StudentId) && gs.SchoolId == notifSchoolId)
-                        .Join(_db.Guardians,
-                              gs => gs.GuardianId,
-                              g => g.Id,
-                              (gs, g) => g.UserLoginId)
-                        .Where(uid => uid.HasValue)
-                        .Select(uid => uid!.Value)
-                        .Distinct()
-                        .ToListAsync();
-
-                    parentUserIds = legacyClassIds.Union(newClassGuardianIds).Distinct().ToList();
+                    // Build parent→student pairs for all students in this class
+                    parentStudentPairs = new List<(Guid, Guid)>();
+                    foreach (var sid in classStudentIds)
+                    {
+                        var pairs = await GetParentStudentPairsForStudentAsync(notifSchoolId, sid);
+                        parentStudentPairs.AddRange(pairs);
+                    }
+                    parentStudentPairs = parentStudentPairs.Distinct().ToList();
                 }
                 else
                 {
-                    parentUserIds = new List<Guid>();
+                    parentStudentPairs = new List<(Guid, Guid)>();
                 }
 
-                if (parentUserIds.Count > 0)
+                if (parentStudentPairs.Count > 0)
                 {
                     var staffName = entry.Staff != null
                         ? $"{entry.Staff.FirstName} {entry.Staff.LastName}".Trim()
@@ -484,10 +469,10 @@ namespace SmsApi.Controllers
                         _        => "Normal",
                     };
 
-                    var notifs = parentUserIds.Select(uid => new Notification
+                    var notifs = parentStudentPairs.Select(pair => new Notification
                     {
                         SchoolId      = SchoolId(),
-                        RecipientId   = uid,
+                        RecipientId   = pair.ParentId,
                         RecipientType = "Parent",
                         SenderId      = UserId(),
                         SenderName    = staffName,
@@ -498,6 +483,7 @@ namespace SmsApi.Controllers
                         ReferenceType = "Diary",
                         Priority      = priority,
                         ActionUrl     = "/parent-diary",
+                        StudentId     = pair.StudentId,
                     }).ToList();
 
                     _db.Notifications.AddRange(notifs);

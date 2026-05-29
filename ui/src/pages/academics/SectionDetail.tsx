@@ -108,7 +108,7 @@ export default function SectionDetail() {
   const [teacherPickerQuery, setTeacherPickerQuery] = useState("");
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
 
-  // ΓöÇΓöÇ Staff Assignments ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Staff Assignments ------------------------------------------------------
   const [staffAssignments, setStaffAssignments] = useState<TeacherAssignmentResponse[]>([]);
   const [staffAssignmentsLoading, setStaffAssignmentsLoading] = useState(false);
   const [classSubjects, setClassSubjects] = useState<ClassSubjectResponse[]>([]);
@@ -137,7 +137,7 @@ export default function SectionDetail() {
   const [selectedDate, setSelectedDate] = useState("");
   const [rawAttendanceItems, setRawAttendanceItems] = useState<{ studentId: string; date: string; status: string }[]>([]);
 
-  // ΓöÇΓöÇ Add Students Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Add Students Dialog --------------------------------------------------
   const [addStudentsOpen, setAddStudentsOpen] = useState(false);
   const [allClassStudents, setAllClassStudents] = useState<StudentInfo[]>([]);
   const [addSearch, setAddSearch] = useState("");
@@ -145,20 +145,20 @@ export default function SectionDetail() {
   const [addLoading, setAddLoading] = useState(false);
   const [loadingAllStudents, setLoadingAllStudents] = useState(false);
 
-  // ΓöÇΓöÇ Transfer Dialog (single / from section) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Transfer Dialog (single / from section) ------------------------------
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferStudent, setTransferStudent] = useState<StudentInfo | null>(null);
   const [targetSectionId, setTargetSectionId] = useState("");
   const [allSections, setAllSections] = useState<SectionResponse[]>([]);
   const [transferLoading, setTransferLoading] = useState(false);
 
-  // ΓöÇΓöÇ Bulk Transfer from THIS section ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Bulk Transfer from THIS section -------------------------------------
   const [selectedInSection, setSelectedInSection] = useState<Set<string>>(new Set());
   const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
   const [bulkTargetSectionId, setBulkTargetSectionId] = useState("");
   const [bulkTransferLoading, setBulkTransferLoading] = useState(false);
 
-  // ΓöÇΓöÇ Assignments Tab ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Assignments Tab ------------------------------------------------------
   const [classAssignments, setClassAssignments] = useState<AssignmentResponse[]>([]);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
@@ -180,7 +180,7 @@ export default function SectionDetail() {
   const [gradeForm, setGradeForm] = useState({ marks: "", feedback: "" });
   const [gradeSaving, setGradeSaving] = useState(false);
 
-  // ΓöÇΓöÇ Assignment loaders and handlers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Assignment loaders and handlers --------------------------------------
   const loadAssignments = useCallback(async () => {
     if (!classId || !sectionId) return;
     setAssignmentsLoading(true);
@@ -551,7 +551,7 @@ export default function SectionDetail() {
     return [...fromClassSubjects, ...fromSectionAssignments];
   }, [classSubjects, staffAssignments]);
 
-  // ΓöÇΓöÇ Timetable ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Timetable --------------------------------------------------------------
   const loadTimetable = useCallback(async () => {
     if (!classId || !sectionId) return;
     setTimetableLoading(true);
@@ -742,7 +742,7 @@ export default function SectionDetail() {
     setVisibleRecords(prev => Math.min(prev + 5, attendanceHistory.length));
   };
 
-  // ΓöÇΓöÇ Load all sections in this class (for transfer target dropdown) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Load all sections in this class (for transfer target dropdown) --------
   const loadAllSections = useCallback(async () => {
     if (allSections.length > 0) return;
     try {
@@ -753,7 +753,7 @@ export default function SectionDetail() {
     }
   }, [classId, sectionId, allSections.length]);
 
-  // ΓöÇΓöÇ Open "Add Students" dialog: load all class students not in THIS section
+  // -- Open "Add Students" dialog: load all class students not in THIS section
   const openAddStudents = async () => {
     setAddStudentsOpen(true);
     setSelectedToAdd(new Set());
@@ -776,7 +776,7 @@ export default function SectionDetail() {
     setLoadingAllStudents(false);
   };
 
-  // ΓöÇΓöÇ Confirm: assign / transfer selected students into THIS section ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Confirm: assign / transfer selected students into THIS section --------
   const handleAddStudents = async () => {
     if (selectedToAdd.size === 0) return;
     setAddLoading(true);
@@ -796,7 +796,7 @@ export default function SectionDetail() {
     setAddLoading(false);
   };
 
-  // ΓöÇΓöÇ Open single-student transfer dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Open single-student transfer dialog -----------------------------------
   const openTransfer = async (student: StudentInfo) => {
     setTransferStudent(student);
     setTargetSectionId("");
@@ -804,14 +804,14 @@ export default function SectionDetail() {
     await loadAllSections();
   };
 
-  // ΓöÇΓöÇ Confirm single-student transfer ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Confirm single-student transfer --------------------------------------
   const handleTransferStudent = async () => {
     if (!transferStudent || !targetSectionId) return;
     setTransferLoading(true);
     try {
       const target = allSections.find(s => s.id === targetSectionId);
       await studentApi.update(transferStudent.id, {
-        class: section!.className,
+        class: target!.className,
         section: target!.name,
       });
       toast.success(`${transferStudent.name} transferred to ${target?.name}`);
@@ -824,14 +824,14 @@ export default function SectionDetail() {
     setTransferLoading(false);
   };
 
-  // ΓöÇΓöÇ Open bulk-transfer dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Open bulk-transfer dialog --------------------------------------------
   const openBulkTransfer = async () => {
     setBulkTargetSectionId("");
     setBulkTransferOpen(true);
     await loadAllSections();
   };
 
-  // ΓöÇΓöÇ Confirm bulk transfer from THIS section ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Confirm bulk transfer from THIS section -------------------------------
   const handleBulkTransfer = async () => {
     if (selectedInSection.size === 0 || !bulkTargetSectionId) return;
     setBulkTransferLoading(true);
@@ -839,7 +839,7 @@ export default function SectionDetail() {
       const target = allSections.find(s => s.id === bulkTargetSectionId);
       await studentApi.bulkUpdate({
         studentIds: Array.from(selectedInSection),
-        class: section!.className,
+        class: target!.className,
         section: target!.name,
       });
       toast.success(`${selectedInSection.size} student(s) transferred to ${target?.name}`);
@@ -852,7 +852,7 @@ export default function SectionDetail() {
     setBulkTransferLoading(false);
   };
 
-  // ΓöÇΓöÇ Select-all helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // -- Select-all helpers ----------------------------------------------------
   const toggleSelectAll = () => {
     if (selectedInSection.size === students.length) {
       setSelectedInSection(new Set());
@@ -2095,9 +2095,9 @@ export default function SectionDetail() {
                               <Badge variant={sub.status === "graded" ? "default" : "secondary"} className="capitalize text-xs">{sub.status}</Badge>
                             </TableCell>
                             <TableCell className="text-right font-semibold">
-                              {sub.marksObtained != null ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}` : "ΓÇö"}
+                              {sub.marksObtained != null ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}` : " - "}
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">{sub.feedback || "ΓÇö"}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">{sub.feedback || " - "}</TableCell>
                             <TableCell className="text-right">
                               <Button
                                 size="sm"
@@ -2168,8 +2168,8 @@ export default function SectionDetail() {
                         return (
                           <TableRow key={a.id} className="cursor-pointer hover:bg-muted/50" onClick={() => loadSubmissions(a)}>
                             <TableCell className="font-medium">{a.title}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.subjectName || "ΓÇö"}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.assignedByName || "ΓÇö"}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.subjectName || " - "}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.assignedByName || " - "}</TableCell>
                             <TableCell>
                               <span className={isOverdue ? "text-red-500 font-medium" : ""}>
                                 {new Date(a.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
@@ -2189,7 +2189,7 @@ export default function SectionDetail() {
                               {a.gradedCount > 0 ? (
                                 <span className="text-green-600 font-medium">{a.gradedCount}</span>
                               ) : (
-                                <span className="text-muted-foreground">ΓÇö</span>
+                                <span className="text-muted-foreground"> - </span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -2217,7 +2217,7 @@ export default function SectionDetail() {
                   Create Assignment
                 </DialogTitle>
                 <DialogDescription>
-                  Create a new assignment for {section?.className} ΓÇô {section?.name}
+                  Create a new assignment for {section?.className}  -  {section?.name}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 pt-2">
@@ -2225,7 +2225,7 @@ export default function SectionDetail() {
                   <Label htmlFor="asgn-title">Title <span className="text-red-500">*</span></Label>
                   <Input
                     id="asgn-title"
-                    placeholder="e.g. Chapter 3 ΓÇô Algebraic Expressions"
+                    placeholder="e.g. Chapter 3  -  Algebraic Expressions"
                     value={createAssignmentForm.title}
                     onChange={e => setCreateAssignmentForm(f => ({ ...f, title: e.target.value }))}
                     className="mt-1"
@@ -2312,7 +2312,7 @@ export default function SectionDetail() {
                   Grade Submission
                 </DialogTitle>
                 <DialogDescription>
-                  {gradingSubmission?.studentName} ΓÇö {selectedAssignment?.title}
+                  {gradingSubmission?.studentName}  -  {selectedAssignment?.title}
                 </DialogDescription>
               </DialogHeader>
               {gradingSubmission && (
@@ -2335,7 +2335,7 @@ export default function SectionDetail() {
                       className="mt-1"
                       value={gradeForm.marks}
                       onChange={e => setGradeForm(f => ({ ...f, marks: e.target.value }))}
-                      placeholder={`0 ΓÇô ${selectedAssignment?.maxMarks}`}
+                      placeholder={`0  -  ${selectedAssignment?.maxMarks}`}
                     />
                   </div>
                   <div>
@@ -2362,13 +2362,13 @@ export default function SectionDetail() {
         </TabsContent>
       </Tabs>
 
-      {/* ΓöÇΓöÇ Add Students Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
+      {/* -- Add Students Dialog ----------------------------------------------- */}
       <Dialog open={addStudentsOpen} onOpenChange={setAddStudentsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5" />
-              Add Students to {section?.className} ΓÇô {section?.name}
+              Add Students to {section?.className}  -  {section?.name}
             </DialogTitle>
             <DialogDescription>
               Students from {section?.className} not yet in this section. Select one or more and click "Add to Section".
@@ -2460,10 +2460,10 @@ export default function SectionDetail() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm">{student.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            Roll: {student.rollNo || "ΓÇö"}
+                            Roll: {student.rollNo || " - "}
                             {student.section ? (
                               <span className="ml-2 text-orange-600">
-                                (Currently in {section?.className} ΓÇô {student.section})
+                                (Currently in {section?.className}  -  {student.section})
                               </span>
                             ) : (
                               <span className="ml-2 text-green-600">(Unassigned)</span>
@@ -2497,7 +2497,7 @@ export default function SectionDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ΓöÇΓöÇ Single Transfer Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
+      {/* -- Single Transfer Dialog -------------------------------------------- */}
       <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -2507,7 +2507,7 @@ export default function SectionDetail() {
             </DialogTitle>
             <DialogDescription>
               Move <span className="font-semibold">{transferStudent?.name}</span> from{" "}
-              <span className="font-semibold">{section?.className} ΓÇô {section?.name}</span> to another section.
+              <span className="font-semibold">{section?.className}  -  {section?.name}</span> to another section.
             </DialogDescription>
           </DialogHeader>
 
@@ -2524,7 +2524,7 @@ export default function SectionDetail() {
                   ) : (
                     allSections.map(s => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.className} ΓÇô {s.name}
+                        {s.className}  -  {s.name}
                         {s.classTeacherName && (
                           <span className="text-muted-foreground ml-2">({s.classTeacherName})</span>
                         )}
@@ -2552,7 +2552,7 @@ export default function SectionDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* ΓöÇΓöÇ Bulk Transfer Dialog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
+      {/* -- Bulk Transfer Dialog ----------------------------------------------- */}
       <Dialog open={bulkTransferOpen} onOpenChange={setBulkTransferOpen}>
         <DialogContent>
           <DialogHeader>
@@ -2562,7 +2562,7 @@ export default function SectionDetail() {
             </DialogTitle>
             <DialogDescription>
               Transfer <span className="font-semibold">{selectedInSection.size} student(s)</span> from{" "}
-              <span className="font-semibold">{section?.className} ΓÇô {section?.name}</span> to another section.
+              <span className="font-semibold">{section?.className}  -  {section?.name}</span> to another section.
             </DialogDescription>
           </DialogHeader>
 
@@ -2579,7 +2579,7 @@ export default function SectionDetail() {
                   ) : (
                     allSections.map(s => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.className} ΓÇô {s.name}
+                        {s.className}  -  {s.name}
                         {s.classTeacherName && (
                           <span className="text-muted-foreground ml-2">({s.classTeacherName})</span>
                         )}

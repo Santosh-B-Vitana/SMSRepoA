@@ -779,7 +779,7 @@ function AppearanceTab({ userId }: { userId: string }) {
   const { setTheme: applyTheme, theme: currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [timezone, setTimezone] = useState("UTC");
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
   const [timeFormat, setTimeFormat] = useState("12h");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
@@ -788,9 +788,16 @@ function AppearanceTab({ userId }: { userId: string }) {
     try {
       const res = await settingsApi.getUserSettings(userId);
       const s = res.userSettings ?? [];
-      setTimezone(getSetting(s, "pref_timezone", "UTC"));
-      setDateFormat(getSetting(s, "pref_date_format", "DD/MM/YYYY"));
-      setTimeFormat(getSetting(s, "pref_time_format", "12h"));
+      const tz  = getSetting(s, "pref_timezone",    "Asia/Kolkata");
+      const df  = getSetting(s, "pref_date_format",  "DD/MM/YYYY");
+      const tf  = getSetting(s, "pref_time_format",  "12h");
+      setTimezone(tz);
+      setDateFormat(df);
+      setTimeFormat(tf);
+      // Persist to localStorage so all formatDate/formatTime calls use the correct zone
+      localStorage.setItem("app_tz",        tz);
+      localStorage.setItem("app_date_fmt",  df);
+      localStorage.setItem("app_time_fmt",  tf);
       const savedTheme = getSetting(s, "pref_theme", currentTheme) as "light" | "dark" | "system";
       setTheme(savedTheme);
       applyTheme(savedTheme);
@@ -811,6 +818,9 @@ function AppearanceTab({ userId }: { userId: string }) {
     // Apply immediately so top-nav preference and settings page stay in sync.
     applyTheme(theme);
     localStorage.setItem("school-ui-theme", theme);
+    localStorage.setItem("app_tz",       timezone);
+    localStorage.setItem("app_date_fmt", dateFormat);
+    localStorage.setItem("app_time_fmt", timeFormat);
 
     try {
       await Promise.all([

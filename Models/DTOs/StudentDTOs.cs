@@ -84,6 +84,8 @@ namespace SmsApi.Models.DTOs
         public string? Gender { get; set; }
         public string? Nationality { get; set; } // JSON array
         public string Status { get; set; } = string.Empty;
+        public string? InactiveReason { get; set; }
+        public DateTime? InactiveDate { get; set; }
         public DateTime AdmissionDate { get; set; }
         public string? PhotoUrl { get; set; }
         
@@ -612,9 +614,11 @@ namespace SmsApi.Models.DTOs
         
         [MaxLength(20)]
         public string? Status { get; set; }
-    }
 
-    // Bulk Update Request
+        [MaxLength(100)]
+        public string? InactiveReason { get; set; }
+        public DateTime? InactiveDate { get; set; }
+    }
     public class BulkUpdateStudentsRequest
     {
         public List<Guid> StudentIds { get; set; } = new();

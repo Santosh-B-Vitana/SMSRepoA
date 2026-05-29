@@ -1,73 +1,104 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { AlertCircle, Loader2, Plus, Star, Trash2, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { boardApi, BoardConfigurationResponse, SchoolBoardConfigResponse } from '@/services/api/boardApi';
+import {
+  boardApi,
+  BoardConfigurationResponse,
+  SchoolBoardConfigResponse,
+} from '@/services/api/boardApi';
 
 export function BoardConfigurationManager() {
-  const [boards, setBoards] = useState<BoardConfigurationResponse[]>([]);
-  const [schoolBoardConfig, setSchoolBoardConfig] = useState<SchoolBoardConfigResponse | null>(null);
-  const [selectedBoardId, setSelectedBoardId] = useState<string>('');
+  const [allBoards, setAllBoards] = useState<BoardConfigurationResponse[]>([]);
+  const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
+  const [addingBoardId, setAddingBoardId] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [addingLoading, setAddingLoading] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadBoardsAndConfig();
+    loadData();
   }, []);
 
-  const loadBoardsAndConfig = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const [boardsRes, configRes] = await Promise.all([
+      const [boardsRes, schoolBoardsRes] = await Promise.all([
         boardApi.getAllBoards(),
-        boardApi.getSchoolBoardConfig().catch(() => null)
+        boardApi.getSchoolBoards().catch(() => ({ boards: [], total: 0 })),
       ]);
-      
-      setBoards(boardsRes.boards || []);
-      if (configRes) {
-        setSchoolBoardConfig(configRes);
-        setSelectedBoardId(configRes.boardConfigurationId || '');
-      }
-    } catch (error) {
-      console.error('Error loading boards:', error);
+      setAllBoards(boardsRes.boards || []);
+      setSchoolBoards(schoolBoardsRes.boards || []);
+    } catch {
       toast.error('Failed to load board configurations');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSaveBoard = async () => {
-    if (!selectedBoardId) {
-      toast.error('Please select a board');
+  const handleAddBoard = async () => {
+    if (!addingBoardId) {
+      toast.error('Please select a board to add');
       return;
     }
-
     try {
-      setSaving(true);
-      await boardApi.setSchoolBoardConfig({
-        boardConfigurationId: selectedBoardId
+      setAddingLoading(true);
+      await boardApi.addSchoolBoard({
+        boardConfigurationId: addingBoardId,
+        setAsDefault: schoolBoards.length === 0,
       });
-      
-      toast.success('Board configuration updated successfully');
-      await loadBoardsAndConfig();
-    } catch (error: any) {
-      toast.error(error?.message || 'Failed to update board configuration');
+      setAddingBoardId('');
+      toast.success('Board added successfully');
+      await loadData();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? e?.message ?? 'Failed to add board');
     } finally {
-      setSaving(false);
+      setAddingLoading(false);
     }
   };
 
-  const selectedBoard = boards.find(b => b.id === selectedBoardId);
+  const handleRemove = async (id: string) => {
+    try {
+      setRemovingId(id);
+      await boardApi.removeSchoolBoard(id);
+      toast.success('Board removed');
+      await loadData();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? e?.message ?? 'Failed to remove board');
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const handleSetDefault = async (id: string) => {
+    try {
+      setSettingDefaultId(id);
+      await boardApi.setDefaultBoard(id);
+      toast.success('Default board updated');
+      await loadData();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? e?.message ?? 'Failed to set default');
+    } finally {
+      setSettingDefaultId(null);
+    }
+  };
+
+  // Boards not yet added to this school
+  const availableToAdd = allBoards.filter(
+    (b) => !schoolBoards.some((s) => s.boardConfigurationId === b.id)
+  );
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Board Configuration</CardTitle>
         <CardDescription>
-          Set the default curriculum board for your school. Classes can override this setting individually.
+          Configure which curriculum boards your school supports. Mark one as the default.
+          Only configured boards will appear when creating classes.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -77,114 +108,112 @@ export function BoardConfigurationManager() {
           </div>
         ) : (
           <>
-            {/* Current Board Info */}
-            {schoolBoardConfig && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="font-medium text-blue-900">Current Board: {schoolBoardConfig.boardName}</p>
-                    <p className="text-sm text-blue-700 mt-1">Code: {schoolBoardConfig.boardCode}</p>
+            {/* Configured Boards List */}
+            {schoolBoards.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Configured Boards</p>
+                {schoolBoards.map((sb) => (
+                  <div
+                    key={sb.id}
+                    className="flex items-center justify-between rounded-lg border px-4 py-3 bg-slate-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      {sb.isDefault && (
+                        <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{sb.boardName}</span>
+                          <span className="text-xs text-muted-foreground">({sb.boardCode})</span>
+                          {sb.isDefault && (
+                            <Badge variant="secondary" className="text-xs">Default</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{sb.boardLevel}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!sb.isDefault && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={settingDefaultId === sb.id}
+                          onClick={() => handleSetDefault(sb.id)}
+                          title="Set as default"
+                        >
+                          {settingDefaultId === sb.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Star className="h-3.5 w-3.5" />
+                          )}
+                          <span className="ml-1 text-xs">Set Default</span>
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        disabled={removingId === sb.id}
+                        onClick={() => handleRemove(sb.id)}
+                        title="Remove board"
+                      >
+                        {removingId === sb.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground text-sm border rounded-lg bg-slate-50">
+                No boards configured yet. Add a board below to get started.
+              </div>
+            )}
+
+            {/* Add Board */}
+            {availableToAdd.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Add a Board</p>
+                <div className="flex gap-2">
+                  <Select value={addingBoardId} onValueChange={setAddingBoardId}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select board to add..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableToAdd.map((board) => (
+                        <SelectItem key={board.id} value={board.id}>
+                          {board.name} ({board.code}) â€” {board.boardLevel}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleAddBoard} disabled={addingLoading || !addingBoardId}>
+                    {addingLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    <span className="ml-1">Add</span>
+                  </Button>
                 </div>
               </div>
             )}
 
-            {/* Board Selection */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="board-select">Select Default Board for All Classes</Label>
-                <p className="text-xs text-muted-foreground mt-1 mb-3">
-                  Classes can override this board for specific curriculum needs
-                </p>
-                <Select value={selectedBoardId} onValueChange={setSelectedBoardId}>
-                  <SelectTrigger id="board-select">
-                    <SelectValue placeholder="Choose a board..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {boards.map((board) => (
-                      <SelectItem key={board.id} value={board.id}>
-                        <div className="flex items-center gap-2">
-                          <span>{board.name}</span>
-                          <span className="text-xs text-muted-foreground">({board.code})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Board Details */}
-              {selectedBoard && (
-                <div className="bg-slate-50 rounded-lg p-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Board Level</p>
-                      <p className="text-sm mt-1">{selectedBoard.boardLevel}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Grading System</p>
-                      <p className="text-sm mt-1">{selectedBoard.gradingSystem}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Passing Percentage</p>
-                      <p className="text-sm mt-1">{selectedBoard.overallPassingPercentage}%</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground">Max Grade Point</p>
-                      <p className="text-sm mt-1">{selectedBoard.maxGradePoint}</p>
-                    </div>
-                  </div>
-                  
-                  {selectedBoard.description && (
-                    <div className="pt-3 border-t">
-                      <p className="text-xs font-semibold text-muted-foreground mb-1">Description</p>
-                      <p className="text-sm text-muted-foreground">{selectedBoard.description}</p>
-                    </div>
-                  )}
-
-                  {/* Grading Scale Preview */}
-                  <div className="pt-3 border-t">
-                    <p className="text-xs font-semibold text-muted-foreground mb-2">Grading Scale</p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {selectedBoard.gradingScale.slice(0, 8).map((entry, idx) => (
-                        <div key={idx} className="bg-white rounded p-2 text-center">
-                          <p className="font-semibold text-sm">{entry.grade}</p>
-                          <p className="text-xs text-muted-foreground">{entry.minPercentage}-{entry.maxPercentage}%</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Info Box */}
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-800">
-                  <p className="font-medium">Multi-Board Support</p>
-                  <p className="text-xs mt-1">Your school can use multiple boards. Set a default here, then override per class in Class Management.</p>
-                </div>
-              </div>
+            {/* Info */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                Only the boards configured here will appear when creating classes. A board cannot be
+                removed if it has classes assigned to it.
+              </p>
             </div>
-
-            <Button 
-              onClick={handleSaveBoard} 
-              disabled={saving || !selectedBoardId}
-              className="w-full"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Board Configuration'
-              )}
-            </Button>
           </>
         )}
       </CardContent>
     </Card>
   );
 }
+

@@ -41,6 +41,7 @@ import {
   type ExamSetupSubjectDto, type StudentExamResultSummaryDto,
 } from '@/services/api/examSetupApi';
 import { academicApi } from '@/services/api/academicApi';
+import { boardApi, type SchoolBoardConfigResponse } from '@/services/api/boardApi';
 
 // ─── Status config ───────────────────────────────────────────────────────────
 
@@ -62,7 +63,9 @@ export function ExamSetupManager() {
 
   const [filterYear, setFilterYear] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterBoard, setFilterBoard] = useState<string>('');
   const [years, setYears] = useState<string[]>([]);
+  const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
 
   // ─── List state ─────────────────────────────────────────────────────────────
 
@@ -103,6 +106,7 @@ export function ExamSetupManager() {
     try {
       const res = await getExamSetups({
         academicYear: filterYear || undefined,
+        boardConfigurationId: filterBoard || undefined,
         status: filterStatus || undefined,
         page,
         pageSize: 20,
@@ -114,7 +118,7 @@ export function ExamSetupManager() {
     } finally {
       setLoading(false);
     }
-  }, [filterYear, filterStatus, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterYear, filterBoard, filterStatus, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadList(); }, [loadList]);
 
@@ -122,6 +126,9 @@ export function ExamSetupManager() {
   useEffect(() => {
     academicApi.listAcademicYears(1, 50)
       .then(res => setYears((res.academicYears ?? []).map(a => a.name)))
+      .catch(() => {});
+    boardApi.getSchoolBoards()
+      .then(res => setSchoolBoards(res.boards ?? []))
       .catch(() => {});
   }, []);
 
@@ -245,6 +252,17 @@ export function ExamSetupManager() {
               {Object.entries(STATUS_CFG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
             </SelectContent>
           </Select>
+          {schoolBoards.length > 1 && (
+            <Select value={filterBoard} onValueChange={v => { setFilterBoard(v === '_all' ? '' : v); setPage(1); }}>
+              <SelectTrigger className="h-8 w-40 text-sm">
+                <SelectValue placeholder="All Boards" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">All Boards</SelectItem>
+                {schoolBoards.map(b => <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>{b.boardName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <Button size="sm" onClick={() => setWizardOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
@@ -295,7 +313,9 @@ export function ExamSetupManager() {
                       <TableCell>
                         <div>
                           <p className="font-medium text-sm leading-tight">{setup.name}</p>
-                          {setup.boardName && <p className="text-xs text-muted-foreground">{setup.boardName}</p>}
+                          {setup.boardName && (
+                            <Badge variant="outline" className="mt-0.5 text-[10px] px-1.5 py-0 bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400">{setup.boardName}</Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">
@@ -375,8 +395,7 @@ export function ExamSetupManager() {
       <ExamCreationWizard
         open={wizardOpen}
         onOpenChange={setWizardOpen}
-        onCreated={() => { loadList(); }}
-      />
+        onCreated={() => { loadList(); }}        boardConfigurationId={filterBoard || undefined}      />
 
       {/* ── Marks Entry Dialog ── */}
       <Dialog open={marksOpen} onOpenChange={setMarksOpen}>

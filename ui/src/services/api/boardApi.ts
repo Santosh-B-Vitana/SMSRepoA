@@ -51,9 +51,22 @@ export interface SchoolBoardConfigResponse {
   academicYear?: string;
   boardName: string;
   boardCode: string;
+  boardLevel: string;
   isActive: boolean;
+  isDefault: boolean;
   effectiveGradingScale: GradeScaleEntry[];
   effectiveExamStructure: ExamStructureEntry[];
+  board: BoardConfigurationResponse;
+}
+
+export interface SchoolBoardListResponse {
+  boards: SchoolBoardConfigResponse[];
+  total: number;
+}
+
+export interface AddSchoolBoardRequest {
+  boardConfigurationId: string;
+  setAsDefault?: boolean;
 }
 
 export interface SetSchoolBoardConfigRequest {
@@ -117,6 +130,31 @@ export const boardApi = {
   // Get effective exam structure for school
   async getExamStructure(): Promise<ExamStructureEntry[]> {
     const response = await apiClient.get('/board/exam-structure');
+    return response.data;
+  },
+
+  // ── Multi-board school config ───────────────────────────────────────────
+
+  // List all boards configured for this school
+  async getSchoolBoards(): Promise<SchoolBoardListResponse> {
+    const response = await apiClient.get('/board/school-boards');
+    return response.data;
+  },
+
+  // Add a board to this school's configured boards
+  async addSchoolBoard(request: AddSchoolBoardRequest): Promise<SchoolBoardConfigResponse> {
+    const response = await apiClient.post('/board/school-boards', request);
+    return response.data;
+  },
+
+  // Remove a board from this school's configured boards
+  async removeSchoolBoard(id: string): Promise<void> {
+    await apiClient.delete(`/board/school-boards/${id}`);
+  },
+
+  // Set a board as the default for this school
+  async setDefaultBoard(id: string): Promise<SchoolBoardConfigResponse> {
+    const response = await apiClient.patch(`/board/school-boards/${id}/set-default`);
     return response.data;
   }
 };

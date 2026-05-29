@@ -133,14 +133,19 @@ export default function ParentDashboard() {
 
   useEffect(() => { if (selectedChild) { loadExams(selectedChild); loadDiary(selectedChild); } }, [selectedChild, loadExams, loadDiary]);
 
+  // Reload dashboard notifications whenever the selected child changes
+  useEffect(() => {
+    if (!selectedChild) return;
+    notificationApi.getMyNotifications({ page: 1, pageSize: 5, studentId: selectedChild })
+      .then(res => { setNotifications(res.notifications); setUnreadCount(res.unreadCount); })
+      .catch(() => {});
+  }, [selectedChild]);
+
   useEffect(() => {
     (async () => {
       try {
-        const [kids, notif] = await Promise.all([
-          studentApi.getMyChildren(),
-          notificationApi.getMyNotifications({ page: 1, pageSize: 5 }).catch(() => ({ notifications: [], unreadCount: 0, total: 0, page: 1, pageSize: 5, totalPages: 0 })),
-        ]);
-        setChildren(kids); setNotifications(notif.notifications); setUnreadCount(notif.unreadCount);
+        const kids = await studentApi.getMyChildren();
+        setChildren(kids);
         if (kids.length > 0) {
           setSelectedChild(kids[0].id);
           const map = new Map<string, ChildDashboardData>();

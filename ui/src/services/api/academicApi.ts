@@ -34,7 +34,8 @@ export interface ClassListResponse {
 export interface CreateClassRequest {
   name?: string;
   standard: string;
-  section: string;
+  section?: string;
+  numberOfSections?: number;
   academicYear: string;
   classTeacherId?: string;
   classTeacher?: string;
@@ -98,6 +99,8 @@ export interface SubjectBasic {
   name: string;
   code: string;
   board?: string;
+  boardConfigurationId?: string;
+  boardName?: string;
   type?: string;
 }
 
@@ -121,6 +124,7 @@ export interface CreateSubjectRequest {
   code: string;
   description?: string;
   board?: string;
+  boardConfigurationId?: string;
   type?: string;
   creditHours?: number;
   schoolId?: string;
@@ -332,8 +336,13 @@ export const academicApi = {
     apiDelete<void>(`/academics/sections/${id}`),
 
   // ========== Subjects ==========
-  listSubjects: (page = 1, pageSize = 50) =>
-    apiGet<SubjectListResponse>('/academics/subjects', { page, pageSize }),
+  listSubjects: (page = 1, pageSize = 20, search?: string, type?: string, boardConfigurationId?: string) =>
+    apiGet<SubjectListResponse>('/academics/subjects', {
+      page, pageSize,
+      ...(search ? { search } : {}),
+      ...(type ? { type } : {}),
+      ...(boardConfigurationId === 'school_default_filter' ? { noBoardOnly: true } : boardConfigurationId ? { boardConfigurationId } : {}),
+    }),
 
   getSubject: (id: string) =>
     apiGet<SubjectResponse>(`/academics/subjects/${id}`),

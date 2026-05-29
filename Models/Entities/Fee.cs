@@ -72,7 +72,11 @@ namespace SmsApi.Models.Entities
         public string? InstallmentDueDates { get; set; } // JSON array
 
         public bool IsActive { get; set; } = true;
-        
+
+        [ForeignKey("BoardConfig")]
+        public Guid? BoardConfigurationId { get; set; }
+        public virtual BoardConfiguration? BoardConfig { get; set; }
+
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
 

@@ -16,7 +16,7 @@ namespace SmsApi.Services
 {
     public interface IFeeService
     {
-        Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null);
+        Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null, Guid? boardConfigurationId = null);
         Task<FeeStructureResponse?> GetFeeStructureByIdAsync(Guid id, Guid schoolId);
         Task<FeeStructureResponse> CreateFeeStructureAsync(CreateFeeStructureRequest request);
         Task<FeeListResponse> GetFeeRecordsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, string? academicYear = null);
@@ -92,19 +92,20 @@ namespace SmsApi.Services
             _scopeFactory = scopeFactory;
         }
 
-        public async Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null)
+        public async Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null, Guid? boardConfigurationId = null)
         {
-            var query = _context.FeeStructures.Where(f => f.SchoolId == schoolId);
+            var query = _context.FeeStructures
+                .Include(f => f.BoardConfig)
+                .Where(f => f.SchoolId == schoolId);
 
             if (!string.IsNullOrWhiteSpace(classFilter))
-            {
                 query = query.Where(f => f.Class == classFilter);
-            }
 
             if (!string.IsNullOrWhiteSpace(academicYear))
-            {
                 query = query.Where(f => f.AcademicYear == academicYear);
-            }
+
+            if (boardConfigurationId.HasValue)
+                query = query.Where(f => f.BoardConfigurationId == boardConfigurationId.Value);
 
             var structures = await query
                 .Select(f => new FeeStructureResponse
@@ -114,7 +115,9 @@ namespace SmsApi.Services
                     Name = f.Name,
                     Class = f.Class,
                     AcademicYear = f.AcademicYear,
-                    
+                    BoardConfigurationId = f.BoardConfigurationId,
+                    BoardName = f.BoardConfig != null ? f.BoardConfig.Name : null,
+
                     // Components
                     TuitionFee = f.TuitionFee,
                     AdmissionFee = f.AdmissionFee,
@@ -129,12 +132,12 @@ namespace SmsApi.Services
                     DevelopmentFee = f.DevelopmentFee,
                     Miscellaneous = f.Miscellaneous,
                     TotalAmount = f.TotalAmount,
-                    
+
                     // Installments
                     InstallmentCount = f.InstallmentCount,
                     InstallmentAmounts = f.InstallmentAmounts,
                     InstallmentDueDates = f.InstallmentDueDates,
-                    
+
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
@@ -152,6 +155,7 @@ namespace SmsApi.Services
         public async Task<FeeStructureResponse?> GetFeeStructureByIdAsync(Guid id, Guid schoolId)
         {
             return await _context.FeeStructures
+                .Include(f => f.BoardConfig)
                 .Where(f => f.Id == id && f.SchoolId == schoolId)
                 .Select(f => new FeeStructureResponse
                 {
@@ -160,7 +164,9 @@ namespace SmsApi.Services
                     Name = f.Name,
                     Class = f.Class,
                     AcademicYear = f.AcademicYear,
-                    
+                    BoardConfigurationId = f.BoardConfigurationId,
+                    BoardName = f.BoardConfig != null ? f.BoardConfig.Name : null,
+
                     // Components
                     TuitionFee = f.TuitionFee,
                     AdmissionFee = f.AdmissionFee,
@@ -175,12 +181,12 @@ namespace SmsApi.Services
                     DevelopmentFee = f.DevelopmentFee,
                     Miscellaneous = f.Miscellaneous,
                     TotalAmount = f.TotalAmount,
-                    
+
                     // Installments
                     InstallmentCount = f.InstallmentCount,
                     InstallmentAmounts = f.InstallmentAmounts,
                     InstallmentDueDates = f.InstallmentDueDates,
-                    
+
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
@@ -272,11 +278,20 @@ namespace SmsApi.Services
                 
                 Description = request.Description,
                 CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                BoardConfigurationId = request.BoardConfigurationId
             };
 
             _context.FeeStructures.Add(structure);
             await _context.SaveChangesAsync();
+
+            // Reload with board name
+            var boardName = request.BoardConfigurationId.HasValue
+                ? await _context.BoardConfigurations
+                    .Where(b => b.Id == request.BoardConfigurationId.Value)
+                    .Select(b => b.Name)
+                    .FirstOrDefaultAsync()
+                : null;
 
             return new FeeStructureResponse
             {
@@ -285,7 +300,9 @@ namespace SmsApi.Services
                 Name = structure.Name,
                 Class = structure.Class,
                 AcademicYear = structure.AcademicYear,
-                
+                BoardConfigurationId = structure.BoardConfigurationId,
+                BoardName = boardName,
+
                 TuitionFee = structure.TuitionFee,
                 AdmissionFee = structure.AdmissionFee,
                 ExamFee = structure.ExamFee,
@@ -299,11 +316,11 @@ namespace SmsApi.Services
                 DevelopmentFee = structure.DevelopmentFee,
                 Miscellaneous = structure.Miscellaneous,
                 TotalAmount = structure.TotalAmount,
-                
+
                 InstallmentCount = structure.InstallmentCount,
                 InstallmentAmounts = structure.InstallmentAmounts,
                 InstallmentDueDates = structure.InstallmentDueDates,
-                
+
                 Description = structure.Description,
                 CreatedAt = structure.CreatedAt,
                 UpdatedAt = structure.UpdatedAt
@@ -2137,8 +2154,20 @@ namespace SmsApi.Services
             if (request.InstallmentAmounts != null)  structure.InstallmentAmounts  = request.InstallmentAmounts;
             if (request.InstallmentDueDates != null) structure.InstallmentDueDates = request.InstallmentDueDates;
 
+            // Allow updating board — pass Guid.Empty to clear it
+            if (request.BoardConfigurationId.HasValue)
+                structure.BoardConfigurationId = request.BoardConfigurationId == Guid.Empty ? null : request.BoardConfigurationId;
+
             structure.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            // Reload board name
+            var boardName = structure.BoardConfigurationId.HasValue
+                ? await _context.BoardConfigurations
+                    .Where(b => b.Id == structure.BoardConfigurationId.Value)
+                    .Select(b => b.Name)
+                    .FirstOrDefaultAsync()
+                : null;
 
             return new FeeStructureResponse
             {
@@ -2147,6 +2176,8 @@ namespace SmsApi.Services
                 Name = structure.Name,
                 Class = structure.Class,
                 AcademicYear = structure.AcademicYear,
+                BoardConfigurationId = structure.BoardConfigurationId,
+                BoardName = boardName,
                 TuitionFee = structure.TuitionFee,
                 AdmissionFee = structure.AdmissionFee,
                 ExamFee = structure.ExamFee,
@@ -2541,13 +2572,31 @@ namespace SmsApi.Services
         {
             try
             {
-                var parentUserIds = await _context.GuardianStudents
+                // Path 1 (legacy): StudentGuardians email → UserLogins
+                var guardianEmails = await _context.StudentGuardians
+                    .Where(sg => sg.StudentId == studentId && sg.SchoolId == schoolId && sg.Email != null)
+                    .Select(sg => sg.Email!.ToLower())
+                    .Distinct()
+                    .ToListAsync();
+
+                var legacyIds = guardianEmails.Any()
+                    ? await _context.UserLogins
+                        .Where(ul => ul.SchoolId == schoolId && guardianEmails.Contains(ul.Email.ToLower()))
+                        .Select(ul => ul.Id)
+                        .Distinct()
+                        .ToListAsync()
+                    : new List<Guid>();
+
+                // Path 2 (new): GuardianStudents → Guardian.UserLoginId
+                var newIds = await _context.GuardianStudents
                     .Include(gs => gs.Guardian)
                     .Where(gs => gs.StudentId == studentId && gs.SchoolId == schoolId && gs.CanViewFees
                                  && gs.Guardian != null && gs.Guardian.UserLoginId != null)
                     .Select(gs => gs.Guardian!.UserLoginId!.Value)
                     .Distinct()
                     .ToListAsync();
+
+                var parentUserIds = legacyIds.Union(newIds).Distinct().ToList();
 
                 foreach (var userId in parentUserIds)
                 {
@@ -2566,6 +2615,7 @@ namespace SmsApi.Services
                         ActionUrl = "/parent-fees",
                         IsRead = false,
                         SenderName = "School Fee Office",
+                        StudentId = studentId,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow,
                     });

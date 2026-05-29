@@ -26,7 +26,7 @@ namespace SmsApi.Services
         Task<bool> DeleteSectionAsync(Guid id, Guid schoolId);
 
         // Subjects
-        Task<SubjectListResponse> GetSubjectsAsync(Guid schoolId, int page = 1, int pageSize = 10);
+        Task<SubjectListResponse> GetSubjectsAsync(Guid schoolId, int page = 1, int pageSize = 10, string? search = null, string? type = null, Guid? boardConfigurationId = null, bool noBoardOnly = false);
         Task<SubjectResponse?> GetSubjectByIdAsync(Guid id, Guid schoolId);
         Task<SubjectResponse> CreateSubjectAsync(CreateSubjectRequest request);
         Task<SubjectResponse?> UpdateSubjectAsync(Guid id, Guid schoolId, CreateSubjectRequest request);
@@ -245,17 +245,50 @@ namespace SmsApi.Services
                 throw new InvalidOperationException("Class name/standard is required");
 
             var className = normalizedName.Trim();
-            var duplicateClass = await _context.Classes
-                .AnyAsync(c => c.SchoolId == request.SchoolId &&
-                               c.Name.ToLower() == className.ToLower());
-            if (duplicateClass)
-                throw new InvalidOperationException("A class with the same name already exists");
+
+            // Uniqueness check: same standard + same board
+            if (request.BoardConfigurationId.HasValue)
+            {
+                var duplicateBoardClass = await _context.Classes
+                    .IgnoreQueryFilters()
+                    .Where(c => !c.IsDeleted && c.SchoolId == request.SchoolId &&
+                                   c.Name.ToLower() == className.ToLower() &&
+                                   c.BoardConfigurationId == request.BoardConfigurationId)
+                    .AnyAsync();
+                if (duplicateBoardClass)
+                    throw new InvalidOperationException($"A class '{className}' for this board already exists");
+
+                // Validate board is in school's active boards
+                var boardIsConfigured = await _context.SchoolBoardConfigs
+                    .AnyAsync(s => s.SchoolId == request.SchoolId &&
+                                   s.BoardConfigurationId == request.BoardConfigurationId &&
+                                   s.IsActive);
+                if (!boardIsConfigured)
+                    throw new InvalidOperationException("The selected board is not configured for this school. Add it in Settings → Board first.");
+            }
+            else
+            {
+                // No board specified: use legacy name-only uniqueness
+                var duplicateClass = await _context.Classes
+                    .IgnoreQueryFilters()
+                    .Where(c => !c.IsDeleted && c.SchoolId == request.SchoolId &&
+                                   c.Name.ToLower() == className.ToLower() &&
+                                   c.BoardConfigurationId == null)
+                    .AnyAsync();
+                if (duplicateClass)
+                    throw new InvalidOperationException("A class with the same name already exists");
+            }
 
             var normalizedStatus = NormalizeStatus(request.Status, AllowedClassStatuses, "active", "class");
             var normalizedCode = string.IsNullOrWhiteSpace(request.Code) ? null : request.Code.Trim();
-            var normalizedSection = string.IsNullOrWhiteSpace(request.Section) ? null : request.Section.Trim();
             if (request.Capacity.HasValue && request.Capacity <= 0)
                 throw new InvalidOperationException("Class capacity must be greater than 0");
+
+            var numberOfSections = request.NumberOfSections > 0 ? request.NumberOfSections : 1;
+
+            var academicYear = !string.IsNullOrWhiteSpace(request.AcademicYear)
+                ? request.AcademicYear!
+                : await GetCurrentAcademicYearNameAsync(request.SchoolId);
 
             var classEntity = new Class
             {
@@ -266,6 +299,7 @@ namespace SmsApi.Services
                 Board = request.Board,
                 BoardConfigurationId = request.BoardConfigurationId,
                 Capacity = request.Capacity,
+                NumberOfSections = numberOfSections,
                 Status = normalizedStatus,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -277,9 +311,13 @@ namespace SmsApi.Services
             // Reload with navigation properties
             await _context.Entry(classEntity).Reference(c => c.BoardConfig).LoadAsync();
 
-            if (!string.IsNullOrWhiteSpace(normalizedSection))
+            // Auto-create sections A, B, C... based on numberOfSections
+            var sectionLabels = Enumerable.Range(0, numberOfSections)
+                .Select(i => ((char)('A' + i)).ToString())
+                .ToList();
+
+            foreach (var sectionName in sectionLabels)
             {
-                var sectionName = normalizedSection;
                 var existingSection = await _context.Sections.FirstOrDefaultAsync(s =>
                     s.SchoolId == request.SchoolId && s.ClassId == classEntity.Id && s.Name == sectionName);
                 if (existingSection == null)
@@ -295,22 +333,17 @@ namespace SmsApi.Services
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     });
-                    await _context.SaveChangesAsync();
                 }
             }
-
-            var academicYear = !string.IsNullOrWhiteSpace(request.AcademicYear)
-                ? request.AcademicYear!
-                : await GetCurrentAcademicYearNameAsync(request.SchoolId);
+            await _context.SaveChangesAsync();
 
             var totalStudents = await _context.Students
-                .CountAsync(s => s.SchoolId == request.SchoolId && s.Class == classEntity.Name
-                    && (string.IsNullOrWhiteSpace(normalizedSection) || s.Section == normalizedSection));
+                .CountAsync(s => s.SchoolId == request.SchoolId && s.Class == classEntity.Name);
 
             return MapToClassResponse(
                 classEntity,
                 classEntity.Name,
-                normalizedSection ?? string.Empty,
+                sectionLabels.FirstOrDefault() ?? string.Empty,
                 academicYear,
                 totalStudents,
                 request.ClassTeacher,
@@ -682,13 +715,26 @@ namespace SmsApi.Services
         }
 
         // Subjects Implementation
-        public async Task<SubjectListResponse> GetSubjectsAsync(Guid schoolId, int page = 1, int pageSize = 10)
+        public async Task<SubjectListResponse> GetSubjectsAsync(Guid schoolId, int page = 1, int pageSize = 10, string? search = null, string? type = null, Guid? boardConfigurationId = null, bool noBoardOnly = false)
         {
             EnsureSchoolId(schoolId);
             NormalizePagination(ref page, ref pageSize);
             var query = _context.Subjects
                 .Include(s => s.SubjectTypeRef)
+                .Include(s => s.BoardConfig)
                 .Where(s => s.SchoolId == schoolId);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var q = search.Trim().ToLower();
+                query = query.Where(s => s.Name.ToLower().Contains(q) || s.Code.ToLower().Contains(q));
+            }
+            if (!string.IsNullOrWhiteSpace(type))
+                query = query.Where(s => s.Type != null && s.Type.ToLower() == type.ToLower());
+            if (noBoardOnly)
+                query = query.Where(s => s.BoardConfigurationId == null);
+            else if (boardConfigurationId.HasValue)
+                query = query.Where(s => s.BoardConfigurationId == boardConfigurationId.Value);
 
             var total = await query.CountAsync();
             var subjects = await query
@@ -710,6 +756,7 @@ namespace SmsApi.Services
         {
             var subject = await _context.Subjects
                 .Include(s => s.SubjectTypeRef)
+                .Include(s => s.BoardConfig)
                 .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
 
             return subject == null ? null : MapToSubjectResponse(subject);
@@ -741,6 +788,7 @@ namespace SmsApi.Services
                 Code = subjectCode,
                 Type = request.Type,
                 SubjectTypeId = request.SubjectTypeId,
+                BoardConfigurationId = request.BoardConfigurationId,
                 MaxMarks = request.MaxMarks,
                 TheoryMaxMarks = request.TheoryMaxMarks,
                 PracticalMaxMarks = request.PracticalMaxMarks,
@@ -754,6 +802,7 @@ namespace SmsApi.Services
             _context.Subjects.Add(subject);
             await _context.SaveChangesAsync();
             await _context.Entry(subject).Reference(s => s.SubjectTypeRef).LoadAsync();
+            await _context.Entry(subject).Reference(s => s.BoardConfig).LoadAsync();
 
             return MapToSubjectResponse(subject);
         }
@@ -784,6 +833,7 @@ namespace SmsApi.Services
             subject.Code = subjectCode;
             subject.Type = request.Type;
             subject.SubjectTypeId = request.SubjectTypeId;
+            subject.BoardConfigurationId = request.BoardConfigurationId;
             subject.MaxMarks = request.MaxMarks;
             subject.TheoryMaxMarks = request.TheoryMaxMarks;
             subject.PracticalMaxMarks = request.PracticalMaxMarks;
@@ -794,6 +844,7 @@ namespace SmsApi.Services
 
             await _context.SaveChangesAsync();
             await _context.Entry(subject).Reference(s => s.SubjectTypeRef).LoadAsync();
+            await _context.Entry(subject).Reference(s => s.BoardConfig).LoadAsync();
 
             return MapToSubjectResponse(subject);
         }
@@ -1696,6 +1747,8 @@ namespace SmsApi.Services
                 Type = subject.Type,
                 SubjectTypeId = subject.SubjectTypeId,
                 SubjectTypeName = subject.SubjectTypeRef?.Name,
+                BoardConfigurationId = subject.BoardConfigurationId,
+                BoardName = subject.BoardConfig?.Name,
                 MaxMarks = subject.MaxMarks,
                 TheoryMaxMarks = subject.TheoryMaxMarks,
                 PracticalMaxMarks = subject.PracticalMaxMarks,

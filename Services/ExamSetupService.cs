@@ -22,7 +22,7 @@ namespace SmsApi.Services
 
         // ExamSetup CRUD
         Task<PaginatedResponse<ExamSetupBasicDto>> GetExamSetupsAsync(
-            Guid schoolId, string? academicYear, Guid? classId, string? status, int page, int pageSize);
+            Guid schoolId, string? academicYear, Guid? classId, Guid? boardConfigurationId, string? status, int page, int pageSize);
         Task<ExamSetupDetailDto?> GetExamSetupByIdAsync(Guid schoolId, Guid id);
         Task<ExamSetupDetailDto> CreateExamSetupAsync(Guid schoolId, CreateExamSetupDto dto);
         Task<ExamSetupDetailDto> UpdateExamSetupAsync(Guid schoolId, Guid id, CreateExamSetupDto dto);
@@ -181,7 +181,7 @@ namespace SmsApi.Services
         // ─────────────────────────────────────────────────────────────────────
 
         public async Task<PaginatedResponse<ExamSetupBasicDto>> GetExamSetupsAsync(
-            Guid schoolId, string? academicYear, Guid? classId, string? status, int page, int pageSize)
+            Guid schoolId, string? academicYear, Guid? classId, Guid? boardConfigurationId, string? status, int page, int pageSize)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 20;
@@ -200,6 +200,8 @@ namespace SmsApi.Services
                 query = query.Where(e => e.AcademicYear == academicYear);
             if (classId.HasValue)
                 query = query.Where(e => e.ClassId == classId.Value);
+            if (boardConfigurationId.HasValue)
+                query = query.Where(e => e.BoardConfigurationId == boardConfigurationId.Value);
             if (!string.IsNullOrWhiteSpace(status))
                 query = query.Where(e => e.Status == status);
 
@@ -844,26 +846,46 @@ namespace SmsApi.Services
                 reportCardsGenerated++;
 
                 // Notify parents via Notification entity
-                var guardianLinks = await _context.GuardianStudents
-                    .Where(gs => gs.StudentId == studentId)
-                    .Include(gs => gs.Guardian)
+                // Path 1 (legacy): StudentGuardians email → UserLogins
+                var guardianEmails = await _context.StudentGuardians
+                    .Where(sg => sg.StudentId == studentId && sg.SchoolId == schoolId && sg.Email != null)
+                    .Select(sg => sg.Email!.ToLower())
+                    .Distinct()
                     .ToListAsync();
 
-                foreach (var link in guardianLinks)
-                {
-                    if (link.Guardian?.UserLoginId == null) continue;
+                var legacyParentIds = guardianEmails.Any()
+                    ? await _context.UserLogins
+                        .Where(ul => ul.SchoolId == schoolId && guardianEmails.Contains(ul.Email.ToLower()))
+                        .Select(ul => ul.Id)
+                        .Distinct()
+                        .ToListAsync()
+                    : new List<Guid>();
 
+                // Path 2 (new): GuardianStudents → Guardian.UserLoginId
+                var newParentIds = await _context.GuardianStudents
+                    .Where(gs => gs.StudentId == studentId)
+                    .Include(gs => gs.Guardian)
+                    .Where(gs => gs.Guardian != null && gs.Guardian.UserLoginId != null)
+                    .Select(gs => gs.Guardian!.UserLoginId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+                var allParentIds = legacyParentIds.Union(newParentIds).Distinct().ToList();
+
+                foreach (var parentUserId in allParentIds)
+                {
                     _context.Notifications.Add(new Notification
                     {
                         SchoolId = schoolId,
-                        RecipientId = link.Guardian.UserLoginId.Value,
+                        RecipientId = parentUserId,
                         RecipientType = "Parent",
                         Title = "Exam Results Published",
                         Content = $"Results for {setup.Name} have been published. Login to view your child's report card.",
                         Type = "Exam",
                         ReferenceId = setup.Id,
                         ReferenceType = "ExamSetup",
-                        ActionUrl = $"/parent-marks"
+                        ActionUrl = "/parent-marks",
+                        StudentId = studentId,
                     });
                 }
             }

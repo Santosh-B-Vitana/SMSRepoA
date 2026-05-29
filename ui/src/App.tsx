@@ -43,6 +43,7 @@ const Reports              = lazy(() => import("@/pages/Reports"));
 const ReportCards          = lazy(() => import("@/pages/ReportCards"));
 const Timetable            = lazy(() => import("@/pages/Timetable"));
 const Transport            = lazy(() => import("@/pages/Transport"));
+const Syllabus             = lazy(() => import("@/pages/Syllabus"));
 const Library              = lazy(() => import("@/pages/Library"));
 const Hostel               = lazy(() => import("@/pages/Hostel"));
 const Health               = lazy(() => import("@/pages/Health"));
@@ -221,6 +222,7 @@ function App() {
 
                   {/* ── Protected: optional modules ───────────────────────── */}
                    <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/syllabus" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Syllabus /></Layout></ProtectedRoute>} />
                   <Route path="/library" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout></ProtectedRoute>} />
                    <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/health" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout></ProtectedRoute>} />

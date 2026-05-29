@@ -12,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, Users, Plus, Pencil, Trash2, BedDouble, Loader2, Search, DoorOpen, X, ShieldOff } from "lucide-react";
 import { hostelApiClient, HostelRoom, HostelStudent, CreateRoomDto, AssignStudentDto, UpdateHostelStudentDto } from "@/services/api/hostelApi";
+import * as hostelP1Api from "@/services/api/hostelP1Api";
+import type { HostelBlock } from "@/services/api/hostelP1Api";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
 import { usePermissions } from "@/contexts/PermissionsContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -20,7 +22,9 @@ import { useLanguage } from "@/contexts/LanguageContext";
 
 function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose: () => void; onSaved: () => void }) {
   const { t } = useLanguage();
+  const [blocks, setBlocks] = useState<HostelBlock[]>([]);
   const [form, setForm] = useState<CreateRoomDto>({
+    blockId: room?.blockId ?? "",
     roomNumber: room?.roomNumber ?? "",
     roomType: room?.roomType ?? "boys",
     capacity: room?.capacity ?? 4,
@@ -31,6 +35,10 @@ function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose
     facilities: room?.facilities ?? "",
   });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    hostelP1Api.getBlocks().then(setBlocks).catch(() => {});
+  }, []);
 
   function set(k: keyof CreateRoomDto, v: string | number) { setForm(p => ({ ...p, [k]: v })); }
 
@@ -57,6 +65,16 @@ function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>{room ? t('hostel.roomForm.titleEdit') : t('hostel.roomForm.titleAdd')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5 col-span-2">
+            <Label>Block</Label>
+            <Select value={form.blockId ?? "none"} onValueChange={v => setForm(p => ({ ...p, blockId: v === "none" ? "" : v }))}>
+              <SelectTrigger><SelectValue placeholder="No block assigned" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No block assigned</SelectItem>
+                {blocks.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label>{t('hostel.roomForm.roomNumber')} *</Label>
             <Input value={form.roomNumber} onChange={e => set("roomNumber", e.target.value)} placeholder="101" />

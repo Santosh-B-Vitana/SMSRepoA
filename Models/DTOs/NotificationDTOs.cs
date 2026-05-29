@@ -92,6 +92,8 @@ namespace SmsApi.Models.DTOs
         public DateTime? ReadAt { get; set; }
         public string Priority { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+        /// <summary>For parent notifications: the student this notification relates to.</summary>
+        public Guid? StudentId { get; set; }
     }
 
     public class NotificationListResponse

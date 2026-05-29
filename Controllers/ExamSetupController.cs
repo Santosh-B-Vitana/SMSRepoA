@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -21,7 +22,9 @@ namespace SmsApi.Controllers
         private readonly IExamSetupService _service;
         private readonly ILogger<ExamSetupController> _logger;
 
-        public ExamSetupController(IExamSetupService service, ILogger<ExamSetupController> logger)
+        public ExamSetupController(
+            IExamSetupService service,
+            ILogger<ExamSetupController> logger)
         {
             _service = service;
             _logger = logger;
@@ -127,6 +130,7 @@ namespace SmsApi.Controllers
         public async Task<ActionResult<PaginatedResponse<ExamSetupBasicDto>>> GetAll(
             [FromQuery] string? academicYear = null,
             [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? boardConfigurationId = null,
             [FromQuery] string? status = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
@@ -134,7 +138,7 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
-                var result = await _service.GetExamSetupsAsync(schoolId, academicYear, classId, status, page, pageSize);
+                var result = await _service.GetExamSetupsAsync(schoolId, academicYear, classId, boardConfigurationId, status, page, pageSize);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -584,6 +588,88 @@ namespace SmsApi.Controllers
             {
                 _logger.LogError(ex, "Error getting staff student marks");
                 return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // HALL TICKETS
+        // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>Returns the list of enrolled students with their hall ticket numbers for preview/selection UI.</summary>
+        [HttpGet("{id:guid}/hall-ticket-students")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetHallTicketStudents(Guid id, [FromServices] IHallTicketService hallTicketService)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var students = await hallTicketService.GetStudentsForHallTicketsAsync(schoolId, id);
+                return Ok(students);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching hall ticket students for exam setup {Id}", id);
+                return StatusCode(500, new { message = "Failed to fetch students.", error = ex.Message });
+            }
+        }
+
+        /// <summary>Download a single student's hall ticket PDF by enrollment ID.</summary>
+        [HttpGet("{id:guid}/hall-tickets/{enrollmentId:guid}")]
+        [ProducesResponseType(typeof(FileContentResult), 200)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> DownloadSingleHallTicket(Guid id, Guid enrollmentId, [FromServices] IHallTicketService hallTicketService)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var (pdfBytes, fileName) = await hallTicketService.GenerateSingleHallTicketPdfAsync(schoolId, id, enrollmentId);
+                return File(pdfBytes, "application/pdf", fileName);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating single hall ticket for enrollment {EnrollmentId}", enrollmentId);
+                return StatusCode(500, new { message = "Failed to generate hall ticket.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Generate and download a PDF containing one hall ticket per enrolled student.
+        /// The PDF has 2 hall tickets per A4 page and includes school branding, student details,
+        /// subject-wise exam schedule (date, time, venue, max marks) and signature blocks.
+        /// </summary>
+        [HttpGet("{id:guid}/hall-tickets")]
+        [ProducesResponseType(typeof(FileContentResult), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> DownloadHallTickets(Guid id, [FromServices] IHallTicketService hallTicketService)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var (pdfBytes, fileName) = await hallTicketService.GenerateHallTicketsPdfAsync(schoolId, id);
+                return File(pdfBytes, "application/pdf", fileName);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating hall tickets for exam setup {Id}", id);
+                return StatusCode(500, new { message = "Failed to generate hall tickets.", error = ex.Message });
             }
         }
     }

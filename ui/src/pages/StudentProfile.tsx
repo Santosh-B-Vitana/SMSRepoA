@@ -4,8 +4,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { ParentPortalAccountSection } from "@/components/parent/ParentPortalAccountSection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -67,6 +69,7 @@ import { generateProfessionalReportCard, SchoolInfo } from "@/utils/professional
 import { useSchool } from "@/contexts/SchoolContext";
 import { StudentDocumentUpload } from "@/components/students/StudentDocumentUpload";
 import { getExamSetups, getStudentExamSetupResult, type ExamSetupBasicDto, type StudentExamResultSummaryDto } from "@/services/api/examSetupApi";
+import { DisciplineTab } from "@/components/students/DisciplineTab";
 
 export default function StudentProfile() {
   const { user } = useAuth();
@@ -155,6 +158,10 @@ export default function StudentProfile() {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [exitType, setExitType] = useState<'dropout' | 'passout'>('dropout');
   const [showDetainDialog, setShowDetainDialog] = useState(false);
+  // Deactivation dialog state
+  const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [deactivateDate, setDeactivateDate] = useState(new Date().toISOString().slice(0, 10));
   const [promoteData, setPromoteData] = useState({
     newClass: student?.class || '',
     newSection: student?.section || '',
@@ -309,8 +316,19 @@ export default function StudentProfile() {
     if (!student) return;
     setActionLoading(true);
     try {
-      await studentApi.update(student.id, { status: newStatus });
-      setStudent({ ...student, status: newStatus });
+      if (newStatus === 'inactive') {
+        const isoDate = deactivateDate ? new Date(deactivateDate).toISOString() : new Date().toISOString();
+        await studentApi.update(student.id, {
+          status: 'inactive',
+          inactiveReason: deactivateReason || undefined,
+          inactiveDate: isoDate,
+        });
+        setStudent({ ...student, status: 'inactive', inactiveReason: deactivateReason || undefined, inactiveDate: isoDate });
+      } else {
+        await studentApi.update(student.id, { status: 'active', inactiveReason: '', inactiveDate: undefined });
+        setStudent({ ...student, status: 'active', inactiveReason: undefined, inactiveDate: undefined });
+      }
+      setShowDeactivateDialog(false);
       toast({
         title: t('studentProfilePage.successTitle'),
         description: newStatus === 'active' ? t('studentProfilePage.reactivatedSuccess') : t('studentProfilePage.deactivatedSuccess'),
@@ -539,7 +557,11 @@ export default function StudentProfile() {
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     disabled={actionLoading}
-                    onSelect={() => handleStatusChange('inactive')}
+                    onSelect={() => {
+                      setDeactivateReason('');
+                      setDeactivateDate(new Date().toISOString().slice(0, 10));
+                      setShowDeactivateDialog(true);
+                    }}
                   >
                     {t('studentProfilePage.deactivate')}
                   </DropdownMenuItem>
@@ -563,9 +585,27 @@ export default function StudentProfile() {
       {/* Inactive student banner */}
       {student.status !== 'active' && (
         <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
-          <div className="flex items-center gap-2 text-orange-800">
-            <AlertTriangle className="h-5 w-5 shrink-0" />
-            <span className="font-medium">This student is currently <span className="font-bold capitalize">{student.status}</span>. They are hidden from all class lists and their parent portal access is revoked.</span>
+          <div className="flex items-start gap-2 text-orange-800">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-medium">This student is currently <span className="font-bold capitalize">{student.status}</span>. They are hidden from all class lists and their parent portal access is revoked.</span>
+              {(student.inactiveReason || student.inactiveDate) && (
+                <div className="mt-1 text-sm text-orange-700 flex flex-wrap gap-3">
+                  {student.inactiveReason && (
+                    <span><span className="font-medium">Reason:</span> {{
+                      passed_out: 'Passed Out',
+                      dropped_out: 'Dropped Out',
+                      transferred: 'Transferred',
+                      admin_deactivation: 'Admin Deactivation',
+                      other: 'Other',
+                    }[student.inactiveReason] ?? student.inactiveReason}</span>
+                  )}
+                  {student.inactiveDate && (
+                    <span><span className="font-medium">Since:</span> {new Date(student.inactiveDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <Button
             size="sm"
@@ -605,9 +645,21 @@ export default function StudentProfile() {
                   onChange={handlePhotoUpload}
                 />
               </label>
-              <Badge variant={student.status === 'active' ? 'default' : 'secondary'} className="mt-2 mb-2">
+              <Badge variant={student.status === 'active' ? 'default' : 'secondary'} className="mt-2 mb-1">
                 {student.status === 'active' ? t('common.active') : t('common.inactive')}
               </Badge>
+              {student.status !== 'active' && student.inactiveReason && (
+                <div className="text-xs text-orange-600 text-center max-w-[8rem]">{{
+                  passed_out: 'Passed Out',
+                  dropped_out: 'Dropped Out',
+                  transferred: 'Transferred',
+                  admin_deactivation: 'Admin Deactivation',
+                  other: 'Other',
+                }[student.inactiveReason] ?? student.inactiveReason}</div>
+              )}
+              {student.status !== 'active' && student.inactiveDate && (
+                <div className="text-xs text-muted-foreground text-center">{new Date(student.inactiveDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+              )}
             </div>
             
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -915,6 +967,7 @@ export default function StudentProfile() {
             <TabsTrigger value="visitors" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Visitors</TabsTrigger>
             <TabsTrigger value="communication" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.communication')}</TabsTrigger>
             <TabsTrigger value="documents" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Documents</TabsTrigger>
+            <TabsTrigger value="discipline" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Discipline</TabsTrigger>
             {isAdmin && <TabsTrigger value="portal" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Portal</TabsTrigger>}
           </TabsList>
         </div>
@@ -1845,6 +1898,12 @@ export default function StudentProfile() {
           </Card>
         </TabsContent>
 
+        {student?.id && (
+          <TabsContent value="discipline">
+            <DisciplineTab studentId={student.id} isAdmin={isAdmin} />
+          </TabsContent>
+        )}
+
         {isAdmin && student?.id && (
           <TabsContent value="portal">
             <ParentPortalAccountSection
@@ -1993,6 +2052,54 @@ export default function StudentProfile() {
           }}
         />
       )}
+
+      {/* Deactivate Student Dialog */}
+      <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Deactivate Student</DialogTitle>
+            <DialogDescription>
+              This student will be hidden from class lists and their parent portal access will be revoked.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Reason for Deactivation</Label>
+              <Select value={deactivateReason} onValueChange={setDeactivateReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reason…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="passed_out">Passed Out</SelectItem>
+                  <SelectItem value="dropped_out">Dropped Out</SelectItem>
+                  <SelectItem value="transferred">Transferred to Another School</SelectItem>
+                  <SelectItem value="admin_deactivation">Admin Deactivation</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Effective Date</Label>
+              <Input
+                type="date"
+                value={deactivateDate}
+                onChange={e => setDeactivateDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeactivateDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={actionLoading || !deactivateReason}
+              onClick={() => handleStatusChange('inactive')}
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Deactivate Student
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

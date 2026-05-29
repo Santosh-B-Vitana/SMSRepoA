@@ -134,5 +134,11 @@ namespace SmsApi.Models.Entities
 
         [MaxLength(50)]
         public string Priority { get; set; } = "Normal"; // Low, Normal, High, Urgent
+
+        /// <summary>
+        /// For parent notifications: the student this notification relates to.
+        /// Allows filtering parent notifications by child when a parent has multiple children.
+        /// </summary>
+        public Guid? StudentId { get; set; }
     }
 }

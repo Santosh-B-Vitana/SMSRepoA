@@ -37,6 +37,10 @@ namespace SmsApi.Models.DTOs
         [MaxLength(100)]
         public string? Standard { get; set; }
 
+        /// <summary>Number of sections to auto-create (A, B, C...). Replaces the old free-text Section field.</summary>
+        public int NumberOfSections { get; set; } = 1;
+
+        /// <summary>Legacy single-section text. Kept for backward compat; use NumberOfSections for new code.</summary>
         [MaxLength(20)]
         public string? Section { get; set; }
 
@@ -170,6 +174,9 @@ namespace SmsApi.Models.DTOs
 
         [MaxLength(20)]
         public string Status { get; set; } = "active";
+
+        /// <summary>Curriculum board FK. Null = school-default (available for all boards).</summary>
+        public Guid? BoardConfigurationId { get; set; }
     }
 
     public class SubjectResponse
@@ -187,6 +194,8 @@ namespace SmsApi.Models.DTOs
         public int? PassMarks { get; set; }
         public string? Description { get; set; }
         public string Status { get; set; } = string.Empty;
+        public Guid? BoardConfigurationId { get; set; }
+        public string? BoardName { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }

@@ -51,14 +51,15 @@ namespace SmsApi.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] bool? unreadOnly = null,
-            [FromQuery] string? type = null)
+            [FromQuery] string? type = null,
+            [FromQuery] Guid? studentId = null)
         {
             try
             {
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
                 if (userId == null) return Unauthorized(new { message = "User identity not found." });
-                var result = await _notificationService.GetMyNotificationsAsync(schoolId, userId.Value, page, pageSize, unreadOnly, type);
+                var result = await _notificationService.GetMyNotificationsAsync(schoolId, userId.Value, page, pageSize, unreadOnly, type, studentId);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }

@@ -29,6 +29,7 @@ import { academicApi, ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { usePermissions } from "@/contexts/PermissionsContext";
 import apiClient from "@/services/api/apiClient";
+import { boardApi, SchoolBoardConfigResponse } from "@/services/api/boardApi";
 import { FeeHeadsManager } from "@/components/fees/FeeHeadsManager";
 import { ReceiptTemplateManager } from "@/components/fees/ReceiptTemplateManager";
 import { BulkFeePaymentUpload } from "@/components/fees/BulkFeePaymentUpload";
@@ -2309,6 +2310,8 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
   const [selectedComponents, setSelectedComponents] = useState<Array<{ feeHeadId: string; feeHeadName: string; amount: number; remarks?: string }>>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
+  const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
+  const [boardFilter, setBoardFilter] = useState<string>("__all__");
 
   const handleSeedStructures = async () => {
     if (!tabYear) { toast.error("Select an academic year first"); return; }
@@ -2418,6 +2421,10 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         console.error('Failed to load fee heads:', e);
         setFeeHeads([]);
       });
+    // Load school boards
+    boardApi.getSchoolBoards()
+      .then(r => setSchoolBoards(r.boards || []))
+      .catch(e => console.error('Failed to load boards:', e));
   }, [tabYear]);
 
   // When installment plan changes or total fee changes, rebuild the term schedule
@@ -2430,7 +2437,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const openCreate = () => {
     const count = 1;
     setEditing(null);
-    setForm({ installmentCount: count, academicYear: tabYear });
+    setForm({ installmentCount: count, academicYear: tabYear, boardConfigurationId: undefined });
     setTermSchedule(defaultTermSchedule(count, tabYear, 0));
     setSelectedComponents([]);
     setShowDialog(true);
@@ -2447,6 +2454,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       admissionFee: s.admissionFee,
       uniformFee: s.uniformFee, booksFee: s.booksFee, miscellaneous: s.miscellaneous,
       installmentCount: s.installmentCount,
+      boardConfigurationId: s.boardConfigurationId || undefined,
     });
     // Load existing components
     setComponentsLoading(true);
@@ -2513,6 +2521,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         ...FEE_HEADS.reduce((acc, h) => ({ ...acc, [h.key]: (form as any)[h.key] || 0 }), {}),
         installmentCount: form.installmentCount || 1,
         installmentDueDates: termSchedule.length > 0 ? JSON.stringify(termSchedule) : undefined,
+        boardConfigurationId: form.boardConfigurationId || undefined,
       } as CreateFeeStructureDto;
       let structureId: string;
       if (editing) {
@@ -2564,6 +2573,22 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
           <p className="text-sm text-muted-foreground">{t('fees.struct.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Board filter — only shown when school has multiple boards */}
+          {schoolBoards.length > 1 && (
+            <Select value={boardFilter} onValueChange={setBoardFilter}>
+              <SelectTrigger className="h-9 text-sm w-[150px]">
+                <SelectValue placeholder="All Boards" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Boards</SelectItem>
+                {schoolBoards.map(b => (
+                  <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
+                    {b.boardName}{b.isDefault ? " (Default)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {/* Academic year picker scoped to this tab */}
           <Select value={tabYear} onValueChange={setTabYear}>
             <SelectTrigger className="h-9 text-sm w-[140px]">
@@ -2610,7 +2635,9 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {structures.map(s => {
+          {structures
+            .filter(s => boardFilter === "__all__" || s.boardConfigurationId === boardFilter)
+            .map(s => {
             const isAssigned = assignedIds.has(s.id) || (s.assignedStudentCount ?? 0) > 0;
             const justAssigned = assignedIds.has(s.id);
             return (
@@ -2620,6 +2647,11 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                   <div className="flex-1 min-w-0 mr-2">
                     <div className="font-semibold">{s.name}</div>
                     <div className="text-sm text-muted-foreground">{s.class} · {s.academicYear}</div>
+                    {s.boardName && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold px-2 py-0.5 mt-1">
+                        {s.boardName}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <div className="text-xl font-bold text-primary">{inr(s.totalAmount)}</div>
@@ -2848,7 +2880,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                 )}
               </div>
             )}
-            <div className="col-span-2 grid grid-cols-3 gap-3">
+            <div className="col-span-2 grid grid-cols-2 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.structureName')} *</Label>
                 <Input className="h-9 text-sm" placeholder="e.g. Annual Fee 2025-26" value={form.name ?? ""} onChange={e => setForm({ ...form, name: e.target.value })} />
@@ -2874,6 +2906,25 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                   </SelectContent>
                 </Select>
               </div>
+              {schoolBoards.length > 1 && (
+                <div>
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Board</Label>
+                  <Select
+                    value={form.boardConfigurationId ?? "__all__"}
+                    onValueChange={v => setForm({ ...form, boardConfigurationId: v === "__all__" ? undefined : v })}
+                  >
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Boards" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Boards (School Default)</SelectItem>
+                      {schoolBoards.map(b => (
+                        <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
+                          {b.boardName}{b.isDefault ? " (Default)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {/* Fee heads grouped by category */}

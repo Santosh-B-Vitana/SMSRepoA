@@ -295,5 +295,75 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { message = "An error occurred.", details = ex.Message });
             }
         }
+
+        // ── Multi-board school config ─────────────────────────────────────────
+
+        /// <summary>List all boards configured for this school.</summary>
+        [HttpGet("school-boards")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllInternal)]
+        public async Task<ActionResult<SchoolBoardListResponse>> GetSchoolBoards()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _boardService.GetSchoolBoardsAsync(schoolId);
+                return Ok(result);
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred.", details = ex.Message }); }
+        }
+
+        /// <summary>Add a board to this school's configured boards.</summary>
+        [HttpPost("school-boards")]
+        [Authorize(Roles = "SuperAdmin,Admin,Principal")]
+        public async Task<ActionResult<SchoolBoardConfigResponse>> AddSchoolBoard([FromBody] AddSchoolBoardRequest request)
+        {
+            try
+            {
+                if (request == null) return BadRequest(new { message = "Request body cannot be null." });
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _boardService.AddSchoolBoardAsync(schoolId, request);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred.", details = ex.Message }); }
+        }
+
+        /// <summary>Remove a board from this school's configured boards.</summary>
+        [HttpDelete("school-boards/{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,Principal")]
+        public async Task<IActionResult> RemoveSchoolBoard(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                await _boardService.RemoveSchoolBoardAsync(schoolId, id);
+                return NoContent();
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred.", details = ex.Message }); }
+        }
+
+        /// <summary>Set a board as the default for this school.</summary>
+        [HttpPatch("school-boards/{id}/set-default")]
+        [Authorize(Roles = "SuperAdmin,Admin,Principal")]
+        public async Task<ActionResult<SchoolBoardConfigResponse>> SetDefaultBoard(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _boardService.SetDefaultBoardAsync(schoolId, id);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred.", details = ex.Message }); }
+        }
     }
 }

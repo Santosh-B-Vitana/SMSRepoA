@@ -490,7 +490,7 @@ export default function AdminDashboard() {
           borderColor={attendancePct >= 90 ? "border-l-emerald-500" : attendancePct >= 80 ? "border-l-amber-500" : "border-l-rose-500"}
           trend={attendancePct >= 90 ? "up" : attendancePct >= 80 ? "neutral" : "down"}
           trendLabel={attendancePct >= 90 ? t('dashboard.onTarget') : attendancePct >= 80 ? t('dashboard.nearTarget') : t('dashboard.belowTarget')}
-          onClick={() => navigate("/attendance")}
+          onClick={() => navigate("/students")}
         />
         <KpiCard
           label={t('dashboard.pendingFees')} value={inr(s.pendingFees)} sub={t('dashboard.duesOutstanding')}

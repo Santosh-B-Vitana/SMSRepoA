@@ -54,6 +54,10 @@ export interface Student extends StudentBasic {
   nationality?: string;
   /** ISO date-time string */
   admissionDate: string;
+  
+  // Inactive tracking
+  inactiveReason?: string; // passed_out, dropped_out, transferred, admin_deactivation, etc.
+  inactiveDate?: string; // ISO date-time when marked inactive
 
   // Identification
   aadharNumber?: string;
@@ -347,7 +351,7 @@ export const studentApi = {
   create: (data: CreateStudentRequest) =>
     apiPost<Student>('/students', data),
 
-  update: (id: string, data: Partial<CreateStudentRequest> & { status?: string }) =>
+  update: (id: string, data: Partial<CreateStudentRequest> & { status?: string; inactiveReason?: string; inactiveDate?: string }) =>
     apiPut<Student>(`/students/${id}`, data),
 
   delete: (id: string) =>

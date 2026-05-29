@@ -62,14 +62,15 @@ namespace SmsApi.Controllers
         [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
         public async Task<ActionResult> GetFeeStructures(
             [FromQuery] string? classFilter = null,
-            [FromQuery] string? academicYear = null)
+            [FromQuery] string? academicYear = null,
+            [FromQuery] Guid? boardConfigurationId = null)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 var headerYear = HttpContext.Items["AcademicYearHeaderValue"] as string;
                 var effectiveYear = !string.IsNullOrWhiteSpace(academicYear) ? academicYear : headerYear;
-                var structures = await _feeService.GetFeeStructuresAsync(schoolId, classFilter, effectiveYear);
+                var structures = await _feeService.GetFeeStructuresAsync(schoolId, classFilter, effectiveYear, boardConfigurationId);
                 return Ok(structures);
             }
             catch (UnauthorizedAccessException ex)
@@ -2500,13 +2501,31 @@ namespace SmsApi.Controllers
         {
             try
             {
-                var parentUserIds = await _context.GuardianStudents
+                // Path 1 (legacy): StudentGuardians email → UserLogins
+                var guardianEmails = await _context.StudentGuardians
+                    .Where(sg => sg.StudentId == studentId && sg.SchoolId == schoolId && sg.Email != null)
+                    .Select(sg => sg.Email!.ToLower())
+                    .Distinct()
+                    .ToListAsync();
+
+                var legacyIds = guardianEmails.Any()
+                    ? await _context.UserLogins
+                        .Where(ul => ul.SchoolId == schoolId && guardianEmails.Contains(ul.Email.ToLower()))
+                        .Select(ul => ul.Id)
+                        .Distinct()
+                        .ToListAsync()
+                    : new List<Guid>();
+
+                // Path 2 (new): GuardianStudents → Guardian.UserLoginId
+                var newIds = await _context.GuardianStudents
                     .Include(gs => gs.Guardian)
                     .Where(gs => gs.StudentId == studentId && gs.SchoolId == schoolId && gs.CanViewFees
                                  && gs.Guardian != null && gs.Guardian.UserLoginId != null)
                     .Select(gs => gs.Guardian!.UserLoginId!.Value)
                     .Distinct()
                     .ToListAsync();
+
+                var parentUserIds = legacyIds.Union(newIds).Distinct().ToList();
 
                 foreach (var userId in parentUserIds)
                 {
@@ -2525,6 +2544,7 @@ namespace SmsApi.Controllers
                         ActionUrl = "/parent-fees",
                         IsRead = false,
                         SenderName = "School Fee Office",
+                        StudentId = studentId,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow,
                     });

@@ -1,4 +1,5 @@
 ﻿import React, { useState } from "react";
+import { formatDateTime } from "@/utils/dateUtils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -36,7 +37,7 @@ function fmt(amount: number, currency = "INR") {
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  return formatDateTime(iso);
 }
 
 function RefundDialog({ transaction, onClose }: { transaction: PaymentTransaction; onClose: () => void }) {

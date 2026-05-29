@@ -42,6 +42,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },
         { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: "examinations" },
         { title: t('nav.timetable'), url: "/timetable", icon: Clock, moduleKey: "timetable" },
+        { title: "Syllabus & Lesson Plans", url: "/syllabus", icon: ClipboardList },
 
         { title: "FINANCE & ADMINISTRATION", isLabel: true },
         { title: t('nav.fees'), url: "/fees", icon: DollarSign, moduleKey: "fees" },

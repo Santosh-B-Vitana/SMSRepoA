@@ -102,9 +102,11 @@ interface ExamCreationWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (setup: ExamSetupDetailDto) => void;
+  /** When set, pre-filters the Class dropdown to classes belonging to this board */
+  boardConfigurationId?: string;
 }
 
-export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreationWizardProps) {
+export function ExamCreationWizard({ open, onOpenChange, onCreated, boardConfigurationId: propBoardId }: ExamCreationWizardProps) {
   const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -151,7 +153,7 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
     setErrors({});
     setForm({
       examTypeId: '', isCustomType: false, customTypeName: '',
-      academicYear: '', classId: '', sectionId: '', boardConfigurationId: '',
+      academicYear: '', classId: '', sectionId: '', boardConfigurationId: propBoardId ?? '',
       term: '', startDate: '', endDate: '', suggestedName: '', subjects: [],
     });
     setAvailableSubjects([]);
@@ -511,6 +513,7 @@ export function ExamCreationWizard({ open, onOpenChange, onCreated }: ExamCreati
                         </SelectTrigger>
                         <SelectContent>
                           {classes
+                            .filter(c => !propBoardId || c.boardConfigurationId === propBoardId)
                             .filter((c, idx, arr) => arr.findIndex(x => x.name === c.name) === idx)
                             .map(c => (
                               <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>

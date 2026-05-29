@@ -35,6 +35,7 @@ export default function ClassDetail() {
   const { academicYear: activeAcademicYear } = useAcademicYear();
   const [activeTab, setActiveTab] = useState("sections");
   const [className, setClassName] = useState("");
+  const [classBoardConfigurationId, setClassBoardConfigurationId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   
   // Sections state — backed by real API
@@ -91,6 +92,7 @@ export default function ClassDetail() {
         academicApi.listSections(classId, 1, 100)
       ]);
       setClassName(classData.name || classData.standard || "");
+      setClassBoardConfigurationId(classData.boardConfigurationId);
       setTeachingStaff(staffData.staff ?? []);
       setSections(sectionsData.sections ?? []);
     } catch (error) {
@@ -414,7 +416,7 @@ export default function ClassDetail() {
 
         {/* Subjects Tab */}
         <TabsContent value="subjects">
-          <SubjectsTab classId={classId!} />
+          <SubjectsTab classId={classId!} boardConfigurationId={classBoardConfigurationId} />
         </TabsContent>
 
         {/* Settings Tab */}

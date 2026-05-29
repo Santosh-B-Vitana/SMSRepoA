@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, BookOpen, GraduationCap, Layers } from "lucide-react";
+import { Calendar, BookOpen, GraduationCap, Shield } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { academicApi } from "@/services/api/academicApi";
+import { boardApi } from "@/services/api/boardApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import AcademicYearManager from "./AcademicYearManager";
@@ -16,6 +17,7 @@ interface AcademicStats {
   totalYears: number;
   totalClasses: number;
   totalSubjects: number;
+  totalBoards: number;
 }
 
 function StatTile({
@@ -58,8 +60,9 @@ export default function Academics() {
       academicApi.listAcademicYears(1, 50),
       academicApi.listClasses(1, 1),
       academicApi.listSubjects(1, 1),
+      boardApi.getSchoolBoards(),
     ])
-      .then(([years, classes, subjects]) => {
+      .then(([years, classes, subjects, boards]) => {
         if (cancelled) return;
         const activeYear = years.academicYears.find(y => y.isCurrent || y.status === "active");
         setStats({
@@ -67,10 +70,11 @@ export default function Academics() {
           totalYears: years.total,
           totalClasses: classes.total,
           totalSubjects: subjects.total,
+          totalBoards: boards.boards?.length ?? 0,
         });
       })
       .catch(() => {
-        if (!cancelled) setStats({ currentYear: currentYear ?? "—", totalYears: 0, totalClasses: 0, totalSubjects: 0 });
+        if (!cancelled) setStats({ currentYear: currentYear ?? "—", totalYears: 0, totalClasses: 0, totalSubjects: 0, totalBoards: 0 });
       })
       .finally(() => { if (!cancelled) setStatsLoading(false); });
     return () => { cancelled = true; };
@@ -125,8 +129,8 @@ export default function Academics() {
           iconColor="text-teal-600" iconBg="bg-teal-50" loading={statsLoading}
         />
         <StatTile
-          icon={Layers} label={t('academicSetup.year.newYear')}
-          value={stats?.totalYears ?? "—"} sub={t('academicSetup.year.startDate')}
+          icon={Shield} label="Boards"
+          value={stats?.totalBoards ?? "—"} sub="Configured"
           iconColor="text-violet-600" iconBg="bg-violet-50" loading={statsLoading}
         />
       </div>

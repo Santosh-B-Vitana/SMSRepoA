@@ -6,6 +6,8 @@ const BASE = '/hostel';
 
 export interface HostelRoom {
   id: string;
+  blockId?: string;
+  blockName?: string;
   roomNumber: string;
   roomType: string;
   capacity: number;
@@ -44,6 +46,7 @@ export interface HostelRoomListResponse {
 }
 
 export interface CreateRoomDto {
+  blockId?: string;
   roomNumber: string;
   roomType: string;
   capacity: number;

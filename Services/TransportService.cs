@@ -22,6 +22,17 @@ namespace SmsApi.Services
         Task<TransportStudentResponse> AssignStudentToRouteAsync(CreateTransportStudentRequest request);
         Task<TransportStudentResponse?> UpdateTransportStudentAsync(Guid id, Guid schoolId, UpdateTransportStudentRequest request);
         Task<bool> RemoveStudentFromRouteAsync(Guid id, Guid schoolId);
+
+        // ── Stop management ──────────────────────────────────────────────
+        Task<List<TransportStopResponse>> GetStopsAsync(Guid routeId, Guid schoolId);
+        Task<TransportStopResponse?> GetStopByIdAsync(Guid id, Guid schoolId);
+        Task<TransportStopResponse> CreateStopAsync(Guid routeId, Guid schoolId, CreateTransportStopRequest request);
+        Task<TransportStopResponse?> UpdateStopAsync(Guid id, Guid schoolId, UpdateTransportStopRequest request);
+        Task<bool> DeleteStopAsync(Guid id, Guid schoolId);
+        Task ReorderStopsAsync(Guid routeId, Guid schoolId, ReorderStopsRequest request);
+
+        // ── Vehicle assignment to route ───────────────────────────────────
+        Task<TransportRouteResponse?> AssignVehicleToRouteAsync(Guid routeId, Guid schoolId, Guid? vehicleId);
     }
 
     public class TransportService : ITransportService
@@ -754,6 +765,196 @@ namespace SmsApi.Services
                 UpdatedAt = student.UpdatedAt
             };
         }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // STOP MANAGEMENT
+        // ═══════════════════════════════════════════════════════════════════
+
+        public async Task<List<TransportStopResponse>> GetStopsAsync(Guid routeId, Guid schoolId)
+        {
+            var stops = await _context.TransportStops
+                .Where(s => s.RouteId == routeId && s.SchoolId == schoolId)
+                .OrderBy(s => s.StopOrder)
+                .ToListAsync();
+
+            var pickupCounts = await _context.TransportStudents
+                .Where(ts => ts.PickupStopId != null && stops.Select(s => s.Id).Contains(ts.PickupStopId!.Value))
+                .GroupBy(ts => ts.PickupStopId!.Value)
+                .Select(g => new { StopId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.StopId, x => x.Count);
+
+            var dropCounts = await _context.TransportStudents
+                .Where(ts => ts.DropStopId != null && stops.Select(s => s.Id).Contains(ts.DropStopId!.Value))
+                .GroupBy(ts => ts.DropStopId!.Value)
+                .Select(g => new { StopId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.StopId, x => x.Count);
+
+            return stops.Select(s => MapToStopResponse(s, pickupCounts, dropCounts)).ToList();
+        }
+
+        public async Task<TransportStopResponse?> GetStopByIdAsync(Guid id, Guid schoolId)
+        {
+            var stop = await _context.TransportStops
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+
+            if (stop == null) return null;
+
+            var pickupCount = await _context.TransportStudents.CountAsync(ts => ts.PickupStopId == id);
+            var dropCount = await _context.TransportStudents.CountAsync(ts => ts.DropStopId == id);
+
+            return MapToStopResponse(stop,
+                new Dictionary<Guid, int> { [id] = pickupCount },
+                new Dictionary<Guid, int> { [id] = dropCount });
+        }
+
+        public async Task<TransportStopResponse> CreateStopAsync(Guid routeId, Guid schoolId, CreateTransportStopRequest request)
+        {
+            var routeExists = await _context.TransportRoutes
+                .AnyAsync(r => r.Id == routeId && r.SchoolId == schoolId);
+            if (!routeExists)
+                throw new KeyNotFoundException("Transport route not found.");
+
+            // Ensure stop order is unique per route
+            var orderUsed = await _context.TransportStops
+                .AnyAsync(s => s.RouteId == routeId && s.StopOrder == request.StopOrder);
+            if (orderUsed)
+                throw new InvalidOperationException($"Stop order {request.StopOrder} is already used on this route.");
+
+            var stop = new TransportStop
+            {
+                SchoolId = schoolId,
+                RouteId = routeId,
+                StopName = request.StopName,
+                StopOrder = request.StopOrder,
+                Landmark = request.Landmark,
+                Latitude = request.Latitude,
+                Longitude = request.Longitude,
+                MorningArrivalTime = request.MorningArrivalTime,
+                EveningDepartureTime = request.EveningDepartureTime,
+                DistanceKm = request.DistanceKm,
+                Status = "active"
+            };
+
+            _context.TransportStops.Add(stop);
+            await _context.SaveChangesAsync();
+
+            return MapToStopResponse(stop, new Dictionary<Guid, int>(), new Dictionary<Guid, int>());
+        }
+
+        public async Task<TransportStopResponse?> UpdateStopAsync(Guid id, Guid schoolId, UpdateTransportStopRequest request)
+        {
+            var stop = await _context.TransportStops
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+            if (stop == null) return null;
+
+            // Check new order doesn't conflict with another stop
+            if (request.StopOrder.HasValue && request.StopOrder.Value != stop.StopOrder)
+            {
+                var orderUsed = await _context.TransportStops
+                    .AnyAsync(s => s.RouteId == stop.RouteId && s.Id != id && s.StopOrder == request.StopOrder.Value);
+                if (orderUsed)
+                    throw new InvalidOperationException($"Stop order {request.StopOrder} is already used on this route.");
+                stop.StopOrder = request.StopOrder.Value;
+            }
+
+            if (request.StopName != null) stop.StopName = request.StopName;
+            if (request.Landmark != null) stop.Landmark = request.Landmark;
+            if (request.Latitude.HasValue) stop.Latitude = request.Latitude;
+            if (request.Longitude.HasValue) stop.Longitude = request.Longitude;
+            if (request.MorningArrivalTime.HasValue) stop.MorningArrivalTime = request.MorningArrivalTime;
+            if (request.EveningDepartureTime.HasValue) stop.EveningDepartureTime = request.EveningDepartureTime;
+            if (request.DistanceKm.HasValue) stop.DistanceKm = request.DistanceKm;
+            if (request.Status != null) stop.Status = request.Status;
+
+            await _context.SaveChangesAsync();
+            return await GetStopByIdAsync(id, schoolId);
+        }
+
+        public async Task<bool> DeleteStopAsync(Guid id, Guid schoolId)
+        {
+            var stop = await _context.TransportStops
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+            if (stop == null) return false;
+
+            // Unlink students from this stop
+            var linked = await _context.TransportStudents
+                .Where(ts => ts.PickupStopId == id || ts.DropStopId == id)
+                .ToListAsync();
+            foreach (var ts in linked)
+            {
+                if (ts.PickupStopId == id) ts.PickupStopId = null;
+                if (ts.DropStopId == id) ts.DropStopId = null;
+            }
+
+            _context.TransportStops.Remove(stop);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task ReorderStopsAsync(Guid routeId, Guid schoolId, ReorderStopsRequest request)
+        {
+            var stops = await _context.TransportStops
+                .Where(s => s.RouteId == routeId && s.SchoolId == schoolId)
+                .ToListAsync();
+
+            for (int i = 0; i < request.OrderedStopIds.Count; i++)
+            {
+                var stop = stops.FirstOrDefault(s => s.Id == request.OrderedStopIds[i]);
+                if (stop != null) stop.StopOrder = i + 1;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<TransportRouteResponse?> AssignVehicleToRouteAsync(Guid routeId, Guid schoolId, Guid? vehicleId)
+        {
+            var route = await _context.TransportRoutes
+                .FirstOrDefaultAsync(r => r.Id == routeId && r.SchoolId == schoolId);
+            if (route == null) return null;
+
+            if (vehicleId.HasValue)
+            {
+                var vehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v => v.Id == vehicleId.Value && v.SchoolId == schoolId);
+                if (vehicle == null)
+                    throw new KeyNotFoundException("Vehicle not found.");
+
+                route.VehicleId = vehicleId;
+                // Sync capacity and vehicle number for backward compat
+                route.Capacity = vehicle.SeatingCapacity;
+                route.VehicleNumber = vehicle.RegistrationNumber;
+            }
+            else
+            {
+                route.VehicleId = null;
+            }
+
+            await _context.SaveChangesAsync();
+            return MapToResponse(route);
+        }
+
+        private static TransportStopResponse MapToStopResponse(
+            TransportStop s,
+            Dictionary<Guid, int> pickupCounts,
+            Dictionary<Guid, int> dropCounts) => new()
+        {
+            Id = s.Id,
+            SchoolId = s.SchoolId,
+            RouteId = s.RouteId,
+            StopName = s.StopName,
+            StopOrder = s.StopOrder,
+            Landmark = s.Landmark,
+            Latitude = s.Latitude,
+            Longitude = s.Longitude,
+            MorningArrivalTime = s.MorningArrivalTime,
+            EveningDepartureTime = s.EveningDepartureTime,
+            DistanceKm = s.DistanceKm,
+            Status = s.Status,
+            StudentsPickupCount = pickupCounts.GetValueOrDefault(s.Id),
+            StudentsDropCount = dropCounts.GetValueOrDefault(s.Id),
+            CreatedAt = s.CreatedAt,
+            UpdatedAt = s.UpdatedAt
+        };
     }
 }
 

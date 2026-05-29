@@ -372,6 +372,8 @@ namespace SmsApi.Services
                 GuardianPhone = student.GuardianPhone,
                 
                 Status = student.Status,
+                InactiveReason = student.InactiveReason,
+                InactiveDate = student.InactiveDate,
                 PhotoUrl = student.PhotoUrl,
                 
                 // Collections
@@ -1169,6 +1171,8 @@ namespace SmsApi.Services
             
             var previousStatus = student.Status;
             if (request.Status != null) student.Status = request.Status;
+            if (request.InactiveReason != null) student.InactiveReason = request.InactiveReason;
+            if (request.InactiveDate.HasValue) student.InactiveDate = request.InactiveDate;
             if (request.PhotoUrl != null) student.PhotoUrl = request.PhotoUrl;
 
             student.UpdatedAt = DateTime.UtcNow;
