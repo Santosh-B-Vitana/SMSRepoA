@@ -555,7 +555,7 @@ export default function ResultsManager({
 
           {/* Grade legend */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 border-t bg-muted/20 text-xs">
-            <span className="font-semibold text-muted-foreground mr-1">Grade Scale:</span>
+            <span className="font-semibold text-muted-foreground mr-1">Grade Scale (Default):</span>
             {[["A1","≥91","text-emerald-600"],["A2","81–90","text-green-600"],["B1","71–80","text-blue-600"],
               ["B2","61–70","text-blue-500"],["C1","51–60","text-yellow-600"],["C2","41–50","text-orange-600"],
               ["D","33–40","text-orange-800"],["E","<33","text-red-600"]].map(([g, r, c]) => (

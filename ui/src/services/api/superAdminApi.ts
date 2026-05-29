@@ -161,6 +161,8 @@ export interface OnboardSchoolRequest {
   adminEmail: string;
   adminPassword: string;
   moduleOverrides?: Record<string, boolean>;
+  boardConfigurationIds?: string[];
+  defaultBoardConfigurationId?: string;
 }
 
 export interface OnboardSchoolResult {

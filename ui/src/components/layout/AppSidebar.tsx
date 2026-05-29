@@ -1,4 +1,4 @@
-﻿import * as React from "react"
+import * as React from "react"
 import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck, CalendarCheck, Star, FileText, Megaphone } from "lucide-react"
 import { NavMain } from "@/components/sidebar/nav-main"
 import { TeamSwitcher } from "@/components/sidebar/team-switcher"
@@ -42,7 +42,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },
         { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: "examinations" },
         { title: t('nav.timetable'), url: "/timetable", icon: Clock, moduleKey: "timetable" },
-        { title: "Syllabus & Lesson Plans", url: "/syllabus", icon: ClipboardList },
+        { title: "Curriculum Planner", url: "/syllabus", icon: ClipboardList },
 
         { title: "FINANCE & ADMINISTRATION", isLabel: true },
         { title: t('nav.fees'), url: "/fees", icon: DollarSign, moduleKey: "fees" },
@@ -84,7 +84,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     if (user.role === 'staff') {
       const designation = (user.designation ?? 'Teacher').toLowerCase();
 
-      // ── Shared items for every staff member ──────────────────────────────
+      // -- Shared items for every staff member ------------------------------
       const shared: NavItem[] = [
         { title: "OVERVIEW", isLabel: true },
         { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
@@ -96,7 +96,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "School Connect", url: "/school-connect", icon: School },
       ]
 
-      // ── Build designation-based nav items ─────────────────────────────────
+      // -- Build designation-based nav items ---------------------------------
       // Typed as NavItem[] so moduleKey works for feature-toggle filtering
       let staffItems: NavItem[];
 
@@ -112,6 +112,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' as const },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
             ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
+          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
           { title: "COMMUNICATIONS", isLabel: true },
           { title: "Announcements", url: "/announcements", icon: Bell },
           { title: "Communication", url: "/communication", icon: MessageSquare },
@@ -129,6 +130,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' as const },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
             ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
+          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
           { title: "Staff", url: "/staff", icon: UserCheck },
         ];
       } else if (designation === 'class teacher') {
@@ -143,6 +145,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
             ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
           { title: "Timetable", url: "/timetable", icon: Clock },
+          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
           { title: "DIARY", isLabel: true },
           { title: "Diary", url: "/staff-diary", icon: BookOpen },
           ...(hasUserPermission('Health', 'View')
@@ -157,6 +160,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
             ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
           { title: "Timetable", url: "/timetable", icon: Clock },
+          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
           { title: "DIARY", isLabel: true },
           { title: "Diary", url: "/staff-diary", icon: BookOpen },
         ];
@@ -215,7 +219,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           { title: "Students", url: "/students", icon: Users, moduleKey: 'students' as const },
         ];
       } else {
-        // Generic/unknown designation — no Attendance (only class teachers mark attendance)
+        // Generic/unknown designation � no Attendance (only class teachers mark attendance)
         staffItems = [
           ...shared,
           { title: "ACADEMIC", isLabel: true },
@@ -223,7 +227,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ];
       }
 
-      // ── Augment with permission-based items (role management overrides) ───
+      // -- Augment with permission-based items (role management overrides) ---
       // Each augmentation also requires the module to be enabled in the school feature toggles.
 
       // Library: show for anyone with Library.View + module enabled
@@ -274,6 +278,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
+      // Syllabus: show for any teaching staff who doesn't already have it
+      if (!staffItems.some(i => i.url === '/syllabus') && (
+        designation === 'teacher' || designation === 'class teacher' ||
+        designation === 'head of department' || designation === 'principal' || designation === 'vice principal'
+      )) {
+        staffItems.push(
+          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
+        );
+      }
+
       // Attendance: show for anyone with Attendance.Create (or View) + module enabled
       // This covers staff whose designation in the DB differs from their role assignment
       // (e.g., a "Teacher" who has been assigned the "Class Teacher" role in Role Management).
@@ -308,7 +322,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Certificates: show for anyone with Certificates.View permission (not principal/VP — managed by admin)
+      // Certificates: show for anyone with Certificates.View permission (not principal/VP � managed by admin)
       if (!['principal', 'vice principal'].includes(designation) && hasUserPermission('Certificates', 'View') && !staffItems.some(i => i.url === '/certificates')) {
         staffItems.push(
           { title: "CERTIFICATES", isLabel: true },

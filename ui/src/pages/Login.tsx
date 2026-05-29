@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Loader2, Eye, EyeOff, Sun, Moon, Monitor,
   Shield, Users, GraduationCap, AlertTriangle, ArrowRight,
-  Lock, CheckCircle2, Building2, ImagePlus, ArrowLeft,
+  Lock, CheckCircle2, ImagePlus, ArrowLeft,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -176,10 +176,10 @@ export default function Login() {
     : `Continue to ${ap.label} Portal`;
 
   const subtitles: Record<PortalId, string> = {
-    admin:  'School leadership, operations and institutional oversight',
-    staff:  'Teaching, attendance, classes and day-to-day academic workflows',
-    parent: "Progress, attendance, communication and fee visibility for families",
-    super_admin: 'Internal platform governance for the Vitana operations team',
+    admin:  'Manage admissions, fees, academics and day-to-day school operations',
+    staff:  'Your classes, attendance, timetable and grades — all in one place',
+    parent: 'Check your child\'s progress, fees and school updates instantly',
+    super_admin: 'Vitana platform access — internal team only',
   };
 
   const roleExperience: Record<PortalId, {
@@ -192,40 +192,40 @@ export default function Login() {
     passwordPlaceholder: string;
   }> = {
     admin: {
-      eyebrow: 'Administration Workspace',
-      heading: 'Lead your school with confidence',
-      helper: 'Access admissions, finance, academics and operational controls from one secure place.',
+      eyebrow: 'Admin Portal',
+      heading: 'Good to have you back',
+      helper: 'Admissions, fee collection, academics, reports and everything else your school runs on.',
       chipA: 'Leadership Ready',
       chipB: 'Institution Controls',
-      emailPlaceholder: 'admin@school.edu',
-      passwordPlaceholder: 'Enter your admin password',
+      emailPlaceholder: 'you@yourschool.edu',
+      passwordPlaceholder: 'Your password',
     },
     staff: {
-      eyebrow: 'Staff Workspace',
-      heading: 'Run classes and campus workflows smoothly',
-      helper: 'Open your daily teaching, attendance, timetable and communication tools in seconds.',
+      eyebrow: 'Staff Portal',
+      heading: 'Ready for today\'s classes?',
+      helper: 'Your attendance, timetable, grades and messages are waiting for you.',
       chipA: 'Academic Workflow',
       chipB: 'Attendance First',
-      emailPlaceholder: 'staff@school.edu',
-      passwordPlaceholder: 'Enter your staff password',
+      emailPlaceholder: 'you@yourschool.edu',
+      passwordPlaceholder: 'Your password',
     },
     parent: {
-      eyebrow: 'Parent Workspace',
-      heading: 'Stay connected to your child\'s journey',
-      helper: 'Track progress, attendance, announcements and fee updates with complete clarity.',
+      eyebrow: 'Parent Portal',
+      heading: 'Stay close to your child\'s day',
+      helper: 'See how your child is doing in class, track attendance and pay fees without the hassle.',
       chipA: 'Family Insights',
       chipB: 'Real-time Updates',
-      emailPlaceholder: 'parent@email.com',
-      passwordPlaceholder: 'Enter your parent password',
+      emailPlaceholder: 'your@email.com',
+      passwordPlaceholder: 'Your password',
     },
     super_admin: {
       eyebrow: 'Internal Access',
-      heading: 'Platform control for Vitana operations',
-      helper: 'Manage tenant-level governance, configuration and platform stewardship.',
+      heading: 'Vitana Operations Console',
+      helper: 'Platform-wide controls, school configuration and tenant management for the Vitana team.',
       chipA: 'Platform Governance',
       chipB: 'Internal Team Only',
-      emailPlaceholder: 'superadmin@vitana.in',
-      passwordPlaceholder: 'Enter your super admin password',
+      emailPlaceholder: 'you@vitana.in',
+      passwordPlaceholder: 'Your password',
     },
   };
 
@@ -384,16 +384,25 @@ export default function Login() {
       </div>
 
       {/* ═══════════ RIGHT — Form panel ═══════════ */}
-      <div className="flex-1 flex flex-col relative bg-background">
+      <div className="flex-1 flex flex-col relative bg-background overflow-y-auto">
 
-        {/* Theme picker */}
-        <div className="absolute top-5 right-5 z-10">
+        {/* Top bar: theme picker */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-0 lg:px-10 shrink-0">
+          {/* Mobile brand */}
+          <div className="lg:hidden flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #3B82F6, #2563EB)', boxShadow: '0 4px 14px rgba(59,130,246,0.35)' }}>
+              <img src="/favicon.ico" alt="VEDA" className="h-4.5 w-4.5 filter brightness-0 invert" />
+            </div>
+            <span className="font-black text-lg text-foreground tracking-tight">VEDA</span>
+          </div>
+          <div className="hidden lg:block" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl border border-border/60 hover:bg-muted/60">
-                {theme === 'light'  && <Sun className="h-4 w-4" />}
-                {theme === 'dark'   && <Moon className="h-4 w-4" />}
-                {theme === 'system' && <Monitor className="h-4 w-4" />}
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl border border-border/50 hover:bg-muted/60">
+                {theme === 'light'  && <Sun className="h-3.5 w-3.5" />}
+                {theme === 'dark'   && <Moon className="h-3.5 w-3.5" />}
+                {theme === 'system' && <Monitor className="h-3.5 w-3.5" />}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="rounded-xl">
@@ -404,62 +413,37 @@ export default function Login() {
           </DropdownMenu>
         </div>
 
-        {/* Mobile logo */}
-        <div className="lg:hidden flex items-center gap-2.5 px-6 pt-6">
-          <div className="h-9 w-9 rounded-xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #3B82F6, #2563EB)', boxShadow: '0 4px 16px rgba(59,130,246,0.38)' }}>
-            <img src="/favicon.ico" alt="VEDA" className="h-5 w-5 filter brightness-0 invert" />
-          </div>
-          <span className="font-black text-xl text-foreground">VEDA</span>
-          <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full"
-            style={{ color: '#3B82F6', border: '1px solid rgba(59,130,246,0.38)', background: 'rgba(59,130,246,0.08)' }}>Pro</span>
-        </div>
-
         {/* ── Main centered content ── */}
-        <div className="flex-1 flex items-center justify-center px-6 py-10 lg:px-12">
+        <div className="flex-1 flex items-center justify-center px-6 py-8 lg:px-12">
           <div className="w-full max-w-[400px]">
 
-            {/* Identity selection step */}
+            {/* ── STEP 1: Role selection ── */}
             {loginType !== 'super_admin' && !selectedPortal ? (
               <div>
-                <div className="mb-6">
-                  <div className="mb-4">
-                    <div className="h-20 w-20 rounded-2xl overflow-hidden border border-border bg-muted/30 flex items-center justify-center shadow-sm">
+                {/* School identity header */}
+                <div className="flex flex-col items-center text-center mb-8">
+                  <div className="relative mb-4">
+                    <div className="h-[72px] w-[72px] rounded-2xl overflow-hidden border-2 border-border/60 bg-muted/30 flex items-center justify-center shadow-lg shadow-black/5">
                       {hasSchoolLogo ? (
-                        <img src={schoolInfo?.logoUrl} alt={schoolName} className="h-16 w-16 object-contain" />
+                        <img src={schoolInfo?.logoUrl} alt={schoolName} className="h-14 w-14 object-contain" />
                       ) : (
-                        <div className="relative flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
-                          <Building2 className="h-7 w-7 text-blue-600/70 dark:text-blue-300/70" />
-                          <span className="absolute bottom-2 right-2 text-xs font-bold text-blue-700/80 dark:text-blue-200/80">{schoolInitial}</span>
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
+                          <span className="text-2xl font-black text-primary/60">{schoolInitial}</span>
                         </div>
                       )}
                     </div>
+                    {/* Online pulse */}
+                    <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-background border-2 border-background flex items-center justify-center">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    </span>
                   </div>
-
-                  <h2 className="text-[1.35rem] font-semibold text-foreground/80 leading-none tracking-tight">Welcome to</h2>
-                  <div className="mt-1.5 relative inline-block">
-                    <div
-                      className="absolute -inset-x-2 -inset-y-1 rounded-xl blur-md"
-                      style={{ background: `linear-gradient(90deg, ${ap.accent}22, ${ap.accentDark}16)` }}
-                      aria-hidden="true"
-                    />
-                    <h3
-                      className="relative text-[2.15rem] leading-[1.04] tracking-[-0.02em] font-black"
-                      style={{
-                        background: `linear-gradient(92deg, ${ap.accentDark} 0%, ${ap.accent} 45%, #0EA5E9 100%)`,
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        backgroundClip: 'text',
-                      }}
-                    >
-                      {schoolName}
-                    </h3>
-                  </div>
-
-                  <p className="text-sm text-muted-foreground mt-2">Choose how you would like to sign in. We will tailor the experience to your role.</p>
+                  <p className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-widest mb-1">Welcome to</p>
+                  <h2 className="text-2xl font-black text-foreground tracking-tight leading-tight">{schoolName}</h2>
+                  <p className="text-[13px] text-muted-foreground mt-1.5">How would you like to sign in?</p>
                 </div>
 
-                <div className="grid gap-3">
+                {/* Role cards */}
+                <div className="flex flex-col gap-2.5">
                   {MAIN_PORTALS.map((portal) => {
                     const Icon = portal.icon;
                     return (
@@ -472,20 +456,25 @@ export default function Login() {
                           setError('');
                           setFieldErrors({});
                         }}
-                        className="group w-full rounded-2xl border border-border/70 bg-card px-4 py-4 text-left transition-all duration-200 hover:border-primary/50 hover:shadow-md hover:shadow-primary/10"
+                        className="group relative w-full rounded-2xl border border-border/60 bg-card text-left transition-all duration-200 hover:border-transparent hover:shadow-xl overflow-hidden"
+                        style={{ '--hover-accent': portal.accent } as React.CSSProperties}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl flex items-center justify-center"
-                              style={{ background: `linear-gradient(135deg, ${portal.accent}20, ${portal.accentDark}22)` }}>
-                              <Icon className="h-4.5 w-4.5" style={{ color: portal.accentDark }} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold text-foreground">I am {portal.label}</p>
-                              <p className="text-xs text-muted-foreground">{subtitles[portal.id]}</p>
-                            </div>
+                        {/* Hover glow */}
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none rounded-2xl"
+                          style={{ boxShadow: `inset 0 0 0 1.5px ${portal.accent}60, 0 8px 32px ${portal.accent}18` }} />
+                        <div className="flex items-center gap-4 px-4 py-4">
+                          <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-110"
+                            style={{ background: `linear-gradient(135deg, ${portal.accent}28, ${portal.accentDark}20)` }}>
+                            <Icon className="h-5 w-5 transition-colors duration-200" style={{ color: portal.accentDark }} />
                           </div>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13.5px] font-bold text-foreground leading-tight">Sign in as {portal.label}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{subtitles[portal.id]}</p>
+                          </div>
+                          <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 bg-muted/50 group-hover:bg-transparent"
+                            style={{ boxShadow: `0 0 0 0px ${portal.accent}00` }}>
+                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/60 group-hover:text-foreground transition-all duration-200 group-hover:translate-x-0.5" />
+                          </div>
                         </div>
                       </button>
                     );
@@ -493,164 +482,165 @@ export default function Login() {
                 </div>
 
                 <div className="mt-6 text-center">
-                  <Link to="/super-admin-login" className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                  <Link to="/super-admin-login" className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
                     Super Admin sign-in (internal team)
                   </Link>
                 </div>
-
               </div>
+
             ) : (
-              <>
-                {/* Heading */}
-                <div className="mb-7">
+              /* ── STEP 2: Login form ── */
+              <div>
+                {/* Back + role badge strip */}
+                <div className="flex items-center justify-between mb-6">
                   <button
                     type="button"
                     onClick={() => {
                       if (loginType === 'super_admin') {
-                        setError('');
-                        setFieldErrors({});
-                        setSelectedPortal(null);
-                        setLoginType('admin');
-                        navigate('/login', { replace: true });
-                        return;
+                        setError(''); setFieldErrors({}); setSelectedPortal(null); setLoginType('admin');
+                        navigate('/login', { replace: true }); return;
                       }
-                      setSelectedPortal(null);
-                      setError('');
-                      setFieldErrors({});
+                      setSelectedPortal(null); setError(''); setFieldErrors({});
                     }}
-                    className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                    className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors group"
                   >
-                    <ArrowLeft className="h-3.5 w-3.5" /> {loginType === 'super_admin' ? 'Back to school login' : 'Back to role selection'}
+                    <ArrowLeft className="h-3.5 w-3.5 transition-transform duration-150 group-hover:-translate-x-0.5" />
+                    {loginType === 'super_admin' ? 'Back to school login' : 'Switch role'}
                   </button>
-
-                  <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-card/70 p-4 mb-4">
-                    <div className="absolute -top-10 -right-8 h-24 w-24 rounded-full blur-2xl"
-                      style={{ background: `${ap.accent}30` }} />
-                    <div className="absolute -bottom-10 -left-8 h-20 w-20 rounded-full blur-2xl"
-                      style={{ background: `${ap.accentDark}25` }} />
-                    <div className="relative">
-                      <p className="text-[10px] uppercase tracking-[0.2em] font-bold" style={{ color: ap.accentDark }}>{roleExperience[loginType].eyebrow}</p>
-                      <h3 className="text-base font-extrabold text-foreground mt-1">{roleExperience[loginType].heading}</h3>
-                      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{roleExperience[loginType].helper}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ borderColor: `${ap.accent}55`, color: ap.accentDark, background: `${ap.accent}12` }}>{roleExperience[loginType].chipA}</span>
-                        <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ borderColor: `${ap.accent}45`, color: ap.accentDark, background: `${ap.accent}0D` }}>{roleExperience[loginType].chipB}</span>
-                      </div>
-                    </div>
+                  {/* Active role pill */}
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold"
+                    style={{ background: `${ap.accent}14`, color: ap.accentDark, border: `1px solid ${ap.accent}35` }}>
+                    <ap.icon className="h-3 w-3" />
+                    {ap.label} Portal
                   </div>
+                </div>
 
-                  <div className="mb-4 flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-xl overflow-hidden border border-border bg-muted/40 flex items-center justify-center">
+                {/* School + heading */}
+                <div className="mb-7">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-11 w-11 rounded-xl overflow-hidden border border-border/60 bg-muted/30 flex items-center justify-center shrink-0 shadow-sm">
                       {hasSchoolLogo ? (
-                        <img src={schoolInfo?.logoUrl} alt={schoolName} className="h-10 w-10 object-contain" />
+                        <img src={schoolInfo?.logoUrl} alt={schoolName} className="h-9 w-9 object-contain" />
                       ) : (
-                        <div className="relative flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-700">
-                          <Building2 className="h-5 w-5 text-blue-600/70 dark:text-blue-300/70" />
-                          <span className="absolute bottom-1 right-1 text-[10px] font-bold text-blue-700/80 dark:text-blue-200/80">{schoolInitial}</span>
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
+                          <span className="text-base font-black text-primary/60">{schoolInitial}</span>
                         </div>
                       )}
                     </div>
-                    {!hasSchoolLogo && (
-                      <Link to="/login?portal=super_admin" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
-                        <ImagePlus className="h-3.5 w-3.5" /> Add school logo
-                      </Link>
-                    )}
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-muted-foreground/60 font-medium truncate">
+                        {loginType === 'super_admin' ? 'Vitana Platform' : schoolName}
+                      </p>
+                      {!hasSchoolLogo && loginType !== 'super_admin' && (
+                        <Link to="/login?portal=super_admin" className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary/70 hover:text-primary transition-colors mt-0.5">
+                          <ImagePlus className="h-3 w-3" /> Add logo
+                        </Link>
+                      )}
+                    </div>
                   </div>
-                  <h2 className="text-[1.85rem] font-black text-foreground tracking-tight leading-none">{schoolInfo?.name ?? ap.full}</h2>
-                  {!hasSchoolLogo && (
-                    <p className="text-xs text-muted-foreground mt-2">No school logo configured yet. Add one in School Management for stronger branding.</p>
-                  )}
-
+                  <h2 className="text-[1.7rem] font-black text-foreground tracking-[-0.02em] leading-tight">
+                    {loginType === 'super_admin' ? 'Super Admin Portal' : `Sign in to ${schoolInfo?.name ? schoolInfo.name : ap.full}`}
+                  </h2>
+                  <p className="text-[13px] text-muted-foreground mt-1.5 leading-relaxed">
+                    {roleExperience[loginType].helper}
+                  </p>
                 </div>
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                  <div className="space-y-1.5">
+                    <label htmlFor="email" className="text-[13px] font-semibold text-foreground">Email address</label>
+                    <Input
+                      id="email" type="email" value={email}
+                      onChange={e => { setEmail(e.target.value); if (fieldErrors.email) setFieldErrors(p => ({ ...p, email: undefined })); }}
+                      placeholder={roleExperience[loginType].emailPlaceholder}
+                      required autoComplete="email"
+                      aria-invalid={!!fieldErrors.email}
+                      className={`h-12 rounded-xl text-[13.5px] bg-muted/30 border-border/70 placeholder:text-muted-foreground/40 focus-visible:ring-1 transition-all ${
+                        fieldErrors.email ? 'border-destructive focus-visible:ring-destructive/40' : 'focus-visible:border-primary focus-visible:ring-primary/25'
+                      }`}
+                    />
+                    {fieldErrors.email && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 shrink-0" />{fieldErrors.email}
+                      </p>
+                    )}
+                  </div>
 
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="text-[13px] font-semibold text-foreground">Email address</label>
-                <Input
-                  id="email" type="email" value={email}
-                  onChange={e => { setEmail(e.target.value); if (fieldErrors.email) setFieldErrors(p => ({ ...p, email: undefined })); }}
-                  placeholder={roleExperience[loginType].emailPlaceholder}
-                  required autoComplete="email"
-                  aria-invalid={!!fieldErrors.email}
-                  className={`h-11 rounded-xl bg-muted/30 border-border placeholder:text-muted-foreground/50 focus-visible:ring-1 transition-all text-sm ${
-                    fieldErrors.email ? 'border-destructive focus-visible:ring-destructive/50' : 'focus-visible:border-primary focus-visible:ring-primary/30'
-                  }`}
-                />
-                {fieldErrors.email && (
-                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />{fieldErrors.email}
-                  </p>
-                )}
-              </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="password" className="text-[13px] font-semibold text-foreground">Password</label>
+                    <div className="relative">
+                      <Input
+                        id="password" type={showPassword ? 'text' : 'password'} value={password}
+                        onChange={e => { setPassword(e.target.value); if (fieldErrors.password) setFieldErrors(p => ({ ...p, password: undefined })); }}
+                        placeholder={roleExperience[loginType].passwordPlaceholder}
+                        required autoComplete="current-password"
+                        aria-invalid={!!fieldErrors.password}
+                        className={`h-12 rounded-xl text-[13.5px] bg-muted/30 border-border/70 placeholder:text-muted-foreground/40 pr-11 focus-visible:ring-1 transition-all ${
+                          fieldErrors.password ? 'border-destructive focus-visible:ring-destructive/40' : 'focus-visible:border-primary focus-visible:ring-primary/25'
+                        }`}
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {fieldErrors.password && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 shrink-0" />{fieldErrors.password}
+                      </p>
+                    )}
+                  </div>
 
-              <div className="space-y-1.5">
-                <label htmlFor="password" className="text-[13px] font-semibold text-foreground">Password</label>
-                <div className="relative">
-                  <Input
-                    id="password" type={showPassword ? 'text' : 'password'} value={password}
-                    onChange={e => { setPassword(e.target.value); if (fieldErrors.password) setFieldErrors(p => ({ ...p, password: undefined })); }}
-                    placeholder={roleExperience[loginType].passwordPlaceholder}
-                    required autoComplete="current-password"
-                    aria-invalid={!!fieldErrors.password}
-                    className={`h-11 rounded-xl bg-muted/30 border-border placeholder:text-muted-foreground/50 pr-11 focus-visible:ring-1 transition-all text-sm ${
-                      fieldErrors.password ? 'border-destructive focus-visible:ring-destructive/50' : 'focus-visible:border-primary focus-visible:ring-primary/30'
-                    }`}
-                  />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-                    aria-label={showPassword ? 'Hide' : 'Show'}>
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {fieldErrors.password && (
-                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />{fieldErrors.password}
-                  </p>
-                )}
-              </div>
+                  {rateLimitWarn && !error && (
+                    <Alert className="rounded-xl border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 py-2.5">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      <AlertDescription className="text-amber-700 dark:text-amber-300 text-sm">{rateLimitWarn}</AlertDescription>
+                    </Alert>
+                  )}
+                  {error && (
+                    <Alert variant="destructive" className="rounded-xl py-2.5">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">{error}</AlertDescription>
+                    </Alert>
+                  )}
 
-              {rateLimitWarn && !error && (
-                <Alert className="rounded-xl border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 py-2.5">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  <AlertDescription className="text-amber-700 dark:text-amber-300 text-sm">{rateLimitWarn}</AlertDescription>
-                </Alert>
-              )}
-              {error && (
-                <Alert variant="destructive" className="rounded-xl py-2.5">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription className="text-sm">{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {/* Submit button — portal-colored gradient */}
-              <Button type="submit" disabled={loading}
-                className="w-full h-11 rounded-xl text-sm font-bold text-white border-0 shadow-lg transition-all duration-150 hover:opacity-90 active:scale-[0.98] mt-2"
-                style={{ background: `linear-gradient(135deg, ${ap.accent} 0%, ${ap.accentDark} 100%)`, boxShadow: `0 4px 24px ${ap.accent}40` }}>
-                {loading
-                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</>
-                  : <>{brandedSignInLabel} <ArrowRight className="ml-1.5 h-4 w-4" /></>
-                }
-              </Button>
+                  {/* CTA */}
+                  <div className="pt-1">
+                    <Button type="submit" disabled={loading}
+                      className="w-full h-12 rounded-xl text-[13.5px] font-bold text-white border-0 transition-all duration-150 hover:opacity-92 active:scale-[0.985]"
+                      style={{
+                        background: `linear-gradient(135deg, ${ap.accent} 0%, ${ap.accentDark} 100%)`,
+                        boxShadow: `0 4px 20px ${ap.accent}45, 0 1px 3px rgba(0,0,0,0.12)`,
+                      }}>
+                      {loading
+                        ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</>
+                        : <>{brandedSignInLabel}<ArrowRight className="ml-2 h-4 w-4" /></>
+                      }
+                    </Button>
+                  </div>
                 </form>
 
                 {/* Demo credentials */}
                 {demos.filter(d => d.portal === loginType).length > 0 && (
-                  <div className="mt-6 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Demo Access</span>
+                  <div className="mt-5 rounded-xl border border-border/50 bg-muted/20 overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/30">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Demo Access</span>
                     </div>
                     {demos.filter(d => d.portal === loginType).map((du, i) => (
-                      <div key={i} className="flex items-center justify-between py-1.5">
+                      <div key={i} className="flex items-center justify-between px-4 py-2.5">
                         <div>
-                          <p className="text-xs font-semibold text-foreground">{du.role}</p>
-                          <p className="text-[11px] text-muted-foreground leading-tight">{du.email}</p>
+                          <p className="text-[12px] font-semibold text-foreground leading-tight">{du.role}</p>
+                          <p className="text-[11px] text-muted-foreground/70">{du.email}</p>
                         </div>
                         <Button type="button" variant="outline" size="sm"
                           onClick={() => fillDemo(du.email, du.password)}
-                          className="h-7 px-3 text-[11px] font-semibold rounded-lg hover:border-primary/50 hover:text-primary transition-colors">
+                          className="h-7 px-3.5 text-[11px] font-bold rounded-lg border-border/60 hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all">
                           Use
                         </Button>
                       </div>
@@ -658,17 +648,15 @@ export default function Login() {
                   </div>
                 )}
 
-                {/* Footer links */}
-                <div className="mt-5 flex items-center text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <Lock className="h-3 w-3 text-emerald-500" />
-                    Secured with 256-bit SSL
-                  </span>
+                {/* SSL badge */}
+                <div className="mt-5 flex items-center justify-center text-[11px] text-muted-foreground/40 gap-1.5">
+                  <Lock className="h-3 w-3 text-emerald-500/70" />
+                  Secured with 256-bit SSL
                 </div>
-              </>
+              </div>
             )}
 
-            <p className="mt-8 text-center text-[11px] text-muted-foreground lg:hidden">© 2026 Vitana Private Limited</p>
+            <p className="mt-6 text-center text-[11px] text-muted-foreground/40 lg:hidden">© 2026 Vitana Private Limited</p>
           </div>
         </div>
       </div>

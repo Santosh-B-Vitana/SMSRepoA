@@ -165,6 +165,41 @@ function ResultsView({ setupId }: { setupId: string }) {
           </TableBody>
         </Table>
       </div>
+
+      {/* Board-aware grade legend */}
+      {(() => {
+        const legend = results[0]?.gradingScaleLegend;
+        const boardName = results[0]?.boardName;
+        const gradingSystem = results[0]?.gradingSystem;
+        if (!legend?.length) return null;
+        return (
+          <div className="border rounded-md bg-muted/20 px-4 py-3 text-xs space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-muted-foreground">Grade Scale</span>
+              {boardName && (
+                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">{boardName}</span>
+              )}
+              {gradingSystem && (
+                <span className="text-muted-foreground">({gradingSystem.replace(/_/g, ' ')})</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {legend.map(entry => (
+                <span key={entry.grade} className="flex items-center gap-1">
+                  <span className={`font-bold px-1.5 py-0.5 rounded ${entry.isPassing ? 'text-emerald-700 bg-emerald-100' : 'text-red-700 bg-red-100'}`}>
+                    {entry.grade}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {entry.minPercentage}–{entry.maxPercentage}%
+                    {entry.gradePoint > 0 && ` · ${entry.gradePoint}pt`}
+                    {entry.description && ` · ${entry.description}`}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -277,7 +312,18 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
           <p className="text-xs text-muted-foreground">
             {setup.className}{setup.sectionName ? ` · ${setup.sectionName}` : ''} · {setup.academicYear}
             {setup.term ? ` · Term ${setup.term}` : ''}
+            {setup.boardName ? ` · ${setup.boardName}` : ''}
           </p>
+          {setup.effectiveGradingScale?.length > 0 && (
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+              {setup.effectiveGradingScale.map(entry => (
+                <span key={entry.grade} className="text-xs">
+                  <span className={`font-bold ${entry.isPassing ? 'text-emerald-700' : 'text-red-600'}`}>{entry.grade}</span>
+                  <span className="text-muted-foreground"> {entry.minPercentage}–{entry.maxPercentage}%</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_CFG[setup.status]?.color ?? ''}`}>
           {STATUS_CFG[setup.status]?.label ?? setup.status}

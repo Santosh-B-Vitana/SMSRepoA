@@ -235,6 +235,14 @@ namespace SmsApi.Models.DTOs
         // Module overrides: key = module name, value = enabled/disabled
         // If null, all defaults (all enabled) are kept
         public Dictionary<string, bool>? ModuleOverrides { get; set; }
+
+        // Board configurations to attach to this school during onboarding.
+        // Provide one or more BoardConfiguration IDs (from the global board catalog).
+        // The first one (or DefaultBoardConfigurationId) is set as the school's default board.
+        public List<Guid>? BoardConfigurationIds { get; set; }
+
+        /// <summary>Which of the supplied BoardConfigurationIds should be the default. If omitted, the first one is used.</summary>
+        public Guid? DefaultBoardConfigurationId { get; set; }
     }
 
     public class SchoolOnboardingResult

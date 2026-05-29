@@ -54,8 +54,18 @@ export interface SchoolBoardConfigResponse {
   boardLevel: string;
   isActive: boolean;
   isDefault: boolean;
+  // Effective values (custom overrides take precedence over board defaults)
+  effectiveOverallPassingPercentage: number;
+  effectiveTheoryPassingPercentage: number;
+  effectivePracticalPassingPercentage: number;
   effectiveGradingScale: GradeScaleEntry[];
   effectiveExamStructure: ExamStructureEntry[];
+  // Raw override values (null = using board default)
+  customOverallPassingPercentage?: number;
+  customTheoryPassingPercentage?: number;
+  customPracticalPassingPercentage?: number;
+  hasCustomGradingScale: boolean;
+  hasCustomExamStructure: boolean;
   board: BoardConfigurationResponse;
 }
 
@@ -67,6 +77,23 @@ export interface SchoolBoardListResponse {
 export interface AddSchoolBoardRequest {
   boardConfigurationId: string;
   setAsDefault?: boolean;
+}
+
+/**
+ * Update custom overrides on an existing school-board config.
+ * Set a field to `null` (or omit it) to revert it to the board default.
+ */
+export interface UpdateSchoolBoardOverridesRequest {
+  /** Override overall passing %. null = revert to board default */
+  customOverallPassingPercentage?: number | null;
+  /** Override theory component passing %. null = revert to board default */
+  customTheoryPassingPercentage?: number | null;
+  /** Override practical component passing %. null = revert to board default */
+  customPracticalPassingPercentage?: number | null;
+  /** Override grading scale entries. Empty array / null = revert to board default */
+  customGradingScale?: GradeScaleEntry[] | null;
+  /** Override exam structure. null = revert to board default */
+  customExamStructure?: ExamStructureEntry[] | null;
 }
 
 export interface SetSchoolBoardConfigRequest {
@@ -155,6 +182,19 @@ export const boardApi = {
   // Set a board as the default for this school
   async setDefaultBoard(id: string): Promise<SchoolBoardConfigResponse> {
     const response = await apiClient.patch(`/board/school-boards/${id}/set-default`);
+    return response.data;
+  },
+
+  /**
+   * Update custom overrides (passing %, grading scale, exam structure) on an existing
+   * school-board config without replacing or recreating it.
+   * Send null for any field to revert it to the board default.
+   */
+  async updateSchoolBoardOverrides(
+    id: string,
+    request: UpdateSchoolBoardOverridesRequest
+  ): Promise<SchoolBoardConfigResponse> {
+    const response = await apiClient.patch(`/board/school-boards/${id}/overrides`, request);
     return response.data;
   }
 };

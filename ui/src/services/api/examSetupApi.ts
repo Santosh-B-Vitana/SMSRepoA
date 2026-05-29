@@ -87,9 +87,27 @@ export interface ExamSetupBasicDto {
   myAssignedSubjectIds?: string[];
 }
 
+/** One entry in a board's grade scale (A1 91-100, O 90-100, 7 80-100, etc.) */
+export interface GradeScaleEntryDto {
+  grade: string;
+  minPercentage: number;
+  maxPercentage: number;
+  gradePoint: number;
+  description?: string;
+  isPassing: boolean;
+}
+
 export interface ExamSetupDetailDto extends ExamSetupBasicDto {
   subjects: ExamSetupSubjectDto[];
   publishedAt?: string;
+  /** Board grading system identifier, e.g. "CBSE_10POINT", "IB_7POINT", "STATE_PERCENTAGE" */
+  gradingSystem?: string;
+  /** Short board code, e.g. "CBSE", "IB", "CAIE" */
+  boardCode?: string;
+  /** Resolved effective grading scale for this exam (board-specific or school default) */
+  effectiveGradingScale: GradeScaleEntryDto[];
+  /** Effective overall passing percentage threshold (board or school configured) */
+  overallPassingPercentage?: number;
 }
 
 export interface CreateExamSetupSubjectDto {
@@ -214,6 +232,14 @@ export interface StudentExamResultSummaryDto {
   rank?: number;
   isPass: boolean;
   subjects: SubjectResultSummaryDto[];
+  /** Board short code for this exam's configured board, e.g. "CBSE", "IB", "CAIE" */
+  boardCode?: string;
+  /** Human-readable board name, e.g. "Central Board of Secondary Education" */
+  boardName?: string;
+  /** Grading system identifier, e.g. "CBSE_10POINT", "IB_7POINT" */
+  gradingSystem?: string;
+  /** Board-specific grading scale legend for display in mark cards and report views */
+  gradingScaleLegend?: GradeScaleEntryDto[];
 }
 
 export interface PaginatedResponse<T> {

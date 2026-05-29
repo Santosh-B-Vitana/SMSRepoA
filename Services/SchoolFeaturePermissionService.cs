@@ -556,6 +556,46 @@ namespace SmsApi.Services
 
             var enabledModules = await GetEnabledModulesAsync(schoolId);
 
+            // Step 5: Attach board configurations if supplied
+            if (request.BoardConfigurationIds != null && request.BoardConfigurationIds.Count > 0)
+            {
+                for (int i = 0; i < request.BoardConfigurationIds.Count; i++)
+                {
+                    var boardId = request.BoardConfigurationIds[i];
+                    var isDefault = request.DefaultBoardConfigurationId.HasValue
+                        ? boardId == request.DefaultBoardConfigurationId.Value
+                        : i == 0; // first one is default if no explicit default given
+                    try
+                    {
+                        var boardExists = await _context.BoardConfigurations
+                            .AnyAsync(b => b.Id == boardId && b.IsActive);
+                        if (!boardExists) continue; // skip invalid ids silently
+
+                        // Unset prior defaults when this one is being set as default
+                        if (isDefault)
+                        {
+                            var priorDefaults = await _context.SchoolBoardConfigs
+                                .Where(s => s.SchoolId == schoolId && s.IsActive && s.IsDefault)
+                                .ToListAsync();
+                            foreach (var d in priorDefaults) d.IsDefault = false;
+                        }
+
+                        _context.SchoolBoardConfigs.Add(new SmsApi.Models.Entities.SchoolBoardConfig
+                        {
+                            Id = Guid.NewGuid(),
+                            SchoolId = schoolId,
+                            BoardConfigurationId = boardId,
+                            IsDefault = isDefault,
+                            IsActive = true,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                    }
+                    catch { /* skip any individual board failures */ }
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return new SchoolOnboardingResult
             {
                 SchoolId = schoolId,

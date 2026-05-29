@@ -65,7 +65,8 @@ namespace SmsApi.Services
 
                 if (results.Count == 0) continue;
 
-                var passedCount = results.Count(r => r.MarksObtained >= exam.PassingMarks);
+                // Use stored pass/fail status (already board-aware from result submission)
+                var passedCount = results.Count(r => r.IsPass);
                 var failedCount = results.Count - passedCount;
                 var avgMarks = results.Average(r => r.MarksObtained);
                 var highestMarks = results.Max(r => r.MarksObtained);
@@ -91,10 +92,10 @@ namespace SmsApi.Services
                 totalPassedAcrossExams += passedCount;
                 totalFailedAcrossExams += failedCount;
 
-                // Track grade distribution
+                // Use stored board-aware grades (set during result submission)
                 foreach (var result in results)
                 {
-                    var grade = CalculateGrade(result.MarksObtained, result.TotalMarks);
+                    var grade = result.Grade ?? "F";
                     if (!gradeDistribution.ContainsKey(grade))
                         gradeDistribution[grade] = 0;
                     gradeDistribution[grade]++;
@@ -114,6 +115,11 @@ namespace SmsApi.Services
                 response.GradeCPercentage = GetGradePercentage("C", gradeDistribution, totalStudentsAcrossExams);
                 response.GradeDPercentage = GetGradePercentage("D", gradeDistribution, totalStudentsAcrossExams);
                 response.GradeEPercentage = GetGradePercentage("E", gradeDistribution, totalStudentsAcrossExams);
+                // GradeBreakdown carries the full board-specific distribution
+                response.GradeBreakdown = gradeDistribution
+                    .OrderByDescending(kv => kv.Value)
+                    .ToDictionary(kv => kv.Key, kv =>
+                        totalStudentsAcrossExams > 0 ? Math.Round((decimal)kv.Value / totalStudentsAcrossExams * 100, 1) : 0m);
             }
 
             return response;
@@ -192,9 +198,10 @@ namespace SmsApi.Services
 
             foreach (var result in results.OrderByDescending(r => r.MarksObtained))
             {
-                var percentage = exam.TotalMarks > 0 ? (double)(result.MarksObtained / exam.TotalMarks) * 100 : 0;
-                var grade = CalculateGrade(result.MarksObtained, exam.TotalMarks);
-                var status = result.MarksObtained >= exam.PassingMarks ? "Pass" : "Fail";
+                var percentage = result.TotalMarks > 0 ? (double)(result.MarksObtained / result.TotalMarks) * 100 : 0;
+                // Use stored board-aware grade and pass/fail status
+                var grade = result.Grade ?? "F";
+                var status = result.IsPass ? "Pass" : "Fail";
 
                 response.StudentMarks.Add(new StudentMarkDetail
                 {
@@ -246,7 +253,8 @@ namespace SmsApi.Services
                 if (classResults.Count == 0)
                     continue;
 
-                var passedCount = classResults.Count(r => r.MarksObtained >= 35);
+                // Use stored IsPass (board-aware) instead of a hardcoded threshold
+                var passedCount = classResults.Count(r => r.IsPass);
                 var failedCount = classResults.Count - passedCount;
                 var avgMarks = classResults.Average(r => r.MarksObtained);
                 var maxMarks = classResults.Max(r => r.MarksObtained);
@@ -287,11 +295,11 @@ namespace SmsApi.Services
                 .Where(r => r.ExamId == examId && r.SchoolId == schoolId && !r.IsDeleted)
                 .ToListAsync();
 
+            // Group by stored board-aware grade (A1/A2/O/A*/7/etc. for respective boards)
             var gradeDistribution = new Dictionary<string, int>();
-
             foreach (var result in results)
             {
-                var grade = CalculateGrade(result.MarksObtained, result.TotalMarks > 0 ? result.TotalMarks : exam.TotalMarks);
+                var grade = result.Grade ?? "F";
                 if (!gradeDistribution.ContainsKey(grade))
                     gradeDistribution[grade] = 0;
                 gradeDistribution[grade]++;
@@ -305,24 +313,15 @@ namespace SmsApi.Services
                 GradeDistributions = new List<GradeDistribution>()
             };
 
-            var gradeRanges = new Dictionary<string, string>
+            // Emit one entry per grade that actually appears in the results
+            foreach (var kv in gradeDistribution.OrderByDescending(k => k.Value))
             {
-                { "A", "90-100" },
-                { "B", "80-89" },
-                { "C", "70-79" },
-                { "D", "60-69" },
-                { "E", "Below 60" }
-            };
-
-            foreach (var gradeRange in gradeRanges)
-            {
-                var count = gradeDistribution.ContainsKey(gradeRange.Key) ? gradeDistribution[gradeRange.Key] : 0;
                 response.GradeDistributions.Add(new GradeDistribution
                 {
-                    GradeSymbol = gradeRange.Key,
-                    GradeRange = gradeRange.Value,
-                    StudentCount = count,
-                    Percentage = results.Count > 0 ? (decimal)count / results.Count * 100 : 0
+                    GradeSymbol = kv.Key,
+                    GradeRange = string.Empty, // label is the grade code itself
+                    StudentCount = kv.Value,
+                    Percentage = results.Count > 0 ? Math.Round((decimal)kv.Value / results.Count * 100, 1) : 0
                 });
             }
 

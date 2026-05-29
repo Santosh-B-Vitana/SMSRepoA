@@ -61,11 +61,13 @@ namespace SmsApi.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<ExamSetupService> _logger;
+        private readonly IBoardConfigurationService _boardService;
 
-        public ExamSetupService(AppDbContext context, ILogger<ExamSetupService> logger)
+        public ExamSetupService(AppDbContext context, ILogger<ExamSetupService> logger, IBoardConfigurationService boardService)
         {
             _context = context;
             _logger = logger;
+            _boardService = boardService;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -259,6 +261,25 @@ namespace SmsApi.Services
 
             if (entity == null) return null;
 
+            // Resolve board grading context for the detail view
+            var gradeScale = await ResolveGradeScaleAsync(schoolId, entity.ClassId, entity.BoardConfigurationId);
+            var boardCode = entity.BoardConfig?.Code;
+            var gradingSystem = entity.BoardConfig?.GradingSystem;
+            var overallPassPct = await GetEffectiveOverallPassingPctAsync(
+                schoolId, entity.BoardConfigurationId, entity.AcademicYear);
+            var boardPassPct = entity.BoardConfig?.OverallPassingPercentage ?? overallPassPct;
+            var effectiveGradingScale = gradeScale
+                .OrderByDescending(s => s.min)
+                .Select(s => new GradeScaleEntryDto
+                {
+                    Grade = s.grade,
+                    MinPercentage = s.min,
+                    MaxPercentage = s.max,
+                    GradePoint = s.gp,
+                    IsPassing = s.min >= boardPassPct
+                })
+                .ToList();
+
             return new ExamSetupDetailDto
             {
                 Id                  = entity.Id,
@@ -281,6 +302,10 @@ namespace SmsApi.Services
                 MarksEnteredCount   = entity.Subjects.Count(s => !s.IsDeleted && (s.Status == "marks_entry" || s.Status == "locked")),
                 CreatedAt           = entity.CreatedAt,
                 PublishedAt         = entity.PublishedAt,
+                BoardCode           = boardCode,
+                GradingSystem       = gradingSystem,
+                OverallPassingPercentage = overallPassPct,
+                EffectiveGradingScale = effectiveGradingScale,
                 Subjects            = entity.Subjects
                     .Where(s => !s.IsDeleted)
                     .OrderBy(s => s.SubjectOrder)
@@ -813,6 +838,14 @@ namespace SmsApi.Services
                         && r.AcademicYear == setup.AcademicYear
                         && r.Term == (setup.Term == 0 ? "Annual" : $"Term {setup.Term}"));
 
+                var overallPassPct = await GetEffectiveOverallPassingPctAsync(
+                    schoolId, setup.BoardConfigurationId, setup.AcademicYear);
+                var allSubjectsPassed = setup.Subjects
+                    .Select(s => s.MarksEntries.FirstOrDefault(m => m.StudentId == studentId))
+                    .Where(e => e != null && !e.IsAbsent)
+                    .All(e => e!.IsPass);
+                var isPassingOverall = allSubjectsPassed && pct >= overallPassPct;
+
                 if (existingCard == null)
                 {
                     _context.ReportCards.Add(new ReportCard
@@ -827,7 +860,7 @@ namespace SmsApi.Services
                         Percentage = pct,
                         OverallGrade = overallGrade,
                         CGPA = cgpa,
-                        Status = pct >= 35 ? "Pass" : "Fail",
+                        Status = isPassingOverall ? "Pass" : "Fail",
                         IssueDate = DateTime.UtcNow
                     });
                 }
@@ -838,7 +871,7 @@ namespace SmsApi.Services
                     existingCard.Percentage = pct;
                     existingCard.OverallGrade = overallGrade;
                     existingCard.CGPA = cgpa;
-                    existingCard.Status = pct >= 35 ? "Pass" : "Fail";
+                    existingCard.Status = isPassingOverall ? "Pass" : "Fail";
                     existingCard.IssueDate = DateTime.UtcNow;
                     existingCard.ExamSetupId = setup.Id;
                 }
@@ -938,6 +971,31 @@ namespace SmsApi.Services
             var result = new List<StudentExamResultSummaryDto>();
             var gradeScale = await ResolveGradeScaleAsync(schoolId, setup.ClassId, setup.BoardConfigurationId);
 
+            // ── Board context for mark card rendering (same for all students in this exam) ──
+            string? boardCode = null, boardName = null, gradingSystem = null;
+            var gradingScaleLegend = new List<GradeScaleEntryDto>();
+            if (setup.BoardConfigurationId.HasValue)
+            {
+                var board = await _context.BoardConfigurations.FindAsync(setup.BoardConfigurationId.Value);
+                if (board != null)
+                {
+                    boardCode = board.Code;
+                    boardName = board.Name;
+                    gradingSystem = board.GradingSystem;
+                    gradingScaleLegend = gradeScale
+                        .OrderByDescending(s => s.min)
+                        .Select(s => new GradeScaleEntryDto
+                        {
+                            Grade = s.grade,
+                            MinPercentage = s.min,
+                            MaxPercentage = s.max,
+                            GradePoint = s.gp,
+                            IsPassing = s.min >= board.OverallPassingPercentage
+                        })
+                        .ToList();
+                }
+            }
+
             foreach (var studentId in studentIds)
             {
                 if (!students.TryGetValue(studentId, out var student)) continue;
@@ -974,6 +1032,12 @@ namespace SmsApi.Services
                 var pct = totalMax > 0 ? Math.Round(totalObtained / totalMax * 100, 2) : 0;
                 var (overallGrade, cgpa) = ResolveGradeFromScale(gradeScale, pct);
 
+                var overallPassPctForSummary = await GetEffectiveOverallPassingPctAsync(
+                    schoolId, setup.BoardConfigurationId, setup.AcademicYear);
+                var allSubjectsPassedForSummary = subjectResults
+                    .Where(s => !s.IsAbsent)
+                    .All(s => s.IsPass);
+
                 result.Add(new StudentExamResultSummaryDto
                 {
                     StudentId = studentId,
@@ -988,7 +1052,11 @@ namespace SmsApi.Services
                     Percentage = pct,
                     OverallGrade = overallGrade,
                     CGPA = cgpa,
-                    IsPass = pct >= 35
+                    IsPass = allSubjectsPassedForSummary && pct >= overallPassPctForSummary,
+                    BoardCode = boardCode,
+                    BoardName = boardName,
+                    GradingSystem = gradingSystem,
+                    GradingScaleLegend = gradingScaleLegend
                 });
             }
 
@@ -1553,6 +1621,43 @@ namespace SmsApi.Services
                     return (grade, gp);
             }
             return ("F", 0m);
+        }
+
+        /// <summary>
+        /// Returns the effective overall passing percentage for the exam's board.
+        /// Priority: school's custom override → board default → 33% fallback.
+        /// </summary>
+        private async Task<decimal> GetEffectiveOverallPassingPctAsync(
+            Guid schoolId, Guid? boardConfigurationId, string? academicYear)
+        {
+            if (boardConfigurationId.HasValue)
+            {
+                // Check for school-level override for this specific board
+                var schoolCfg = await _context.SchoolBoardConfigs
+                    .Where(c => c.SchoolId == schoolId
+                        && c.BoardConfigurationId == boardConfigurationId.Value
+                        && c.IsActive)
+                    .OrderByDescending(c => c.AcademicYear)
+                    .FirstOrDefaultAsync();
+
+                if (schoolCfg?.CustomOverallPassingPercentage.HasValue == true)
+                    return schoolCfg.CustomOverallPassingPercentage.Value;
+
+                // Board's own default
+                var board = await _context.BoardConfigurations.FindAsync(boardConfigurationId.Value);
+                if (board != null)
+                    return board.OverallPassingPercentage;
+            }
+
+            // School's default board
+            var defaultCfg = await _context.SchoolBoardConfigs
+                .Include(c => c.BoardConfiguration)
+                .Where(c => c.SchoolId == schoolId && c.IsActive && c.IsDefault)
+                .FirstOrDefaultAsync();
+
+            return defaultCfg?.CustomOverallPassingPercentage
+                ?? defaultCfg?.BoardConfiguration?.OverallPassingPercentage
+                ?? 33m;
         }
     }
 }

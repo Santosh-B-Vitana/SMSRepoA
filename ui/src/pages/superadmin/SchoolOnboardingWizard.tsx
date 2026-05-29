@@ -8,7 +8,7 @@ import {
   Megaphone, BarChart2, FolderOpen, ClipboardList,
   Library, Bus, Home, Heart, Wallet, MessageSquare,
   TrendingUp, Award, ShoppingBag, FileText, Sparkles,
-  School,
+  School, Star,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import * as superAdminApi from "@/services/api/superAdminApi";
 import type { OnboardSchoolResult } from "@/services/api/superAdminApi";
+import { boardApi } from "@/services/api/boardApi";
+import type { BoardConfigurationResponse } from "@/services/api/boardApi";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,7 +32,6 @@ interface WizardData {
   school: {
     name: string;
     schoolCode: string;
-    board: string;
     schoolType: string;
     address: string;
     phone: string;
@@ -50,6 +51,11 @@ interface WizardData {
     autoGenerate: boolean;
   };
   modules: Record<string, boolean>;
+  boards: {
+    selected: string[];       // boardConfigurationId[]
+    defaultBoardId: string;   // which one is the default
+    names: Record<string, string>; // id → display name for review
+  };
 }
 
 // ─── Module definitions ───────────────────────────────────────────────────────
@@ -118,10 +124,11 @@ function suggestAcademicYear() {
 const yearSuggestion = suggestAcademicYear();
 
 const INITIAL_DATA: WizardData = {
-  school: { name: "", schoolCode: "", board: "", schoolType: "independent", address: "", phone: "", email: "", logo: "" },
+  school: { name: "", schoolCode: "", schoolType: "independent", address: "", phone: "", email: "", logo: "" },
   year: { name: yearSuggestion.name, startDate: yearSuggestion.startDate, endDate: yearSuggestion.endDate, isCurrent: true },
   admin: { username: "", email: "", password: generatePassword(), autoGenerate: true },
   modules: { ...DEFAULT_MODULES },
+  boards: { selected: [], defaultBoardId: "", names: {} },
 };
 
 // ─── Step config ─────────────────────────────────────────────────────────────
@@ -131,7 +138,8 @@ const STEPS = [
   { id: 2, label: "Academic Year",  icon: CalendarDays },
   { id: 3, label: "Admin Account",  icon: User },
   { id: 4, label: "Modules",        icon: ShieldCheck },
-  { id: 5, label: "Review & Launch",icon: Rocket },
+  { id: 5, label: "Boards",         icon: BookOpen },
+  { id: 6, label: "Review & Launch",icon: Rocket },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -173,6 +181,9 @@ export default function SchoolOnboardingWizard() {
 
   const toggleModule = (key: string) =>
     setData((d) => ({ ...d, modules: { ...d.modules, [key]: !d.modules[key] } }));
+
+  const patchBoards = (patch: Partial<WizardData["boards"]>) =>
+    setData((d) => ({ ...d, boards: { ...d.boards, ...patch } }));
 
   const clearError = (key: string) =>
     setErrors((e) => { const n = { ...e }; delete n[key]; return n; });
@@ -250,6 +261,8 @@ export default function SchoolOnboardingWizard() {
         adminEmail: data.admin.email.trim(),
         adminPassword: data.admin.password,
         moduleOverrides: Object.keys(overrides).length ? overrides : undefined,
+        boardConfigurationIds: data.boards.selected.length ? data.boards.selected : undefined,
+        defaultBoardConfigurationId: data.boards.defaultBoardId || (data.boards.selected[0] ?? undefined),
       });
 
       setResult(res);
@@ -440,6 +453,12 @@ export default function SchoolOnboardingWizard() {
             />
           )}
           {step === 5 && (
+            <StepBoards
+              boards={data.boards}
+              onChange={patchBoards}
+            />
+          )}
+          {step === 6 && (
             <StepReview
               data={data}
               launching={launching}
@@ -460,7 +479,7 @@ export default function SchoolOnboardingWizard() {
             Back
           </Button>
 
-          {step < 5 ? (
+          {step < 6 ? (
             <Button
               onClick={goNext}
               disabled={step === 1 && codeAlreadyExists}
@@ -598,23 +617,6 @@ function StepSchoolProfile({
                 ? <FieldError>⚠️ This school code is already taken — please choose a different one</FieldError>
                 : <p className="text-xs text-muted-foreground mt-1">Unique identifier — cannot be changed later</p>
           }
-        </div>
-
-        <div>
-          <FieldLabel>Board / Curriculum</FieldLabel>
-          <Select value={data.board} onValueChange={(v) => onChange({ board: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select board" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="cbse">CBSE</SelectItem>
-              <SelectItem value="icse">ICSE / ISC</SelectItem>
-              <SelectItem value="state">State Board</SelectItem>
-              <SelectItem value="ib">IB (International Baccalaureate)</SelectItem>
-              <SelectItem value="igcse">IGCSE (Cambridge)</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
         <div>
@@ -928,7 +930,131 @@ function StepModules({
   );
 }
 
-// ─── Step 5: Review & Launch ──────────────────────────────────────────────────
+// ─── Step 5: Boards ──────────────────────────────────────────────────────────
+
+function StepBoards({
+  boards, onChange,
+}: {
+  boards: WizardData["boards"];
+  onChange: (patch: Partial<WizardData["boards"]>) => void;
+}) {
+  const [allBoards, setAllBoards] = useState<BoardConfigurationResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    boardApi.getAllBoards()
+      .then((res) => setAllBoards(res.boards.filter((b) => b.isActive)))
+      .catch(() => {/* non-critical — boards can be set up later */})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggleBoard = (id: string, name: string) => {
+    const isSelected = boards.selected.includes(id);
+    const newSelected = isSelected
+      ? boards.selected.filter((s) => s !== id)
+      : [...boards.selected, id];
+
+    const newNames = { ...boards.names };
+    if (isSelected) delete newNames[id]; else newNames[id] = name;
+
+    // If we removed the current default, pick the first remaining or clear
+    const newDefault = isSelected && boards.defaultBoardId === id
+      ? (newSelected[0] ?? "")
+      : (boards.defaultBoardId || (newSelected[0] ?? ""));
+
+    onChange({ selected: newSelected, defaultBoardId: newDefault, names: newNames });
+  };
+
+  const setDefault = (id: string) => {
+    if (!boards.selected.includes(id)) return;
+    onChange({ defaultBoardId: id });
+  };
+
+  return (
+    <WizardCard
+      title="Boards & Curriculum"
+      description="Select the boards/curricula this school follows. You can add or change these later."
+    >
+      {loading ? (
+        <div className="flex items-center justify-center py-12 text-muted-foreground text-sm gap-2">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Loading available boards…
+        </div>
+      ) : allBoards.length === 0 ? (
+        <div className="text-center py-10 text-muted-foreground text-sm">
+          No boards found. You can configure boards after onboarding from the Board Settings page.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {allBoards.map((board) => {
+              const isSelected = boards.selected.includes(board.id);
+              const isDefault  = boards.defaultBoardId === board.id;
+              return (
+                <button
+                  key={board.id}
+                  type="button"
+                  onClick={() => toggleBoard(board.id, board.name)}
+                  className={cn(
+                    "relative text-left rounded-xl border-2 p-4 transition-all",
+                    isSelected
+                      ? "border-indigo-500 bg-indigo-50 shadow-sm"
+                      : "border-border bg-card hover:border-indigo-200 hover:bg-indigo-50/40"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm truncate">{board.name}</span>
+                        {isSelected && (
+                          <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {board.code}{board.boardLevel ? ` · ${board.boardLevel}` : ""}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <button
+                        type="button"
+                        title={isDefault ? "Default board" : "Set as default"}
+                        onClick={(e) => { e.stopPropagation(); setDefault(board.id); }}
+                        className={cn(
+                          "shrink-0 rounded-full p-1 transition-colors",
+                          isDefault
+                            ? "text-amber-500 hover:text-amber-600"
+                            : "text-muted-foreground/40 hover:text-amber-400"
+                        )}
+                      >
+                        <Star className={cn("h-4 w-4", isDefault && "fill-amber-400")} />
+                      </button>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {boards.selected.length > 0 && (
+            <div className="mt-4 rounded-lg bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-800 flex items-start gap-2">
+              <Star className="h-4 w-4 text-amber-500 fill-amber-400 shrink-0 mt-0.5" />
+              <span>
+                <strong>{allBoards.find((b) => b.id === boards.defaultBoardId)?.name ?? "—"}</strong>
+                {" "}is set as the default board. Click the star on any selected board to change it.
+              </span>
+            </div>
+          )}
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            Boards can be skipped and configured later under Academic Settings.
+          </p>
+        </>
+      )}
+    </WizardCard>
+  );
+}
+
+// ─── Step 6: Review & Launch ──────────────────────────────────────────────────
 
 function StepReview({
   data, launching, onLaunch,
@@ -953,7 +1079,6 @@ function StepReview({
         >
           <ReviewRow label="Name"   value={data.school.name} />
           <ReviewRow label="Code"   value={data.school.schoolCode.toUpperCase()} mono />
-          <ReviewRow label="Board"  value={data.school.board || "—"} />
           <ReviewRow label="Type"   value={data.school.schoolType} />
           {data.school.phone   && <ReviewRow label="Phone"   value={data.school.phone} />}
           {data.school.email   && <ReviewRow label="Email"   value={data.school.email} />}
@@ -1000,6 +1125,31 @@ function StepReview({
               </Badge>
             ))}
           </div>
+        </ReviewSection>
+
+        <ReviewSection
+          id="boards"
+          title={data.boards.selected.length > 0 ? `Boards (${data.boards.selected.length} selected)` : "Boards (none — can configure later)"}
+          icon={BookOpen}
+          open={openSection === "boards"}
+          onToggle={() => toggle("boards")}
+        >
+          {data.boards.selected.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">No boards selected. You can configure boards after onboarding.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {data.boards.selected.map((id) => (
+                <Badge
+                  key={id}
+                  variant={id === data.boards.defaultBoardId ? "default" : "secondary"}
+                  className="text-xs gap-1"
+                >
+                  {id === data.boards.defaultBoardId && <Star className="h-3 w-3 fill-current" />}
+                  {data.boards.names[id] ?? id}
+                </Badge>
+              ))}
+            </div>
+          )}
         </ReviewSection>
       </div>
 

@@ -365,5 +365,29 @@ namespace SmsApi.Controllers
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
             catch (Exception ex) { return StatusCode(500, new { message = "An error occurred.", details = ex.Message }); }
         }
+
+        /// <summary>
+        /// Update custom overrides (passing %, grading scale, exam structure) on an existing school-board config.
+        /// Send null for any field to revert it to the board default.
+        /// </summary>
+        [HttpPatch("school-boards/{id}/overrides")]
+        [Authorize(Roles = "SuperAdmin,Admin,Principal")]
+        public async Task<ActionResult<SchoolBoardConfigResponse>> UpdateSchoolBoardOverrides(
+            Guid id, [FromBody] UpdateSchoolBoardOverridesRequest request)
+        {
+            try
+            {
+                if (request == null)
+                    return BadRequest(new { message = "Request body cannot be null." });
+
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _boardService.UpdateSchoolBoardOverridesAsync(schoolId, id, request);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred.", details = ex.Message }); }
+        }
     }
 }

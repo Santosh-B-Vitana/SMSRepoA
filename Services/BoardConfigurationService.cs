@@ -28,6 +28,7 @@ namespace SmsApi.Services
         Task<SchoolBoardConfigResponse> AddSchoolBoardAsync(Guid schoolId, AddSchoolBoardRequest request);
         Task RemoveSchoolBoardAsync(Guid schoolId, Guid configId);
         Task<SchoolBoardConfigResponse> SetDefaultBoardAsync(Guid schoolId, Guid configId);
+        Task<SchoolBoardConfigResponse> UpdateSchoolBoardOverridesAsync(Guid schoolId, Guid configId, UpdateSchoolBoardOverridesRequest request);
 
         // ── Grading (board-aware) ─────────────────────────────────────────────
         Task<BoardAwareGradeResult> CalculateGradeAsync(Guid schoolId, decimal percentage, string? academicYear = null);
@@ -393,6 +394,63 @@ namespace SmsApi.Services
                 d.IsDefault = false;
 
             config.IsDefault = true;
+            config.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return MapToSchoolBoardConfigResponse(config);
+        }
+
+        public async Task<SchoolBoardConfigResponse> UpdateSchoolBoardOverridesAsync(
+            Guid schoolId, Guid configId, UpdateSchoolBoardOverridesRequest request)
+        {
+            var config = await _context.SchoolBoardConfigs
+                .Include(s => s.BoardConfiguration)
+                .FirstOrDefaultAsync(s => s.Id == configId && s.SchoolId == schoolId && s.IsActive);
+            if (config == null)
+                throw new InvalidOperationException("School board configuration not found.");
+
+            var board = config.BoardConfiguration!;
+
+            // Validate passing percentages
+            if (request.CustomOverallPassingPercentage.HasValue &&
+                (request.CustomOverallPassingPercentage < 0 || request.CustomOverallPassingPercentage > 100))
+                throw new ArgumentException("CustomOverallPassingPercentage must be between 0 and 100");
+
+            if (request.CustomTheoryPassingPercentage.HasValue &&
+                (request.CustomTheoryPassingPercentage < 0 || request.CustomTheoryPassingPercentage > 100))
+                throw new ArgumentException("CustomTheoryPassingPercentage must be between 0 and 100");
+
+            if (request.CustomPracticalPassingPercentage.HasValue &&
+                (request.CustomPracticalPassingPercentage < 0 || request.CustomPracticalPassingPercentage > 100))
+                throw new ArgumentException("CustomPracticalPassingPercentage must be between 0 and 100");
+
+            // Validate custom grading scale entries if provided
+            if (request.CustomGradingScale != null && request.CustomGradingScale.Count > 0)
+            {
+                foreach (var entry in request.CustomGradingScale)
+                {
+                    if (entry.MinPercentage < 0 || entry.MinPercentage > 100 ||
+                        entry.MaxPercentage < 0 || entry.MaxPercentage > 100)
+                        throw new ArgumentException("Grade scale percentage values must be between 0 and 100");
+                    if (entry.MinPercentage > entry.MaxPercentage)
+                        throw new ArgumentException($"Grade '{entry.Grade}': minPercentage ({entry.MinPercentage}) cannot exceed maxPercentage ({entry.MaxPercentage})");
+                }
+            }
+
+            // Apply overrides — null clears the override (reverts to board default)
+            config.CustomOverallPassingPercentage = request.CustomOverallPassingPercentage;
+            config.CustomTheoryPassingPercentage = request.CustomTheoryPassingPercentage;
+            config.CustomPracticalPassingPercentage = request.CustomPracticalPassingPercentage;
+
+            // Empty list or null both mean "revert to board default"
+            config.CustomGradingScaleJson = (request.CustomGradingScale != null && request.CustomGradingScale.Count > 0)
+                ? JsonSerializer.Serialize(request.CustomGradingScale)
+                : null;
+
+            config.CustomExamStructureJson = (request.CustomExamStructure != null && request.CustomExamStructure.Count > 0)
+                ? JsonSerializer.Serialize(request.CustomExamStructure)
+                : null;
+
             config.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 

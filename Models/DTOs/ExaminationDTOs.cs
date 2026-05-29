@@ -501,6 +501,19 @@ namespace SmsApi.Models.DTOs
     {
         public List<ExamSetupSubjectDto> Subjects { get; set; } = new();
         public DateTime? PublishedAt { get; set; }
+
+        // ── Board grading context ─────────────────────────────────────────
+        /// <summary>Board code (e.g. "CBSE", "IB", "STATE-MH").</summary>
+        public string? BoardCode { get; set; }
+        /// <summary>Grading system label (e.g. "A1-E2 10-point scale").</summary>
+        public string? GradingSystem { get; set; }
+        /// <summary>Overall pass percentage for this exam's board (school override applied).</summary>
+        public decimal? OverallPassingPercentage { get; set; }
+        /// <summary>
+        /// Ordered grading scale for rendering the grade key on exam setup pages and mark entry sheets.
+        /// Always populated regardless of exam status.
+        /// </summary>
+        public List<GradeScaleEntryDto> EffectiveGradingScale { get; set; } = new();
     }
 
     /// <summary>Per-subject slot within an ExamSetup.</summary>
@@ -724,6 +737,19 @@ namespace SmsApi.Models.DTOs
         public decimal? CGPA { get; set; }
         public int? Rank { get; set; }
         public bool IsPass { get; set; }
+
+        // ── Board context for mark card / report card rendering ────────────
+        /// <summary>Board code (e.g. "CBSE", "IB", "STATE-MH"). Null if no board configured.</summary>
+        public string? BoardCode { get; set; }
+        /// <summary>Full board name (e.g. "Central Board of Secondary Education").</summary>
+        public string? BoardName { get; set; }
+        /// <summary>Grading system description (e.g. "A1-E2 10-point scale").</summary>
+        public string? GradingSystem { get; set; }
+        /// <summary>
+        /// Ordered grading scale legend for this exam. Populated after finalization.
+        /// Allows the frontend to render the correct grade key on mark cards for every board.
+        /// </summary>
+        public List<GradeScaleEntryDto> GradingScaleLegend { get; set; } = new();
     }
 
     public class SubjectResultSummaryDto

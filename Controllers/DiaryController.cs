@@ -392,104 +392,7 @@ namespace SmsApi.Controllers
 
             // ── Notify parents if NotifyParent is set ─────────────────────────
             if (entry.NotifyParent && entry.IsVisibleToParent)
-            {
-                var notifSchoolId = SchoolId();
-                // Build list of (parentUserId, studentId) pairs so each notification is tagged
-                // with the correct child — enabling per-child filtering on the parent portal.
-                List<(Guid ParentId, Guid StudentId)> parentStudentPairs;
-
-                if (entry.DiaryType == "individual" && entry.StudentId.HasValue)
-                {
-                    var sid = entry.StudentId.Value;
-                    parentStudentPairs = await GetParentStudentPairsForStudentAsync(notifSchoolId, sid);
-                }
-                else if (entry.DiaryType == "class" && entry.ClassId.HasValue)
-                {
-                    // Collect all student IDs enrolled in this class/section
-                    var classStudentIds = await _db.StudentEnrollments
-                        .Where(se => se.SchoolId == notifSchoolId &&
-                                     se.ClassId == entry.ClassId.Value &&
-                                     (entry.SectionId == null || se.SectionId == entry.SectionId) &&
-                                     se.Status == "active")
-                        .Select(se => se.StudentId)
-                        .Distinct()
-                        .ToListAsync();
-
-                    // Legacy string-based student fallback
-                    var classEntity = await _db.Classes
-                        .Where(c => c.Id == entry.ClassId.Value)
-                        .Select(c => new { c.Name })
-                        .FirstOrDefaultAsync();
-                    if (classEntity != null)
-                    {
-                        var sectionName = entry.SectionId.HasValue
-                            ? await _db.Sections
-                                .Where(s => s.Id == entry.SectionId.Value)
-                                .Select(s => s.Name)
-                                .FirstOrDefaultAsync()
-                            : null;
-                        var legacyStudentIds = await _db.Students
-                            .Where(s => s.SchoolId == notifSchoolId &&
-                                        s.Class == classEntity.Name &&
-                                        (sectionName == null || s.Section == sectionName))
-                            .Select(s => s.Id)
-                            .ToListAsync();
-                        classStudentIds = classStudentIds.Union(legacyStudentIds).Distinct().ToList();
-                    }
-
-                    // Build parent→student pairs for all students in this class
-                    parentStudentPairs = new List<(Guid, Guid)>();
-                    foreach (var sid in classStudentIds)
-                    {
-                        var pairs = await GetParentStudentPairsForStudentAsync(notifSchoolId, sid);
-                        parentStudentPairs.AddRange(pairs);
-                    }
-                    parentStudentPairs = parentStudentPairs.Distinct().ToList();
-                }
-                else
-                {
-                    parentStudentPairs = new List<(Guid, Guid)>();
-                }
-
-                if (parentStudentPairs.Count > 0)
-                {
-                    var staffName = entry.Staff != null
-                        ? $"{entry.Staff.FirstName} {entry.Staff.LastName}".Trim()
-                        : "Staff";
-
-                    var shortContent = entry.Content.Length > 150
-                        ? entry.Content[..150] + "…"
-                        : entry.Content;
-
-                    var priority = (entry.Priority?.ToLower()) switch
-                    {
-                        "high"   => "High",
-                        "urgent" => "Urgent",
-                        "low"    => "Low",
-                        _        => "Normal",
-                    };
-
-                    var notifs = parentStudentPairs.Select(pair => new Notification
-                    {
-                        SchoolId      = SchoolId(),
-                        RecipientId   = pair.ParentId,
-                        RecipientType = "Parent",
-                        SenderId      = UserId(),
-                        SenderName    = staffName,
-                        Type          = "Diary",
-                        Title         = entry.Title,
-                        Content       = shortContent,
-                        ReferenceId   = entry.Id,
-                        ReferenceType = "Diary",
-                        Priority      = priority,
-                        ActionUrl     = "/parent-diary",
-                        StudentId     = pair.StudentId,
-                    }).ToList();
-
-                    _db.Notifications.AddRange(notifs);
-                    await _db.SaveChangesAsync();
-                }
-            }
+                await SendDiaryNotificationsAsync(entry, deduplicateByEntryId: false);
 
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, ProjectEntry(entry));
         }
@@ -505,6 +408,9 @@ namespace SmsApi.Controllers
             var entry = await _db.StudentDiaries
                 .FirstOrDefaultAsync(e => e.Id == id && e.SchoolId == schoolId);
             if (entry == null) return NotFound();
+
+            // Track whether NotifyParent is being switched on so we can send notifications after save.
+            bool wasNotifyingParent = entry.NotifyParent;
 
             if (dto.Title != null) entry.Title = dto.Title.Trim();
             if (dto.Content != null) entry.Content = dto.Content.Trim();
@@ -522,6 +428,12 @@ namespace SmsApi.Controllers
             await _db.Entry(entry).Reference(e => e.Class).LoadAsync();
             await _db.Entry(entry).Reference(e => e.Section).LoadAsync();
             await _db.Entry(entry).Reference(e => e.Student).LoadAsync();
+
+            // If NotifyParent was just turned on (previously false → now true), send notifications.
+            // Deduplicate so parents who already received a notification for this entry are skipped.
+            bool notifyTurnedOn = !wasNotifyingParent && entry.NotifyParent;
+            if (notifyTurnedOn && entry.IsVisibleToParent)
+                await SendDiaryNotificationsAsync(entry, deduplicateByEntryId: true);
 
             return Ok(ProjectEntry(entry));
         }
@@ -541,6 +453,128 @@ namespace SmsApi.Controllers
             _db.StudentDiaries.Remove(entry);   // soft-delete via SaveChanges interceptor
             await _db.SaveChangesAsync();
             return NoContent();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Notification sending
+        // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Resolves parent/student pairs and creates Diary notifications for the given entry.
+        /// When <paramref name="deduplicateByEntryId"/> is true, skips parents who already have
+        /// a notification for this entry (prevents duplicates when re-triggering from an edit).
+        /// </summary>
+        private async Task SendDiaryNotificationsAsync(StudentDiary entry, bool deduplicateByEntryId)
+        {
+            var notifSchoolId = SchoolId();
+            List<(Guid ParentId, Guid StudentId)> parentStudentPairs;
+
+            if (entry.DiaryType == "individual" && entry.StudentId.HasValue)
+            {
+                parentStudentPairs = await GetParentStudentPairsForStudentAsync(notifSchoolId, entry.StudentId.Value);
+            }
+            else if (entry.DiaryType == "class" && entry.ClassId.HasValue)
+            {
+                var classStudentIds = await _db.StudentEnrollments
+                    .Where(se => se.SchoolId == notifSchoolId &&
+                                 se.ClassId == entry.ClassId.Value &&
+                                 (entry.SectionId == null || se.SectionId == entry.SectionId) &&
+                                 se.Status == "active")
+                    .Select(se => se.StudentId)
+                    .Distinct()
+                    .ToListAsync();
+
+                // Legacy: students stored with class/section as plain strings
+                var classEntity = await _db.Classes
+                    .Where(c => c.Id == entry.ClassId.Value)
+                    .Select(c => new { c.Name })
+                    .FirstOrDefaultAsync();
+                if (classEntity != null)
+                {
+                    var sectionName = entry.SectionId.HasValue
+                        ? await _db.Sections
+                            .Where(s => s.Id == entry.SectionId.Value)
+                            .Select(s => s.Name)
+                            .FirstOrDefaultAsync()
+                        : null;
+                    var legacyStudentIds = await _db.Students
+                        .Where(s => s.SchoolId == notifSchoolId &&
+                                    s.Class == classEntity.Name &&
+                                    (sectionName == null || s.Section == sectionName))
+                        .Select(s => s.Id)
+                        .ToListAsync();
+                    classStudentIds = classStudentIds.Union(legacyStudentIds).Distinct().ToList();
+                }
+
+                parentStudentPairs = new List<(Guid, Guid)>();
+                foreach (var sid in classStudentIds)
+                {
+                    var pairs = await GetParentStudentPairsForStudentAsync(notifSchoolId, sid);
+                    parentStudentPairs.AddRange(pairs);
+                }
+                parentStudentPairs = parentStudentPairs.Distinct().ToList();
+            }
+            else
+            {
+                return; // nothing to notify
+            }
+
+            if (parentStudentPairs.Count == 0)
+                return;
+
+            // Deduplication: find parent IDs that already have a notification for this entry
+            if (deduplicateByEntryId)
+            {
+                var alreadyNotified = await _db.Notifications
+                    .Where(n => n.SchoolId == notifSchoolId &&
+                                n.ReferenceId == entry.Id &&
+                                n.ReferenceType == "Diary")
+                    .Select(n => n.RecipientId)
+                    .Distinct()
+                    .ToListAsync();
+                parentStudentPairs = parentStudentPairs
+                    .Where(p => !alreadyNotified.Contains(p.ParentId))
+                    .ToList();
+            }
+
+            if (parentStudentPairs.Count == 0)
+                return;
+
+            var staffName = entry.Staff != null
+                ? $"{entry.Staff.FirstName} {entry.Staff.LastName}".Trim()
+                : "Staff";
+
+            var shortContent = entry.Content.Length > 150
+                ? entry.Content[..150] + "…"
+                : entry.Content;
+
+            var priority = (entry.Priority?.ToLower()) switch
+            {
+                "high"   => "High",
+                "urgent" => "Urgent",
+                "low"    => "Low",
+                _        => "Normal",
+            };
+
+            var notifs = parentStudentPairs.Select(pair => new Notification
+            {
+                SchoolId      = notifSchoolId,
+                RecipientId   = pair.ParentId,
+                RecipientType = "Parent",
+                SenderId      = UserId(),
+                SenderName    = staffName,
+                Type          = "Diary",
+                Title         = entry.Title,
+                Content       = shortContent,
+                ReferenceId   = entry.Id,
+                ReferenceType = "Diary",
+                Priority      = priority,
+                ActionUrl     = "/parent-diary",
+                StudentId     = pair.StudentId,
+            }).ToList();
+
+            _db.Notifications.AddRange(notifs);
+            await _db.SaveChangesAsync();
         }
 
         // ─────────────────────────────────────────────────────────────────────

@@ -262,4 +262,33 @@ namespace SmsApi.Models.DTOs
         public int Page { get; set; }
         public int PageSize { get; set; }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // TEACHER ASSIGNMENT DTOs
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// A class+subject pair assigned to a specific teacher, returned by GET /syllabus/my-assignments.
+    /// </summary>
+    public class TeacherSubjectAssignmentDto
+    {
+        public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
+        public Guid SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Which teacher is assigned to a specific section for a given class+subject. Returned by GET /syllabus/section-teachers.
+    /// </summary>
+    public class SectionTeacherInfoDto
+    {
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
+        public Guid? StaffId { get; set; }
+        public string? StaffName { get; set; }
+    }
 }

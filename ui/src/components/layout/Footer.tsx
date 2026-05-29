@@ -1,66 +1,68 @@
+import { Shield, BarChart3, Heart, Lock } from 'lucide-react';
+
 export function Footer() {
   const year = new Date().getFullYear();
 
   return (
     <footer id="footer" className="relative mt-auto">
-      {/* Gradient accent line at top */}
       <div className="h-px w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
 
       <div className="bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto max-w-7xl px-5 sm:px-8">
+        <div className="container mx-auto max-w-7xl px-5 sm:px-8 py-3.5">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
 
-          {/* Main row */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
-
-            {/* Brand */}
+            {/* Brand + status */}
             <div className="flex items-center gap-3">
-              <div className="relative w-8 h-8 rounded-lg overflow-hidden ring-1 ring-border/60 shadow-sm bg-background flex items-center justify-center">
-                <img src="/favicon.ico" alt="Veda" className="w-6 h-6 object-contain" />
+              {/* Logo mark — borderless, transparent bg */}
+              <div className="shrink-0 w-7 h-7 flex items-center justify-center">
+                <img src="/favicon.ico" alt="VEDA" className="w-6 h-6 object-contain opacity-80" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold tracking-tight text-foreground">VEDA</span>
-                  <span className="text-[9px] font-semibold uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/20">
-                    v2.0
-                  </span>
+              {/* Wordmark */}
+              <div className="flex flex-col leading-none">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-bold tracking-[-0.01em] text-foreground">VEDA</span>
+                  <span className="text-[8px] font-bold uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">v2.0</span>
                 </div>
-                <p className="text-[10px] text-muted-foreground/60 tracking-wide">School Management Platform</p>
+                <span className="text-[9px] text-muted-foreground/50 tracking-wide mt-0.5">by Vitana Inc.</span>
               </div>
-            </div>
-
-            {/* Status + links */}
-            <div className="flex items-center gap-5 text-[11px] text-muted-foreground/55">
-              <span className="flex items-center gap-1.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              <span className="hidden sm:block h-3.5 w-px bg-border/50 mx-0.5" />
+              <span className="hidden sm:flex items-center gap-1.5 text-[10.5px] text-muted-foreground/50">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
                 </span>
-                All systems operational
+                Live &amp; running
               </span>
-              <span className="hidden sm:block h-3 w-px bg-border/60" />
-              <div className="hidden sm:flex items-center gap-4">
-                <a href="#" className="hover:text-foreground transition-colors duration-150">Privacy</a>
-                <a href="#" className="hover:text-foreground transition-colors duration-150">Terms</a>
-                <a href="mailto:support@vitanagroup.com" className="hover:text-foreground transition-colors duration-150">
-                  support@vitanagroup.com
-                </a>
-              </div>
             </div>
 
-            {/* Copyright */}
-            <p className="text-[11px] text-muted-foreground/45 tabular-nums whitespace-nowrap">
-              © {year} Vitana Private Limited
-            </p>
+            {/* Trust badges */}
+            <div className="flex items-center gap-3.5 text-[10px] text-muted-foreground/40">
+              <span className="flex items-center gap-1">
+                <Lock className="h-2.5 w-2.5" />
+                256-bit SSL
+              </span>
+              <span className="h-2.5 w-px bg-border/40" />
+              <span className="flex items-center gap-1">
+                <Shield className="h-2.5 w-2.5" />
+                SOC 2 Aligned
+              </span>
+              <span className="h-2.5 w-px bg-border/40" />
+              <span className="flex items-center gap-1">
+                <BarChart3 className="h-2.5 w-2.5" />
+                99.9% Uptime
+              </span>
+            </div>
+
+            {/* Right */}
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground/40">
+              <span className="tabular-nums">© {year} Vitana Private Limited</span>
+              <span className="h-2.5 w-px bg-border/40" />
+              <span className="flex items-center gap-1">
+                Built with <Heart className="h-2.5 w-2.5 text-rose-400/60 fill-rose-400/60" /> in India
+              </span>
+            </div>
 
           </div>
-
-          {/* Mobile-only links row */}
-          <div className="flex sm:hidden justify-center gap-5 pb-3 text-[11px] text-muted-foreground/55 border-t border-border/30 pt-3">
-            <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
-            <a href="#" className="hover:text-foreground transition-colors">Terms</a>
-            <a href="mailto:support@vitanagroup.com" className="hover:text-foreground transition-colors">Support</a>
-          </div>
-
         </div>
       </div>
     </footer>

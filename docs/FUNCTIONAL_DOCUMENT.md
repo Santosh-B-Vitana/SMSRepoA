@@ -2,7 +2,41 @@
 
 > School Management System — Complete Feature Reference for Administrators and End Users
 
-**Version:** 2.8 | **Last Updated:** May 21, 2026 (Session 10) | **Project:** SMSRepoA
+**Version:** 2.9 | **Last Updated:** May 30, 2026 (Session 12) | **Project:** SMSRepoA
+
+---
+
+## Changelog — May 30, 2026 (Session 12)
+
+| Area | Change |
+|------|--------|
+| **Board Configuration — Full Multi-Board Support** | The system now supports 15 curriculum boards: CBSE, ICSE, ISC, IB (International Baccalaureate), CAIE (Cambridge), and 10 Indian state boards (Maharashtra, Tamil Nadu, Karnataka, AP/Telangana, Gujarat, Rajasthan, UP, MP, West Bengal, Kerala). Each board has its own grading system, pass thresholds, and grade scale seeded in the database. Schools configure their boards via **Settings → Board Configuration** — add one or more boards, set a default, and optionally override pass percentages and grading scale on a per-board basis. |
+| **Board Overrides — School Level** | In Board Configuration, each configured board row has a **Override** button (Settings icon). Expanding it reveals: **Overall / Theory / Practical passing %** inputs (leave blank to use the board's default) and a **Grading Scale** toggle — either use the board's default scale or enter a custom JSON scale. Boards with active overrides show an amber **"Overridden"** badge. Saving calls `PATCH /api/board/school-boards/{id}/overrides`. Setting any field to blank reverts it to the board default. |
+| **Board Overrides — Class Level** | The **Settings tab** in a class detail page (Academics → Class → Settings) now shows a **Board Defaults** reference card at the top. It displays the board the class is assigned to, its effective pass%, and the full grade scale as colour-coded chips (green = passing, red = failing). An amber "School Override Active" badge appears if the school has customised the board's scale. The **Grade Tiers** section below allows class-level overrides — adding any grade tier shows a "Class Override Active" badge. If no class tiers exist, the board defaults apply automatically. |
+| **Passing % — Board-Aware Default** | When a class has never had settings saved, opening the Settings tab for the first time now pre-fills the **Passing Percentage** field with the board's configured pass% (e.g. 33% for CBSE) instead of a hardcoded 35%. The field hint reads *"Board default: 33%. Override here for this class only."* |
+| **Exam Results — Board Grade Legend** | The Examinations Results view now shows the board name and effective grade scale legend alongside exam results. Grade chips use board-specific colours (IB: numeric 1–7, CAIE: A*–U, CBSE: A1–E2, etc.). Grade distribution in analytics and report summary is dynamic — generated from the backend `gradeBreakdown` field rather than hardcoded A–E buckets. |
+| **Curriculum Planner — Renamed** | "Syllabus & Lesson Plans" has been renamed to **Curriculum Planner** throughout the application — sidebar navigation for all roles (Admin, Principal, Teacher, Staff), the module heading, and the teacher-facing heading ("My Curriculum"). The URL (`/syllabus`) and underlying API are unchanged. |
+| **Role Management — Badge Display Fix** | Scope and tier badges in Role Management were displaying raw i18n key strings (e.g. `roles.scope.Domain`, `roles.tier.FinanceHR`) due to a case mismatch between `AccessScope` values (PascalCase) and translation keys (lowercase). Fixed: scope uses `.toLowerCase()`, tier uses a lookup map (`TIER_I18N_KEY`) that maps `"Finance & HR"` → `"financeHr"` etc. The Staff & Access table's scope column was also rendering the raw value directly; it now goes through the same translation. |
+
+### Board Configuration — override priority chain
+
+| Level | Storage | Wins over |
+|-------|---------|-----------|
+| Class Grade Tiers | `ClassGradeTiers` table | Everything |
+| School Custom Override | `SchoolBoardConfig.Custom*` fields | Board default |
+| Board Default | `BoardConfiguration.*` (seeded) | System fallback |
+| System Fallback | Hardcoded 33%, CBSE A1–E2 | Nothing |
+
+### Supported boards reference
+
+| Code | Board | Type | Default Pass% |
+|------|-------|------|---------------|
+| CBSE | Central Board of Secondary Education | National | 33% |
+| ICSE | ICSE (CISCE Class 10) | National | 35% |
+| ISC | ISC (CISCE Class 11–12) | National | 35% |
+| IB | IB (International Baccalaureate) | International | 40% |
+| CAIE | Cambridge IGCSE/A-Level | International | 40% |
+| STATE-MH/TN/KA/AP/GJ/RJ/UP/MP/WB/KL | Respective state boards | State | 35% |
 
 ---
 

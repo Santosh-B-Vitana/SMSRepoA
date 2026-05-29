@@ -49,6 +49,16 @@ interface RoleConfig {
 
 const SCOPE_ORDER: AccessScope[] = ["Full", "Broad", "Standard", "Domain", "Limited"];
 
+// Maps RoleTier values to their i18n keys in LanguageContext
+const TIER_I18N_KEY: Record<RoleTier, string> = {
+  "System":       "system",
+  "Leadership":   "leadership",
+  "Academic":     "academic",
+  "Finance & HR": "financeHr",
+  "Operations":   "operations",
+  "Support":      "support",
+};
+
 const ROLE_CONFIG: Record<string, RoleConfig> = {
   "Admin": {
     tier: "System", scope: "Full",
@@ -891,9 +901,9 @@ function RoleCard({ role, onEdit, onDelete, onPermissions }: {
 
         {/* Tier + Scope row */}
         <div className="flex items-center gap-2 mb-3">
-          <span className={`text-xs font-medium ${cfg.tierColor}`}>{t(`roles.tier.${cfg.tier.replace(' & ', '')}`)}</span>
+          <span className={`text-xs font-medium ${cfg.tierColor}`}>{t(`roles.tier.${TIER_I18N_KEY[cfg.tier]}`)}</span>
           <span className="text-muted-foreground/40">•</span>
-          <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[cfg.scope]}`}>{t(`roles.scope.${cfg.scope}`)} {t('roles.scope.accessSuffix')}</Badge>
+          <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[cfg.scope]}`}>{t(`roles.scope.${cfg.scope.toLowerCase()}`)} {t('roles.scope.accessSuffix')}</Badge>
         </div>
 
         {/* Key modules */}
@@ -1257,7 +1267,7 @@ export default function RoleManagement() {
                             </TableCell>
                             <TableCell>
                               {highestScope ? (
-                                <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[highestScope]}`}>{highestScope}</Badge>
+                                <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[highestScope]}`}>{t(`roles.scope.${highestScope.toLowerCase()}`)} {t('roles.scope.accessSuffix')}</Badge>
                               ) : (
                                 <span className="text-xs text-muted-foreground italic">—</span>
                               )}

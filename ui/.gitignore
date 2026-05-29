@@ -24,3 +24,17 @@ dist-ssr
 *.sw?
 
 package-lock.json
+
+# Playwright test artifacts
+e2e/.auth/
+test-results/
+e2e-report/
+playwright-report/
+staff-test-results.txt
+staff-test-v2-results.txt
+SECURITY_UPGRADE_SUMMARY.txt
+
+# Playwright test artifacts (generated on each test run)
+test-results/
+e2e-report/
+e2e/.auth/

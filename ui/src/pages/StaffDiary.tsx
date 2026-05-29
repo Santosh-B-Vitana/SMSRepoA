@@ -104,7 +104,7 @@ function WriteDiaryDialog({
       setTitle(""); setContent(""); setCategory("note");
       setDiaryType("class"); setSelectedStudentIds([]); setStudentSearch("");
       setDiaryDate(todayISO()); setPriority("normal");
-      setIsVisibleToParent(true); setNotifyParent(false);
+      setIsVisibleToParent(true); setNotifyParent(true);
     }
   }, [editEntry, open]);
 

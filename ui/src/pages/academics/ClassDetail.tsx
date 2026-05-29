@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ import {
   Plus,
   Settings
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { GraduationCap } from "lucide-react";
 import { toast } from "sonner";
 import {
   academicApi,
@@ -26,6 +29,7 @@ import {
   type ClassSettingsResponse,
 } from "@/services/api/academicApi";
 import { staffApi, type StaffBasic } from "@/services/api/staffApi";
+import { boardApi, type SchoolBoardConfigResponse } from "@/services/api/boardApi";
 import { SubjectsTab } from "@/components/academics/SubjectsTab";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
@@ -36,6 +40,9 @@ export default function ClassDetail() {
   const [activeTab, setActiveTab] = useState("sections");
   const [className, setClassName] = useState("");
   const [classBoardConfigurationId, setClassBoardConfigurationId] = useState<string | undefined>(undefined);
+  const [classBoard, setClassBoard] = useState<SchoolBoardConfigResponse | null>(null);
+  // Ref so stale closures (useCallback) always see the latest board
+  const classBoardRef = useRef<SchoolBoardConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   
   // Sections state — backed by real API
@@ -92,9 +99,19 @@ export default function ClassDetail() {
         academicApi.listSections(classId, 1, 100)
       ]);
       setClassName(classData.name || classData.standard || "");
-      setClassBoardConfigurationId(classData.boardConfigurationId);
+      const boardId = classData.boardConfigurationId;
+      setClassBoardConfigurationId(boardId);
       setTeachingStaff(staffData.staff ?? []);
       setSections(sectionsData.sections ?? []);
+
+      // Fetch board defaults now (fresh boardId, avoids stale closure issue)
+      if (boardId) {
+        boardApi.getSchoolBoards().then(r => {
+          const match = r.boards?.find(b => b.boardConfigurationId === boardId) ?? null;
+          classBoardRef.current = match;
+          setClassBoard(match);
+        }).catch(() => {/* non-critical */});
+      }
     } catch (error) {
       console.error("Error loading class:", error);
       toast.error("Failed to load class details");
@@ -185,7 +202,11 @@ export default function ClassDetail() {
     } catch (err: unknown) {
       const status = (err as { status?: number })?.status;
       if (status !== 404) toast.error("Failed to load class settings");
-      // 404 is fine — settings not created yet, defaults stay
+      // 404 = no settings yet — seed passing% from board default (via ref, always current)
+      const boardDefault = classBoardRef.current?.effectiveOverallPassingPercentage;
+      if (boardDefault !== undefined) {
+        setPolicyForm(p => ({ ...p, passingPercentage: boardDefault }));
+      }
     } finally {
       setSettingsLoading(false);
     }
@@ -421,6 +442,51 @@ export default function ClassDetail() {
 
         {/* Settings Tab */}
         <TabsContent value="settings" className="space-y-4">
+          {/* Board Defaults Reference Card */}
+          {classBoard ? (
+            <Card className="border-blue-200 bg-blue-50/40 dark:border-blue-900 dark:bg-blue-950/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <GraduationCap className="h-4 w-4 text-blue-600" />
+                  Board Defaults
+                  <Badge variant="outline" className="text-blue-700 border-blue-400">{classBoard.boardCode}</Badge>
+                  {classBoard.hasCustomGradingScale && (
+                    <Badge variant="secondary" className="text-amber-700 bg-amber-100">School Override Active</Badge>
+                  )}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {classBoard.boardName} · Pass: {classBoard.effectiveOverallPassingPercentage}%
+                  {classBoard.hasCustomGradingScale ? " (school-level custom scale)" : " (board default scale)"}
+                  {classBoard.board?.gradingSystem ? ` · ${classBoard.board.gradingSystem}` : ""}
+                </p>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex flex-wrap gap-1.5">
+                  {classBoard.effectiveGradingScale.map(entry => (
+                    <div
+                      key={entry.grade}
+                      className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium border ${
+                        entry.isPassing
+                          ? "bg-green-50 border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300"
+                          : "bg-red-50 border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300"
+                      }`}
+                    >
+                      <span className="font-bold">{entry.grade}</span>
+                      <span className="opacity-70 ml-0.5">{entry.minPercentage}–{entry.maxPercentage}%</span>
+                    </div>
+                  ))}
+                </div>
+                <Separator className="my-3" />
+                <p className="text-xs text-muted-foreground">
+                  The <span className="font-semibold">Grade Tiers</span> section below lets you override these defaults for this class.
+                  If no class-level grade tiers are added, the board defaults above are used automatically.
+                </p>
+              </CardContent>
+            </Card>
+          ) : classBoardConfigurationId ? (
+            <p className="text-xs text-muted-foreground px-1">Loading board defaults…</p>
+          ) : null}
+
           {/* Grade Tiers Section */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -428,8 +494,11 @@ export default function ClassDetail() {
                 <CardTitle className="flex items-center gap-2">
                   <Award className="h-5 w-5" />
                   Grade Tiers
+                  {gradeTiers.length > 0 && (
+                    <Badge variant="secondary" className="text-amber-700 bg-amber-100">Class Override Active</Badge>
+                  )}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Configure grading scale for all sections</p>
+                <p className="text-sm text-muted-foreground mt-1">Override the board grading scale for this class only</p>
               </div>
               <Button onClick={handleAddGradeTier} size="sm" disabled={gradeTiersLoading}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -507,7 +576,11 @@ export default function ClassDetail() {
                         onChange={e => setPolicyForm(p => ({ ...p, passingPercentage: Number(e.target.value) }))}
                         min="0" max="100"
                       />
-                      <p className="text-xs text-muted-foreground">Minimum marks percentage required to pass</p>
+                      <p className="text-xs text-muted-foreground">
+                        {classBoard
+                          ? <>Board default: <span className="font-medium">{classBoard.effectiveOverallPassingPercentage}%</span>. Override here for this class only.</>
+                          : "Minimum marks percentage required to pass"}
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="minAttendance">Minimum Attendance (%)</Label>

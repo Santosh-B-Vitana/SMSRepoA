@@ -23,15 +23,20 @@ namespace SmsApi.Services
         Task<bool> DeleteTopicAsync(Guid id, Guid schoolId);
 
         // ── Lesson Plans ───────────────────────────────────────────────────
-        Task<LessonPlanListResponse> GetLessonPlansAsync(Guid schoolId, Guid? staffId, Guid? classId, DateTime? fromDate, DateTime? toDate, string? status, int page, int pageSize);
+        Task<LessonPlanListResponse> GetLessonPlansAsync(Guid schoolId, Guid? staffId, Guid? classId, Guid? subjectId, Guid? sectionId, DateTime? fromDate, DateTime? toDate, string? status, int page, int pageSize);
         Task<LessonPlanResponse?> GetLessonPlanByIdAsync(Guid id, Guid schoolId);
         Task<LessonPlanResponse> CreateLessonPlanAsync(Guid schoolId, Guid? staffId, CreateLessonPlanRequest request);
         Task<LessonPlanResponse?> UpdateLessonPlanAsync(Guid id, Guid schoolId, Guid staffId, UpdateLessonPlanRequest request);
-        Task<LessonPlanResponse?> ApproveLessonPlanAsync(Guid id, Guid schoolId, Guid approverStaffId, ApproveLessonPlanRequest request);
+        Task<LessonPlanResponse?> ApproveLessonPlanAsync(Guid id, Guid schoolId, Guid? approverStaffId, ApproveLessonPlanRequest request);
         Task<bool> DeleteLessonPlanAsync(Guid id, Guid schoolId);
 
         // ── Reports ────────────────────────────────────────────────────────
         Task<SyllabusCoverageReport> GetCoverageReportAsync(Guid schoolId, Guid classId, Guid subjectId, string academicYear);
+
+        // ── Teacher Assignments ────────────────────────────────────────────
+        Task<List<TeacherSubjectAssignmentDto>> GetTeacherAssignmentsAsync(Guid schoolId, Guid staffId);
+        Task<List<SectionTeacherInfoDto>> GetSectionTeachersAsync(Guid schoolId, Guid classId, Guid subjectId);
+        Task<LessonPlanResponse?> SubmitLessonPlanAsync(Guid id, Guid schoolId, Guid staffId);
     }
 
     public class SyllabusService : ISyllabusService
@@ -270,7 +275,7 @@ namespace SmsApi.Services
         // ═══════════════════════════════════════════════════════════════════
 
         public async Task<LessonPlanListResponse> GetLessonPlansAsync(
-            Guid schoolId, Guid? staffId, Guid? classId, DateTime? fromDate, DateTime? toDate,
+            Guid schoolId, Guid? staffId, Guid? classId, Guid? subjectId, Guid? sectionId, DateTime? fromDate, DateTime? toDate,
             string? status, int page, int pageSize)
         {
             var query = _db.LessonPlans
@@ -281,10 +286,13 @@ namespace SmsApi.Services
                 .Include(p => p.Topic)
                 .Where(p => p.SchoolId == schoolId);
 
-            if (staffId.HasValue) query = query.Where(p => p.StaffId == staffId.Value);
-            if (classId.HasValue) query = query.Where(p => p.ClassId == classId.Value);
-            if (fromDate.HasValue) query = query.Where(p => p.Date >= fromDate.Value.Date);
-            if (toDate.HasValue) query = query.Where(p => p.Date <= toDate.Value.Date);
+            if (staffId.HasValue)   query = query.Where(p => p.StaffId == staffId.Value);
+            if (classId.HasValue)   query = query.Where(p => p.ClassId == classId.Value);
+            if (subjectId.HasValue) query = query.Where(p => p.SubjectId == subjectId.Value);
+            // Section filter: when provided, returns plans for this section OR school-wide plans (null section)
+            if (sectionId.HasValue) query = query.Where(p => p.SectionId == null || p.SectionId == sectionId.Value);
+            if (fromDate.HasValue)  query = query.Where(p => p.Date >= fromDate.Value.Date);
+            if (toDate.HasValue)    query = query.Where(p => p.Date <= toDate.Value.Date);
             if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
 
             var total = await query.CountAsync();
@@ -351,9 +359,12 @@ namespace SmsApi.Services
             var plan = await _db.LessonPlans.FirstOrDefaultAsync(p => p.Id == id && p.SchoolId == schoolId && p.StaffId == staffId);
             if (plan == null) return null;
 
-            // Only draft plans can be updated by their author
-            if (plan.Status != "draft")
-                throw new InvalidOperationException("Only draft lesson plans can be edited.");
+            // Draft or rejected plans can be revised by their author; reset rejected back to draft
+            if (plan.Status != "draft" && plan.Status != "rejected")
+                throw new InvalidOperationException("Only draft or rejected lesson plans can be edited.");
+
+            if (plan.Status == "rejected")
+                plan.Status = "draft";
 
             if (request.TopicId.HasValue) plan.TopicId = request.TopicId;
             if (request.Date.HasValue) plan.Date = request.Date.Value.Date;
@@ -370,7 +381,7 @@ namespace SmsApi.Services
             return await GetLessonPlanByIdAsync(id, schoolId);
         }
 
-        public async Task<LessonPlanResponse?> ApproveLessonPlanAsync(Guid id, Guid schoolId, Guid approverStaffId, ApproveLessonPlanRequest request)
+        public async Task<LessonPlanResponse?> ApproveLessonPlanAsync(Guid id, Guid schoolId, Guid? approverStaffId, ApproveLessonPlanRequest request)
         {
             var plan = await _db.LessonPlans.FirstOrDefaultAsync(p => p.Id == id && p.SchoolId == schoolId);
             if (plan == null) return null;
@@ -378,6 +389,8 @@ namespace SmsApi.Services
             if (request.Action == "approve")
             {
                 plan.Status = "approved";
+                // Only store ApprovedByStaffId if caller is a real StaffMember (LinkedEntityId present).
+                // Admin users fall back to UserId which isn't a valid StaffMember FK.
                 plan.ApprovedByStaffId = approverStaffId;
                 plan.ApprovedAt = DateTime.UtcNow;
                 plan.RejectionReason = null;
@@ -441,6 +454,99 @@ namespace SmsApi.Services
                 CompletedTopics = mappedUnits.Sum(u => u.CompletedTopics),
                 Units = mappedUnits
             };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // TEACHER ASSIGNMENTS
+        // ═══════════════════════════════════════════════════════════════════
+
+        public async Task<List<TeacherSubjectAssignmentDto>> GetTeacherAssignmentsAsync(Guid schoolId, Guid staffId)
+        {
+            var raw = await _db.TeacherAssignments
+                .Include(ta => ta.Class)
+                .Include(ta => ta.Section)
+                .Include(ta => ta.Subject)
+                .Where(ta => ta.SchoolId == schoolId
+                             && ta.StaffId == staffId
+                             && ta.Status == "active"
+                             && ta.SubjectId != null)
+                .OrderBy(ta => ta.Class!.Name)
+                .ThenBy(ta => ta.Subject!.Name)
+                .ToListAsync();
+
+            // Each class+section+subject combination is a distinct assignment.
+            // A teacher may teach Science for Class 5-A AND Class 5-B — keep them separate.
+            return raw
+                .GroupBy(ta => new { ta.ClassId, ta.SectionId, ta.SubjectId })
+                .Select(g =>
+                {
+                    var first = g.First();
+                    return new TeacherSubjectAssignmentDto
+                    {
+                        ClassId = first.ClassId,
+                        ClassName = first.Class?.Name ?? string.Empty,
+                        SectionId = first.SectionId,
+                        SectionName = first.Section?.Name,
+                        SubjectId = first.SubjectId!.Value,
+                        SubjectName = first.Subject?.Name ?? string.Empty,
+                        AcademicYear = first.AcademicYear
+                    };
+                })
+                .ToList();
+        }
+
+        /// <summary>
+        /// For admin/principal: returns which teacher (if any) is assigned to each section
+        /// of the given class+subject. Helps the admin understand section-teacher coverage.
+        /// </summary>
+        public async Task<List<SectionTeacherInfoDto>> GetSectionTeachersAsync(Guid schoolId, Guid classId, Guid subjectId)
+        {
+            var assignments = await _db.TeacherAssignments
+                .Include(ta => ta.Section)
+                .Include(ta => ta.Staff)
+                .Where(ta => ta.SchoolId == schoolId
+                             && ta.ClassId == classId
+                             && ta.SubjectId == subjectId
+                             && ta.Status == "active")
+                .OrderBy(ta => ta.Section!.Name)
+                .ToListAsync();
+
+            // Group by section so we return one entry per section
+            return assignments
+                .GroupBy(ta => ta.SectionId)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    return new SectionTeacherInfoDto
+                    {
+                        SectionId   = first.SectionId,
+                        SectionName = first.Section?.Name,
+                        StaffId     = first.StaffId,
+                        StaffName   = first.Staff != null
+                            ? $"{first.Staff.FirstName} {first.Staff.LastName}".Trim()
+                            : null,
+                    };
+                })
+                .ToList();
+        }
+
+        public async Task<LessonPlanResponse?> SubmitLessonPlanAsync(Guid id, Guid schoolId, Guid staffId)
+        {
+            var plan = await _db.LessonPlans
+                .FirstOrDefaultAsync(p => p.Id == id && p.SchoolId == schoolId);
+
+            if (plan == null) return null;
+
+            // Only the author can submit their own plan
+            if (plan.StaffId != staffId)
+                throw new UnauthorizedAccessException("You can only submit your own lesson plans.");
+
+            if (plan.Status != "draft")
+                throw new InvalidOperationException("Only draft lesson plans can be submitted for approval.");
+
+            plan.Status = "submitted";
+            await _db.SaveChangesAsync();
+            return await GetLessonPlanByIdAsync(id, schoolId);
         }
 
         // ═══════════════════════════════════════════════════════════════════

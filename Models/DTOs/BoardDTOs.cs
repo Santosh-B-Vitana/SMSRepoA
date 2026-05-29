@@ -157,6 +157,31 @@ namespace SmsApi.Models.DTOs
         public bool SetAsDefault { get; set; } = false;
     }
 
+    /// <summary>
+    /// Update custom overrides on an existing school-board config without replacing it.
+    /// Send null for any field to revert it to the board default.
+    /// </summary>
+    public class UpdateSchoolBoardOverridesRequest
+    {
+        /// <summary>Override overall passing %. Null = use board default.</summary>
+        public decimal? CustomOverallPassingPercentage { get; set; }
+
+        /// <summary>Override theory component passing %. Null = use board default.</summary>
+        public decimal? CustomTheoryPassingPercentage { get; set; }
+
+        /// <summary>Override practical component passing %. Null = use board default.</summary>
+        public decimal? CustomPracticalPassingPercentage { get; set; }
+
+        /// <summary>
+        /// Override grading scale. Empty array or null = revert to board default.
+        /// Each entry: { grade, minPercentage, maxPercentage, gradePoint, description, isPassing }
+        /// </summary>
+        public List<GradeScaleEntryDto>? CustomGradingScale { get; set; }
+
+        /// <summary>Override exam structure. Null = use board default.</summary>
+        public List<BoardExamStructureEntryDto>? CustomExamStructure { get; set; }
+    }
+
     /// <summary>List of all boards configured for a school.</summary>
     public class SchoolBoardListResponse
     {

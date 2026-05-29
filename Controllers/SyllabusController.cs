@@ -25,6 +25,22 @@ namespace SmsApi.Controllers
             _db = db;
         }
 
+        /// <summary>
+        /// Helper: returns the LinkedEntityId (Staff.Id) from JWT, falling back to UserId.
+        /// For staff accounts the JWT contains "LinkedEntityId" = StaffMember.Id.
+        /// </summary>
+        private Guid GetStaffId() => _tenant.LinkedEntityId ?? _tenant.UserId;
+
+        /// <summary>
+        /// Returns true when the current user is an admin or principal.
+        /// Staff / Teacher roles are NOT included.
+        /// </summary>
+        private bool IsAdminOrPrincipal()
+        {
+            var role = _tenant.Role?.Trim().ToLowerInvariant();
+            return role is "admin" or "administrator" or "principal" or "super_admin";
+        }
+
         // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // UNITS
         // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -157,7 +173,7 @@ namespace SmsApi.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             var schoolId = _tenant.GetEffectiveSchoolId();
-            var staffId = _tenant.UserId;
+            var staffId = GetStaffId();
             var topic = await _syllabusService.MarkTopicCompleteAsync(id, schoolId, staffId, request);
             if (topic == null) return NotFound(new { message = "Topic not found." });
             return Ok(topic);
@@ -184,6 +200,8 @@ namespace SmsApi.Controllers
         public async Task<IActionResult> GetLessonPlans(
             [FromQuery] Guid? staffId,
             [FromQuery] Guid? classId,
+            [FromQuery] Guid? subjectId,
+            [FromQuery] Guid? sectionId,
             [FromQuery] DateTime? fromDate,
             [FromQuery] DateTime? toDate,
             [FromQuery] string? status,
@@ -191,7 +209,7 @@ namespace SmsApi.Controllers
             [FromQuery] int pageSize = 20)
         {
             var schoolId = _tenant.GetEffectiveSchoolId();
-            var result = await _syllabusService.GetLessonPlansAsync(schoolId, staffId, classId, fromDate, toDate, status, page, pageSize);
+            var result = await _syllabusService.GetLessonPlansAsync(schoolId, staffId, classId, subjectId, sectionId, fromDate, toDate, status, page, pageSize);
             return Ok(result);
         }
 
@@ -269,7 +287,7 @@ namespace SmsApi.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             var schoolId = _tenant.GetEffectiveSchoolId();
-            var staffId = _tenant.UserId;
+            var staffId = GetStaffId();
             try
             {
                 var plan = await _syllabusService.UpdateLessonPlanAsync(id, schoolId, staffId, request);
@@ -289,7 +307,8 @@ namespace SmsApi.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             var schoolId = _tenant.GetEffectiveSchoolId();
-            var approverStaffId = _tenant.UserId;
+            // Use LinkedEntityId (StaffMember.Id) only — null for admin users who have no staff record
+            var approverStaffId = _tenant.LinkedEntityId;
             try
             {
                 var plan = await _syllabusService.ApproveLessonPlanAsync(id, schoolId, approverStaffId, request);
@@ -328,6 +347,89 @@ namespace SmsApi.Controllers
             var schoolId = _tenant.GetEffectiveSchoolId();
             var report = await _syllabusService.GetCoverageReportAsync(schoolId, classId, subjectId, academicYear);
             return Ok(report);
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // TEACHER ASSIGNMENT ENDPOINTS
+        // ════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Returns the class+subject pairs assigned to the currently logged-in teacher.
+        /// Uses the LinkedEntityId JWT claim (Staff.Id) to query TeacherAssignments.
+        /// </summary>
+        [HttpGet("my-assignments")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<IActionResult> GetMyAssignments()
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var staffId = GetStaffId();
+            var assignments = await _syllabusService.GetTeacherAssignmentsAsync(schoolId, staffId);
+            return Ok(assignments);
+        }
+
+        /// <summary>
+        /// Admin/Principal: for a given class+subject, returns which teacher (if any) handles each section.
+        /// Used by the admin Syllabus UI to show section-teacher coverage and detect shared-teacher scenarios.
+        /// </summary>
+        [HttpGet("section-teachers")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        public async Task<IActionResult> GetSectionTeachers(
+            [FromQuery] Guid classId,
+            [FromQuery] Guid subjectId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _syllabusService.GetSectionTeachersAsync(schoolId, classId, subjectId);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Teacher submits a draft lesson plan for admin/principal review.
+        /// Only the plan's author may call this.
+        /// </summary>
+        [HttpPost("lesson-plans/{id:guid}/submit")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<IActionResult> SubmitLessonPlan(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var staffId = GetStaffId();
+            try
+            {
+                var plan = await _syllabusService.SubmitLessonPlanAsync(id, schoolId, staffId);
+                if (plan == null) return NotFound(new { message = "Lesson plan not found." });
+                return Ok(plan);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Approve or reject a submitted lesson plan.
+        /// Alias for review — accepts same ApproveLessonPlanRequest body.
+        /// </summary>
+        [HttpPost("lesson-plans/{id:guid}/approve")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipalStaff)]
+        public async Task<IActionResult> ApproveLessonPlan(Guid id, [FromBody] ApproveLessonPlanRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            // Use LinkedEntityId (StaffMember.Id) only — null for admin users who have no staff record
+            var approverStaffId = _tenant.LinkedEntityId;
+            try
+            {
+                var plan = await _syllabusService.ApproveLessonPlanAsync(id, schoolId, approverStaffId, request);
+                if (plan == null) return NotFound(new { message = "Lesson plan not found." });
+                return Ok(plan);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 }

@@ -48,6 +48,8 @@ interface ResultSummaryReport {
   gradeDPercentage: number;
   gradeEPercentage: number;
   examSummaries: ExamSummaryItem[];
+  /** Board-aware dynamic grade distribution — keys are grade labels (A1, O, 7, A*, etc.), values are % of students */
+  gradeBreakdown?: Record<string, number>;
 }
 interface ExamPerformanceData {
   examName: string;
@@ -168,12 +170,43 @@ function ExamSelector({
     </Select>
   );
 }
+// Cycling palette for unknown / board-specific grade codes
+const GRADE_COLOR_CYCLE = [
+  "bg-emerald-500", "bg-teal-500", "bg-blue-500", "bg-cyan-500",
+  "bg-yellow-400", "bg-amber-500", "bg-orange-400", "bg-red-400",
+];
+// Map known grade symbols to Tailwind bar colors (covers CBSE, ICSE, CAIE, IB, State boards)
+const KNOWN_GRADE_BARS: Record<string, string> = {
+  "O": "bg-emerald-500",  "A+": "bg-emerald-500", "A*": "bg-emerald-400",
+  "A1": "bg-emerald-500", "A2": "bg-green-500",
+  "A": "bg-green-500",   "B+": "bg-blue-400",
+  "B1": "bg-blue-500",   "B2": "bg-blue-400",
+  "B": "bg-blue-500",    "C1": "bg-yellow-400", "C2": "bg-amber-400",
+  "C": "bg-yellow-400",  "D": "bg-orange-400",
+  "E": "bg-red-400",     "F": "bg-red-500",     "U": "bg-red-600",
+  "E1": "bg-red-400",    "E2": "bg-red-500",
+  "7": "bg-emerald-500", "6": "bg-green-500",   "5": "bg-blue-500",
+  "4": "bg-yellow-400",  "3": "bg-amber-400",   "2": "bg-orange-400", "1": "bg-red-500",
+};
+function gradeBarColor(g: string, idx = 0) {
+  return KNOWN_GRADE_BARS[g.toUpperCase()] ?? GRADE_COLOR_CYCLE[idx % GRADE_COLOR_CYCLE.length];
+}
 function gradeColor(g: string) {
-  const u = (g || "").toUpperCase();
-  if (u.startsWith("A")) return "text-emerald-700 bg-emerald-100";
+  const u = (g || "").trim().toUpperCase();
+  // Numeric grades: IB 1-7, some state boards
+  const num = parseInt(u, 10);
+  if (!isNaN(num) && String(num) === u) {
+    if (num >= 6) return "text-emerald-700 bg-emerald-100";
+    if (num >= 4) return "text-blue-700 bg-blue-100";
+    if (num >= 3) return "text-yellow-700 bg-yellow-100";
+    if (num === 2) return "text-orange-700 bg-orange-100";
+    return "text-red-700 bg-red-100";
+  }
+  // Letter grades — O (Outstanding), A*, A+, A1, A2, A → green tier
+  if (u === "O" || u === "A*" || u.startsWith("A")) return "text-emerald-700 bg-emerald-100";
   if (u.startsWith("B")) return "text-blue-700 bg-blue-100";
   if (u.startsWith("C")) return "text-yellow-700 bg-yellow-100";
-  if (u === "D") return "text-orange-700 bg-orange-100";
+  if (u === "D" || u.startsWith("D")) return "text-orange-700 bg-orange-100";
   return "text-red-700 bg-red-100";
 }
 function downloadCSV(rows: (string | number)[][], filename: string) {
@@ -197,13 +230,26 @@ function SummaryPanel() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const grades = report ? [
-    { label: "A (90–100)", pct: report.gradeAPercentage, color: "bg-emerald-500" },
-    { label: "B (80–89)", pct: report.gradeBPercentage, color: "bg-blue-500" },
-    { label: "C (70–79)", pct: report.gradeCPercentage, color: "bg-yellow-400" },
-    { label: "D (60–69)", pct: report.gradeDPercentage, color: "bg-orange-400" },
-    { label: "E (< 60)", pct: report.gradeEPercentage, color: "bg-red-400" },
-  ] : [];
+  // If backend returns board-specific gradeBreakdown, prefer it; fall back to legacy A-E fields
+  const grades = report
+    ? (() => {
+        if (report.gradeBreakdown && Object.keys(report.gradeBreakdown).length > 0) {
+          return Object.entries(report.gradeBreakdown).map(([label, pct], idx) => ({
+            label,
+            pct,
+            color: gradeBarColor(label, idx),
+          }));
+        }
+        // Legacy fallback (CBSE A-E buckets from old fields)
+        return [
+          { label: "A (90–100)", pct: report.gradeAPercentage, color: "bg-emerald-500" },
+          { label: "B (80–89)", pct: report.gradeBPercentage, color: "bg-blue-500" },
+          { label: "C (70–79)", pct: report.gradeCPercentage, color: "bg-yellow-400" },
+          { label: "D (60–69)", pct: report.gradeDPercentage, color: "bg-orange-400" },
+          { label: "E (< 60)",  pct: report.gradeEPercentage, color: "bg-red-400" },
+        ];
+      })()
+    : [];
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -235,7 +281,7 @@ function SummaryPanel() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm flex items-center gap-2">
-                <GraduationCap className="h-4 w-4" /> CBSE Grade Distribution
+                <GraduationCap className="h-4 w-4" /> Grade Distribution
               </CardTitle>
               <Button size="sm" variant="ghost" className="h-7 text-xs gap-1"
                 onClick={() => downloadCSV([["Grade","Range","Pass%"], ...grades.map(g => [g.label, g.label, `${g.pct.toFixed(1)}%`])], "grade-summary.csv")}>
@@ -614,7 +660,7 @@ function GradePanel({ exams }: { exams: ExamBasic[] }) {
     setLoading(false);
   }, []);
 
-  const GRADE_BAR: Record<string, string> = { A: "bg-emerald-500", B: "bg-blue-500", C: "bg-yellow-400", D: "bg-orange-400", E: "bg-red-400" };
+  // Grade bar colors are resolved dynamically from KNOWN_GRADE_BARS with cycling fallback
   const maxCount = Math.max(...(report?.gradeDistributions?.map(g => g.studentCount) || [1]), 1);
 
   return (
@@ -646,7 +692,7 @@ function GradePanel({ exams }: { exams: ExamBasic[] }) {
                   </div>
                   <div className="h-4 bg-muted rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${GRADE_BAR[g.gradeSymbol] || "bg-gray-400"}`}
+                      className={`h-full rounded-full transition-all duration-500 ${gradeBarColor(g.gradeSymbol)}`}
                       style={{ width: `${maxCount ? (g.studentCount / maxCount) * 100 : 0}%` }}
                     />
                   </div>

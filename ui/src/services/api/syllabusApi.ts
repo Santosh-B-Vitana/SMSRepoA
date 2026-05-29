@@ -42,7 +42,7 @@ export interface SyllabusUnit {
 
 export interface LessonPlan {
   id: string;
-  staffId: string;
+  staffId?: string;
   staffName?: string;
   classId: string;
   className?: string;
@@ -62,11 +62,16 @@ export interface LessonPlan {
   homework?: string;
   notes?: string;
   status: string; // draft | submitted | approved | rejected
+  approvedByName?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface LessonPlanListResponse {
   plans: LessonPlan[];
   total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface SyllabusCoverageReport {
@@ -77,10 +82,30 @@ export interface SyllabusCoverageReport {
   academicYear: string;
   totalUnits: number;
   completedUnits: number;
+  inProgressUnits: number;
+  pendingUnits: number;
   totalTopics: number;
   completedTopics: number;
-  overallCompletionPercentage: number;
   units: SyllabusUnit[];
+}
+
+/** Returned by GET /syllabus/my-assignments */
+export interface TeacherSubjectAssignment {
+  classId: string;
+  className: string;
+  sectionId?: string;
+  sectionName?: string;
+  subjectId: string;
+  subjectName: string;
+  academicYear: string;
+}
+
+/** Returned by GET /syllabus/section-teachers — for admin to see per-section teacher coverage */
+export interface SectionTeacherInfo {
+  sectionId?: string;
+  sectionName?: string;
+  staffId?: string;
+  staffName?: string;
 }
 
 // ─── Request DTOs (match backend CreateXxxRequest field names) ────────────────
@@ -158,13 +183,25 @@ export const syllabusApi = {
     return apiPost<SyllabusTopic>(`${BASE}/topics/${id}/complete`, data);
   },
 
-  getLessonPlans(classId?: string, subjectId?: string, teacherId?: string, startDate?: string, endDate?: string): Promise<LessonPlanListResponse> {
-    const params: Record<string, unknown> = {};
-    if (classId) params.classId = classId;
+  getLessonPlans(
+    classId?: string,
+    subjectId?: string,
+    staffId?: string,
+    status?: string,
+    fromDate?: string,
+    toDate?: string,
+    page = 1,
+    pageSize = 50,
+    sectionId?: string,
+  ): Promise<LessonPlanListResponse> {
+    const params: Record<string, unknown> = { page, pageSize };
+    if (classId)   params.classId   = classId;
     if (subjectId) params.subjectId = subjectId;
-    if (teacherId) params.teacherId = teacherId;
-    if (startDate) params.startDate = startDate;
-    if (endDate) params.endDate = endDate;
+    if (sectionId) params.sectionId = sectionId;
+    if (staffId)   params.staffId   = staffId;
+    if (status)    params.status    = status;
+    if (fromDate)  params.fromDate  = fromDate;
+    if (toDate)    params.toDate    = toDate;
     return apiGet<LessonPlanListResponse>(`${BASE}/lesson-plans`, params);
   },
 
@@ -176,15 +213,33 @@ export const syllabusApi = {
     return apiPut<LessonPlan>(`${BASE}/lesson-plans/${id}`, data);
   },
 
+  /** Teacher submits a draft lesson plan for admin/principal review */
+  submitLessonPlan(id: string): Promise<LessonPlan> {
+    return apiPost<LessonPlan>(`${BASE}/lesson-plans/${id}/submit`, {});
+  },
+
+  /** Admin/Principal approves or rejects a submitted lesson plan */
+  approveLessonPlan(id: string, action: 'approve' | 'reject', rejectionReason?: string): Promise<LessonPlan> {
+    return apiPost<LessonPlan>(`${BASE}/lesson-plans/${id}/approve`, { action, rejectionReason });
+  },
+
   deleteLessonPlan(id: string): Promise<void> {
     return apiDelete<void>(`${BASE}/lesson-plans/${id}`);
   },
 
-  getCoverage(classId?: string, subjectId?: string, academicYear?: string): Promise<SyllabusCoverageReport[]> {
-    const params: Record<string, unknown> = {};
-    if (classId) params.classId = classId;
-    if (subjectId) params.subjectId = subjectId;
-    if (academicYear) params.academicYear = academicYear;
-    return apiGet<SyllabusCoverageReport[]>(`${BASE}/coverage`, params);
+  /** Get syllabus coverage report for a class/subject/year */
+  getCoverage(classId: string, subjectId: string, academicYear: string): Promise<SyllabusCoverageReport> {
+    return apiGet<SyllabusCoverageReport>(`${BASE}/coverage`, { classId, subjectId, academicYear });
+  },
+
+  /** Returns the class+subject pairs assigned to the currently logged-in teacher */
+  getMyAssignments(): Promise<TeacherSubjectAssignment[]> {
+    return apiGet<TeacherSubjectAssignment[]>(`${BASE}/my-assignments`);
+  },
+
+  /** Admin: returns which teacher covers which section for a given class+subject */
+  getSectionTeachers(classId: string, subjectId: string): Promise<SectionTeacherInfo[]> {
+    return apiGet<SectionTeacherInfo[]>(`${BASE}/section-teachers`, { classId, subjectId });
   },
 };
+
