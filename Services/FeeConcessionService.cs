@@ -18,6 +18,8 @@ namespace SmsApi.Services
         Task<FeeConcessionResponse> CreateConcessionAsync(CreateFeeConcessionRequest request);
         Task<FeeConcessionResponse> ApproveConcessionAsync(Guid id, ApproveFeeConcessionRequest request, Guid schoolId);
         Task<FeeConcessionResponse> RejectConcessionAsync(Guid id, RejectFeeConcessionRequest request, Guid schoolId);
+        Task<FeeConcessionResponse> RevokeFeeConcessionAsync(Guid id, string reason, Guid schoolId);
+        Task<FeeConcessionListResponse> GetConcessionsForSchoolAsync(Guid schoolId, Guid? studentId, string? status, int page, int pageSize);
     }
 
     public class FeeConcessionService : IFeeConcessionService
@@ -324,6 +326,24 @@ namespace SmsApi.Services
                 _context.FeeConcessions.Add(concession);
                 await _context.SaveChangesAsync();
 
+                // If auto-approved (RequiresApproval = false), update FeeRecord.DiscountAmount immediately
+                if (concession.Status == "Approved")
+                {
+                    concession.ApprovedAmount = request.AppliedAmount;
+                    var feeRecord = await _context.FeeRecords
+                        .FirstOrDefaultAsync(f => f.StudentId == request.StudentId
+                            && f.AcademicYear == request.AcademicYear
+                            && f.SchoolId == request.SchoolId);
+                    if (feeRecord != null)
+                    {
+                        feeRecord.DiscountAmount += request.AppliedAmount;
+                        feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount + feeRecord.LateFeeAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount);
+                        if (feeRecord.PendingAmount <= 0) feeRecord.Status = "paid";
+                        feeRecord.UpdatedAt = DateTime.UtcNow;
+                    }
+                    await _context.SaveChangesAsync();
+                }
+
                 _logger.LogInformation($"✓ Concession created: {concessionNumber} | Student: {student.Name} | Type: {concessionType.Name} | Amount: ₹{request.AppliedAmount} | Status: {concession.Status}");
 
                 // Reload with navigation properties
@@ -445,6 +465,19 @@ namespace SmsApi.Services
                 concession.ApproverRemarks = request.Remarks;
                 concession.UpdatedAt = DateTime.UtcNow;
 
+                // ===== UPDATE FeeRecord.DiscountAmount =====
+                var feeRec = await _context.FeeRecords
+                    .FirstOrDefaultAsync(f => f.StudentId == concession.StudentId
+                        && f.AcademicYear == concession.AcademicYear
+                        && f.SchoolId == schoolId);
+                if (feeRec != null)
+                {
+                    feeRec.DiscountAmount += request.ApprovedAmount;
+                    feeRec.PendingAmount = Math.Max(0, feeRec.TotalAmount + feeRec.LateFeeAmount - feeRec.PaidAmount - feeRec.DiscountAmount);
+                    if (feeRec.PendingAmount <= 0) feeRec.Status = "paid";
+                    feeRec.UpdatedAt = DateTime.UtcNow;
+                }
+
                 await _context.SaveChangesAsync();
 
                 // ===== AUDIT LOG: immutable concession approval record =====
@@ -529,6 +562,108 @@ namespace SmsApi.Services
                 throw;
             }
             });
+        }
+
+        public async Task<FeeConcessionResponse> RevokeFeeConcessionAsync(Guid id, string reason, Guid schoolId)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+                throw new ArgumentException("Revocation reason is required.");
+
+            var strategy = _context.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var concession = await _context.FeeConcessions
+                    .Include(fc => fc.ConcessionType)
+                    .FirstOrDefaultAsync(fc => fc.Id == id && fc.SchoolId == schoolId);
+
+                if (concession == null)
+                    throw new KeyNotFoundException("Concession not found");
+
+                if (concession.Status != "Approved")
+                    throw new InvalidOperationException($"Only approved concessions can be revoked (Current: {concession.Status})");
+
+                // Reverse the discount on FeeRecord
+                var feeRec = await _context.FeeRecords
+                    .FirstOrDefaultAsync(f => f.StudentId == concession.StudentId
+                        && f.AcademicYear == concession.AcademicYear
+                        && f.SchoolId == schoolId);
+                if (feeRec != null)
+                {
+                    feeRec.DiscountAmount = Math.Max(0, feeRec.DiscountAmount - concession.ApprovedAmount);
+                    feeRec.PendingAmount = Math.Max(0, feeRec.TotalAmount + feeRec.LateFeeAmount - feeRec.PaidAmount - feeRec.DiscountAmount);
+                    if (feeRec.PendingAmount > 0 && feeRec.Status == "paid") feeRec.Status = "partial";
+                    feeRec.UpdatedAt = DateTime.UtcNow;
+                }
+
+                concession.Status = "Revoked";
+                concession.ApproverRemarks = reason;
+                concession.UpdatedAt = DateTime.UtcNow;
+
+                _context.Set<FeeAuditLog>().Add(new FeeAuditLog
+                {
+                    SchoolId = schoolId,
+                    EntityType = "FeeConcession",
+                    EntityId = concession.Id,
+                    Action = "ConcessionRevoked",
+                    StudentId = concession.StudentId,
+                    Amount = concession.ApprovedAmount,
+                    Remarks = $"Concession {concession.ConcessionNumber} revoked. Reason: {reason}",
+                    Timestamp = DateTime.UtcNow,
+                });
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                _logger.LogInformation($"✓ Concession Revoked: {concession.ConcessionNumber}");
+                return MapToFeeConcessionResponse(concession);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError($"✗ Concession revocation failed: {ex.Message}");
+                throw;
+            }
+            });
+        }
+
+        public async Task<FeeConcessionListResponse> GetConcessionsForSchoolAsync(Guid schoolId, Guid? studentId, string? status, int page, int pageSize)
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 200) pageSize = 50;
+
+            var query = _context.FeeConcessions
+                .Include(fc => fc.ConcessionType)
+                .Include(fc => fc.Student)
+                .Where(fc => fc.SchoolId == schoolId);
+
+            if (studentId.HasValue)
+                query = query.Where(fc => fc.StudentId == studentId.Value);
+            if (!string.IsNullOrEmpty(status))
+                query = query.Where(fc => fc.Status == status);
+
+            var total = await query.CountAsync();
+            var concessions = await query
+                .OrderByDescending(fc => fc.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new FeeConcessionListResponse
+            {
+                Concessions = concessions.Select(fc =>
+                {
+                    var r = MapToFeeConcessionResponse(fc);
+                    r.StudentName = fc.Student?.Name;
+                    r.StudentAdmissionNumber = fc.Student?.AdmissionNumber;
+                    return r;
+                }).ToList(),
+                Total = total,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = (int)Math.Ceiling((double)total / pageSize)
+            };
         }
 
         private ConcessionTypeResponse MapToConcessionTypeResponse(ConcessionType type)

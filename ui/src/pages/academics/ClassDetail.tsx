@@ -104,13 +104,15 @@ export default function ClassDetail() {
       setTeachingStaff(staffData.staff ?? []);
       setSections(sectionsData.sections ?? []);
 
-      // Fetch board defaults now (fresh boardId, avoids stale closure issue)
+      // Fetch board defaults — awaited so board data is ready before the loading spinner
+      // disappears, eliminating any race when the user immediately opens the Settings tab.
       if (boardId) {
-        boardApi.getSchoolBoards().then(r => {
+        try {
+          const r = await boardApi.getSchoolBoards();
           const match = r.boards?.find(b => b.boardConfigurationId === boardId) ?? null;
           classBoardRef.current = match;
           setClassBoard(match);
-        }).catch(() => {/* non-critical */});
+        } catch {/* non-critical */}
       }
     } catch (error) {
       console.error("Error loading class:", error);
@@ -265,8 +267,10 @@ export default function ClassDetail() {
   const handleSaveSettings = async () => {
     setSettingsSaving(true);
     try {
-      if (classSettings) {
-        const updated = await academicApi.updateClassSettings(classSettings.id, policyForm);
+      // Guid.Empty ("00000000-…") means the backend returned virtual defaults — no DB row exists yet.
+      const isUnsaved = !classSettings || classSettings.id === '00000000-0000-0000-0000-000000000000';
+      if (!isUnsaved) {
+        const updated = await academicApi.updateClassSettings(classSettings!.id, policyForm);
         setClassSettings(updated);
         toast.success("Class settings saved");
       } else {

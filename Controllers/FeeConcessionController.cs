@@ -178,17 +178,36 @@ namespace SmsApi.Controllers
         {
             try
             {
+                // Always inject schoolId from tenant context — frontend does not need to pass it
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                if (schoolId == Guid.Empty)
+                    return BadRequest(new { message = "School context required." });
+                request.SchoolId = schoolId;
                 var concession = await _concessionService.CreateConcessionAsync(request);
                 return CreatedAtAction(nameof(GetConcessionById), new { id = concession.Id, schoolId = concession.SchoolId }, concession);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
-            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
+
+        /// <summary>List concessions for the current school (tenant-context). Supports ?studentId= and ?status= filters.</summary>
+        [HttpGet("list")]
+        public async Task<ActionResult<FeeConcessionListResponse>> GetConcessionsList(
+            [FromQuery] Guid? studentId = null,
+            [FromQuery] string? status = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                if (schoolId == Guid.Empty) return Ok(new FeeConcessionListResponse());
+                var result = await _concessionService.GetConcessionsForSchoolAsync(schoolId, studentId, status, page, pageSize);
+                return Ok(result);
             }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
         }
 
         [HttpPost("{id}/approve")]
@@ -202,16 +221,9 @@ namespace SmsApi.Controllers
                 return Ok(concession);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message });
-            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
         }
 
         [HttpPost("{id}/reject")]
@@ -225,16 +237,25 @@ namespace SmsApi.Controllers
                 return Ok(concession);
             }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
-            catch (KeyNotFoundException ex)
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
+
+        [HttpPost("{id}/revoke")]
+        [Authorize(Roles = "Admin,Principal,Bursar,Accountant")]
+        public async Task<ActionResult<FeeConcessionResponse>> RevokeConcession(Guid id, [FromBody] RevokeFeeConcessionRequest request)
+        {
+            try
             {
-                return NotFound(new { message = ex.Message });
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var concession = await _concessionService.RevokeFeeConcessionAsync(id, request.Reason, schoolId);
+                return Ok(concession);
             }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message });
-            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
         }
     }
 }

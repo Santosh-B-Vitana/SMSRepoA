@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -17,10 +18,10 @@ import {
   Printer, Tag, BarChart3, Loader2, Calendar, Building2,
   QrCode, ChevronDown, ChevronUp, Send, Pencil, Trash2,
   FileText, CalendarDays, CreditCard, Banknote, Filter, Link2, PackagePlus,
-  Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2, X, GraduationCap
+  Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2, X, GraduationCap, ArrowLeft, RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
-import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, FeeHead, FeeStructureComponent, toggleStructureActive } from "@/services/api/feeApi";
+import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, FeeHead, FeeStructureComponent, toggleStructureActive, FeeConcessionRecord, getSchoolConcessions, approveConcession, rejectConcession } from "@/services/api/feeApi";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -67,6 +68,14 @@ const INSTALLMENT_PLANS = [
   { value: "4",  label: "Quarterly (April, July, October, January)" },
   { value: "3",  label: "Term-wise (3 Terms)" },
   { value: "12", label: "Monthly (12 Installments)" },
+];
+
+const FREQ_OPTIONS = [
+  { value: "termly",     label: "Every Installment",          description: "Billed in each installment (default)" },
+  { value: "once",       label: "One-time",                    description: "Charged in the 1st installment only" },
+  { value: "halfYearly", label: "Twice a Year",               description: "Charged in 2 installments per year" },
+  { value: "quarterly",  label: "Quarterly (4×/year)",        description: "Charged in 4 installments per year" },
+  { value: "monthly",    label: "Monthly (12×/year)",         description: "Charged every month" },
 ];
 
 const CONCESSION_TYPES = [
@@ -1852,9 +1861,22 @@ function CollectPaymentDialog({
                           </div>
                         ) : (
                           <>
-                            {/* Sibling cards with installment breakdown */}
+                            {/* Sibling cards with installment breakdown — one card per student */}
                             <div className="space-y-3">
-                              {siblings.map((sib: any) => (
+                              {Object.values(
+                                siblings.reduce((acc: Record<string, any>, sib: any) => {
+                                  if (!acc[sib.studentId]) {
+                                    acc[sib.studentId] = { ...sib };
+                                  } else {
+                                    // Merge additional fee records: sum financials, keep isAnchor
+                                    acc[sib.studentId].totalFee = (acc[sib.studentId].totalFee ?? 0) + (sib.totalFee ?? 0);
+                                    acc[sib.studentId].paidAmount = (acc[sib.studentId].paidAmount ?? 0) + (sib.paidAmount ?? 0);
+                                    acc[sib.studentId].pendingAmount = (acc[sib.studentId].pendingAmount ?? 0) + (sib.pendingAmount ?? 0);
+                                    acc[sib.studentId].discountAmount = (acc[sib.studentId].discountAmount ?? 0) + (sib.discountAmount ?? 0);
+                                  }
+                                  return acc;
+                                }, {})
+                              ).map((sib: any) => (
                                 <div key={sib.studentId} className={`rounded-xl border text-sm ${
                                   sib.isAnchor ? "border-pink-300 bg-pink-50/60" : "border-border bg-background"
                                 }`}>
@@ -2309,6 +2331,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const [editLinkedClassesLoading, setEditLinkedClassesLoading] = useState(false);
   const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
   const [selectedComponents, setSelectedComponents] = useState<Array<{ feeHeadId: string; feeHeadName: string; amount: number; remarks?: string }>>([]);
+  const [headFrequencies, setHeadFrequencies] = useState<Record<string, string>>({});
   const [componentsLoading, setComponentsLoading] = useState(false);
   const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
   const [boardFilter, setBoardFilter] = useState<string>("__all__");
@@ -2440,6 +2463,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
     setForm({ installmentCount: count, academicYear: tabYear, boardConfigurationId: undefined });
     setTermSchedule(defaultTermSchedule(count, tabYear, 0));
     setSelectedComponents([]);
+    setHeadFrequencies({});
     setShowDialog(true);
   };
   
@@ -2456,6 +2480,10 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       installmentCount: s.installmentCount,
       boardConfigurationId: s.boardConfigurationId || undefined,
     });
+    // Restore saved per-head frequencies
+    try {
+      setHeadFrequencies(s.feeHeadFrequencies ? JSON.parse(s.feeHeadFrequencies) : {});
+    } catch { setHeadFrequencies({}); }
     // Load existing components
     setComponentsLoading(true);
     try {
@@ -2521,6 +2549,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         ...FEE_HEADS.reduce((acc, h) => ({ ...acc, [h.key]: (form as any)[h.key] || 0 }), {}),
         installmentCount: form.installmentCount || 1,
         installmentDueDates: termSchedule.length > 0 ? JSON.stringify(termSchedule) : undefined,
+        feeHeadFrequencies: Object.keys(headFrequencies).length > 0 ? JSON.stringify(headFrequencies) : undefined,
         boardConfigurationId: form.boardConfigurationId || undefined,
       } as CreateFeeStructureDto;
       let structureId: string;
@@ -2931,22 +2960,55 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
             {["Academic", "Development", "Other"].map(cat => (
               <div key={cat} className="col-span-2">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 border-b pb-1">{cat} Fees</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {FEE_HEADS.filter(h => h.category === cat).map(h => (
-                    <div key={h.key}>
-                      <Label className="text-xs text-muted-foreground mb-1 block">{h.label}</Label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
-                        <Input
-                          className="h-8 text-sm pl-6"
-                          type="number" min={0}
-                          value={(form as any)[h.key] ?? ""}
-                          onChange={e => setForm({ ...form, [h.key]: parseFloat(e.target.value) || 0 })}
-                          placeholder="0"
-                        />
+                <div className="grid grid-cols-1 gap-2">
+                  {FEE_HEADS.filter(h => h.category === cat).map(h => {
+                    const amount = (form as any)[h.key] ?? "";
+                    const freq = headFrequencies[h.key] ?? "termly";
+                    return (
+                      <div key={h.key} className="grid grid-cols-[1fr_auto_180px] gap-2 items-end">
+                        {/* Amount */}
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">{h.label}</Label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">?</span>
+                            <Input
+                              className="h-8 text-sm pl-6"
+                              type="number" min={0}
+                              value={amount}
+                              onChange={e => setForm({ ...form, [h.key]: parseFloat(e.target.value) || 0 })}
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                        {/* Visual divider */}
+                        <span className="text-muted-foreground/40 text-xs mb-1.5 self-end pb-[7px]">�</span>
+                        {/* Frequency */}
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Billing Frequency</Label>
+                          <Select
+                            value={freq}
+                            onValueChange={v => {
+                              const next = { ...headFrequencies };
+                              if (v === "termly") delete next[h.key];
+                              else next[h.key] = v;
+                              setHeadFrequencies(next);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {FREQ_OPTIONS.map(fo => (
+                                <SelectItem key={fo.value} value={fo.value} className="text-xs">
+                                  {fo.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -3495,6 +3557,9 @@ const BLANK_CT_FORM = { name: "", description: "", discountType: "Percentage", d
 
 function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
   const { t } = useLanguage();
+  const [subTab, setSubTab] = useState<"types" | "pending">("types");
+
+  // ── Types state ──
   const [types, setTypes]       = useState<ConcessionType[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -3505,6 +3570,55 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
   const [form, setForm]         = useState({ ...BLANK_CT_FORM });
   const { hasUserPermission: hasPerm } = usePermissions();
   const canManage = hasPerm('Fees', 'Create');
+  const canApprove = hasPerm('Fees', 'Edit');
+
+  // ── Pending approvals state ──
+  const [pending, setPending]       = useState<FeeConcessionRecord[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [approveDialogId, setApproveDialogId] = useState<string | null>(null);
+  const [approveAmt, setApproveAmt] = useState("");
+  const [approveRemarks, setApproveRemarks] = useState("");
+  const [rejectDialogId, setRejectDialogId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const loadPending = async () => {
+    setPendingLoading(true);
+    try {
+      const { items } = await getSchoolConcessions("Pending");
+      setPending(items);
+    } catch { setPending([]); }
+    finally { setPendingLoading(false); }
+  };
+
+  useEffect(() => { if (subTab === "pending") loadPending(); }, [subTab]);
+
+  const handleApprove = async () => {
+    if (!approveDialogId) return;
+    const amt = parseFloat(approveAmt);
+    if (!amt || amt <= 0) { toast.error("Enter approved amount"); return; }
+    setActionLoading(true);
+    try {
+      await approveConcession(approveDialogId, amt, approveRemarks || undefined);
+      toast.success(`Concession approved: ₹${amt.toLocaleString("en-IN")}`);
+      setApproveDialogId(null); setApproveAmt(""); setApproveRemarks("");
+      loadPending();
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? "Failed to approve"); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleReject = async () => {
+    if (!rejectDialogId) return;
+    if (!rejectReason.trim()) { toast.error("Reason required"); return; }
+    setActionLoading(true);
+    try {
+      await rejectConcession(rejectDialogId, rejectReason.trim());
+      toast.success("Concession request rejected");
+      setRejectDialogId(null); setRejectReason("");
+      loadPending();
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? "Failed to reject"); }
+    finally { setActionLoading(false); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -3586,6 +3700,147 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
 
   return (
     <div className="space-y-5">
+      {/* Sub-tab switcher */}
+      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+        <button
+          onClick={() => setSubTab("types")}
+          className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${subTab === "types" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          Concession Types
+        </button>
+        <button
+          onClick={() => setSubTab("pending")}
+          className={`px-4 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${subTab === "pending" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          Pending Approvals
+          {pending.length > 0 && (
+            <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">{pending.length}</span>
+          )}
+        </button>
+      </div>
+
+      {/* ── PENDING APPROVALS tab ── */}
+      {subTab === "pending" && (
+        <>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-base flex items-center gap-2"><Clock className="h-4 w-4 text-amber-600" />Pending Concession Approvals</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Review and approve or reject submitted concession requests.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadPending} disabled={pendingLoading} className="gap-1.5">
+              {pendingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              Refresh
+            </Button>
+          </div>
+
+          {pendingLoading ? (
+            <div className="flex justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : pending.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-10 text-center">
+                <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-600">No pending requests</p>
+                <p className="text-xs text-muted-foreground mt-1">All concession requests have been actioned.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {pending.map(rec => (
+                <Card key={rec.id} className="border-amber-200 bg-amber-50/30">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm">{rec.studentName}</span>
+                          {rec.studentAdmissionNumber && <span className="text-xs text-muted-foreground">#{rec.studentAdmissionNumber}</span>}
+                          <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs gap-1"><Clock className="h-3 w-3" />Pending</Badge>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          <span className="font-medium">{rec.concessionTypeName}</span>
+                          {" · "}
+                          Requested: <span className="font-bold text-amber-700">₹{rec.appliedAmount.toLocaleString("en-IN")}</span>
+                          {" · "}
+                          {rec.academicYear}
+                        </p>
+                        <p className="text-xs text-slate-500 italic">"{rec.reason}"</p>
+                        <p className="text-xs text-slate-400">#{rec.concessionNumber} · {new Date(rec.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                      </div>
+                      {canApprove && (
+                        <div className="flex gap-2 shrink-0">
+                          <Button size="sm" className="h-8 text-xs gap-1 bg-green-600 hover:bg-green-700"
+                            onClick={() => { setApproveDialogId(rec.id); setApproveAmt(String(rec.appliedAmount)); setApproveRemarks(""); }}>
+                            <CheckCircle2 className="h-3.5 w-3.5" />Approve
+                          </Button>
+                          <Button variant="outline" size="sm" className="h-8 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50"
+                            onClick={() => { setRejectDialogId(rec.id); setRejectReason(""); }}>
+                            <XCircle className="h-3.5 w-3.5" />Reject
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Approve dialog */}
+          <Dialog open={!!approveDialogId} onOpenChange={v => { if (!v) setApproveDialogId(null); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Approve Concession</DialogTitle>
+                <DialogDescription>
+                  {pending.find(p => p.id === approveDialogId)?.studentName} — {pending.find(p => p.id === approveDialogId)?.concessionTypeName}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-1">
+                <div className="bg-amber-50 border border-amber-100 rounded px-3 py-2 text-xs text-amber-700">
+                  Requested: <strong>₹{pending.find(p => p.id === approveDialogId)?.appliedAmount.toLocaleString("en-IN") ?? 0}</strong>
+                  <p className="mt-0.5 italic text-amber-600">"{pending.find(p => p.id === approveDialogId)?.reason}"</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Approved Amount (₹) *</Label>
+                  <Input type="number" className="h-8 text-sm" value={approveAmt} onChange={e => setApproveAmt(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Remarks (optional)</Label>
+                  <Input className="h-8 text-sm" placeholder="e.g. Documents verified" value={approveRemarks} onChange={e => setApproveRemarks(e.target.value)} />
+                </div>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setApproveDialogId(null)}>Cancel</Button>
+                <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1" onClick={handleApprove} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Approve
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Reject dialog */}
+          <Dialog open={!!rejectDialogId} onOpenChange={v => { if (!v) setRejectDialogId(null); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Reject Concession Request</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2 py-1">
+                <Label className="text-xs">Reason *</Label>
+                <Textarea className="text-xs min-h-[60px] resize-none" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Enter reason for rejection…" />
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setRejectDialogId(null)}>Cancel</Button>
+                <Button variant="destructive" size="sm" onClick={handleReject} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}Reject
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+
+      {/* ── CONCESSION TYPES tab ── */}
+      {subTab === "types" && (
+      <div className="space-y-5">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold text-base flex items-center gap-2"><Tag className="h-4 w-4 text-primary" />{t('fees.con.title')}</h3>
@@ -3732,6 +3987,8 @@ function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
           </div>
         </DialogContent>
       </Dialog>
+      </div>
+      )}
     </div>
   );
 }
@@ -4437,7 +4694,7 @@ function AuditTrailTab() {
 }
 
 // ─── Main Fee Module Page ─────────────────────────────────
-export default function Fees() {
+export default function Fees({ section }: { section?: "collect" | "setup" }) {
   const { t } = useLanguage();
   const { hasUserPermission } = usePermissions();
   const canViewFees    = hasUserPermission('Fees', 'View');
@@ -4448,7 +4705,11 @@ export default function Fees() {
 
   const { academicYear, availableYears } = useAcademicYear();
   const [collectYear, setCollectYear] = useState<string | null>(null); // null = not yet initialized; "all-years" = show all records
-  const [activeTab, setActiveTab] = useState("collect");
+  const [activeTab, setActiveTab] = useState(section === "setup" ? "fee-setup" : "collect");
+  // Sync activeTab whenever the route's section prop changes (React reuses this component across routes)
+  useEffect(() => {
+    setActiveTab(section === "setup" ? "fee-setup" : "collect");
+  }, [section]);
   const [feeSetupSubTab, setFeeSetupSubTab] = useState("structure");
   const [analyticsSubTab, setAnalyticsSubTab] = useState("overview");
   const [records, setRecords] = useState<FeeRecord[]>([]);
@@ -4486,6 +4747,7 @@ export default function Fees() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterClass, setFilterClass] = useState("all");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<FeeRecord | null>(null);
 
@@ -4618,18 +4880,26 @@ export default function Fees() {
     );
   }
 
+  const sectionTitle = section === "setup"
+    ? "Fee Setup & Configuration"
+    : section === "collect"
+    ? "Collect Fees & Reports"
+    : "Fee Management";
+
   return (
     <div className="space-y-5">
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <IndianRupee className="h-7 w-7 text-primary" />
-            Fee Management
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {canManageFees ? t('fees.subtitleManage') : t('fees.subtitleView')}
-          </p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <IndianRupee className="h-7 w-7 text-primary" />
+              {sectionTitle}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {canManageFees ? t('fees.subtitleManage') : t('fees.subtitleView')}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => loadData()}>
@@ -4705,17 +4975,31 @@ export default function Fees() {
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3 h-auto">
-          <TabsTrigger value="collect" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Receipt className="h-4 w-4" /><span>{t('fees.collectFee')}</span>
-          </TabsTrigger>
-          <TabsTrigger value="fee-setup" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <Building2 className="h-4 w-4" /><span>Fee Setup</span>
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-            <BarChart3 className="h-4 w-4" /><span>Reports</span>
-          </TabsTrigger>
-        </TabsList>
+        {/* Hide the tab switcher entirely when only one logical section is active */}
+        {!section && (
+          <TabsList className="grid w-full grid-cols-3 h-auto">
+            <TabsTrigger value="collect" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+              <Receipt className="h-4 w-4" /><span>{t('fees.collectFee')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="fee-setup" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+              <Building2 className="h-4 w-4" /><span>Fee Setup</span>
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+              <BarChart3 className="h-4 w-4" /><span>Reports</span>
+            </TabsTrigger>
+          </TabsList>
+        )}
+        {section === "collect" && (
+          <TabsList className="grid w-full grid-cols-2 h-auto">
+            <TabsTrigger value="collect" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+              <Receipt className="h-4 w-4" /><span>{t('fees.collectFee')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+              <BarChart3 className="h-4 w-4" /><span>Reports</span>
+            </TabsTrigger>
+          </TabsList>
+        )}
+        {/* section==="setup": no top tab bar needed — just show fee-setup content directly */}
 
         {/* ── Collect Fees Tab (Student Dues) ──────────────── */}
         <TabsContent value="collect" className="mt-4">
@@ -4887,7 +5171,7 @@ export default function Fees() {
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-xs gap-1 border-green-200 text-green-700 hover:bg-green-50"
-                                    onClick={e => { e.stopPropagation(); setSelectedRecord(g.records[g.records.length - 1]); setPayDialogOpen(true); }}
+                                    onClick={e => { e.stopPropagation(); navigate(`/fees/collect/${g.records[g.records.length - 1].studentId}`); }}
                                   >
                                     <Eye className="h-3 w-3" />
                                     {t('fees.viewSummary')}
@@ -4896,7 +5180,7 @@ export default function Fees() {
                                   <Button
                                     size="sm"
                                     className={`h-7 text-xs gap-1 ${actionNextTerm?.isUpcoming ? "bg-indigo-600 hover:bg-indigo-700" : ""}`}
-                                    onClick={e => { e.stopPropagation(); setSelectedRecord(firstPendingRecord ?? g.records[0]); setPayDialogOpen(true); }}
+                                    onClick={e => { e.stopPropagation(); navigate(`/fees/collect/${(firstPendingRecord ?? g.records[0]).studentId}`); }}
                                   >
                                     {actionNextTerm?.isUpcoming
                                       ? <CreditCard className="h-3 w-3" />
@@ -5041,7 +5325,7 @@ export default function Fees() {
                                                     <Button
                                                       size="sm" variant="outline"
                                                       className="h-7 text-xs gap-1 border-slate-200 text-slate-600 hover:bg-slate-50"
-                                                      onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}
+                                                      onClick={e => { e.stopPropagation(); navigate(`/fees/collect/${r.studentId}`); }}
                                                     >
                                                       <Eye className="h-3 w-3" /> {t('fees.viewBtn')}
                                                     </Button>
@@ -5049,7 +5333,7 @@ export default function Fees() {
                                                       <Button
                                                         size="sm"
                                                         className="h-7 text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700"
-                                                        onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}
+                                                        onClick={e => { e.stopPropagation(); navigate(`/fees/collect/${r.studentId}`); }}
                                                       >
                                                         <CreditCard className="h-3 w-3" />
                                                     {nextDueTerm.isUpcoming ? `${t('fees.advancePayment')} — ${nextDueTerm.label}` : `${t('fees.collect')} ${nextDueTerm.label}`}
@@ -5065,7 +5349,7 @@ export default function Fees() {
                                                   </span>
                                                   <Button
                                                     size="sm" className="h-7 text-xs gap-1.5"
-                                                    onClick={e => { e.stopPropagation(); setSelectedRecord(r); setPayDialogOpen(true); }}
+                                                    onClick={e => { e.stopPropagation(); navigate(`/fees/collect/${r.studentId}`); }}
                                                   >
                                                     <IndianRupee className="h-3 w-3" />
                                                     {t('fees.collect')} {tLabel}
@@ -5313,7 +5597,7 @@ export default function Fees() {
                       {quickMatches.map(r => (
                         <button
                           key={r.id}
-                          onClick={() => { setQuickRecord(r); setQuickOpen(false); setSelectedRecord(r); setPayDialogOpen(true); }}
+                          onClick={() => { setQuickOpen(false); navigate(`/fees/collect/${r.studentId}`); }}
                           className="w-full flex items-center justify-between px-4 py-3 rounded-lg border hover:border-primary hover:bg-primary/5 transition-colors text-left"
                         >
                           <div>

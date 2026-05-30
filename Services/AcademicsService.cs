@@ -1835,13 +1835,43 @@ namespace SmsApi.Services
 
             if (settings == null)
             {
-                // Return default settings if not found
+                // Resolve the board-configured default passing percentage for this class.
+                // Priority: school-level board override → board global default → 35% fallback.
+                var boardConfigId = await _context.Classes
+                    .Where(c => c.Id == classId && c.SchoolId == schoolId && !c.IsDeleted)
+                    .Select(c => c.BoardConfigurationId)
+                    .FirstOrDefaultAsync();
+
+                decimal boardPassPct = 35m;
+                if (boardConfigId.HasValue)
+                {
+                    var schoolBoard = await _context.SchoolBoardConfigs
+                        .Include(s => s.BoardConfiguration)
+                        .Where(s => s.SchoolId == schoolId && s.BoardConfigurationId == boardConfigId.Value && s.IsActive)
+                        .FirstOrDefaultAsync();
+
+                    if (schoolBoard != null)
+                        boardPassPct = schoolBoard.CustomOverallPassingPercentage
+                                       ?? schoolBoard.BoardConfiguration?.OverallPassingPercentage
+                                       ?? 35m;
+                    else
+                    {
+                        var boardDefault = await _context.BoardConfigurations
+                            .Where(b => b.Id == boardConfigId.Value && b.IsActive)
+                            .Select(b => b.OverallPassingPercentage)
+                            .FirstOrDefaultAsync();
+                        if (boardDefault > 0) boardPassPct = boardDefault;
+                    }
+                }
+
+                // Return virtual (unsaved) defaults. Id = Guid.Empty signals the frontend to
+                // call createClassSettings rather than updateClassSettings on save.
                 return new ClassSettingsResponse
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.Empty,
                     SchoolId = schoolId,
                     ClassId = classId,
-                    PassingPercentage = 35,
+                    PassingPercentage = boardPassPct,
                     MinimumAttendance = 75,
                     GradingScale = "4.0",
                     PromotionPolicy = "strict",

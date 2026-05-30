@@ -790,23 +790,41 @@ namespace SmsApi.Services
 
         public async Task<RolePermissionResponse> AssignPermissionsToRoleAsync(AssignPermissionsRequest request)
         {
-            var existing = await _context.RolePermissions
+            // Use soft-delete pattern: deactivate removed, re-activate or add new
+            var allExisting = await _context.RolePermissions
                 .Where(rp => rp.RoleId == request.RoleId)
                 .ToListAsync();
 
-            _context.RolePermissions.RemoveRange(existing);
+            var incomingSet = new HashSet<Guid>(request.PermissionIds);
+            var existingByPermId = allExisting.ToDictionary(rp => rp.PermissionId);
 
+            // Soft-delete permissions being removed
+            foreach (var rp in allExisting.Where(rp => !rp.IsDeleted && !incomingSet.Contains(rp.PermissionId)))
+            {
+                rp.IsDeleted = true;
+                rp.DeletedAt = DateTime.UtcNow;
+                rp.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // Re-activate or add permissions being granted
             foreach (var permissionId in request.PermissionIds)
             {
-                _context.RolePermissions.Add(new RolePermission
+                if (existingByPermId.TryGetValue(permissionId, out var rp))
                 {
-                    Id = Guid.NewGuid(),
-                    RoleId = request.RoleId,
-                    PermissionId = permissionId,
-                    IsGranted = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                });
+                    if (rp.IsDeleted) { rp.IsDeleted = false; rp.DeletedAt = null; rp.IsGranted = true; rp.UpdatedAt = DateTime.UtcNow; }
+                }
+                else
+                {
+                    _context.RolePermissions.Add(new RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = request.RoleId,
+                        PermissionId = permissionId,
+                        IsGranted = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
             }
 
             await _context.SaveChangesAsync();
@@ -883,23 +901,41 @@ namespace SmsApi.Services
                     throw new ArgumentException($"One or more permission IDs do not exist: {string.Join(", ", invalidIds.Take(5))}");
             }
 
-            // Full replace
-            var existing = await _context.RolePermissions
+            // Soft-delete approach: preserve audit history by deactivating removed, re-activating restored
+            var allExisting = await _context.RolePermissions
                 .Where(rp => rp.RoleId == roleId)
                 .ToListAsync();
-            _context.RolePermissions.RemoveRange(existing);
 
+            var incomingSet = new HashSet<Guid>(permissionIds);
+            var existingByPermId = allExisting.ToDictionary(rp => rp.PermissionId);
+
+            // Soft-delete permissions being removed
+            foreach (var rp in allExisting.Where(rp => !rp.IsDeleted && !incomingSet.Contains(rp.PermissionId)))
+            {
+                rp.IsDeleted = true;
+                rp.DeletedAt = DateTime.UtcNow;
+                rp.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // Re-activate previously soft-deleted, or add brand-new entries
             foreach (var permId in permissionIds)
             {
-                _context.RolePermissions.Add(new RolePermission
+                if (existingByPermId.TryGetValue(permId, out var rp))
                 {
-                    Id = Guid.NewGuid(),
-                    RoleId = roleId,
-                    PermissionId = permId,
-                    IsGranted = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                });
+                    if (rp.IsDeleted) { rp.IsDeleted = false; rp.DeletedAt = null; rp.IsGranted = true; rp.UpdatedAt = DateTime.UtcNow; }
+                }
+                else
+                {
+                    _context.RolePermissions.Add(new RolePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        RoleId = roleId,
+                        PermissionId = permId,
+                        IsGranted = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
             }
 
             await _context.SaveChangesAsync();

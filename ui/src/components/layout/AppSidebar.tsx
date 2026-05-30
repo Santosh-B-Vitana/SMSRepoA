@@ -1,5 +1,5 @@
 import * as React from "react"
-import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck, CalendarCheck, Star, FileText, Megaphone } from "lucide-react"
+import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck, CalendarCheck, Star, FileText, Megaphone, Receipt, type LucideIcon } from "lucide-react"
 import { NavMain } from "@/components/sidebar/nav-main"
 import { TeamSwitcher } from "@/components/sidebar/team-switcher"
 import {
@@ -15,7 +15,7 @@ import { usePermissions, type ModuleName } from "@/contexts/PermissionsContext"
 type NavItem = {
   title: string;
   url?: string;
-  icon?: React.ElementType;
+  icon?: LucideIcon;
   isLabel?: boolean;
   moduleKey?: ModuleName;
 }
@@ -45,7 +45,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: "Curriculum Planner", url: "/syllabus", icon: ClipboardList },
 
         { title: "FINANCE & ADMINISTRATION", isLabel: true },
-        { title: t('nav.fees'), url: "/fees", icon: DollarSign, moduleKey: "fees" },
+        { title: "Collect Fees", url: "/fees/collect", icon: Receipt, moduleKey: "fees" },
+        { title: "Fee Setup", url: "/fees/setup", icon: Settings, moduleKey: "fees" },
         { title: t('nav.library'), url: "/library", icon: Library, moduleKey: "library" },
         { title: t('nav.roleManagement'), url: "/role-management", icon: Shield },
 
@@ -70,6 +71,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('common.store'), url: "/store", icon: ShoppingBag, moduleKey: "store" },
         { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
 
+        { title: "GOVERNMENT & COMPLIANCE", isLabel: true },
+        { title: "DISE / UDISE Report", url: "/reports/dise", icon: FileText, moduleKey: "reports" },
+
         { title: "SETTINGS", isLabel: true },
         { title: t('nav.settings'), url: "/settings", icon: Settings },
         { title: "Security", url: "/security", icon: Shield },
@@ -84,153 +88,218 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     if (user.role === 'staff') {
       const designation = (user.designation ?? 'Teacher').toLowerCase();
 
-      // -- Shared items for every staff member ------------------------------
-      const shared: NavItem[] = [
-        { title: "OVERVIEW", isLabel: true },
-        { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
-        { title: "ANNOUNCEMENTS", isLabel: true },
+      // ── Terminal sections – always anchored at the bottom ─────────────────
+      // COMMUNICATION: Announcements + optional full Communication channel + School Connect
+      const communicationSection: NavItem[] = [
+        { title: "COMMUNICATION", isLabel: true },
         { title: "Announcements", url: "/announcements", icon: Bell },
-        { title: "LEAVE", isLabel: true },
+        ...(isModuleEnabled('communication') && hasUserPermission('Communication', 'View')
+          ? [{ title: "Communication", url: "/communication", icon: MessageSquare, moduleKey: 'communication' as const } as NavItem]
+          : []),
+        { title: "School Connect", url: "/school-connect", icon: School },
+      ];
+
+      // MY PROFILE: personal leave & attendance tracking
+      const myProfileSection: NavItem[] = [
+        { title: "MY PROFILE", isLabel: true },
         { title: "My Leave", url: "/leave-management", icon: Calendar },
         { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
-        { title: "School Connect", url: "/school-connect", icon: School },
-      ]
+      ];
 
-      // -- Build designation-based nav items ---------------------------------
-      // Typed as NavItem[] so moduleKey works for feature-toggle filtering
-      let staffItems: NavItem[];
+      // ── Core designation-based navigation ─────────────────────────────────
+      let coreItems: NavItem[];
 
       if (designation === 'principal' || designation === 'vice principal') {
-        staffItems = [
+        coreItems = [
           { title: "OVERVIEW", isLabel: true },
           { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
-          { title: "TEACHING & ASSESSMENT", isLabel: true },
+
+          { title: "SCHOOL MANAGEMENT", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
           ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
-            ? [{ title: "Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as const] : []),
-          { title: t('nav.timetable'), url: "/timetable", icon: Clock },
+            ? [{ title: "Class Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as NavItem] : []),
+          { title: "My Timetable", url: "/timetable", icon: Clock },
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' as const },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
-          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
+
+          // Principal gets the full communications section inline (incl. Communication channel)
           { title: "COMMUNICATIONS", isLabel: true },
           { title: "Announcements", url: "/announcements", icon: Bell },
           { title: "Communication", url: "/communication", icon: MessageSquare },
-          { title: "ADMINISTRATION", isLabel: true },
-          { title: "Leave Management", url: "/leave-management", icon: Calendar },
-          { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
           { title: "School Connect", url: "/school-connect", icon: School },
+
+          { title: "REPORTS & COMPLIANCE", isLabel: true },
+          { title: "DISE / UDISE Report", url: "/reports/dise", icon: FileText },
+
+          { title: "MY PROFILE", isLabel: true },
+          { title: "My Leave", url: "/leave-management", icon: Calendar },
+          { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
         ];
       } else if (designation === 'head of department') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "DEPARTMENT", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-          { title: "Timetable", url: "/timetable", icon: Clock },
+          { title: "My Timetable", url: "/timetable", icon: Clock },
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' as const },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
-          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
           { title: "Staff", url: "/staff", icon: UserCheck },
         ];
       } else if (designation === 'class teacher') {
-        // Class teachers are the in-charge of a class: show Attendance (for their class)
-        // and Health (if the module is enabled). Subject teachers never see Attendance.
-        staffItems = [
-          ...shared,
-          { title: "ACADEMIC", isLabel: true },
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
+          { title: "TEACHING", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-          ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
-            ? [{ title: "Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as const] : []),
+          { title: "My Timetable", url: "/timetable", icon: Clock },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
-          { title: "Timetable", url: "/timetable", icon: Clock },
-          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
-          { title: "DIARY", isLabel: true },
-          { title: "Diary", url: "/staff-diary", icon: BookOpen },
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
+          { title: "Diary", url: "/staff-diary", icon: FileText },
+
+          { title: "CLASSROOM", isLabel: true },
+          ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
+            ? [{ title: "Class Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as NavItem] : []),
           ...(hasUserPermission('Health', 'View')
-            ? [{ title: "HEALTH", isLabel: true }, { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' as const } as const] : []),
+            ? [{ title: "Health Records", url: "/health", icon: HeartPulse, moduleKey: 'health' as const } as NavItem] : []),
         ];
       } else if (designation === 'teacher') {
-        // Subject teachers: no Attendance (they are not the class in-charge)
-        staffItems = [
-          ...shared,
-          { title: "ACADEMIC", isLabel: true },
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
+          { title: "TEACHING", isLabel: true },
           { title: "My Classes", url: "/my-classes", icon: GraduationCap },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as const] : []),
-          { title: "Timetable", url: "/timetable", icon: Clock },
-          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
-          { title: "DIARY", isLabel: true },
-          { title: "Diary", url: "/staff-diary", icon: BookOpen },
+            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: "My Timetable", url: "/timetable", icon: Clock },
+          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
+          { title: "Diary", url: "/staff-diary", icon: FileText },
         ];
       } else if (designation === 'accountant') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "FINANCE", isLabel: true },
-          { title: "Fees", url: "/fees", icon: DollarSign, moduleKey: 'fees' as const },
-          { title: "Wallet / Finance", url: "/wallet", icon: Wallet, moduleKey: 'wallet' as const },
+          { title: "Collect Fees", url: "/fees/collect", icon: Receipt, moduleKey: 'fees' as const },
+          { title: "Wallet & Finance", url: "/wallet", icon: Wallet, moduleKey: 'wallet' as const },
           { title: "Store", url: "/store", icon: ShoppingBag, moduleKey: 'store' as const },
         ];
       } else if (designation === 'receptionist' || designation === 'front desk officer') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "FRONT DESK", isLabel: true },
           { title: "Visitor Management", url: "/visitor-management", icon: UserCog },
+
           { title: "ADMISSIONS", isLabel: true },
           { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: "admissions" as const },
         ];
       } else if (designation === 'hr manager') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "HR MANAGEMENT", isLabel: true },
           { title: "Staff", url: "/staff", icon: UserCheck },
         ];
       } else if (designation === 'librarian') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "LIBRARY", isLabel: true },
           { title: "Library", url: "/library", icon: Library, moduleKey: 'library' as const },
         ];
       } else if (designation === 'transport manager') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "TRANSPORT", isLabel: true },
           { title: "Transport", url: "/transport", icon: Truck, moduleKey: 'transport' as const },
         ];
       } else if (designation === 'hostel warden') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "HOSTEL", isLabel: true },
           { title: "Hostel", url: "/hostel", icon: Home, moduleKey: 'hostel' as const },
           { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
         ];
       } else if (designation === 'admissions officer') {
-        staffItems = [
-          ...shared,
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
           { title: "ADMISSIONS", isLabel: true },
           { title: "Students", url: "/students", icon: Users, moduleKey: 'students' as const },
         ];
       } else if (designation === 'counselor') {
-        staffItems = [
-          ...shared,
-          { title: "SERVICES", isLabel: true },
-          { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+
+          { title: "STUDENT SERVICES", isLabel: true },
           { title: "Students", url: "/students", icon: Users, moduleKey: 'students' as const },
+          { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
         ];
       } else {
-        // Generic/unknown designation � no Attendance (only class teachers mark attendance)
-        staffItems = [
-          ...shared,
-          { title: "ACADEMIC", isLabel: true },
-          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
+        // Unknown/custom designation – all nav built by permission augmentation
+        coreItems = [
+          { title: "OVERVIEW", isLabel: true },
+          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
         ];
       }
 
-      // -- Augment with permission-based items (role management overrides) ---
-      // Each augmentation also requires the module to be enabled in the school feature toggles.
+      // ── Permission-based augmentation (role-management overrides) ─────────
+      const staffItems: NavItem[] = [...coreItems];
 
-      // Library: show for anyone with Library.View + module enabled
+      // Students & Staff management — Admin & Principal only
+      const isPrincipalRole = ['principal', 'vice principal'].includes(designation);
+      
+      if (isPrincipalRole && hasUserPermission('Students', 'View') && !staffItems.some(i => i.url === '/students')) {
+        staffItems.push(
+          { title: "PEOPLE & ENROLLMENT", isLabel: true },
+          { title: "Students", url: "/students", icon: Users, moduleKey: 'students' },
+        );
+      }
+
+      if (isPrincipalRole && hasUserPermission('Staff', 'View') && !staffItems.some(i => i.url === '/staff')) {
+        staffItems.push(
+          { title: "Staff", url: "/staff", icon: UserCheck, moduleKey: 'staff' },
+        );
+      }
+
+      if (isModuleEnabled('admissions') && hasUserPermission('Admissions', 'View') && !staffItems.some(i => i.url === '/admissions')) {
+        staffItems.push(
+          { title: "ADMISSIONS", isLabel: true },
+          { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: 'admissions' },
+        );
+      }
+
+      if (isModuleEnabled('timetable') && hasUserPermission('Timetable', 'View') && !staffItems.some(i => i.url === '/timetable')) {
+        staffItems.push(
+          { title: t('nav.timetable'), url: "/timetable", icon: Clock, moduleKey: 'timetable' },
+        );
+      }
+
+      if (hasUserPermission('Assignments', 'View') && !staffItems.some(i => i.url === '/assignments')) {
+        staffItems.push(
+          { title: "Assignments", url: "/assignments", icon: ClipboardList },
+        );
+      }
+
       if (isModuleEnabled('library') && hasUserPermission('Library', 'View') && !staffItems.some(i => i.url === '/library')) {
         staffItems.push(
           { title: "LIBRARY", isLabel: true },
@@ -238,7 +307,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Transport: show for anyone with Transport.View + module enabled
       if (isModuleEnabled('transport') && hasUserPermission('Transport', 'View') && !staffItems.some(i => i.url === '/transport')) {
         staffItems.push(
           { title: "TRANSPORT", isLabel: true },
@@ -246,7 +314,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Hostel: show for anyone with Hostel.View + module enabled
       if (isModuleEnabled('hostel') && hasUserPermission('Hostel', 'View') && !staffItems.some(i => i.url === '/hostel')) {
         staffItems.push(
           { title: "HOSTEL", isLabel: true },
@@ -254,15 +321,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Fees: show for anyone with Fees.View + module enabled
-      if (isModuleEnabled('fees') && hasUserPermission('Fees', 'View') && !staffItems.some(i => i.url === '/fees')) {
+      if (isModuleEnabled('fees') && hasUserPermission('Fees', 'View') && !staffItems.some(i => i.url === '/fees/collect' || i.url === '/fees')) {
         staffItems.push(
           { title: "FINANCE", isLabel: true },
-          { title: "Fees", url: "/fees", icon: DollarSign, moduleKey: 'fees' },
+          { title: "Collect Fees", url: "/fees/collect", icon: Receipt, moduleKey: 'fees' },
         );
       }
 
-      // Visitor Management: show for anyone with Visitor.View permission
       if (hasUserPermission('Visitor', 'View') && !staffItems.some(i => i.url === '/visitor-management')) {
         staffItems.push(
           { title: "OPERATIONS", isLabel: true },
@@ -270,7 +335,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Examinations: show for anyone with Examinations.View + module enabled
       if (isModuleEnabled('examinations') && hasUserPermission('Examinations', 'View') && !staffItems.some(i => i.url === '/examinations')) {
         staffItems.push(
           { title: "EXAMINATIONS", isLabel: true },
@@ -278,19 +342,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Syllabus: show for any teaching staff who doesn't already have it
+      // Curriculum: fallback for teaching staff not yet covered above
       if (!staffItems.some(i => i.url === '/syllabus') && (
         designation === 'teacher' || designation === 'class teacher' ||
         designation === 'head of department' || designation === 'principal' || designation === 'vice principal'
       )) {
         staffItems.push(
-          { title: "Curriculum Planner", url: "/syllabus", icon: BookOpen },
+          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
         );
       }
 
-      // Attendance: show for anyone with Attendance.Create (or View) + module enabled
-      // This covers staff whose designation in the DB differs from their role assignment
-      // (e.g., a "Teacher" who has been assigned the "Class Teacher" role in Role Management).
+      // Attendance: covers staff whose DB designation differs from their role assignment
       if (
         isModuleEnabled('attendance') &&
         (hasUserPermission('Attendance', 'Create') || hasUserPermission('Attendance', 'View')) &&
@@ -298,23 +360,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       ) {
         staffItems.push(
           { title: "ATTENDANCE", isLabel: true },
-          { title: "Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' },
+          { title: "Class Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' },
         );
       }
 
-      // Health: show for anyone with Health.View + module enabled
-      if (
-        isModuleEnabled('health') &&
-        hasUserPermission('Health', 'View') &&
-        !staffItems.some(i => i.url === '/health')
-      ) {
+      if (isModuleEnabled('health') && hasUserPermission('Health', 'View') && !staffItems.some(i => i.url === '/health')) {
         staffItems.push(
           { title: "HEALTH", isLabel: true },
           { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' },
         );
       }
 
-      // Grades: show for anyone with Grades.View permission
       if (hasUserPermission('Grades', 'View') && !staffItems.some(i => i.url === '/grades')) {
         staffItems.push(
           { title: "GRADES", isLabel: true },
@@ -322,7 +378,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Certificates: show for anyone with Certificates.View permission (not principal/VP � managed by admin)
       if (!['principal', 'vice principal'].includes(designation) && hasUserPermission('Certificates', 'View') && !staffItems.some(i => i.url === '/certificates')) {
         staffItems.push(
           { title: "CERTIFICATES", isLabel: true },
@@ -330,11 +385,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         );
       }
 
-      // Keep module items visible even when disabled so users see the menu entry
-      // and can open the existing ModuleRestricted page.
+      // ── Append terminal sections ──────────────────────────────────────────
+      // Principal/VP already has their COMMUNICATIONS + MY PROFILE inline, so skip for them.
+      if (!staffItems.some(i => i.url === '/school-connect')) {
+        staffItems.push(...communicationSection);
+      }
+      if (!staffItems.some(i => i.url === '/my-attendance')) {
+        staffItems.push(...myProfileSection);
+      }
+
       return staffItems;
     }
-
     if (user.role === 'parent') {
       return [
         { title: t('nav.childProfile'), url: "/child-profile", icon: User },

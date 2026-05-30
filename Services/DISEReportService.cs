@@ -72,11 +72,36 @@ namespace SmsApi.Services
         public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
     }
 
+    public class DISEDesignationCount
+    {
+        public string Designation { get; set; } = string.Empty;
+        public int Total { get; set; }
+        public int Male { get; set; }
+        public int Female { get; set; }
+        public int Trained { get; set; }   // B.Ed / D.El.Ed covered
+    }
+
+    public class DISEStaffSummary
+    {
+        public int TotalTeachingStaff { get; set; }
+        public int MaleTeachers { get; set; }
+        public int FemaleTeachers { get; set; }
+        public int TrainedTeachers { get; set; }     // has B.Ed / D.El.Ed in Qualification
+        public int UntrainedTeachers { get; set; }
+        public int ContractTeachers { get; set; }
+        public int PermanentTeachers { get; set; }
+        public int StaffWithAadhar { get; set; }
+        public int StaffWithPAN { get; set; }
+        public List<DISEDesignationCount> ByDesignation { get; set; } = new();
+        public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+    }
+
     public interface IDISEReportService
     {
         Task<DISESchoolSummary> GetSummaryAsync(Guid schoolId, string academicYear);
         Task<List<DISEStudentRecord>> GetStudentRecordsAsync(Guid schoolId, string academicYear, string? className = null);
         Task<byte[]> ExportCsvAsync(Guid schoolId, string academicYear, string? className = null);
+        Task<DISEStaffSummary> GetStaffSummaryAsync(Guid schoolId);
     }
 
     public class DISEReportService : IDISEReportService
@@ -145,16 +170,89 @@ namespace SmsApi.Services
 
         public async Task<List<DISEStudentRecord>> GetStudentRecordsAsync(Guid schoolId, string academicYear, string? className = null)
         {
-            // Query active students, optionally filter by class name
-            var query = _db.Students
+            // ── Enrollment-based path (correct academic year + class/section) ──────
+            // Look up the AcademicYear record by name so we can join via FK.
+            var ayRecord = await _db.AcademicYears
+                .FirstOrDefaultAsync(ay => ay.SchoolId == schoolId && ay.Name == academicYear);
+
+            if (ayRecord != null)
+            {
+                // Build the enrollment query — joins student, class and section in one go.
+                var enrollmentQuery = _db.StudentEnrollments
+                    .Include(e => e.Student)
+                    .Include(e => e.Class)
+                    .Include(e => e.Section)
+                    .Where(e => e.SchoolId == schoolId
+                                && e.AcademicYearId == ayRecord.Id
+                                && e.Status == "active"
+                                && e.Student != null && e.Student.Status == "active");
+
+                if (!string.IsNullOrWhiteSpace(className))
+                    enrollmentQuery = enrollmentQuery.Where(e => e.Class != null && e.Class.Name == className);
+
+                var enrollments = await enrollmentQuery
+                    .OrderBy(e => e.Class != null ? e.Class.Name : string.Empty)
+                    .ThenBy(e => e.Section != null ? e.Section.Name : string.Empty)
+                    .ThenBy(e => e.Student != null ? e.Student.FirstName : string.Empty)
+                    .ToListAsync();
+
+                // Only use enrollment records if data is present for this year; otherwise
+                // fall through to the legacy path (school hasn't migrated enrollments yet).
+                if (enrollments.Count > 0)
+                {
+                    return enrollments.Select(e =>
+                    {
+                        var s = e.Student!;
+                        return new DISEStudentRecord
+                        {
+                            StudentId = s.Id,
+                            PenNumber = s.PenNumber,
+                            UDISENumber = s.UDISENumber,
+                            AadharNumber = s.AadharNumber,
+                            Name = !string.IsNullOrWhiteSpace(s.FirstName)
+                                ? $"{s.FirstName} {s.LastName}".Trim()
+                                : s.Name,
+                            FirstName = s.FirstName,
+                            LastName = s.LastName,
+                            FatherName = s.GuardianName,
+                            MotherName = null,
+                            DateOfBirth = s.DateOfBirth,
+                            Gender = s.Gender,
+                            ClassName = e.Class?.Name ?? s.Class ?? string.Empty,
+                            SectionName = e.Section?.Name ?? s.Section ?? string.Empty,
+                            Category = s.Category,
+                            IsMinority = s.IsMinority,
+                            IsBPL = s.IsBPL,
+                            IsDifferentlyAbled = s.IsDifferentlyAbled,
+                            DifferentlyAbledType = s.DifferentlyAbledType,
+                            DifferentlyAbledPercentage = decimal.TryParse(s.DifferentlyAbledPercentage, out var dap) ? dap : null,
+                            Religion = s.Religion,
+                            BoardRollNumber = s.BoardRollNumber,
+                            Address = s.Address
+                        };
+                    }).ToList();
+                }
+
+                _logger.LogWarning(
+                    "DISE: No active enrollment records found for school {SchoolId} / year {Year}. Falling back to Student.Class field.",
+                    schoolId, academicYear);
+            }
+
+            // ── Legacy fallback (Student.Class string field) ──────────────────────
+            // Used when enrollment records haven't been populated yet (migration pending).
+            var legacyQuery = _db.Students
                 .Where(s => s.SchoolId == schoolId && s.Status == "active");
 
             if (!string.IsNullOrWhiteSpace(className))
-                query = query.Where(s => s.Class == className);
+#pragma warning disable CS0618 // Student.Class is deprecated but kept for this legacy path
+                legacyQuery = legacyQuery.Where(s => s.Class == className);
+#pragma warning restore CS0618
 
-            var students = await query
+            var students = await legacyQuery
+#pragma warning disable CS0618
                 .OrderBy(s => s.Class)
                 .ThenBy(s => s.Section)
+#pragma warning restore CS0618
                 .ThenBy(s => s.FirstName)
                 .ToListAsync();
 
@@ -173,8 +271,10 @@ namespace SmsApi.Services
                 MotherName = null,
                 DateOfBirth = s.DateOfBirth,
                 Gender = s.Gender,
+#pragma warning disable CS0618
                 ClassName = s.Class ?? string.Empty,
                 SectionName = s.Section ?? string.Empty,
+#pragma warning restore CS0618
                 Category = s.Category,
                 IsMinority = s.IsMinority,
                 IsBPL = s.IsBPL,
@@ -235,6 +335,71 @@ namespace SmsApi.Services
             if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
                 return $"\"{value.Replace("\"", "\"\"")}\"";
             return value;
+        }
+
+        public async Task<DISEStaffSummary> GetStaffSummaryAsync(Guid schoolId)
+        {
+            var staff = await _db.StaffMembers
+                .Where(s => s.SchoolId == schoolId && s.Status == "active" && !s.IsDeleted)
+                .ToListAsync();
+
+            // Teaching designations per DISE norms
+            var teachingDesignations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Teacher", "Class Teacher", "Senior Teacher", "Subject Teacher",
+                "Head of Department", "PGT", "TGT", "PRT", "Assistant Teacher",
+                "Principal", "Vice Principal", "Headmaster", "Headmistress"
+            };
+
+            var teaching = staff
+                .Where(s => teachingDesignations.Contains(s.Designation ?? ""))
+                .ToList();
+
+            static bool IsTrained(string? qual)
+            {
+                if (string.IsNullOrWhiteSpace(qual)) return false;
+                var q = qual.ToUpperInvariant();
+                return q.Contains("B.ED") || q.Contains("B.ED.") || q.Contains("BED")
+                    || q.Contains("D.EL.ED") || q.Contains("DELED") || q.Contains("D.ED")
+                    || q.Contains("JBT") || q.Contains("NTT") || q.Contains("ETT");
+            }
+
+            var byDesignation = teaching
+                .GroupBy(s => s.Designation, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key)
+                .Select(g => new DISEDesignationCount
+                {
+                    Designation = g.Key ?? "Unknown",
+                    Total = g.Count(),
+                    Male = g.Count(s => string.Equals(s.Gender, "Male", StringComparison.OrdinalIgnoreCase)
+                                     || string.Equals(s.Gender, "M", StringComparison.OrdinalIgnoreCase)),
+                    Female = g.Count(s => string.Equals(s.Gender, "Female", StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(s.Gender, "F", StringComparison.OrdinalIgnoreCase)),
+                    Trained = g.Count(s => IsTrained(s.Qualification)),
+                })
+                .ToList();
+
+            return new DISEStaffSummary
+            {
+                TotalTeachingStaff = teaching.Count,
+                MaleTeachers = teaching.Count(s =>
+                    string.Equals(s.Gender, "Male", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(s.Gender, "M", StringComparison.OrdinalIgnoreCase)),
+                FemaleTeachers = teaching.Count(s =>
+                    string.Equals(s.Gender, "Female", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(s.Gender, "F", StringComparison.OrdinalIgnoreCase)),
+                TrainedTeachers = teaching.Count(s => IsTrained(s.Qualification)),
+                UntrainedTeachers = teaching.Count(s => !IsTrained(s.Qualification)),
+                PermanentTeachers = teaching.Count(s =>
+                    string.Equals(s.EmploymentType, "permanent", StringComparison.OrdinalIgnoreCase)),
+                ContractTeachers = teaching.Count(s =>
+                    string.Equals(s.EmploymentType, "contract", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(s.EmploymentType, "temporary", StringComparison.OrdinalIgnoreCase)),
+                StaffWithAadhar = staff.Count(s => !string.IsNullOrWhiteSpace(s.AadharNumber)),
+                StaffWithPAN = staff.Count(s => !string.IsNullOrWhiteSpace(s.PanNumber)),
+                ByDesignation = byDesignation,
+                GeneratedAt = DateTime.UtcNow,
+            };
         }
     }
 }

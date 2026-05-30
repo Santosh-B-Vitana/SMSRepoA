@@ -7,9 +7,23 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Loader2, Tags } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { feeApi, FeeHead, CreateFeeHeadDto } from "@/services/api/feeApi";
+
+const FREQ_OPTIONS = [
+  { value: "termly",     label: "Every Installment" },
+  { value: "once",       label: "One-time" },
+  { value: "halfYearly", label: "Twice a Year" },
+  { value: "quarterly",  label: "Quarterly (4×/year)" },
+  { value: "monthly",    label: "Monthly (12×/year)" },
+];
+
+const FREQ_LABELS: Record<string, string> = {
+  termly: "Every Installment", once: "One-time",
+  halfYearly: "2×/yr", quarterly: "4×/yr", monthly: "12×/yr",
+};
 
 export function FeeHeadsManager() {
   const { toast } = useToast();
@@ -25,6 +39,7 @@ export function FeeHeadsManager() {
     isVisibleOnReceipt: true,
     isMandatory: false,
     displayOrder: 0,
+    defaultFrequency: "termly",
   });
 
   const loadHeads = async () => {
@@ -43,13 +58,13 @@ export function FeeHeadsManager() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: "", code: "", description: "", isVisibleOnReceipt: true, isMandatory: false, displayOrder: heads.length });
+    setForm({ name: "", code: "", description: "", isVisibleOnReceipt: true, isMandatory: false, displayOrder: heads.length, defaultFrequency: "termly" });
     setDialogOpen(true);
   };
 
   const openEdit = (h: FeeHead) => {
     setEditing(h);
-    setForm({ name: h.name, code: h.code, description: h.description ?? "", isVisibleOnReceipt: h.isVisibleOnReceipt, isMandatory: h.isMandatory, displayOrder: h.displayOrder });
+    setForm({ name: h.name, code: h.code, description: h.description ?? "", isVisibleOnReceipt: h.isVisibleOnReceipt, isMandatory: h.isMandatory, displayOrder: h.displayOrder, defaultFrequency: h.defaultFrequency ?? "termly" });
     setDialogOpen(true);
   };
 
@@ -124,6 +139,7 @@ export function FeeHeadsManager() {
                   <TableHead>Name</TableHead>
                   <TableHead>Code</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>Default Freq.</TableHead>
                   <TableHead>On Receipt</TableHead>
                   <TableHead>Mandatory</TableHead>
                   <TableHead>Status</TableHead>
@@ -140,6 +156,11 @@ export function FeeHeadsManager() {
                     <TableCell className="font-medium">{h.name}</TableCell>
                     <TableCell><Badge variant="outline">{h.code}</Badge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{h.description ?? "—"}</TableCell>
+                    <TableCell>
+                      {h.defaultFrequency
+                        ? <Badge variant="secondary" className="text-xs">{FREQ_LABELS[h.defaultFrequency] ?? h.defaultFrequency}</Badge>
+                        : <span className="text-muted-foreground text-xs">—</span>}
+                    </TableCell>
                     <TableCell>{h.isVisibleOnReceipt ? <Badge variant="secondary">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
                     <TableCell>{h.isMandatory ? <Badge>Required</Badge> : <Badge variant="outline">Optional</Badge>}</TableCell>
                     <TableCell>
@@ -182,6 +203,19 @@ export function FeeHeadsManager() {
             <div className="space-y-1">
               <Label>Display Order</Label>
               <Input type="number" value={form.displayOrder} onChange={e => setForm(f => ({ ...f, displayOrder: parseInt(e.target.value) || 0 }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Default Billing Frequency</Label>
+              <Select value={form.defaultFrequency ?? "termly"} onValueChange={v => setForm(f => ({ ...f, defaultFrequency: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FREQ_OPTIONS.map(o => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">

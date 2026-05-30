@@ -75,5 +75,18 @@ namespace SmsApi.Controllers
 
             return File(csvBytes, "text/csv", fileName);
         }
+
+        /// <summary>
+        /// DISE staff summary: teaching staff counts by gender, training status,
+        /// employment type, and designation — used for the DISE ASR Staff section.
+        /// </summary>
+        [HttpGet("staff")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        public async Task<IActionResult> GetStaffSummary()
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var summary = await _diseService.GetStaffSummaryAsync(schoolId);
+            return Ok(summary);
+        }
     }
 }

@@ -36,7 +36,8 @@ const YEAR_OPTIONS = [CURRENT_YEAR, `${CURR_YR - 1}-${CURR_YR}`];
 function isTeacherRole(designation?: string, role?: string): boolean {
   if (role === "super_admin" || role === "admin") return false;
   const des = (designation ?? "").toLowerCase();
-  return !["admin", "principal", "vice principal", "head of department", "hr manager"].includes(des);
+  // Principals and vice principals see their own curriculum (like teachers), not the full admin view
+  return !["admin", "hr manager"].includes(des);
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────

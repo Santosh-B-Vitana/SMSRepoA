@@ -266,7 +266,7 @@ namespace SmsApi.Services
             var boardCode = entity.BoardConfig?.Code;
             var gradingSystem = entity.BoardConfig?.GradingSystem;
             var overallPassPct = await GetEffectiveOverallPassingPctAsync(
-                schoolId, entity.BoardConfigurationId, entity.AcademicYear);
+                schoolId, entity.BoardConfigurationId, entity.AcademicYear, entity.ClassId);
             var boardPassPct = entity.BoardConfig?.OverallPassingPercentage ?? overallPassPct;
             var effectiveGradingScale = gradeScale
                 .OrderByDescending(s => s.min)
@@ -839,7 +839,7 @@ namespace SmsApi.Services
                         && r.Term == (setup.Term == 0 ? "Annual" : $"Term {setup.Term}"));
 
                 var overallPassPct = await GetEffectiveOverallPassingPctAsync(
-                    schoolId, setup.BoardConfigurationId, setup.AcademicYear);
+                    schoolId, setup.BoardConfigurationId, setup.AcademicYear, setup.ClassId);
                 var allSubjectsPassed = setup.Subjects
                     .Select(s => s.MarksEntries.FirstOrDefault(m => m.StudentId == studentId))
                     .Where(e => e != null && !e.IsAbsent)
@@ -1033,7 +1033,7 @@ namespace SmsApi.Services
                 var (overallGrade, cgpa) = ResolveGradeFromScale(gradeScale, pct);
 
                 var overallPassPctForSummary = await GetEffectiveOverallPassingPctAsync(
-                    schoolId, setup.BoardConfigurationId, setup.AcademicYear);
+                    schoolId, setup.BoardConfigurationId, setup.AcademicYear, setup.ClassId);
                 var allSubjectsPassedForSummary = subjectResults
                     .Where(s => !s.IsAbsent)
                     .All(s => s.IsPass);
@@ -1624,12 +1624,23 @@ namespace SmsApi.Services
         }
 
         /// <summary>
-        /// Returns the effective overall passing percentage for the exam's board.
-        /// Priority: school's custom override → board default → 33% fallback.
+        /// Returns the effective overall passing percentage for an exam.
+        /// Priority: class-level override (ClassSettings) → school's custom board override → board default → 33% fallback.
         /// </summary>
         private async Task<decimal> GetEffectiveOverallPassingPctAsync(
-            Guid schoolId, Guid? boardConfigurationId, string? academicYear)
+            Guid schoolId, Guid? boardConfigurationId, string? academicYear, Guid? classId = null)
         {
+            // Most specific: per-class override saved in ClassSettings
+            if (classId.HasValue)
+            {
+                var classPct = await _context.ClassSettings
+                    .Where(cs => cs.ClassId == classId.Value && cs.SchoolId == schoolId && !cs.IsDeleted)
+                    .Select(cs => (decimal?)cs.PassingPercentage)
+                    .FirstOrDefaultAsync();
+                if (classPct.HasValue)
+                    return classPct.Value;
+            }
+
             if (boardConfigurationId.HasValue)
             {
                 // Check for school-level override for this specific board

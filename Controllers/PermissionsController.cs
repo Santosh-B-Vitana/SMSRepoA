@@ -56,11 +56,13 @@ namespace SmsApi.Controllers
 
                 var schoolId = _tenant.GetEffectiveSchoolId();
 
-                // Has the user EVER had any role assignments (including removed ones)?
-                // If yes → role management is in effect for this user → fail-closed.
-                // If no → this user has never been configured → use designation-based fallback.
+                // Does the user have any active role assignments right now?
+                // If yes → role management is in effect → fail-closed (strict permission check).
+                // If no  → no active roles configured → use designation-based fallback.
+                // Note: we intentionally check !IsDeleted so that removing all roles reverts to
+                // designation defaults rather than locking the user out permanently.
                 var isRoleManaged = await _db.UserRoles
-                    .AnyAsync(ur => ur.UserId == userId && ur.SchoolId == schoolId);
+                    .AnyAsync(ur => ur.UserId == userId && ur.SchoolId == schoolId && !ur.IsDeleted);
 
                 var permissions = await _permissionsService.GetUserEffectivePermissionsAsync(userId, schoolId);
                 return Ok(new { permissions, isRoleManaged });

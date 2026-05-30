@@ -172,11 +172,13 @@ namespace SmsApi.Services
         private async Task<byte[]?> TryGetBytes(string? key)
         {
             if (string.IsNullOrWhiteSpace(key)) return null;
-            // Skip relative web paths like "/placeholder.svg" — these are UI placeholders, not real images
-            if (key.StartsWith("/") || key.StartsWith("data:")) return null;
+            // Skip data URIs and known UI placeholder paths (e.g. "/placeholder.svg")
+            if (key.StartsWith("data:")) return null;
+            if (key.Contains("placeholder", StringComparison.OrdinalIgnoreCase) && !key.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return null;
             try
             {
-                // Use _files.GetAsync for everything — it already handles full S3 URLs via ExtractKeyFromUrl
+                // Use _files.GetAsync for everything — it handles full S3 URLs via ExtractKeyFromUrl
+                // and local "/files/..." paths via LocalFileStorageService
                 return await _files.GetAsync(key);
             }
             catch { return null; }

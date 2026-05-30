@@ -88,6 +88,8 @@ namespace SmsApi.Data
         public DbSet<FeeHead> FeeHeads { get; set; }
         public DbSet<FeeStructureComponent> FeeStructureComponents { get; set; }
         public DbSet<FeeTerm> FeeTerms { get; set; }
+        public DbSet<ClassFeeStructure> ClassFeeStructures { get; set; }
+        public DbSet<StudentFeeItem> StudentFeeItems { get; set; }
         public DbSet<ReceiptTemplate> ReceiptTemplates { get; set; }
 
         // Examinations
@@ -1058,7 +1060,64 @@ namespace SmsApi.Data
                     .HasForeignKey(f => f.FeeHeadId)
                     .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasIndex(e => new { e.FeeStructureId, e.FeeHeadId }).IsUnique();
+                // Optional FK to FeeTerm — no cascade (deleting a term should not wipe components)
+                entity.HasOne(f => f.FeeTerm)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeTermId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
+
+                // Uniqueness is now (FeeStructureId, FeeHeadId, FeeTermId) so the same head
+                // can appear in multiple terms with different amounts.
+                entity.HasIndex(e => new { e.FeeStructureId, e.FeeHeadId, e.FeeTermId }).IsUnique();
+            });
+
+            // ── ClassFeeStructure ──────────────────────────────────────────────
+            modelBuilder.Entity<ClassFeeStructure>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(c => c.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // A class can only be linked to one fee structure per academic year
+                entity.HasIndex(e => new { e.SchoolId, e.ClassName, e.AcademicYear }).IsUnique();
+                entity.HasIndex(e => e.FeeStructureId);
+            });
+
+            // ── StudentFeeItem ─────────────────────────────────────────────────
+            modelBuilder.Entity<StudentFeeItem>(entity =>
+            {
+                entity.HasOne(s => s.School)
+                    .WithMany()
+                    .HasForeignKey(s => s.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.Student)
+                    .WithMany()
+                    .HasForeignKey(s => s.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(s => s.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.FeeStructureComponent)
+                    .WithMany()
+                    .HasForeignKey(s => s.FeeStructureComponentId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
+
+                entity.Property(s => s.DiscountPercentage).HasColumnType("decimal(5,2)");
+                entity.Property(s => s.FlatAmount).HasColumnType("decimal(12,2)");
+
+                entity.HasIndex(e => new { e.StudentId, e.FeeStructureId, e.FeeStructureComponentId, e.AcademicYear });
             });
 
             // ── FeeTerm ────────────────────────────────────────────────────────

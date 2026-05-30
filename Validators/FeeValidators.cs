@@ -64,9 +64,9 @@ public class CreatePaymentRequestValidator : AbstractValidator<CreatePaymentRequ
 
         RuleFor(x => x.Method)
             .NotEmpty().WithMessage("Payment method is required")
-            .Must(m => new[] { "cash", "cheque", "online", "upi", "card", "bank_transfer", "razorpay", "payu" }
+            .Must(m => new[] { "cash", "cheque", "dd", "online", "upi", "card", "bank_transfer", "neft", "imps", "rtgs", "razorpay", "payu", "cashfree" }
                 .Contains(m.ToLower()))
-            .WithMessage("Payment method must be: cash, cheque, online, upi, card, bank_transfer, razorpay, or payu");
+            .WithMessage("Payment method must be: cash, cheque, dd, bank_transfer, upi, card, or cashfree");
 
         RuleFor(x => x.ReceiptNumber)
             .NotEmpty().WithMessage("Receipt number is required")

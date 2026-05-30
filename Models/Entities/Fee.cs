@@ -71,6 +71,16 @@ namespace SmsApi.Models.Entities
         
         public string? InstallmentDueDates { get; set; } // JSON array
 
+        /// <summary>
+        /// Per-head billing frequency stored as a JSON dictionary.
+        /// Keys match the camelCase fee head names (tuitionFee, admissionFee, etc.).
+        /// Valid values: "once" | "termly" | "halfYearly" | "quarterly" | "monthly"
+        /// Missing key = "termly" (default — spreads evenly across all installments).
+        /// Example: {"admissionFee":"once","examFee":"halfYearly"}
+        /// </summary>
+        [MaxLength(2000)]
+        public string? FeeHeadFrequencies { get; set; }
+
         public bool IsActive { get; set; } = true;
 
         [ForeignKey("BoardConfig")]
@@ -293,13 +303,17 @@ namespace SmsApi.Models.Entities
 
         public bool IsActive { get; set; } = true;
 
+        /// <summary>Default billing frequency for this fee head: once|termly|halfYearly|quarterly|monthly</summary>
+        [MaxLength(20)]
+        public string? DefaultFrequency { get; set; }
+
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // FeeStructureComponent — maps a FeeHead to a FeeStructure with an amount.
-    // One FeeStructure can have many components (one per FeeHead).
+    // Optionally scoped to a specific FeeTerm (e.g. Tuition charged in Term1 only).
     // ─────────────────────────────────────────────────────────────────────────
     public class FeeStructureComponent : BaseEntity
     {
@@ -312,9 +326,15 @@ namespace SmsApi.Models.Entities
         [Required]
         public Guid FeeHeadId { get; set; }
 
+        /// <summary>Optional: if set, this component belongs to a specific FeeTerm.</summary>
+        public Guid? FeeTermId { get; set; }
+
         [Required]
         [Column(TypeName = "decimal(12,2)")]
         public decimal Amount { get; set; }
+
+        /// <summary>Due date for this specific component, if different from the term's due date.</summary>
+        public DateTime? DueDate { get; set; }
 
         [MaxLength(200)]
         public string? Remarks { get; set; }
@@ -327,6 +347,9 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("FeeHeadId")]
         public virtual FeeHead? FeeHead { get; set; }
+
+        [ForeignKey("FeeTermId")]
+        public virtual FeeTerm? FeeTerm { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -368,6 +391,93 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("FeeStructureId")]
         public virtual FeeStructure? FeeStructure { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ClassFeeStructure — many-to-many join between a Class (by name) and a
+    // FeeStructure. Replaces the single Class string column on FeeStructure for
+    // schools that assign one structure to multiple classes.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class ClassFeeStructure : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        /// <summary>Class name e.g. "5A", "10B". Matches Student.Class.</summary>
+        [Required]
+        [MaxLength(50)]
+        public string ClassName { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        public bool IsActive { get; set; } = true;
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // StudentFeeItem — per-student discount applied at the line-item level.
+    // Tracks which FeeStructureComponent is discounted, the discount type
+    // (Scholarship / Sibling / Management / Others) and the percentage.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class StudentFeeItem : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid StudentId { get; set; }
+
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        /// <summary>The specific component (fee head line) this discount applies to.
+        /// Null = applies to the whole structure (legacy aggregate discount).</summary>
+        public Guid? FeeStructureComponentId { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        /// <summary>Discount category: Scholarship | Sibling | Management | Others</summary>
+        [Required]
+        [MaxLength(50)]
+        public string DiscountType { get; set; } = "Others";
+
+        /// <summary>Discount as a percentage of the component amount (0–100).</summary>
+        [Required]
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal DiscountPercentage { get; set; } = 0;
+
+        /// <summary>Flat override amount. When both are set, flat takes precedence.</summary>
+        [Column(TypeName = "decimal(12,2)")]
+        public decimal? FlatAmount { get; set; }
+
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+
+        public bool IsActive { get; set; } = true;
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("StudentId")]
+        public virtual Student? Student { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+
+        [ForeignKey("FeeStructureComponentId")]
+        public virtual FeeStructureComponent? FeeStructureComponent { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

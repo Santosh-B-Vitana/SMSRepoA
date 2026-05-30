@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -44,10 +44,12 @@ const ReportCards          = lazy(() => import("@/pages/ReportCards"));
 const Timetable            = lazy(() => import("@/pages/Timetable"));
 const Transport            = lazy(() => import("@/pages/Transport"));
 const Syllabus             = lazy(() => import("@/pages/Syllabus"));
+const SchoolCurriculum     = lazy(() => import("@/pages/SchoolCurriculum"));
 const Library              = lazy(() => import("@/pages/Library"));
 const Hostel               = lazy(() => import("@/pages/Hostel"));
 const Health               = lazy(() => import("@/pages/Health"));
 const Fees                 = lazy(() => import("@/pages/Fees"));
+const CollectPaymentPage   = lazy(() => import("@/pages/fees/CollectPaymentPage"));
 const Communication        = lazy(() => import("@/pages/Communication"));
 const Announcements        = lazy(() => import("@/pages/Announcements"));
 const Documents            = lazy(() => import("@/pages/Documents"));
@@ -94,6 +96,7 @@ const StudentMarks         = lazy(() => import("@/pages/reports/StudentMarks"));
 const ClassAnalysis        = lazy(() => import("@/pages/reports/ClassAnalysis"));
 const GradeDistribution    = lazy(() => import("@/pages/reports/GradeDistribution"));
 const SubjectPerformance   = lazy(() => import("@/pages/reports/SubjectPerformance"));
+const DISEReport           = lazy(() => import("@/pages/reports/DISEReport"));
 const SecurityDashboardPage = lazy(() => import("@/pages/SecurityDashboard"));
 const AdvancedAnalytics    = lazy(() => import("@/pages/AdvancedAnalytics"));
 const Admissions           = lazy(() => import("@/pages/Admissions"));
@@ -203,7 +206,10 @@ function App() {
 
                   {/* ── Protected: admin-only finance ────────────────────── */}
                   <Route path="/finance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Finance /></Layout></ProtectedRoute>} />
-                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="fees"><Fees /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/fees" element={<Navigate to="/fees/collect" replace />} />
+                  <Route path="/fees/collect" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="fees"><Fees section="collect" /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/fees/collect/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="fees"><CollectPaymentPage /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/fees/setup" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><Fees section="setup" /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/student-fee-details/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><StudentFeeDetails /></ProtectedRoute>} />
                   <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><FeeConcession /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><PaymentGateway /></ModuleGuard></Layout></ProtectedRoute>} />
@@ -217,12 +223,14 @@ function App() {
                   <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ClassAnalysis /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><GradeDistribution /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><SubjectPerformance /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/dise" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="reports"><DISEReport /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/report-cards" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><ModuleGuard module="reports"><ReportCards /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="analytics"><Analytics /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: optional modules ───────────────────────── */}
                    <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/syllabus" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Syllabus /></Layout></ProtectedRoute>} />
+                  <Route path="/school-curriculum" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><SchoolCurriculum /></Layout></ProtectedRoute>} />
                   <Route path="/library" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout></ProtectedRoute>} />
                    <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/health" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout></ProtectedRoute>} />

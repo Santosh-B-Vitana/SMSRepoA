@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using SmsApi.Data;
 using SmsApi.Models.Entities;
 using SmsApi.Models.DTOs;
+using SmsApi.Services.Cashfree;
 using SmsApi.Utils;
 
 #pragma warning disable CS0618 // Student.Class is obsolete - migration to StudentEnrollment is in progress
@@ -84,12 +85,14 @@ namespace SmsApi.Services
         private readonly AppDbContext _context;
         private readonly ILogger<FeeService> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly ICashfreeClient _cashfree;
 
-        public FeeService(AppDbContext context, ILogger<FeeService> logger, IServiceScopeFactory scopeFactory)
+        public FeeService(AppDbContext context, ILogger<FeeService> logger, IServiceScopeFactory scopeFactory, ICashfreeClient cashfree)
         {
             _context = context;
             _logger = logger;
             _scopeFactory = scopeFactory;
+            _cashfree = cashfree;
         }
 
         public async Task<List<FeeStructureResponse>> GetFeeStructuresAsync(Guid schoolId, string? classFilter, string? academicYear = null, Guid? boardConfigurationId = null)
@@ -137,6 +140,7 @@ namespace SmsApi.Services
                     InstallmentCount = f.InstallmentCount,
                     InstallmentAmounts = f.InstallmentAmounts,
                     InstallmentDueDates = f.InstallmentDueDates,
+                    FeeHeadFrequencies = f.FeeHeadFrequencies,
 
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
@@ -186,6 +190,7 @@ namespace SmsApi.Services
                     InstallmentCount = f.InstallmentCount,
                     InstallmentAmounts = f.InstallmentAmounts,
                     InstallmentDueDates = f.InstallmentDueDates,
+                    FeeHeadFrequencies = f.FeeHeadFrequencies,
 
                     Description = f.Description,
                     CreatedAt = f.CreatedAt,
@@ -275,6 +280,7 @@ namespace SmsApi.Services
                 InstallmentCount = request.InstallmentCount,
                 InstallmentAmounts = request.InstallmentAmounts,
                 InstallmentDueDates = request.InstallmentDueDates,
+                FeeHeadFrequencies = request.FeeHeadFrequencies,
                 
                 Description = request.Description,
                 CreatedAt = DateTime.UtcNow,
@@ -320,6 +326,7 @@ namespace SmsApi.Services
                 InstallmentCount = structure.InstallmentCount,
                 InstallmentAmounts = structure.InstallmentAmounts,
                 InstallmentDueDates = structure.InstallmentDueDates,
+                FeeHeadFrequencies = structure.FeeHeadFrequencies,
 
                 Description = structure.Description,
                 CreatedAt = structure.CreatedAt,
@@ -806,9 +813,9 @@ namespace SmsApi.Services
             if (request.Amount <= 0) throw new ArgumentException("Payment amount must be greater than zero.");
             if (request.Amount > 10_000_000) throw new ArgumentException("Payment amount cannot exceed 10,000,000.");
 
-            var validMethods = new[] { "cash", "cheque", "online", "upi", "card", "bank_transfer", "razorpay", "payu" };
+            var validMethods = new[] { "cash", "cheque", "dd", "online", "upi", "card", "bank_transfer", "neft", "imps", "rtgs", "razorpay", "payu", "cashfree" };
             if (string.IsNullOrWhiteSpace(request.Method) || !validMethods.Contains(request.Method.ToLower()))
-                throw new ArgumentException("Payment method must be: cash, cheque, online, upi, card, bank_transfer, razorpay, or payu.");
+                throw new ArgumentException($"Invalid payment method '{request.Method}'. Accepted: cash, cheque, dd, bank_transfer, upi, card, cashfree.");
 
             if (string.IsNullOrWhiteSpace(request.ReceiptNumber)) throw new ArgumentException("Receipt number is required.");
 
@@ -1366,16 +1373,66 @@ namespace SmsApi.Services
                 }
             };
 
-            // Gateway-specific configuration
-            if (dto.Gateway == "razorpay")
+            // ── Cashfree: call the real API using the school's DB-configured credentials ──
+            if (dto.Gateway.Equals("cashfree", StringComparison.OrdinalIgnoreCase))
             {
-                response.GatewayKey = "rzp_test_your_key_here"; // From configuration
-                response.CheckoutUrl = "https://checkout.razorpay.com/v1/checkout.js";
-            }
-            else if (dto.Gateway == "payu")
-            {
-                response.GatewayKey = "your_payu_merchant_key"; // From configuration
-                response.CheckoutUrl = "https://secure.payu.in/_payment";
+                var cfConfig = await _context.PaymentGatewayConfigs
+                    .FirstOrDefaultAsync(c => c.SchoolId == schoolId
+                        && c.GatewayName == PaymentGatewayConstants.GatewayCashfree
+                        && c.IsActive);
+
+                if (cfConfig != null)
+                {
+                    try
+                    {
+                        var isSandbox = cfConfig.Mode?.Equals("Test", StringComparison.OrdinalIgnoreCase) ?? true;
+                        var student   = feeRecord.Student;
+                        var cfReq = new CashfreeCreateOrderRequest
+                        {
+                            OrderId       = orderId,
+                            OrderAmount   = dto.Amount,
+                            OrderCurrency = dto.Currency ?? "INR",
+                            CustomerDetails = new CashfreeCustomerDetails
+                            {
+                                CustomerId   = feeRecord.StudentId.ToString("N"),
+                                CustomerName = student != null ? $"{student.FirstName} {student.LastName}".Trim() : "Student",
+                                CustomerPhone = (!string.IsNullOrWhiteSpace(student?.GuardianPhone)
+                                                    ? student.GuardianPhone
+                                                    : "9999999999"),
+                            },
+                            OrderMeta = new CashfreeOrderMeta
+                            {
+                                ReturnUrl = cfConfig.ReturnUrl,
+                                NotifyUrl = cfConfig.WebhookUrl,
+                                PaymentMethods = "cc,dc,nb,upi,wallet"
+                            },
+                            OrderNote = $"Fee payment – {student?.FirstName} {student?.LastName}"
+                        };
+
+                        var cfResp = await _cashfree.CreateOrderAsync(cfReq, cfConfig.ApiKey, cfConfig.ApiSecret ?? string.Empty, isSandbox);
+
+                        var baseUrl = isSandbox ? "https://sandbox.cashfree.com" : "https://payments.cashfree.com";
+                        response.CheckoutUrl = cfResp.Payments?.Url
+                            ?? (cfResp.PaymentSessionId != null
+                                ? $"{baseUrl}/pg/orders/{cfResp.PaymentSessionId}/pay"
+                                : null);
+
+                        // Persist the Cashfree order ID against the gateway log
+                        gatewayLog.GatewayOrderId = cfResp.CfOrderId ?? orderId;
+                        await _context.SaveChangesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Cashfree CreateOrder failed for school {SchoolId}, fee record {FeeRecordId}", schoolId, feeRecordId);
+                        // Propagate so the controller can return a 502 with a clear message
+                        throw new InvalidOperationException($"Payment gateway error: {ex.Message}", ex);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("No active Cashfree config for school {SchoolId}. Returning pending order without checkout URL.", schoolId);
+                    // No config yet — return the order reference so the cashier can enter the txn ID manually
+                }
             }
 
             return response;
@@ -1774,6 +1831,47 @@ namespace SmsApi.Services
         }
 
         /// <summary>
+        /// Parses an academic year string like "2026-2027" and returns the end date (March 31 of the end year).
+        /// Falls back to 10 months from now if parsing fails.
+        /// </summary>
+        private static DateTime ParseAcademicYearEnd(string? academicYear)
+        {
+            if (!string.IsNullOrWhiteSpace(academicYear))
+            {
+                var parts = academicYear.Split('-');
+                if (parts.Length == 2 && int.TryParse(parts[1].Trim(), out var endYear) && endYear > 2000)
+                    return new DateTime(endYear, 3, 31); // Indian academic year ends March 31
+            }
+            // Fallback: Indian academic year Apr–Mar
+            var now = DateTime.UtcNow;
+            return now.Month >= 4
+                ? new DateTime(now.Year + 1, 3, 31)
+                : new DateTime(now.Year, 3, 31);
+        }
+
+        /// <summary>
+        /// Computes the pro-rated annual fee from <paramref name="from"/> to <paramref name="yearEnd"/>
+        /// for a given monthly fee. Matches the same logic used in TransportService/HostelService.
+        /// Returns 0 when monthlyFee is 0 or yearEnd has already passed.
+        /// </summary>
+        private static decimal ComputeModuleFeeProrata(decimal monthlyFee, DateTime from, DateTime yearEnd)
+        {
+            if (monthlyFee <= 0 || yearEnd < from) return 0m;
+
+            var daysInMonth = DateTime.DaysInMonth(from.Year, from.Month);
+            var remainingDays = daysInMonth - from.Day + 1;
+            var prorataFirst = Math.Round(monthlyFee * remainingDays / daysInMonth, 2);
+
+            var nextMonth = new DateTime(from.Year, from.Month, 1).AddMonths(1);
+            var firstMonthAfterEnd = new DateTime(yearEnd.Year, yearEnd.Month, 1).AddMonths(1);
+            var fullMonths = 0;
+            for (var m = nextMonth; m < firstMonthAfterEnd; m = m.AddMonths(1))
+                fullMonths++;
+
+            return prorataFirst + fullMonths * monthlyFee;
+        }
+
+        /// <summary>
         /// Creates fee records for every student in the structure's class who doesn't already have one
         /// for the same academic year + structure combination.
         /// </summary>
@@ -1838,6 +1936,28 @@ namespace SmsApi.Services
                 .Select(f => f.StudentId)
                 .ToListAsync()).ToHashSet();
 
+            // Batch-load active transport/hostel assignments for all students in this class.
+            // These per-student fees are NOT in the fee structure (by design) and must be
+            // added individually based on each student's actual assignment.
+            var transportMap = (await _context.TransportStudents
+                .Where(ts => studentIds.Contains(ts.StudentId) && ts.SchoolId == schoolId &&
+                             !ts.IsDeleted && ts.Status == "active" && ts.MonthlyFee > 0)
+                .Select(ts => new { ts.StudentId, ts.MonthlyFee })
+                .ToListAsync())
+                .GroupBy(t => t.StudentId)
+                .ToDictionary(g => g.Key, g => g.First().MonthlyFee ?? 0m);
+
+            var hostelMap = (await _context.HostelStudents
+                .Where(hs => studentIds.Contains(hs.StudentId) && hs.SchoolId == schoolId &&
+                             !hs.IsDeleted && hs.Status == "active" && hs.MonthlyFee > 0)
+                .Select(hs => new { hs.StudentId, hs.MonthlyFee })
+                .ToListAsync())
+                .GroupBy(h => h.StudentId)
+                .ToDictionary(g => g.Key, g => g.First().MonthlyFee);
+
+            // Compute the academic year end date once for pro-rata calculation.
+            var academicYearEnd = ParseAcademicYearEnd(structure.AcademicYear);
+
             var assigned = 0;
             foreach (var studentId in studentIds)
             {
@@ -1846,6 +1966,25 @@ namespace SmsApi.Services
 
                 var dueDate = DateTime.UtcNow.Date.AddDays(30); // 30-day rolling grace
                 var bulkTotal = structure.ComputeTotalFromComponents();
+
+                // Add each student's individual transport and hostel annual fees (pro-rated from today).
+                var transportMonthly = transportMap.TryGetValue(studentId, out var tm) ? tm : 0m;
+                var hostelMonthly    = hostelMap.TryGetValue(studentId, out var hm)    ? hm : 0m;
+                var transportAnnual  = ComputeModuleFeeProrata(transportMonthly, DateTime.UtcNow, academicYearEnd);
+                var hostelAnnual     = ComputeModuleFeeProrata(hostelMonthly,    DateTime.UtcNow, academicYearEnd);
+                bulkTotal += transportAnnual + hostelAnnual;
+
+                // Persist per-student module fees in FeeHeadOverrides so the stale-fix loop
+                // (which resets TotalAmount from the fee structure) correctly preserves them.
+                string? overridesJson = null;
+                if (transportAnnual > 0 || hostelAnnual > 0)
+                {
+                    var ov = new Dictionary<string, decimal>();
+                    if (transportAnnual > 0) ov["transportFee"] = transportAnnual;
+                    if (hostelAnnual > 0)    ov["hostelFee"]    = hostelAnnual;
+                    overridesJson = System.Text.Json.JsonSerializer.Serialize(ov);
+                }
+
                 var record = new FeeRecord
                 {
                     Id = Guid.NewGuid(),
@@ -1859,6 +1998,7 @@ namespace SmsApi.Services
                     DiscountAmount = 0,
                     LateFeeAmount = 0,
                     PendingAmount = bulkTotal,
+                    FeeHeadOverrides = overridesJson,
                     AcademicYear = structure.AcademicYear,
                     Status = "pending",
                     CreatedAt = DateTime.UtcNow,
@@ -2153,6 +2293,7 @@ namespace SmsApi.Services
             }
             if (request.InstallmentAmounts != null)  structure.InstallmentAmounts  = request.InstallmentAmounts;
             if (request.InstallmentDueDates != null) structure.InstallmentDueDates = request.InstallmentDueDates;
+            if (request.FeeHeadFrequencies != null)  structure.FeeHeadFrequencies  = request.FeeHeadFrequencies;
 
             // Allow updating board — pass Guid.Empty to clear it
             if (request.BoardConfigurationId.HasValue)
@@ -2194,6 +2335,7 @@ namespace SmsApi.Services
                 InstallmentCount = structure.InstallmentCount,
                 InstallmentAmounts = structure.InstallmentAmounts,
                 InstallmentDueDates = structure.InstallmentDueDates,
+                FeeHeadFrequencies = structure.FeeHeadFrequencies,
                 Description = structure.Description,
                 CreatedAt = structure.CreatedAt,
                 UpdatedAt = structure.UpdatedAt
@@ -2378,6 +2520,28 @@ namespace SmsApi.Services
                 .Select(f => f.StudentId)
                 .ToListAsync()).ToHashSet();
 
+            // Batch-load active transport/hostel assignments for all active students so we can
+            // include per-student module fees when creating fee records.
+            var allStudentIds = students.Select(s => s.Id).ToList();
+            var transportMap = (await _context.TransportStudents
+                .Where(ts => allStudentIds.Contains(ts.StudentId) && ts.SchoolId == schoolId &&
+                             !ts.IsDeleted && ts.Status == "active" && ts.MonthlyFee > 0)
+                .Select(ts => new { ts.StudentId, ts.MonthlyFee })
+                .ToListAsync())
+                .GroupBy(t => t.StudentId)
+                .ToDictionary(g => g.Key, g => g.First().MonthlyFee ?? 0m);
+
+            var hostelMap = (await _context.HostelStudents
+                .Where(hs => allStudentIds.Contains(hs.StudentId) && hs.SchoolId == schoolId &&
+                             !hs.IsDeleted && hs.Status == "active" && hs.MonthlyFee > 0)
+                .Select(hs => new { hs.StudentId, hs.MonthlyFee })
+                .ToListAsync())
+                .GroupBy(h => h.StudentId)
+                .ToDictionary(g => g.Key, g => g.First().MonthlyFee);
+
+            // Academic year end for pro-rata calculation (parse from the requested year string).
+            var academicYearEnd = ParseAcademicYearEnd(academicYear);
+
             var created = 0;
             var skipped = 0;
             var now = DateTime.UtcNow;
@@ -2417,11 +2581,26 @@ namespace SmsApi.Services
                 }
 
                 var effectiveTotal = feeStructure.ComputeTotalFromComponents();
-                if (!student.TransportRequired && feeStructure.TransportFee > 0)
-                    effectiveTotal -= feeStructure.TransportFee;
-                if (!student.HostelRequired && feeStructure.HostelFee > 0)
-                    effectiveTotal -= feeStructure.HostelFee;
+
+                // Look up this student's actual transport/hostel assignments (not flags —
+                // the fee structure deliberately has 0 for these heads).
+                var transportMonthly = transportMap.TryGetValue(student.Id, out var stm) ? stm : 0m;
+                var hostelMonthly    = hostelMap.TryGetValue(student.Id, out var shm)    ? shm : 0m;
+                var transportAnnual  = ComputeModuleFeeProrata(transportMonthly, now, academicYearEnd);
+                var hostelAnnual     = ComputeModuleFeeProrata(hostelMonthly,    now, academicYearEnd);
+                effectiveTotal += transportAnnual + hostelAnnual;
                 if (effectiveTotal < 0) effectiveTotal = 0;
+
+                // Persist per-student module fees in FeeHeadOverrides so the stale-fix loop
+                // correctly preserves them across subsequent GET requests.
+                string? overridesJson = null;
+                if (transportAnnual > 0 || hostelAnnual > 0)
+                {
+                    var ov = new Dictionary<string, decimal>();
+                    if (transportAnnual > 0) ov["transportFee"] = transportAnnual;
+                    if (hostelAnnual > 0)    ov["hostelFee"]    = hostelAnnual;
+                    overridesJson = System.Text.Json.JsonSerializer.Serialize(ov);
+                }
 
                 _context.FeeRecords.Add(new FeeRecord
                 {
@@ -2436,6 +2615,7 @@ namespace SmsApi.Services
                     LateFeeAmount = 0,
                     PendingAmount = effectiveTotal,
                     BalanceAmount = effectiveTotal,
+                    FeeHeadOverrides = overridesJson,
                     DueDate = now.AddDays(30),
                     Status = "pending",
                     CreatedAt = now,

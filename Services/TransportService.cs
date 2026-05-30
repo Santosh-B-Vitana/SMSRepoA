@@ -449,6 +449,39 @@ namespace SmsApi.Services
         }
 
         /// <summary>
+        /// Adds or accumulates <paramref name="addedAmount"/> into the named key of
+        /// <see cref="FeeRecord.FeeHeadOverrides"/>. When the fee structure has 0 for that head,
+        /// the stale-fix loop treats a positive override as a negative reduction (0 - X = -X,
+        /// correctTotal -= -X → correctTotal += X), preserving the per-student charge across GETs.
+        /// </summary>
+        private static void ApplyModuleFeeOverride(FeeRecord record, string key, decimal addedAmount)
+        {
+            var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(record.FeeHeadOverrides))
+                try { overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(record.FeeHeadOverrides) ?? overrides; } catch { }
+            overrides[key] = (overrides.TryGetValue(key, out var existing) ? existing : 0m) + addedAmount;
+            record.FeeHeadOverrides = System.Text.Json.JsonSerializer.Serialize(overrides);
+        }
+
+        /// <summary>
+        /// Adjusts (adds or subtracts) <paramref name="delta"/> on the named key in
+        /// <see cref="FeeRecord.FeeHeadOverrides"/>. Removes the key when the result reaches 0.
+        /// </summary>
+        private static void AdjustModuleFeeOverride(FeeRecord record, string key, decimal delta)
+        {
+            if (delta == 0) return;
+            var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(record.FeeHeadOverrides))
+                try { overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(record.FeeHeadOverrides) ?? overrides; } catch { }
+            var current = overrides.TryGetValue(key, out var ex) ? ex : 0m;
+            var updated = Math.Max(0, current + delta);
+            if (updated > 0) overrides[key] = updated;
+            else overrides.Remove(key);
+            record.FeeHeadOverrides = overrides.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(overrides) : null;
+        }
+
+        /// <summary>
         /// Adds the pro-rated transport fee (from today to academic-year end) plus any pending
         /// library fines to the student's existing pending FeeRecord. Creates one if none exists.
         /// Library fines are marked FinePaid=true to prevent double-counting.
@@ -492,6 +525,11 @@ namespace SmsApi.Services
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.UpdatedAt = now;
+
+                    // Track pro-rata transport fee in FeeHeadOverrides so the stale-fix loop
+                    // (which resets TotalAmount from the fee structure) preserves this per-student charge.
+                    if (prorataFee > 0)
+                        ApplyModuleFeeOverride(feeRecord, "transportFee", prorataFee);
 
                     _logger.LogInformation(
                         "Added ₹{Amount} (pro-rata transport ₹{Transport} [{Days}d] + library fines ₹{Fines}) to fee record {RecordId} for student {StudentId}",
@@ -564,6 +602,10 @@ namespace SmsApi.Services
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.UpdatedAt = now;
+
+                    // Keep the FeeHeadOverrides in sync so the stale-fix loop preserves the correct value.
+                    AdjustModuleFeeOverride(feeRecord, "transportFee", prorataDiff);
+
                     await _context.SaveChangesAsync();
 
                     _logger.LogInformation(

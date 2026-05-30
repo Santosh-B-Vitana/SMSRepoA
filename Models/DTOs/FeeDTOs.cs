@@ -53,6 +53,12 @@ namespace SmsApi.Models.DTOs
         public string? InstallmentAmounts { get; set; } // JSON array
         public string? InstallmentDueDates { get; set; } // JSON array
 
+        /// <summary>
+        /// Per-head billing frequency. Keys: tuitionFee, admissionFee, examFee, etc.
+        /// Values: "once" | "termly" | "halfYearly" | "quarterly" | "monthly"
+        /// </summary>
+        public string? FeeHeadFrequencies { get; set; }
+
         public string? Description { get; set; }
 
         public Guid? BoardConfigurationId { get; set; }
@@ -88,6 +94,9 @@ namespace SmsApi.Models.DTOs
         public int? InstallmentCount { get; set; }
         public string? InstallmentAmounts { get; set; }
         public string? InstallmentDueDates { get; set; }
+
+        /// <summary>Per-head billing frequency map (JSON). See CreateFeeStructureRequest.FeeHeadFrequencies.</summary>
+        public string? FeeHeadFrequencies { get; set; }
 
         public string? Description { get; set; }
 
@@ -132,6 +141,9 @@ namespace SmsApi.Models.DTOs
         public int InstallmentCount { get; set; }
         public string? InstallmentAmounts { get; set; }
         public string? InstallmentDueDates { get; set; }
+
+        /// <summary>Per-head billing frequency map (JSON). Keys: tuitionFee etc. Values: once|termly|halfYearly|quarterly|monthly.</summary>
+        public string? FeeHeadFrequencies { get; set; }
 
         public string? Description { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -415,6 +427,18 @@ namespace SmsApi.Models.DTOs
         public DateTime? DueDate { get; set; }
         /// <summary>paid | current | upcoming</summary>
         public string Status { get; set; } = string.Empty;
+        /// <summary>
+        /// Proportional fee head amounts for this installment (only non-zero heads included).
+        /// Key: display label (e.g. "Tuition Fee"), Value: amount due in this installment for that head.
+        /// </summary>
+        public Dictionary<string, decimal> FeeHeads { get; set; } = new();
+    }
+
+    public class SiblingConcessionDto
+    {
+        public string Name { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Reason { get; set; } = string.Empty;
     }
 
     public class SiblingFeeInfoDto
@@ -427,6 +451,10 @@ namespace SmsApi.Models.DTOs
         public decimal TotalFee { get; set; }
         public decimal PaidAmount { get; set; }
         public decimal PendingAmount { get; set; }
+        /// <summary>Discount already applied to FeeRecord (reduces pending amount)</summary>
+        public decimal DiscountAmount { get; set; }
+        /// <summary>Late fee already applied to FeeRecord (increases pending amount)</summary>
+        public decimal LateFeeAmount { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? FeeRecordId { get; set; }
         public string AcademicYear { get; set; } = string.Empty;
@@ -434,6 +462,16 @@ namespace SmsApi.Models.DTOs
         /// <summary>Installment plan type label: Annual / Half-Yearly / Term-wise / Quarterly / Monthly</summary>
         public string InstallmentPlan { get; set; } = "Annual";
         public List<SiblingInstallmentDto> Installments { get; set; } = new();
+        /// <summary>Fee head breakdown (full year, not per installment). Key = label e.g. "Tuition Fee".</summary>
+        public Dictionary<string, decimal> FeeHeads { get; set; } = new();
+        /// <summary>Per-head billing frequency. Keys = camelCase head names. Values = once|termly|halfYearly|quarterly|monthly.</summary>
+        public Dictionary<string, string> FeeHeadFrequencies { get; set; } = new();
+        public decimal ConcessionAmount { get; set; }
+        public List<SiblingConcessionDto> Concessions { get; set; } = new();
+        /// <summary>Active transport monthly fee from TransportStudents table (null = not enrolled)</summary>
+        public decimal? TransportMonthlyFee { get; set; }
+        /// <summary>Active hostel monthly fee from HostelStudents table (null = not enrolled)</summary>
+        public decimal? HostelMonthlyFee { get; set; }
     }
 
     // Statistics
@@ -754,6 +792,113 @@ namespace SmsApi.Models.DTOs
         public Guid StructureId { get; set; }
         public string StructureName { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
+    }
+
+    // ===========================
+    // ClassFeeStructure DTOs
+    // ===========================
+
+    public class ClassFeeStructureResponse
+    {
+        public Guid Id { get; set; }
+        public Guid SchoolId { get; set; }
+        public Guid FeeStructureId { get; set; }
+        public string FeeStructureName { get; set; } = string.Empty;
+        public string ClassName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class CreateClassFeeStructureRequest
+    {
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        [Required]
+        [MaxLength(50)]
+        public string ClassName { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+    }
+
+    // ===========================
+    // StudentFeeItem DTOs
+    // ===========================
+
+    /// <summary>
+    /// Per-student line-item discount record (Scholarship / Sibling / Management / Others).
+    /// </summary>
+    public class StudentFeeItemResponse
+    {
+        public Guid Id { get; set; }
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public Guid FeeStructureId { get; set; }
+        public string FeeStructureName { get; set; } = string.Empty;
+        /// <summary>Null means the discount applies to the full structure total.</summary>
+        public Guid? FeeStructureComponentId { get; set; }
+        public string? FeeHeadName { get; set; }
+        public string AcademicYear { get; set; } = string.Empty;
+        /// <summary>Scholarship | Sibling | Management | Others</summary>
+        public string DiscountType { get; set; } = string.Empty;
+        public decimal DiscountPercentage { get; set; }
+        public decimal? FlatAmount { get; set; }
+        /// <summary>Resolved discount amount based on percentage or flat override.</summary>
+        public decimal ResolvedDiscountAmount { get; set; }
+        public string? Reason { get; set; }
+        public bool IsActive { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class CreateStudentFeeItemRequest
+    {
+        [Required]
+        public Guid StudentId { get; set; }
+
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        /// <summary>Leave null to apply the discount to the entire structure.</summary>
+        public Guid? FeeStructureComponentId { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        /// <summary>Scholarship | Sibling | Management | Others</summary>
+        [Required]
+        [MaxLength(50)]
+        public string DiscountType { get; set; } = "Others";
+
+        [Range(0, 100)]
+        public decimal DiscountPercentage { get; set; } = 0;
+
+        /// <summary>Flat override. When both are supplied, flat takes precedence.</summary>
+        [Range(0, double.MaxValue)]
+        public decimal? FlatAmount { get; set; }
+
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+    }
+
+    public class UpdateStudentFeeItemRequest
+    {
+        [MaxLength(50)]
+        public string? DiscountType { get; set; }
+
+        [Range(0, 100)]
+        public decimal? DiscountPercentage { get; set; }
+
+        [Range(0, double.MaxValue)]
+        public decimal? FlatAmount { get; set; }
+
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+
+        public bool? IsActive { get; set; }
     }
 }
 

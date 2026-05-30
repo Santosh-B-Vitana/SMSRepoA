@@ -149,6 +149,10 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
         setPermissionsFetchFailed(true);
         setPermissionsLoaded(false);
       }
+    } else {
+      // For admin, super_admin, parent, student: no /permissions/me needed
+      // (admin/super_admin already set permissionsLoaded=true above; parent/student have no role checks)
+      setPermissionsLoaded(true);
     }
 
     setLoading(false);
@@ -235,12 +239,14 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     // Principals / VP / HOD can view everything except Certificates (admin-only module)
     if (['principal', 'vice principal', 'head of department'].includes(d)) return module !== 'Certificates';
     // Class teachers can view their teaching modules including Health for their class
+    // Note: Students is intentionally excluded — teachers access student info via My Classes.
+    // Library access is not a default for teachers; grant it via Role Management if needed.
     if (d === 'class teacher') {
-      return ['Attendance', 'Grades', 'Assignments', 'Health', 'Students', 'Library'].includes(module);
+      return ['Attendance', 'Grades', 'Assignments', 'Health'].includes(module);
     }
     // Subject/general teachers: no Attendance (they are not class in-charge)
     if (d === 'teacher' || d === 'subject teacher') {
-      return ['Grades', 'Assignments', 'Students', 'Library'].includes(module);
+      return ['Grades', 'Assignments'].includes(module);
     }
     return false;
   }

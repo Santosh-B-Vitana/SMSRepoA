@@ -70,11 +70,24 @@ public class LocalFileStorageService : IFileStorageService
         }
     }
 
+    /// <summary>
+    /// Strips the base URL prefix from a path so callers can pass either a raw key
+    /// or the public URL that was returned by GetPublicUrl.
+    /// e.g. "/files/schools/xxx/photo.jpg" → "schools/xxx/photo.jpg"
+    /// </summary>
+    private string StripBaseUrl(string filePath)
+    {
+        var prefix = _baseUrl.TrimEnd('/') + "/";
+        return filePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? filePath[prefix.Length..]
+            : filePath;
+    }
+
     public async Task<byte[]?> GetAsync(string filePath)
     {
         try
         {
-            var fullPath = ResolveAndGuard(filePath);
+            var fullPath = ResolveAndGuard(StripBaseUrl(filePath));
             if (!File.Exists(fullPath)) return null;
             return await File.ReadAllBytesAsync(fullPath);
         }
@@ -93,7 +106,8 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = ResolveAndGuard(filePath);
+            var key = StripBaseUrl(filePath);
+            var fullPath = ResolveAndGuard(key);
             if (File.Exists(fullPath))
             {
                 File.Delete(fullPath);
@@ -117,7 +131,8 @@ public class LocalFileStorageService : IFileStorageService
     {
         try
         {
-            var fullPath = ResolveAndGuard(filePath);
+            var key = StripBaseUrl(filePath);
+            var fullPath = ResolveAndGuard(key);
             return Task.FromResult(File.Exists(fullPath));
         }
         catch (UnauthorizedAccessException)
