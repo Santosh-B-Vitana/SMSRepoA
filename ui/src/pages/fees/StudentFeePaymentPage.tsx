@@ -73,8 +73,16 @@ interface PreviewItem {
   concessionName?: string;
 }
 
-export default function StudentFeePaymentPage() {
-  const { studentId } = useParams<{ studentId: string }>();
+interface StudentFeePaymentPageProps {
+  /** When rendered inside the parent portal, pass the childId here instead of relying on :studentId route param */
+  studentIdOverride?: string;
+  /** When true, the concession dropdown is hidden and only already-approved concessions are shown read-only */
+  viewOnlyConcessions?: boolean;
+}
+
+export default function StudentFeePaymentPage({ studentIdOverride, viewOnlyConcessions = false }: StudentFeePaymentPageProps = {}) {
+  const { studentId: studentIdParam } = useParams<{ studentId: string }>();
+  const studentId = studentIdOverride ?? studentIdParam;
   const navigate = useNavigate();
   const { toast } = useToast();
   const { academicYear } = useSchoolContext();
@@ -95,6 +103,15 @@ export default function StudentFeePaymentPage() {
   // Preview dialog
   const [showPreview, setShowPreview] = useState(false);
 
+  // Payment method state
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "cheque" | "dd" | "bank_transfer">("cash");
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [chequeDate, setChequeDate] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
   // Load sibling fee data
   const loadData = useCallback(async () => {
     if (!studentId) return;
@@ -103,10 +120,10 @@ export default function StudentFeePaymentPage() {
     try {
       const [siblingData, concessionsData] = await Promise.all([
         feeApi.getSiblingInfo(studentId, academicYear || undefined),
-        feeApi.getConcessionTypes(),
+        viewOnlyConcessions ? Promise.resolve([]) : feeApi.getConcessionTypes(),
       ]);
       setSiblings(siblingData);
-      setConcessionTypes(concessionsData.filter(c => c.isActive));
+      setConcessionTypes((concessionsData as ConcessionType[]).filter(c => c.isActive));
 
       // Set initial selected students to the anchor (main student)
       const anchor = siblingData.find(s => s.isAnchor) ?? siblingData[0];
@@ -136,8 +153,15 @@ export default function StudentFeePaymentPage() {
 
     // Iterate through all selected students
     Array.from(selectedStudentIds).forEach(selStudentId => {
-      const selected = siblings.find(s => s.studentId === selStudentId);
-      if (!selected) return;
+      // A student may have multiple fee records (e.g. two structures assigned);
+      // collect all entries for this studentId so every record's line items are shown.
+      const selectedEntries = siblings.filter(s => s.studentId === selStudentId);
+      if (selectedEntries.length === 0) return;
+
+      selectedEntries.forEach(selected => {
+      // Track which fee heads are already present in installments so we don't double-count
+      // transport / hostel when they're already baked into the structure breakdown.
+      const headsInInstallments = new Set<string>();
 
       // Flatten installments into line items
       selected.installments?.forEach(inst => {
@@ -160,6 +184,7 @@ export default function StudentFeePaymentPage() {
         } else {
           // Add item per head
           Object.entries(inst.feeHeads).forEach(([headName, headAmount]) => {
+            headsInInstallments.add(headName.toLowerCase());
             items.push({
               id: `${selected.feeRecordId}-${inst.number}-${headName}`,
               studentId: selected.studentId,
@@ -174,6 +199,37 @@ export default function StudentFeePaymentPage() {
           });
         }
       });
+
+      // Add Transport / Hostel monthly module fees as separate line items when the student
+      // is actively enrolled and they aren't already included in installment fee heads.
+      const recordKey = selected.feeRecordId ?? selected.studentId;
+      if (selected.transportMonthlyFee && selected.transportMonthlyFee > 0 && !headsInInstallments.has("transport fee")) {
+        items.push({
+          id: `${recordKey}-transport-monthly`,
+          studentId: selected.studentId,
+          studentName: selected.studentName,
+          feeType: "Transport Fee",
+          feeTerm: "Monthly",
+          amount: selected.transportMonthlyFee,
+          status: "current",
+          discountAmount: 0,
+          selected: false,
+        });
+      }
+      if (selected.hostelMonthlyFee && selected.hostelMonthlyFee > 0 && !headsInInstallments.has("hostel fee")) {
+        items.push({
+          id: `${recordKey}-hostel-monthly`,
+          studentId: selected.studentId,
+          studentName: selected.studentName,
+          feeType: "Hostel Fee",
+          feeTerm: "Monthly",
+          amount: selected.hostelMonthlyFee,
+          status: "current",
+          discountAmount: 0,
+          selected: false,
+        });
+      }
+      }); // end selectedEntries.forEach
     });
 
     setLineItems(items);
@@ -304,7 +360,9 @@ export default function StudentFeePaymentPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Student Fee Payment</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Select fees to pay and add any applicable concessions or discounts
+            {viewOnlyConcessions
+              ? "Select fees to pay. Concessions are managed by the school."
+              : "Select fees to pay and add any applicable concessions or discounts"}
           </p>
         </div>
       </div>
@@ -317,6 +375,10 @@ export default function StudentFeePaymentPage() {
             <p className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Primary Student</p>
             {(() => {
               const anchor = siblings.find(s => s.isAnchor) ?? siblings[0];
+              // Sum pending across ALL fee records for the anchor student (handles multi-record students)
+              const anchorTotalPending = siblings
+                .filter(s => s.studentId === anchor.studentId)
+                .reduce((sum, s) => sum + s.pendingAmount, 0);
               return (
                 <Card className="border-2 border-primary/20 bg-primary/5">
                   <CardContent className="pt-6 pb-4">
@@ -327,7 +389,7 @@ export default function StudentFeePaymentPage() {
                           Class {anchor.class} {anchor.section} • Roll No: {anchor.studentId}
                         </p>
                         <p className="text-xs text-muted-foreground mt-2">
-                          Total Pending: <span className="font-semibold text-red-600">{fmt(anchor.pendingAmount)}</span>
+                          Total Pending: <span className="font-semibold text-red-600">{fmt(anchorTotalPending)}</span>
                         </p>
                       </div>
                       <Badge className="bg-primary">Selected</Badge>
@@ -532,7 +594,24 @@ export default function StudentFeePaymentPage() {
 
                                         {/* Concession Type */}
                                         <TableCell>
-                                          {item.selected ? (
+                                          {viewOnlyConcessions ? (
+                                            (() => {
+                                              // Show admin-approved concessions for this student as read-only
+                                              const sib = siblings.find(s => s.studentId === item.studentId);
+                                              const appliedConcessions = sib?.concessions ?? [];
+                                              return appliedConcessions.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                  {appliedConcessions.map((c, i) => (
+                                                    <Badge key={i} variant="secondary" className="text-xs">
+                                                      {c.name}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
+                                              ) : (
+                                                <span className="text-xs text-slate-400">—</span>
+                                              );
+                                            })()
+                                          ) : item.selected ? (
                                             <Select 
                                               value={item.selectedConcessionId || "none"} 
                                               onValueChange={(value) => {
@@ -673,25 +752,127 @@ export default function StudentFeePaymentPage() {
             </div>
           </div>
 
+          {/* Payment Method */}
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-sm font-semibold text-slate-700">Payment Method</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["cash", "cheque", "dd", "bank_transfer"] as const).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setPaymentMethod(m)}
+                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    paymentMethod === m
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-slate-200 hover:border-slate-300 text-slate-700"
+                  }`}
+                >
+                  {m === "cash" ? "Cash" : m === "cheque" ? "Cheque" : m === "dd" ? "Demand Draft" : "NEFT / IMPS / RTGS"}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-600">Payment Date</Label>
+                <Input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="h-8 text-sm mt-1" />
+              </div>
+              {(paymentMethod === "cheque" || paymentMethod === "dd") && (
+                <div>
+                  <Label className="text-xs text-slate-600">{paymentMethod === "dd" ? "DD Number" : "Cheque Number"}</Label>
+                  <Input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} className="h-8 text-sm mt-1" placeholder="Instrument number" />
+                </div>
+              )}
+              {(paymentMethod === "cheque" || paymentMethod === "dd") && (
+                <div>
+                  <Label className="text-xs text-slate-600">Bank Name</Label>
+                  <Input value={bankName} onChange={e => setBankName(e.target.value)} className="h-8 text-sm mt-1" placeholder="e.g. SBI, HDFC" />
+                </div>
+              )}
+              {(paymentMethod === "cheque" || paymentMethod === "dd") && (
+                <div>
+                  <Label className="text-xs text-slate-600">{paymentMethod === "dd" ? "DD Date" : "Cheque Date"}</Label>
+                  <Input type="date" value={chequeDate} onChange={e => setChequeDate(e.target.value)} className="h-8 text-sm mt-1" />
+                </div>
+              )}
+              {paymentMethod === "bank_transfer" && (
+                <div>
+                  <Label className="text-xs text-slate-600">UTR / Reference Number</Label>
+                  <Input value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} className="h-8 text-sm mt-1" placeholder="UTR / NEFT ref" />
+                </div>
+              )}
+            </div>
+          </div>
+
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setShowPreview(false)}
+              disabled={submitting}
             >
               Back
             </Button>
             <Button
-              onClick={() => {
-                toast({
-                  title: "Success",
-                  description: "Payment processing features coming soon",
+              disabled={submitting}
+              onClick={async () => {
+                if ((paymentMethod === "cheque" || paymentMethod === "dd") && !chequeNumber.trim()) {
+                  toast({ title: `${paymentMethod === "dd" ? "DD" : "Cheque"} number required`, variant: "destructive" });
+                  return;
+                }
+                if (paymentMethod === "bank_transfer" && !referenceNumber.trim()) {
+                  toast({ title: "UTR / Reference number required", variant: "destructive" });
+                  return;
+                }
+
+                // Build per-student batch entries from selected line items
+                const entryMap = new Map<string, { studentId: string; feeRecordId: string; amount: number; discount: number; lines: string[] }>();
+                selectedItems.forEach(item => {
+                  const sib = siblings.find(s => s.studentId === item.studentId);
+                  if (!sib?.feeRecordId) return;
+                  const key = sib.feeRecordId;
+                  if (!entryMap.has(key)) entryMap.set(key, { studentId: sib.studentId, feeRecordId: sib.feeRecordId, amount: 0, discount: 0, lines: [] });
+                  const e = entryMap.get(key)!;
+                  e.amount += item.amount - item.discountAmount;
+                  e.discount += item.discountAmount;
+                  e.lines.push(`${item.feeType} – ${item.feeTerm}`);
                 });
-                setShowPreview(false);
+
+                const payments = Array.from(entryMap.values()).map(e => ({
+                  studentId: e.studentId,
+                  feeRecordId: e.feeRecordId,
+                  amount: e.amount,
+                  discountApplied: e.discount > 0 ? e.discount : undefined,
+                  remarks: e.lines.join(", "),
+                }));
+
+                setSubmitting(true);
+                try {
+                  const result = await feeApi.createBatchPayment({
+                    payments,
+                    method: paymentMethod,
+                    date: new Date(paymentDate + "T00:00:00").toISOString(),
+                    chequeNumber: (paymentMethod === "cheque" || paymentMethod === "dd") ? chequeNumber || undefined : undefined,
+                    chequeDate: (paymentMethod === "cheque" || paymentMethod === "dd") && chequeDate ? chequeDate : undefined,
+                    bankName: (paymentMethod === "cheque" || paymentMethod === "dd") ? bankName || undefined : undefined,
+                    referenceNumber: paymentMethod === "bank_transfer" ? referenceNumber || undefined : undefined,
+                    notifyParents: true,
+                  });
+                  setShowPreview(false);
+                  toast({ title: "Payment recorded", description: `${result.processed} receipt(s) created · Ref: ${result.batchRef}` });
+                  navigate(-1);
+                } catch (err: unknown) {
+                  toast({ title: "Payment failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
+                } finally {
+                  setSubmitting(false);
+                }
               }}
               className="gap-2"
             >
-              <CheckCircle2 className="h-4 w-4" />
-              Proceed to Payment
+              {submitting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Processing…</>
+              ) : (
+                <><CheckCircle2 className="h-4 w-4" /> Confirm Payment</>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

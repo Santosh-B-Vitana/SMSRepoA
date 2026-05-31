@@ -1196,20 +1196,31 @@ namespace SmsApi.Controllers
         /// Used by the Collect Payment form to show sibling info before applying a discount.
         /// </summary>
         [HttpGet("sibling-info")]
-        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent")]
         public async Task<ActionResult<List<SiblingFeeInfoDto>>> GetSiblingInfo(
             [FromQuery] Guid studentId,
             [FromQuery] string? academicYear = null)
         {
             var schoolId = _tenant.GetEffectiveSchoolId();
 
+            // Parents may only view data for their own children.
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+            if (userRole == "Parent")
+            {
+                var parentEmail = _tenant.UserEmail ?? string.Empty;
+                var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId);
+                if (!canAccess)
+                    return StatusCode(403, new { message = "Parents can only access their own child's fee information." });
+            }
+
             var anchor = await _context.Students
                 .FirstOrDefaultAsync(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted);
             if (anchor == null) return NotFound(new { message = "Student not found." });
 
             // Primary: use the StudentSiblings junction table (bidirectional links)
+            // Exclude self-referential rows (SiblingId == anchor.Id) to prevent self-sibling display.
             var siblingIds = await _context.StudentSiblings
-                .Where(x => x.StudentId == anchor.Id && x.SchoolId == schoolId)
+                .Where(x => x.StudentId == anchor.Id && x.SchoolId == schoolId && x.SiblingId != anchor.Id)
                 .Select(x => x.SiblingId)
                 .ToListAsync();
 
@@ -1219,10 +1230,14 @@ namespace SmsApi.Controllers
                 try
                 {
                     var parsed = System.Text.Json.JsonSerializer.Deserialize<List<Guid>>(anchor.SiblingIds);
-                    if (parsed != null) siblingIds.AddRange(parsed);
+                    // Guard against self-referential entries in the legacy JSON field
+                    if (parsed != null) siblingIds.AddRange(parsed.Where(id => id != anchor.Id));
                 }
                 catch { }
             }
+
+            // Deduplicate to prevent the same sibling appearing more than once
+            siblingIds = siblingIds.Distinct().ToList();
 
             var allStudentIds = new List<Guid> { anchor.Id };
             allStudentIds.AddRange(siblingIds);
@@ -1337,7 +1352,10 @@ namespace SmsApi.Controllers
                         Class = s.Class ?? "",
                         Section = s.Section ?? "",
 #pragma warning restore CS0618
-                        IsAnchor = s.Id == anchor.Id && firstRecord,
+                        // Mark ALL fee records for the anchor student as IsAnchor=true so that
+                        // a student with multiple fee records (e.g. two installment plans) does
+                        // not incorrectly appear as their own sibling in the payment UI.
+                        IsAnchor = s.Id == anchor.Id,
                         TotalFee = rec.TotalAmount,
                         PaidAmount = rec.PaidAmount,
                         PendingAmount = rec.PendingAmount,
@@ -2516,7 +2534,16 @@ namespace SmsApi.Controllers
                 structure.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                return Ok(new { classes = structure.Class, count = newClasses.Count });
+                // Auto-create fee records for students in the newly assigned classes.
+                int assigned = 0, skipped = 0;
+                if (newClasses.Count > 0)
+                {
+                    var (a, s) = await _feeService.BulkAssignStructureAsync(id, schoolId);
+                    assigned = a;
+                    skipped = s;
+                }
+
+                return Ok(new { classes = structure.Class, count = newClasses.Count, recordsAssigned = assigned, recordsSkipped = skipped });
             }
             catch (Exception ex) { return StatusCode(500, new { message = "Failed to assign classes.", error = ex.Message }); }
         }
@@ -3148,7 +3175,7 @@ namespace SmsApi.Controllers
         /// Creates individual receipts per student but groups them with a shared batch reference.
         /// </summary>
         [HttpPost("payments/batch")]
-        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        [Authorize(Roles = "Admin,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent")]
         public async Task<ActionResult> CreateBatchPayment([FromBody] BatchPaymentRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -3156,6 +3183,19 @@ namespace SmsApi.Controllers
                 return BadRequest(new { message = "At least one payment entry is required." });
 
             var schoolId = _tenant.GetEffectiveSchoolId();
+
+            // Parents may only pay for their own children.
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+            if (userRole == "Parent")
+            {
+                var parentEmail = _tenant.UserEmail ?? string.Empty;
+                foreach (var entry in request.Payments)
+                {
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, entry.StudentId);
+                    if (!canAccess)
+                        return StatusCode(403, new { message = $"Parents can only pay fees for their own children. Student {entry.StudentId} is not linked to this account." });
+                }
+            }
             var paymentDate = request.Date?.ToUniversalTime() ?? DateTime.UtcNow;
             var batchRef = $"BATCH-{paymentDate:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 

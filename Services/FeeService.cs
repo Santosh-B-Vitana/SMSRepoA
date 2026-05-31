@@ -1876,7 +1876,14 @@ namespace SmsApi.Services
             if (structure == null)
                 throw new KeyNotFoundException("Fee structure not found.");
 
-            var baseClass = structure.Class;
+            // Support comma-separated multi-class assignments (e.g. "Class 1, Class 10")
+            var classNames = (structure.Class ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .ToList();
+
+            if (classNames.Count == 0)
+                return (0, 0);
 
             // Prefer modern enrollment-based lookup (StudentEnrollments FK model).
             // Fall back to the legacy Student.Class string if the class/year entities don't exist yet.
@@ -1884,39 +1891,63 @@ namespace SmsApi.Services
                 .Where(y => y.SchoolId == schoolId && y.Name == structure.AcademicYear)
                 .FirstOrDefaultAsync();
 
-            var classEntity = await _context.Classes
-                .Where(c => c.SchoolId == schoolId && c.Name == baseClass)
-                .FirstOrDefaultAsync();
-
             List<Guid> studentIds;
             var studentEnrollmentMap = new Dictionary<Guid, Guid>(); // studentId -> enrollmentId
 
-            if (academicYearEntity != null && classEntity != null)
+            if (academicYearEntity != null)
             {
-                // Modern path: resolve students via active StudentEnrollments for this class + year.
-                var enrollments = await _context.StudentEnrollments
-                    .Where(e => e.SchoolId == schoolId &&
-                                e.ClassId == classEntity.Id &&
-                                e.AcademicYearId == academicYearEntity.Id &&
-                                e.Status == "active")
-                    .Select(e => new { e.StudentId, EnrollmentId = e.Id })
-                    .ToListAsync();
+                // Modern path: collect students from all assigned classes via active StudentEnrollments.
+                var allEnrollments = new List<(Guid StudentId, Guid EnrollmentId)>();
+                foreach (var baseClass in classNames)
+                {
+                    var classEntity = await _context.Classes
+                        .Where(c => c.SchoolId == schoolId && c.Name == baseClass)
+                        .FirstOrDefaultAsync();
+                    if (classEntity == null) continue;
 
-                studentIds = enrollments.Select(e => e.StudentId).ToList();
-                studentEnrollmentMap = enrollments.ToDictionary(e => e.StudentId, e => e.EnrollmentId);
+                    var enrollments = await _context.StudentEnrollments
+                        .Where(e => e.SchoolId == schoolId &&
+                                    e.ClassId == classEntity.Id &&
+                                    e.AcademicYearId == academicYearEntity.Id &&
+                                    e.Status == "active")
+                        .Select(e => new { e.StudentId, EnrollmentId = e.Id })
+                        .ToListAsync();
+
+                    foreach (var en in enrollments)
+                        allEnrollments.Add((en.StudentId, en.EnrollmentId));
+                }
+
+                // Deduplicate by studentId (a student enrolled in only one class, but guard against duplicates)
+                var seen = new HashSet<Guid>();
+                studentIds = new List<Guid>();
+                foreach (var (sid, eid) in allEnrollments)
+                {
+                    if (seen.Add(sid))
+                    {
+                        studentIds.Add(sid);
+                        studentEnrollmentMap[sid] = eid;
+                    }
+                }
             }
             else
             {
                 // Legacy fallback: match by the deprecated Student.Class string field.
                 // Covers "Class 10", "Class 10 A", "Class 10-B", etc.
-                studentIds = await _context.Students
-                    .Where(s => s.SchoolId == schoolId &&
-                                s.Status == "active" &&
-                                (s.Class == baseClass ||
-                                 s.Class.StartsWith(baseClass + " ") ||
-                                 s.Class.StartsWith(baseClass + "-")))
-                    .Select(s => s.Id)
-                    .ToListAsync();
+                var legacyIds = new HashSet<Guid>();
+                foreach (var baseClass in classNames)
+                {
+                    var ids = await _context.Students
+                        .Where(s => s.SchoolId == schoolId &&
+                                    s.Status == "active" &&
+                                    (s.Class == baseClass ||
+                                     s.Class.StartsWith(baseClass + " ") ||
+                                     s.Class.StartsWith(baseClass + "-")))
+                        .Select(s => s.Id)
+                        .ToListAsync();
+                    foreach (var id in ids)
+                        legacyIds.Add(id);
+                }
+                studentIds = legacyIds.ToList();
             }
 
             if (studentIds.Count == 0)
@@ -2717,9 +2748,13 @@ namespace SmsApi.Services
             if (string.IsNullOrWhiteSpace(structureClass) || string.IsNullOrWhiteSpace(studentClass))
                 return false;
 
-            var sc = structureClass.Trim();
-            var st = studentClass.Trim();
+            // Support comma-separated class lists in the structure (e.g. "Class 1, Class 10")
+            var structureClasses = structureClass.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return structureClasses.Any(sc => SingleClassMatch(sc.Trim(), studentClass.Trim()));
+        }
 
+        private static bool SingleClassMatch(string sc, string st)
+        {
             if (string.Equals(sc, st, StringComparison.OrdinalIgnoreCase))
                 return true;
 

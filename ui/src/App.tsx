@@ -67,6 +67,7 @@ const MyClassDetail        = lazy(() => import("./pages/MyClassDetail"));
 const ParentFees           = lazy(() => import("./pages/ParentFees"));
 const ParentChildFeeDetails = lazy(() => import("./pages/ParentChildFeeDetails"));
 const ParentChildFeePayment = lazy(() => import("./pages/ParentChildFeePayment"));
+const ParentFeePaymentPage  = lazy(() => import("./pages/fees/ParentFeePaymentPage"));
 const ParentNotifications  = lazy(() => import("./pages/ParentNotifications"));
 const ParentAnnouncements  = lazy(() => import("./pages/ParentAnnouncements"));
 const StudentAttendance    = lazy(() => import("./pages/StudentAttendance"));
@@ -172,7 +173,7 @@ function App() {
                   <Route path="/child-profile" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ChildProfile /></Layout></ProtectedRoute>} />
                   <Route path="/parent-fees" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentFees /></Layout></ProtectedRoute>} />
                   <Route path="/parent-fees/:childId" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeeDetails /></Layout></ProtectedRoute>} />
-                  <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeePayment /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentFeePaymentPage /></Layout></ProtectedRoute>} />
                   <Route path="/parent-notifications" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentNotifications /></Layout></ProtectedRoute>} />
                   <Route path="/parent-diary" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDiaryView /></Layout></ProtectedRoute>} />
                   <Route path="/parent-announcements" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentAnnouncements /></Layout></ProtectedRoute>} />
