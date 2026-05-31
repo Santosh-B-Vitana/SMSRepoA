@@ -48,7 +48,7 @@ const Library              = lazy(() => import("@/pages/Library"));
 const Hostel               = lazy(() => import("@/pages/Hostel"));
 const Health               = lazy(() => import("@/pages/Health"));
 const Fees                 = lazy(() => import("@/pages/Fees"));
-const CollectPaymentPage   = lazy(() => import("@/pages/fees/CollectPaymentPage"));
+const StudentFeePaymentPage = lazy(() => import("@/pages/fees/StudentFeePaymentPage"));
 const Communication        = lazy(() => import("@/pages/Communication"));
 const Announcements        = lazy(() => import("@/pages/Announcements"));
 const Documents            = lazy(() => import("@/pages/Documents"));
@@ -207,7 +207,7 @@ function App() {
                   <Route path="/finance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Finance /></Layout></ProtectedRoute>} />
                   <Route path="/fees" element={<Navigate to="/fees/collect" replace />} />
                   <Route path="/fees/collect" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Fees', action: 'View' }}><Layout><ModuleGuard module="fees"><Fees section="collect" /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/fees/collect/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Fees', action: 'View' }}><Layout><ModuleGuard module="fees"><CollectPaymentPage /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/fees/collect/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Fees', action: 'View' }}><Layout><ModuleGuard module="fees"><StudentFeePaymentPage /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/fees/setup" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><Fees section="setup" /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/student-fee-details/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><StudentFeeDetails /></ProtectedRoute>} />
                   <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><FeeConcession /></ModuleGuard></Layout></ProtectedRoute>} />
