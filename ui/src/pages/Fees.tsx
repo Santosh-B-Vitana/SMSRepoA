@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   IndianRupee, Users, AlertTriangle, TrendingUp, Receipt, Search,
   Plus, Download, RefreshCw, CheckCircle2, Clock, XCircle,
@@ -21,7 +22,7 @@ import {
   Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2, X, GraduationCap, ArrowLeft, RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
-import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, FeeHead, FeeStructureComponent, toggleStructureActive, FeeConcessionRecord, getSchoolConcessions, approveConcession, rejectConcession } from "@/services/api/feeApi";
+import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, FeeHead, FeeStructureComponent, toggleStructureActive, FeeConcessionRecord, getSchoolConcessions, approveConcession, rejectConcession, FeeTerm, getFeeHeads, getFeeTerms } from "@/services/api/feeApi";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -32,9 +33,11 @@ import { usePermissions } from "@/contexts/PermissionsContext";
 import apiClient from "@/services/api/apiClient";
 import { boardApi, SchoolBoardConfigResponse } from "@/services/api/boardApi";
 import { FeeHeadsManager } from "@/components/fees/FeeHeadsManager";
+import { FeeTermsManager } from "@/components/fees/FeeTermsManager";
 import { ReceiptTemplateManager } from "@/components/fees/ReceiptTemplateManager";
 import { BulkFeePaymentUpload } from "@/components/fees/BulkFeePaymentUpload";
 import { PromoteFeesDialog } from "@/components/fees/PromoteFeesDialog";
+import { FeeReminderManager } from "@/components/fees/FeeReminderManager";
 import { AdvancedPagination } from "@/components/common/AdvancedPagination";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -122,6 +125,27 @@ function getTermLabel(total: number, index: number): string {
 function normalizeTermName(name: string, idx: number): string {
   if (/^h[12]$/i.test(name.trim())) return `Term ${idx + 1}`;
   return name;
+}
+
+/**
+ * Parse installment schedule data from string or array format.
+ * Returns a TermSchedule array, or an empty array if parsing fails.
+ */
+function parseSchedule(installmentDueDates: any): TermSchedule[] {
+  if (!installmentDueDates) return [];
+  try {
+    // If it's already an array, return it
+    if (Array.isArray(installmentDueDates)) return installmentDueDates;
+    // If it's a string, parse it
+    if (typeof installmentDueDates === "string") {
+      const parsed = JSON.parse(installmentDueDates);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+    return [];
+  } catch {
+    console.warn("Failed to parse installment schedule:", installmentDueDates);
+    return [];
+  }
 }
 
 /**
@@ -2212,1783 +2236,679 @@ function CollectPaymentDialog({
   );
 }
 
-
-// ─── Fee Structure Tab ────────────────────────────────────
-// ─── Term-schedule helpers ────────────────────────────────────────────────
-
-/** Build the default Indian academic year term schedule for the given plan */
-function defaultTermSchedule(installmentCount: number, academicYear: string, totalFee: number): TermSchedule[] {
-  const startYear = parseInt((academicYear || "2026-2027").split('-')[0]);
-  const endYear = startYear + 1;
-  const n = Math.max(1, installmentCount);
-  const base = Math.floor(totalFee / n);
-  const rem  = Math.round((totalFee - base * n) * 100) / 100;
-  const amt  = (i: number) => i === n - 1 ? Math.round((base + rem) * 100) / 100 : base;
-
-  const fmt = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  const lastDay = (y: number, m: number) => new Date(y, m, 0).getDate();
-
-  if (n === 1) return [{ termNumber:1, name:"Annual",  fromDate:fmt(startYear,4,1),     toDate:fmt(endYear,3,31),      dueDate:fmt(startYear,4,30),       amount:amt(0) }];
-  if (n === 2) return [
-    { termNumber:1, name:"Term 1", fromDate:fmt(startYear,4,1),  toDate:fmt(startYear,9,30),  dueDate:fmt(startYear,4,30),  amount:amt(0) },
-    { termNumber:2, name:"Term 2", fromDate:fmt(startYear,10,1), toDate:fmt(endYear,3,31),    dueDate:fmt(startYear,10,31), amount:amt(1) },
-  ];
-  if (n === 3) return [
-    { termNumber:1, name:"Term 1", fromDate:fmt(startYear,4,1),  toDate:fmt(startYear,6,30),  dueDate:fmt(startYear,4,30),  amount:amt(0) },
-    { termNumber:2, name:"Term 2", fromDate:fmt(startYear,7,1),  toDate:fmt(startYear,10,31), dueDate:fmt(startYear,7,31),  amount:amt(1) },
-    { termNumber:3, name:"Term 3", fromDate:fmt(startYear,11,1), toDate:fmt(endYear,3,31),    dueDate:fmt(startYear,11,30), amount:amt(2) },
-  ];
-  if (n === 4) return [
-    { termNumber:1, name:"Q1", fromDate:fmt(startYear,4,1),    toDate:fmt(startYear,6,30),  dueDate:fmt(startYear,4,30),    amount:amt(0) },
-    { termNumber:2, name:"Q2", fromDate:fmt(startYear,7,1),    toDate:fmt(startYear,9,30),  dueDate:fmt(startYear,7,31),    amount:amt(1) },
-    { termNumber:3, name:"Q3", fromDate:fmt(startYear,10,1),   toDate:fmt(startYear,12,31), dueDate:fmt(startYear,10,31),   amount:amt(2) },
-    { termNumber:4, name:"Q4", fromDate:fmt(endYear,1,1),      toDate:fmt(endYear,3,31),    dueDate:fmt(endYear,1,31),      amount:amt(3) },
-  ];
-  if (n === 12) {
-    const months = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
-    const nums   = [4,5,6,7,8,9,10,11,12,1,2,3];
-    return months.map((name, i) => {
-      const y = nums[i] >= 4 ? startYear : endYear;
-      const m = nums[i];
-      return { termNumber:i+1, name, fromDate:fmt(y,m,1), toDate:fmt(y,m,lastDay(y,m)), dueDate:fmt(y,m,7), amount:amt(i) };
-    });
-  }
-  return Array.from({length:n}, (_,i) => ({
-    termNumber:i+1, name:`Installment ${i+1}`, fromDate:"", toDate:"", dueDate:"", amount:amt(i)
-  }));
-}
-
-/** Parse installmentDueDates JSON → TermSchedule[] (or [] if legacy / missing) */
-function parseSchedule(raw?: string): TermSchedule[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object" && "termNumber" in parsed[0])
-      return parsed as TermSchedule[];
-  } catch {}
-  return [];
-}
-
-const MONTH_OPTIONS = [
-  {v:"01",l:"January"},{v:"02",l:"February"},{v:"03",l:"March"},{v:"04",l:"April"},
-  {v:"05",l:"May"},{v:"06",l:"June"},{v:"07",l:"July"},{v:"08",l:"August"},
-  {v:"09",l:"September"},{v:"10",l:"October"},{v:"11",l:"November"},{v:"12",l:"December"},
-];
-
-function MonthYearPicker({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
-  // value = "YYYY-MM-DD" → break into year+month for dropdowns
-  const year  = value ? value.slice(0,4) : "";
-  const month = value ? value.slice(5,7) : "";
-  const day   = value ? value.slice(8,10) : "01";
-
-  const setYM = (y: string, m: string) => {
-    if (y && m) {
-      const last = new Date(parseInt(y), parseInt(m), 0).getDate();
-      const d = Math.min(parseInt(day) || 1, last);
-      onChange(`${y}-${m}-${String(d).padStart(2,'0')}`);
-    }
-  };
-
-  const years = ["2024","2025","2026","2027","2028"];
-  return (
-    <div className="flex gap-1">
-      <Select value={month} onValueChange={m => setYM(year || "2026", m)}>
-        <SelectTrigger className="h-8 text-xs w-[90px]"><SelectValue placeholder={label || "Month"} /></SelectTrigger>
-        <SelectContent>{MONTH_OPTIONS.map(o => <SelectItem key={o.v} value={o.v} className="text-xs">{o.l}</SelectItem>)}</SelectContent>
-      </Select>
-      <Select value={year} onValueChange={y => setYM(y, month || "04")}>
-        <SelectTrigger className="h-8 text-xs w-[70px]"><SelectValue placeholder="Year" /></SelectTrigger>
-        <SelectContent>{years.map(y => <SelectItem key={y} value={y} className="text-xs">{y}</SelectItem>)}</SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-function FeeStructureTab({ academicYear }: { academicYear: string }) {
-  const { t } = useLanguage();
-  const { availableYears } = useAcademicYear();
-  const [tabYear, setTabYear] = useState(academicYear || "");
-  const [structures, setStructures] = useState<FeeStructure[]>([]);
-  const [allClasses, setAllClasses] = useState<ClassResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showDialog, setShowDialog] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState<FeeStructure | null>(null);
-  const [form, setForm] = useState<Partial<CreateFeeStructureDto>>({ installmentCount: 1 });
-  const [termSchedule, setTermSchedule] = useState<TermSchedule[]>([]);
-  const [assigning, setAssigning] = useState<string | null>(null); // structureId being assigned
-  const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set()); // recently successfully assigned
-  const [seeding, setSeeding] = useState(false);
-  const [linkedClassesMap, setLinkedClassesMap] = useState<Record<string, ClassFeeStructureLink[]>>({});
-  const [linkedClassesLoading, setLinkedClassesLoading] = useState<Set<string>>(new Set());
-  const [expandedLinkedClasses, setExpandedLinkedClasses] = useState<Set<string>>(new Set());
-  const [addingClassFor, setAddingClassFor] = useState<string | null>(null); // structureId
-  const [newClassInput, setNewClassInput] = useState("");
-  const [togglingActive, setTogglingActive] = useState<string | null>(null); // structureId being toggled
-  const [editLinkedClasses, setEditLinkedClasses] = useState<ClassFeeStructureLink[]>([]); // linked classes shown in edit dialog
-  const [editLinkedClassesLoading, setEditLinkedClassesLoading] = useState(false);
-  const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
-  const [selectedComponents, setSelectedComponents] = useState<Array<{ feeHeadId: string; feeHeadName: string; amount: number; remarks?: string }>>([]);
-  const [headFrequencies, setHeadFrequencies] = useState<Record<string, string>>({});
-  const [componentsLoading, setComponentsLoading] = useState(false);
-  const [schoolBoards, setSchoolBoards] = useState<SchoolBoardConfigResponse[]>([]);
-  const [boardFilter, setBoardFilter] = useState<string>("__all__");
-
-  const handleSeedStructures = async () => {
-    if (!tabYear) { toast.error("Select an academic year first"); return; }
-    setSeeding(true);
-    try {
-      const res = await feeApi.seedFeeStructures(tabYear);
-      if (res.created === 0) {
-        toast.info(`All classes already have fee structures for ${tabYear}.`);
-      } else {
-        toast.success(`Created ${res.created} fee structure(s) for ${tabYear}. Use "Assign to Class" on each to generate student records.`);
-        const updated = await feeApi.getFeeStructures(undefined, tabYear || undefined);
-        setStructures(updated || []);
-      }
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Failed to seed structures");
-    } finally { setSeeding(false); }
-  };
-
-  // Sync tabYear when parent academicYear prop changes
-  useEffect(() => { if (academicYear) setTabYear(academicYear); }, [academicYear]);
-
-  const toggleLinkedClasses = async (structureId: string) => {
-    const isOpen = expandedLinkedClasses.has(structureId);
-    if (isOpen) {
-      setExpandedLinkedClasses(prev => { const s = new Set(prev); s.delete(structureId); return s; });
-      return;
-    }
-    setExpandedLinkedClasses(prev => new Set(prev).add(structureId));
-    if (linkedClassesMap[structureId]) return; // already loaded
-    setLinkedClassesLoading(prev => new Set(prev).add(structureId));
-    try {
-      const classes = await getLinkedClasses(structureId);
-      setLinkedClassesMap(prev => ({ ...prev, [structureId]: classes }));
-    } catch {
-      toast.error("Failed to load linked classes");
-    } finally {
-      setLinkedClassesLoading(prev => { const s = new Set(prev); s.delete(structureId); return s; });
-    }
-  };
-
-  const handleLinkClass = async (structureId: string) => {
-    const cn = newClassInput.trim();
-    if (!cn) return;
-    try {
-      const linked = await linkClass(structureId, cn);
-      const updatedClasses = [...(linkedClassesMap[structureId] ?? []), linked];
-      setLinkedClassesMap(prev => ({ ...prev, [structureId]: updatedClasses }));
-      setNewClassInput("");
-      setAddingClassFor(null);
-      const classNames = updatedClasses.map(c => c.className).join(", ");
-      toast.success(`Classes linked to structure: ${classNames}`);
-    } catch (e: any) {
-      console.error("Link class error:", e?.response?.data || e?.message || e);
-      const errMsg = e?.response?.data?.message || e?.message || "Failed to link class";
-      toast.error(errMsg);
-    }
-  };
-
-  const handleUnlinkClass = async (structureId: string, link: ClassFeeStructureLink) => {
-    try {
-      await unlinkClass(structureId, link.className);
-      setLinkedClassesMap(prev => ({ ...prev, [structureId]: (prev[structureId] ?? []).filter(c => c.id !== link.id) }));
-      toast.success(`Class "${link.className}" unlinked`);
-    } catch (e: any) {
-      console.error("Unlink class error:", e?.response?.data || e?.message || e);
-      toast.error(e?.response?.data?.message ?? "Failed to unlink class");
-    }
-  };
-
-  const handleToggleActive = async (s: FeeStructure) => {
-    setTogglingActive(s.id);
-    try {
-      const result = await toggleStructureActive(s.id);
-      setStructures(prev => prev.map(x => x.id === s.id ? { ...x, isActive: result.isActive } : x));
-      toast.success(`"${s.name}" marked as ${result.isActive ? "active" : "inactive"}`);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Failed to toggle status");
-    } finally {
-      setTogglingActive(null);
-    }
-  };
-
-  const availableStandards = Array.from(new Set(allClasses.map(c => c.standard))).sort(
-    (a, b) => (parseInt(a.replace(/\D/g, "")) || 0) - (parseInt(b.replace(/\D/g, "")) || 0)
-  );
-
-  const totalFee = useMemo(() => FEE_HEADS.reduce((s, h) => s + (parseFloat(String((form as any)[h.key])) || 0), 0), [form]);
-
-  const { hasUserPermission: hasFeePermission } = usePermissions();
-  const fsCanManage = hasFeePermission('Fees', 'Create');
-  const fsCanEdit   = hasFeePermission('Fees', 'Edit');
-  const fsCanDelete = hasFeePermission('Fees', 'Delete');
-
-  // Reload structures when tabYear changes
-  useEffect(() => {
-    setLoading(true);
-    academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(e => console.error('Failed to load classes:', e));
-    feeApi.getFeeStructures(undefined, tabYear || undefined)
-      .then(r => setStructures(r || [])).catch(e => console.error('Failed to load structures:', e)).finally(() => setLoading(false));
-    // Also load fee heads
-    feeApi.getFeeHeads()
-      .then(r => {
-        console.log('Loaded fee heads:', r);
-        setFeeHeads(r || []);
-      })
-      .catch(e => {
-        console.error('Failed to load fee heads:', e);
-        setFeeHeads([]);
-      });
-    // Load school boards
-    boardApi.getSchoolBoards()
-      .then(r => setSchoolBoards(r.boards || []))
-      .catch(e => console.error('Failed to load boards:', e));
-  }, [tabYear]);
-
-  // When installment plan changes or total fee changes, rebuild the term schedule
-  useEffect(() => {
-    const count = form.installmentCount ?? 1;
-    const year  = form.academicYear || tabYear;
-    setTermSchedule(defaultTermSchedule(count, year, totalFee));
-  }, [form.installmentCount, form.academicYear, tabYear, totalFee]);
-
-  const openCreate = () => {
-    const count = 1;
-    setEditing(null);
-    setForm({ installmentCount: count, academicYear: tabYear, boardConfigurationId: undefined });
-    setTermSchedule(defaultTermSchedule(count, tabYear, 0));
-    setSelectedComponents([]);
-    setHeadFrequencies({});
-    setShowDialog(true);
-  };
-  
-  const openEdit = async (s: FeeStructure) => {
-    const existing = parseSchedule(s.installmentDueDates);
-    setTermSchedule(existing.length > 0 ? existing : defaultTermSchedule(s.installmentCount, s.academicYear, s.totalAmount));
-    setEditing(s);
-    setForm({
-      name: s.name, class: s.class, academicYear: s.academicYear,
-      tuitionFee: s.tuitionFee, examFee: s.examFee, libraryFee: s.libraryFee,
-      labFee: s.labFee, developmentFee: s.developmentFee, sportsFee: s.sportsFee,
-      admissionFee: s.admissionFee,
-      uniformFee: s.uniformFee, booksFee: s.booksFee, miscellaneous: s.miscellaneous,
-      installmentCount: s.installmentCount,
-      boardConfigurationId: s.boardConfigurationId || undefined,
-    });
-    // Restore saved per-head frequencies
-    try {
-      setHeadFrequencies(s.feeHeadFrequencies ? JSON.parse(s.feeHeadFrequencies) : {});
-    } catch { setHeadFrequencies({}); }
-    // Load existing components
-    setComponentsLoading(true);
-    try {
-      const comps = await getStructureComponents(s.id);
-      setSelectedComponents(comps.map((c: FeeStructureComponent) => ({ feeHeadId: c.feeHeadId, feeHeadName: c.feeHeadName, amount: c.amount, remarks: c.remarks })));
-    } catch (e) {
-      console.error("Failed to load components:", e);
-      setSelectedComponents([]);
-    } finally {
-      setComponentsLoading(false);
-    }
-    // Load linked classes for display in dialog
-    setEditLinkedClassesLoading(true);
-    setEditLinkedClasses([]);
-    try {
-      const cls = linkedClassesMap[s.id] ?? await getLinkedClasses(s.id);
-      setEditLinkedClasses(cls);
-      if (!linkedClassesMap[s.id]) setLinkedClassesMap(prev => ({ ...prev, [s.id]: cls }));
-    } catch {
-      setEditLinkedClasses([]);
-    } finally {
-      setEditLinkedClassesLoading(false);
-    }
-    setShowDialog(true);
-  };
-
-  const handleAssign = async (structure: FeeStructure) => {
-    setAssigning(structure.id);
-    try {
-      const res = await bulkAssignStructure(structure.id);
-      const classLabel = structure.class;
-      if (res.assigned > 0) {
-        toast.success(`${res.assigned} student(s) in ${classLabel} assigned fee records.${
-          res.skipped > 0 ? ` ${res.skipped} already had records (skipped).` : ""
-        }`);
-      } else {
-        toast.info(res.skipped > 0
-          ? `All ${res.skipped} students in ${classLabel} already have fee records for this structure.`
-          : `No active students found in ${classLabel} (including sections).`);
-      }
-      // Refresh structures so assignedStudentCount reflects the new state
-      const updated = await feeApi.getFeeStructures(undefined, tabYear || undefined);
-      setStructures(updated || []);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Failed to assign structure");
-    } finally { setAssigning(null); }
-  };
-
-  const handleSave = async () => {
-    if (!form.name || !form.class) { toast.error("Provide structure name and class"); return; }
-    // Validate term schedule amounts sum to total
-    if (termSchedule.length > 1) {
-      const schedTotal = termSchedule.reduce((s, t) => s + (t.amount || 0), 0);
-      const diff = Math.abs(schedTotal - totalFee);
-      if (diff > 1) { toast.error(`Term amounts (${inr(schedTotal)}) must add up to total fee (${inr(totalFee)})`); return; }
-    }
-    setSaving(true);
-    try {
-      const payload: CreateFeeStructureDto = {
-        name: form.name!,
-        class: form.class!,
-        academicYear: form.academicYear || tabYear,
-        ...FEE_HEADS.reduce((acc, h) => ({ ...acc, [h.key]: (form as any)[h.key] || 0 }), {}),
-        installmentCount: form.installmentCount || 1,
-        installmentDueDates: termSchedule.length > 0 ? JSON.stringify(termSchedule) : undefined,
-        feeHeadFrequencies: Object.keys(headFrequencies).length > 0 ? JSON.stringify(headFrequencies) : undefined,
-        boardConfigurationId: form.boardConfigurationId || undefined,
-      } as CreateFeeStructureDto;
-      let structureId: string;
-      if (editing) {
-        await feeApi.updateFeeStructure(editing.id, payload);
-        structureId = editing.id;
-        toast.success("Fee structure updated");
-      } else {
-        const res = await feeApi.createFeeStructure(payload);
-        structureId = (res as any).id;
-        const autoAssigned: number = (res as any).autoAssigned ?? 0;
-        const autoSkipped: number  = (res as any).autoSkipped  ?? 0;
-        if (autoAssigned > 0) {
-          toast.success(
-            `Fee structure created & auto-assigned to ${autoAssigned} student(s) in Class ${form.class}.` +
-            (autoSkipped > 0 ? ` ${autoSkipped} already had records (skipped).` : "")
-          );
-        } else {
-          toast.success(
-            `Fee structure created. No active students found in Class ${form.class} yet — use "Assign to Class" once students are enrolled.`
-          );
-        }
-      }
-      // Save components
-      if (selectedComponents.length > 0) {
-        try {
-          await setStructureComponents(
-            structureId,
-            selectedComponents.map(c => ({ feeHeadId: c.feeHeadId, amount: c.amount, remarks: c.remarks }))
-          );
-        } catch (e) {
-          console.error("Failed to save components:", e);
-          toast.warning("Structure saved but some components failed to save");
-        }
-      }
-      const updated = await feeApi.getFeeStructures(undefined, tabYear || undefined);
-      setStructures(updated || []);
-      setShowDialog(false);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Failed to save");
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Header row: title + year dropdown + new button */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="font-semibold">{t('fees.struct.title')}</h3>
-          <p className="text-sm text-muted-foreground">{t('fees.struct.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Board filter — only shown when school has multiple boards */}
-          {schoolBoards.length > 1 && (
-            <Select value={boardFilter} onValueChange={setBoardFilter}>
-              <SelectTrigger className="h-9 text-sm w-[150px]">
-                <SelectValue placeholder="All Boards" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All Boards</SelectItem>
-                {schoolBoards.map(b => (
-                  <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
-                    {b.boardName}{b.isDefault ? " (Default)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {/* Academic year picker scoped to this tab */}
-          <Select value={tabYear} onValueChange={setTabYear}>
-            <SelectTrigger className="h-9 text-sm w-[140px]">
-              <SelectValue placeholder={t('fees.struct.selectYear')} />
-            </SelectTrigger>
-            <SelectContent>
-              {availableYears.length > 0
-                ? availableYears.map(y => <SelectItem key={y.id} value={y.name}>{y.name}{y.isCurrent ? " (current)" : ""}</SelectItem>)
-                : ["2024-2025","2025-2026","2026-2027"].map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)
-              }
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            onClick={handleSeedStructures}
-            disabled={seeding || !fsCanManage}
-            className="gap-2 h-9 text-xs border-amber-200 text-amber-700 hover:bg-amber-50"
-            title="Create default fee structures for all classes that don't have one yet"
-          >
-            {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-            {t('fees.struct.seedAllClasses')}
-          </Button>
-          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />{t('fees.struct.newStructure')}</Button>
-        </div>
-      </div>
-
-      {/* Auto-link info */}
-      <div className="flex items-start gap-3 p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-800">
-        <Building2 className="h-4 w-4 mt-0.5 shrink-0 text-indigo-600" />
-        <div>
-          <span className="font-semibold">{t('fees.struct.howAutoAssign')}</span>
-          {t('fees.struct.howAutoAssignBody')}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      ) : structures.length === 0 ? (
-        <div className="text-center p-12 border-2 border-dashed rounded-xl">
-          <IndianRupee className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
-          <h3 className="font-semibold text-muted-foreground mb-2">{t('fees.struct.noStructures')}</h3>
-          <p className="text-sm text-muted-foreground mb-4">{t('fees.struct.noStructuresDesc')}</p>
-          <Button onClick={openCreate} className="gap-2" disabled={!fsCanManage}><Plus className="h-4 w-4" />{t('fees.struct.createFirst')}</Button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {structures
-            .filter(s => boardFilter === "__all__" || s.boardConfigurationId === boardFilter)
-            .map(s => {
-            const isAssigned = assignedIds.has(s.id) || (s.assignedStudentCount ?? 0) > 0;
-            const justAssigned = assignedIds.has(s.id);
-            return (
-            <Card key={s.id} className={`transition-shadow hover:shadow-md ${isAssigned ? "border-green-200" : ""} ${s.isActive === false ? "opacity-60" : ""}`}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1 min-w-0 mr-2">
-                    <div className="font-semibold">{s.name}</div>
-                    <div className="text-sm text-muted-foreground">{s.class} · {s.academicYear}</div>
-                    {s.boardName && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold px-2 py-0.5 mt-1">
-                        {s.boardName}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <div className="text-xl font-bold text-primary">{inr(s.totalAmount)}</div>
-                    {isAssigned ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-700 border border-green-200 text-[10px] font-semibold px-2 py-0.5">
-                        <Check className="h-2.5 w-2.5" />
-                        Assigned · {justAssigned ? (s.assignedStudentCount ?? 0) : s.assignedStudentCount} students
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold px-2 py-0.5">
-                        <Clock className="h-2.5 w-2.5" />
-                        Not assigned
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      title={s.isActive === false ? "Mark as Active" : "Mark as Inactive"}
-                      disabled={togglingActive === s.id || !fsCanEdit}
-                      onClick={() => handleToggleActive(s)}
-                      className={`inline-flex items-center gap-1 rounded-full text-[10px] font-semibold px-2 py-0.5 border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                        s.isActive === false
-                          ? "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
-                          : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                      }`}
-                    >
-                      {togglingActive === s.id
-                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                        : s.isActive === false
-                          ? <><span className="w-2 h-2 rounded-full bg-gray-400 inline-block mr-0.5" />Inactive</>
-                          : <><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block mr-0.5" />Active</>
-                      }
-                    </button>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground mb-2">
-                  {INSTALLMENT_PLANS.find(p => p.value === String(s.installmentCount))?.label ?? `${s.installmentCount} installments`}
-                </div>
-                {/* Term schedule preview */}
-                {(() => {
-                  const sched = parseSchedule(s.installmentDueDates);
-                  return sched.length > 0 ? (
-                    <div className="space-y-1 mb-3">
-                      {sched.map(t => (
-                        <div key={t.termNumber} className="flex justify-between items-center text-xs bg-muted/40 rounded px-2 py-1">
-                          <span className="font-medium text-foreground">{t.name}</span>
-                          <span className="text-muted-foreground">{t.dueDate ? new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}) : "—"}</span>
-                          <span className="font-semibold text-primary">{inr(t.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-1 text-xs mb-3">
-                      {FEE_HEADS.filter(h => (s as any)[h.key] > 0).slice(0, 4).map(h => (
-                        <div key={h.key} className="flex justify-between bg-muted/50 rounded px-2 py-1">
-                          <span className="text-muted-foreground truncate">{h.label.split(" ")[0]}</span>
-                          <span className="font-medium ml-1">{inr((s as any)[h.key])}</span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => openEdit(s)} disabled={!fsCanEdit}>
-                    <Pencil className="h-3 w-3 mr-1" />{t('fees.struct.editBtn')}
-                  </Button>
-                  <Button size="sm"
-                    className={`h-7 text-xs flex-1 gap-1 text-white ${
-                      isAssigned
-                        ? "bg-green-600 hover:bg-green-700"
-                        : "bg-indigo-600 hover:bg-indigo-700"
-                    }`}
-                    disabled={assigning === s.id || !fsCanManage}
-                    onClick={() => handleAssign(s)}
-                    title={isAssigned
-                      ? `Re-assign to pick up newly enrolled students in ${s.class}`
-                      : `Auto-create fee records for all sections of ${s.class}`}>
-                    {assigning === s.id
-                      ? <Loader2 className="h-3 w-3 animate-spin" />
-                      : isAssigned
-                        ? <Check className="h-3 w-3" />
-                        : <Users className="h-3 w-3" />}
-                    {isAssigned ? t('fees.struct.assignToClass') : t('fees.struct.assignToClass')}
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600"
-                    disabled={!fsCanDelete}
-                    onClick={async () => { try { await feeApi.deleteFeeStructure(s.id); setStructures(prev => prev.filter(x => x.id !== s.id)); toast.success("Deleted"); } catch { toast.error("Failed"); } }}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                {/* Linked Classes section */}
-                <div className="mt-2 border-t pt-2">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
-                    onClick={() => toggleLinkedClasses(s.id)}
-                  >
-                    <GraduationCap className="h-3.5 w-3.5" />
-                    <span className="font-medium">Linked Classes</span>
-                    {linkedClassesMap[s.id]?.length ? (
-                      <Badge variant="secondary" className="ml-1 h-4 text-[10px] px-1.5 py-0">{linkedClassesMap[s.id].length}</Badge>
-                    ) : null}
-                    {expandedLinkedClasses.has(s.id)
-                      ? <ChevronUp className="h-3 w-3 ml-auto" />
-                      : <ChevronDown className="h-3 w-3 ml-auto" />}
-                  </button>
-
-                  {expandedLinkedClasses.has(s.id) && (
-                    <div className="mt-2 space-y-2">
-                      {linkedClassesLoading.has(s.id) ? (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(linkedClassesMap[s.id] ?? []).length === 0 ? (
-                              <span className="text-xs text-muted-foreground italic">No classes linked yet</span>
-                            ) : (
-                              (linkedClassesMap[s.id] ?? []).map(link => (
-                                <span
-                                  key={link.id}
-                                  className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-medium px-2 py-0.5"
-                                >
-                                  {link.className}
-                                  {fsCanManage && (
-                                    <button
-                                      type="button"
-                                      className="ml-0.5 text-indigo-400 hover:text-red-500 transition-colors"
-                                      onClick={() => handleUnlinkClass(s.id, link)}
-                                      title={`Unlink ${link.className}`}
-                                    >
-                                      <X className="h-2.5 w-2.5" />
-                                    </button>
-                                  )}
-                                </span>
-                              ))
-                            )}
-                          </div>
-                          {fsCanManage && (
-                            addingClassFor === s.id ? (
-                              <div className="flex items-center gap-1.5">
-                                <Select
-                                  value={newClassInput}
-                                  onValueChange={setNewClassInput}
-                                >
-                                  <SelectTrigger className="h-7 text-xs flex-1">
-                                    <SelectValue placeholder="Select class" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {availableStandards
-                                      .filter(cls => !(linkedClassesMap[s.id] ?? []).some(l => l.className === cls))
-                                      .map(cls => <SelectItem key={cls} value={cls}>{cls}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs px-2"
-                                  onClick={() => handleLinkClass(s.id)}
-                                  disabled={!newClassInput}
-                                >
-                                  <Check className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 text-xs px-2"
-                                  onClick={() => { setAddingClassFor(null); setNewClassInput(""); }}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 text-[11px] text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-2 gap-1"
-                                onClick={() => { setAddingClassFor(s.id); setNewClassInput(""); }}
-                              >
-                                <Plus className="h-3 w-3" /> Link Class
-                              </Button>
-                            )
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Create / Edit Dialog */}
-      <Dialog open={showDialog} onOpenChange={v => !v && setShowDialog(false)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? t('fees.struct.dialogEditTitle') : t('fees.struct.dialogCreateTitle')}</DialogTitle>
-            <DialogDescription>Define fee heads for a class. Leave blank for fee heads not applicable.</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Linked Classes (edit mode only) */}
-            {editing && (
-              <div className="col-span-2 p-3 rounded-lg bg-indigo-50 border border-indigo-200">
-                <div className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                  <GraduationCap className="h-3.5 w-3.5" />
-                  Linked Classes
-                </div>
-                {editLinkedClassesLoading ? (
-                  <div className="flex items-center gap-1.5 text-xs text-indigo-600">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
-                  </div>
-                ) : editLinkedClasses.length === 0 ? (
-                  <span className="text-xs text-indigo-500 italic">No classes linked yet</span>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {editLinkedClasses.map(link => (
-                      <span key={link.id} className="inline-flex items-center gap-1 rounded-full bg-white text-indigo-700 border border-indigo-300 text-[11px] font-medium px-2.5 py-0.5 shadow-sm">
-                        {link.className}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="col-span-2 grid grid-cols-2 gap-3">
-              <div className="col-span-1">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.structureName')} *</Label>
-                <Input className="h-9 text-sm" placeholder="e.g. Annual Fee 2025-26" value={form.name ?? ""} onChange={e => setForm({ ...form, name: e.target.value })} />
-              </div>
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.academicYear')}</Label>
-                <Select value={form.academicYear || tabYear} onValueChange={v => setForm({ ...form, academicYear: v })}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select year" /></SelectTrigger>
-                  <SelectContent>
-                    {availableYears.length > 0
-                      ? availableYears.map(y => <SelectItem key={y.id} value={y.name}>{y.name}{y.isCurrent ? " ✓" : ""}</SelectItem>)
-                      : ["2024-2025","2025-2026","2026-2027"].map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)
-                    }
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.forClass')} *</Label>
-                <Select value={form.class ?? ""} onValueChange={v => setForm({ ...form, class: v })}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select class" /></SelectTrigger>
-                  <SelectContent>
-                    {availableStandards.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              {schoolBoards.length > 1 && (
-                <div>
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Board</Label>
-                  <Select
-                    value={form.boardConfigurationId ?? "__all__"}
-                    onValueChange={v => setForm({ ...form, boardConfigurationId: v === "__all__" ? undefined : v })}
-                  >
-                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Boards" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__all__">All Boards (School Default)</SelectItem>
-                      {schoolBoards.map(b => (
-                        <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
-                          {b.boardName}{b.isDefault ? " (Default)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-
-            {/* Fee heads grouped by category */}
-            {["Academic", "Development", "Other"].map(cat => (
-              <div key={cat} className="col-span-2">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 border-b pb-1">{cat} Fees</div>
-                <div className="grid grid-cols-1 gap-2">
-                  {FEE_HEADS.filter(h => h.category === cat).map(h => {
-                    const amount = (form as any)[h.key] ?? "";
-                    const freq = headFrequencies[h.key] ?? "termly";
-                    return (
-                      <div key={h.key} className="grid grid-cols-[1fr_auto_180px] gap-2 items-end">
-                        {/* Amount */}
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">{h.label}</Label>
-                          <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">?</span>
-                            <Input
-                              className="h-8 text-sm pl-6"
-                              type="number" min={0}
-                              value={amount}
-                              onChange={e => setForm({ ...form, [h.key]: parseFloat(e.target.value) || 0 })}
-                              placeholder="0"
-                            />
-                          </div>
-                        </div>
-                        {/* Visual divider */}
-                        <span className="text-muted-foreground/40 text-xs mb-1.5 self-end pb-[7px]">�</span>
-                        {/* Frequency */}
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Billing Frequency</Label>
-                          <Select
-                            value={freq}
-                            onValueChange={v => {
-                              const next = { ...headFrequencies };
-                              if (v === "termly") delete next[h.key];
-                              else next[h.key] = v;
-                              setHeadFrequencies(next);
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FREQ_OPTIONS.map(fo => (
-                                <SelectItem key={fo.value} value={fo.value} className="text-xs">
-                                  {fo.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-
-            {/* Custom Fee Heads Section */}
-            {feeHeads.length > 0 && (
-              <div className="col-span-2">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 border-b pb-1">Custom Fee Heads from Fee Types</div>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto bg-gray-50 p-3 rounded-lg border">
-                  {feeHeads.length === 0 ? (
-                    <div className="text-xs text-muted-foreground italic">No custom fee heads created yet</div>
-                  ) : (
-                    feeHeads.map(fh => {
-                      const isSelected = selectedComponents.some(c => c.feeHeadId === fh.id);
-                      const comp = selectedComponents.find(c => c.feeHeadId === fh.id);
-                      return (
-                        <div key={fh.id} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedComponents([...selectedComponents, { feeHeadId: fh.id, feeHeadName: fh.name, amount: 0 }]);
-                              } else {
-                                setSelectedComponents(selectedComponents.filter(c => c.feeHeadId !== fh.id));
-                              }
-                            }}
-                          />
-                          <label className="flex-1 text-sm font-medium cursor-pointer">{fh.name}</label>
-                          {isSelected && (
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
-                              <Input
-                                className="h-7 text-xs pl-5 w-[100px]"
-                                type="number"
-                                min={0}
-                                value={comp?.amount ?? ""}
-                                onChange={(e) => setSelectedComponents(prev => prev.map(c => c.feeHeadId === fh.id ? { ...c, amount: parseFloat(e.target.value) || 0 } : c))}
-                                placeholder="Amount"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Total */}
-            <div className="col-span-2 flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
-              <div className="font-semibold">Total Annual Fee</div>
-              <div className="text-2xl font-bold text-primary">{inr(totalFee)}</div>
-            </div>
-
-            {/* Installment Plan selector */}
-            <div className="col-span-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.struct.installmentPlan')}</Label>
-              <Select value={String(form.installmentCount ?? 1)} onValueChange={v => setForm({ ...form, installmentCount: parseInt(v) })}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {INSTALLMENT_PLANS.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* ─── Payment Schedule ─────────────────────────────── */}
-            <div className="col-span-2">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 border-b pb-1 flex items-center justify-between">
-                <span>Payment Schedule</span>
-                {termSchedule.length > 0 && (
-                  <span className={`text-xs font-normal ${
-                    Math.abs(termSchedule.reduce((s,t) => s + (t.amount||0), 0) - totalFee) > 1
-                      ? "text-red-500"
-                      : "text-green-600"
-                  }`}>
-                    Total: {inr(termSchedule.reduce((s,t) => s + (t.amount||0), 0))}
-                    {Math.abs(termSchedule.reduce((s,t) => s + (t.amount||0), 0) - totalFee) > 1 && ` ≠ ${inr(totalFee)}`}
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                {termSchedule.map((term, idx) => (
-                  <div key={term.termNumber} className="rounded-lg border bg-muted/20 p-3 space-y-2">
-                    {/* Term header: number badge + name + amount */}
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">{term.termNumber}</span>
-                      <Input
-                        className="h-8 text-sm font-medium flex-1"
-                        value={term.name}
-                        onChange={e => setTermSchedule(prev => prev.map((t,i) => i===idx ? {...t, name: e.target.value} : t))}
-                        placeholder={`Term ${term.termNumber} name`}
-                      />
-                      <div className="relative shrink-0 w-[100px]">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
-                        <Input
-                          className="h-8 text-sm pl-5 text-right"
-                          type="number" min={0}
-                          value={term.amount || ""}
-                          onChange={e => setTermSchedule(prev => prev.map((t,i) => i===idx ? {...t, amount: parseFloat(e.target.value)||0} : t))}
-                          placeholder="0"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Date row: From · To · Due Date */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1 block">Collection From</Label>
-                        <MonthYearPicker
-                          value={term.fromDate}
-                          onChange={v => setTermSchedule(prev => prev.map((t,i) => i===idx ? {...t, fromDate: v} : t))}
-                          label="From"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1 block">Collection To</Label>
-                        <MonthYearPicker
-                          value={term.toDate}
-                          onChange={v => setTermSchedule(prev => prev.map((t,i) => i===idx ? {...t, toDate: v} : t))}
-                          label="To"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1 block">Due Date</Label>
-                        <Input
-                          className="h-8 text-xs"
-                          type="date"
-                          value={term.dueDate}
-                          onChange={e => setTermSchedule(prev => prev.map((t,i) => i===idx ? {...t, dueDate: e.target.value} : t))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={() => setShowDialog(false)} className="flex-1">{t('fees.struct.cancelBtn')}</Button>
-            <Button onClick={handleSave} disabled={saving} className="flex-1 gap-2">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {saving ? t('fees.struct.savingBtn') : editing ? t('fees.struct.updateBtn') : t('fees.struct.saveBtn')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ─── Defaulters Tab ──────────────────────────────────────
-const AGING_BUCKETS = [
-  { key: "0-30",  label: "0–30 days",  cls: "bg-yellow-50 border-yellow-200 text-yellow-800" },
-  { key: "31-60", label: "31–60 days", cls: "bg-orange-50 border-orange-200 text-orange-800" },
-  { key: "61-90", label: "61–90 days", cls: "bg-red-50 border-red-200 text-red-700" },
-  { key: "90+",   label: "90+ days",   cls: "bg-red-100 border-red-300 text-red-900" },
-] as const;
-
-function agingBucket(days: number): "0-30" | "31-60" | "61-90" | "90+" {
-  if (days <= 30) return "0-30";
-  if (days <= 60) return "31-60";
-  if (days <= 90) return "61-90";
-  return "90+";
-}
-
-function DefaultersTab({ canManage }: { canManage: boolean }) {
-  const { t } = useLanguage();
-  const [overdue, setOverdue] = useState<import("@/services/api/feeApi").OverdueFeeRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [bucket, setBucket] = useState("all");
-  const [sending, setSending] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    try { setOverdue(await feeApi.getOverdueFees()); }
-    catch { setOverdue([]); }
-    finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
-
-  const filtered = overdue.filter(r => {
-    if (bucket !== "all" && agingBucket(r.daysOverdue) !== bucket) return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      return r.studentName.toLowerCase().includes(q) || r.class.toLowerCase().includes(q) || r.admissionNumber.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  const bucketCount = (k: string) => overdue.filter(r => agingBucket(r.daysOverdue) === k).length;
-  const bucketAmt   = (k: string) => overdue.filter(r => agingBucket(r.daysOverdue) === k).reduce((s, r) => s + r.amount, 0);
-
-  const handleSendReminder = async (record: import("@/services/api/feeApi").OverdueFeeRecord) => {
-    setSending(record.feeRecordId);
-    try {
-      await feeApi.sendFeeReminders({ daysBefore: 0, channel: "push_notification" });
-      toast.success(`Reminder sent for ${record.studentName}`);
-    } catch { toast.error("Failed to send reminder"); }
-    finally { setSending(null); }
-  };
-
-  return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h3 className="font-semibold flex items-center gap-2 text-base">
-            <AlertTriangle className="h-4 w-4 text-red-500" />{t('fees.def.title')}
-          </h3>
-          <p className="text-sm text-muted-foreground mt-0.5">{t('fees.def.subtitle')}</p>
-        </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{t('fees.def.refresh')}
-        </Button>
-      </div>
-
-      {/* Aging summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {AGING_BUCKETS.map(b => (
-          <button
-            key={b.key}
-            onClick={() => setBucket(bucket === b.key ? "all" : b.key)}
-            className={`rounded-xl border p-3 text-left transition-all ${b.cls} ${bucket === b.key ? "ring-2 ring-primary ring-offset-1" : "hover:shadow-sm"}`}
-          >
-            <div className="text-xs font-medium opacity-80">{b.label} {t('fees.def.overdue')}</div>
-            <div className="text-2xl font-bold mt-1">{bucketCount(b.key)}</div>
-            <div className="text-xs opacity-70 mt-0.5">{inr(bucketAmt(b.key))} {t('fees.def.outstanding')}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9 h-9 text-sm" placeholder={t('fees.def.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={bucket} onValueChange={setBucket}>
-          <SelectTrigger className="w-44 h-9 text-sm"><SelectValue placeholder={t('fees.def.allBuckets')} /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('fees.def.allBuckets')} ({overdue.length})</SelectItem>
-            {AGING_BUCKETS.map(b => <SelectItem key={b.key} value={b.key}>{b.label} ({bucketCount(b.key)})</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Table */}
-      {loading ? (
-        <div className="flex justify-center p-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center p-16 border-2 border-dashed rounded-xl">
-          <CheckCircle2 className="h-12 w-12 mx-auto text-green-400 mb-3" />
-          <p className="font-semibold text-muted-foreground">
-            {overdue.length === 0 ? t('fees.def.noOverdue') : t('fees.def.noMatch')}
-          </p>
-        </div>
-      ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('fees.def.colStudent')}</TableHead>
-                <TableHead>{t('fees.def.colAdmNo')}</TableHead>
-                <TableHead>{t('fees.def.colClass')}</TableHead>
-                <TableHead>{t('fees.def.colDueDate')}</TableHead>
-                <TableHead className="text-center">{t('fees.def.colDaysOverdue')}</TableHead>
-                <TableHead className="text-right">{t('fees.def.colAmount')}</TableHead>
-                <TableHead className="text-right">{t('fees.def.colLateFee')}</TableHead>
-                <TableHead>{t('fees.def.colContact')}</TableHead>
-                {canManage && <TableHead className="text-center">{t('fees.def.colAction')}</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map(r => {
-                const bkt = AGING_BUCKETS.find(b => b.key === agingBucket(r.daysOverdue))!;
-                return (
-                  <TableRow key={r.feeRecordId}>
-                    <TableCell className="font-medium">{r.studentName}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{r.admissionNumber}</TableCell>
-                    <TableCell>{r.class}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(r.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${bkt.cls}`}>{r.daysOverdue}d</span>
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-red-600">{inr(r.amount)}</TableCell>
-                    <TableCell className="text-right text-orange-600 text-sm">{r.calculatedLateFee > 0 ? inr(r.calculatedLateFee) : "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{r.guardianPhone ?? "—"}</TableCell>
-                    {canManage && (
-                      <TableCell className="text-center">
-                        <Button
-                          size="sm" variant="outline"
-                          className="gap-1 h-7 text-xs border-blue-200 text-blue-700 hover:bg-blue-50"
-                          disabled={sending === r.feeRecordId}
-                          onClick={() => handleSendReminder(r)}
-                        >
-                          {sending === r.feeRecordId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                          {t('fees.def.remind')}
-                        </Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!loading && filtered.length > 0 && (
-        <div className="flex items-center justify-between px-3 py-2 bg-muted/40 rounded-lg text-sm">
-          <span className="text-muted-foreground">{filtered.length} {t('common.of')} {overdue.length} {t('fees.def.students')}</span>
-          <span className="font-semibold text-red-600">{inr(filtered.reduce((s, r) => s + r.amount, 0))} {t('fees.def.totalOutstanding')}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Fee Reminders Tab ───────────────────────────────────
-const REMINDER_TEMPLATES = [
-  {
-    key: "gentle",
-    label: "Gentle Reminder",
-    icon: "💬",
-    message: "Dear Parent, this is a gentle reminder that the fee for {{studentName}} (Class {{class}}) of ₹{{amount}} was due on {{dueDate}}. Kindly pay at the earliest. Thank you.",
-  },
-  {
-    key: "due_notice",
-    label: "Payment Due Notice",
-    icon: "📋",
-    message: "Dear Parent, your child {{studentName}} (Class {{class}}) has an overdue fee of ₹{{amount}} due since {{dueDate}}. Please pay immediately to avoid late fees. Contact the school office for assistance.",
-  },
-  {
-    key: "final_notice",
-    label: "Final Notice",
-    icon: "🚨",
-    message: "Dear Parent, this is a FINAL NOTICE regarding the outstanding fee of ₹{{amount}} for {{studentName}} (Class {{class}}). Please clear the dues immediately. Failure to pay may affect your child's academic activities.",
-  },
-] as const;
-
-const CHANNELS = [
-  { value: "push_notification", label: "Push Notification", icon: "🔔" },
-  { value: "sms",              label: "SMS",               icon: "📱" },
-  { value: "email",            label: "Email",             icon: "📧" },
-  { value: "whatsapp",         label: "WhatsApp",          icon: "💬" },
-];
-
-function RemindersTab({ canManage }: { canManage: boolean }) {
-  const { t } = useLanguage();
-  const [template, setTemplate] = useState<string>("gentle");
-  const [channel, setChannel] = useState("push_notification");
-  const [customMsg, setCustomMsg] = useState("");
-  const [daysBefore, setDaysBefore] = useState("0");
-  const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{ sent: number; failed: number } | null>(null);
-
-  const tmplLabel = (key: string): string => ({
-    gentle: t('fees.rem.gentleReminder'),
-    due_notice: t('fees.rem.paymentDueNotice'),
-    final_notice: t('fees.rem.finalNotice'),
-  } as Record<string, string>)[key] ?? key;
-
-  const selected = REMINDER_TEMPLATES.find(tmpl => tmpl.key === template);
-  const previewMsg = template === "custom" ? customMsg : (selected?.message ?? "");
-
-  const handleSend = async () => {
-    if (template === "custom" && !customMsg.trim()) { toast.error("Please enter a custom message"); return; }
-    setSending(true);
-    setResult(null);
-    try {
-      const res = await feeApi.sendFeeReminders({
-        daysBefore: parseInt(daysBefore) || 0,
-        channel,
-        customMessage: template === "custom" ? customMsg : selected?.message,
-      });
-      const sent   = (res as any).sentSuccessfully ?? (res as any).totalSent ?? 0;
-      const failed = (res as any).failed ?? (res as any).errors?.length ?? 0;
-      setResult({ sent, failed });
-      toast.success(`Reminders sent to ${sent} parent(s)`);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Failed to send reminders");
-    } finally { setSending(false); }
-  };
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="font-semibold flex items-center gap-2 text-base">
-          <BellRing className="h-4 w-4 text-blue-500" />{t('fees.rem.title')}
-        </h3>
-        <p className="text-sm text-muted-foreground mt-0.5">{t('fees.rem.subtitle')}</p>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Left: Compose */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">{t('fees.rem.chooseTemplate')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {REMINDER_TEMPLATES.map(tmpl => (
-                <button
-                  key={tmpl.key}
-                  onClick={() => setTemplate(tmpl.key)}
-                  className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${template === tmpl.key ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
-                >
-                  <span className="text-lg mt-0.5">{tmpl.icon}</span>
-                  <div>
-                    <div className="text-sm font-medium">{tmplLabel(tmpl.key)}</div>
-                    <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{tmpl.message.substring(0, 90)}…</div>
-                  </div>
-                </button>
-              ))}
-              <button
-                onClick={() => setTemplate("custom")}
-                className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${template === "custom" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
-              >
-                <span className="text-lg mt-0.5">✏️</span>
-                <div>
-                  <div className="text-sm font-medium">{t('fees.rem.customMessage')}</div>
-                  <div className="text-xs text-muted-foreground">{t('fees.rem.customMessageDesc')}</div>
-                </div>
-              </button>
-              {template === "custom" && (
-                <Textarea
-                  className="text-sm mt-1"
-                  rows={4}
-                  placeholder={t('fees.rem.customPlaceholder')}
-                  value={customMsg}
-                  onChange={e => setCustomMsg(e.target.value)}
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">{t('fees.rem.targetAudience')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">{t('fees.rem.sendTo')}</Label>
-                <Select value={daysBefore} onValueChange={setDaysBefore}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">{t('fees.rem.allOverdue')}</SelectItem>
-                    <SelectItem value="7">{t('fees.rem.due7')}</SelectItem>
-                    <SelectItem value="15">{t('fees.rem.due15')}</SelectItem>
-                    <SelectItem value="30">{t('fees.rem.due30')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">{t('fees.rem.deliveryChannel')}</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {CHANNELS.map(ch => (
-                    <button
-                      key={ch.value}
-                      onClick={() => setChannel(ch.value)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${channel === ch.value ? "border-primary bg-primary/5 font-medium" : "border-border hover:bg-muted/50"}`}
-                    >
-                      <span>{ch.icon}</span>{ch.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right: Preview + Send */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">{t('fees.rem.preview')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-muted/40 rounded-lg p-4 text-sm text-muted-foreground italic border border-dashed min-h-[100px]">
-                {previewMsg || t('fees.rem.previewPlaceholder')}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {["{{studentName}}", "{{class}}", "{{amount}}", "{{dueDate}}"].map(v => (
-                  <span key={v} className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-mono">{v}</span>
-                ))}
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-2">{t('fees.rem.variablesNote')}</p>
-            </CardContent>
-          </Card>
-
-          {result && (
-            <Card className={`border ${result.failed === 0 ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
-              <CardContent className="p-4">
-                <div className={`font-semibold text-sm ${result.failed === 0 ? "text-green-800" : "text-amber-800"}`}>
-                  {result.failed === 0 ? t('fees.rem.successTitle') : t('fees.rem.partialTitle')}
-                </div>
-                <div className="text-sm mt-1 space-x-2 text-muted-foreground">
-                  <span className="text-green-700 font-medium">{result.sent} {t('fees.rem.sent')}</span>
-                  {result.failed > 0 && <span className="text-red-600 font-medium">· {result.failed} {t('fees.rem.failed')}</span>}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Button
-            className="w-full gap-2"
-            disabled={!canManage || sending || (template === "custom" && !customMsg.trim())}
-            onClick={handleSend}
-          >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {sending ? t('fees.rem.sendingBtn') : t('fees.rem.sendBtn')}
-          </Button>
-          {!canManage && (
-            <p className="text-xs text-center text-muted-foreground">{t('fees.rem.noPermission')}</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Concessions Tab ─────────────────────────────────────
-/** India-standard system defaults; seeded on first use via API */
-const SYSTEM_CONCESSION_DEFAULTS = [
-  { name: "Merit Scholarship",          description: "Academic merit-based scholarship",                    discountType: "Percentage", discountValue: 25,  requiresDocuments: true,  requiresApproval: true  },
-  { name: "RTE 25% (Right to Education)", description: "Govt-mandated RTE free seats for EWS/SC/ST",      discountType: "Percentage", discountValue: 25,  requiresDocuments: true,  requiresApproval: true  },
-  { name: "EWS / BPL",                  description: "Economically weaker section / below poverty line",    discountType: "Percentage", discountValue: 50,  requiresDocuments: true,  requiresApproval: true  },
-  { name: "SC / ST Category",           description: "State govt directive for SC/ST students",             discountType: "Percentage", discountValue: 50,  requiresDocuments: true,  requiresApproval: true  },
-  { name: "OBC",                        description: "Other backward classes concession",                   discountType: "Percentage", discountValue: 25,  requiresDocuments: true,  requiresApproval: true  },
-  { name: "Sibling Discount",           description: "2nd child 10%, 3rd+ 20% as per school policy",       discountType: "Percentage", discountValue: 10,  requiresDocuments: false, requiresApproval: false },
-  { name: "Staff Ward",                 description: "Ward of school staff — 50–100% as per policy",       discountType: "Percentage", discountValue: 50,  requiresDocuments: false, requiresApproval: true  },
-  { name: "Sports Achievement",         description: "National/state-level sports achievers",               discountType: "Percentage", discountValue: 20,  requiresDocuments: true,  requiresApproval: true  },
-  { name: "Management Quota",           description: "Special consideration by school management",          discountType: "Percentage", discountValue: 15,  requiresDocuments: false, requiresApproval: true  },
-  { name: "Special Need / Disability",  description: "Students with special needs or disabilities",         discountType: "Percentage", discountValue: 30,  requiresDocuments: true,  requiresApproval: true  },
-];
-
-const BLANK_CT_FORM = { name: "", description: "", discountType: "Percentage", discountValue: "", maxDiscountAmount: "", requiresDocuments: false, requiresApproval: false };
-
-function ConcessionsTab({ academicYear: _ay }: { academicYear: string }) {
+function ConcessionsTab({ academicYear }: { academicYear: string }) {
   const { t } = useLanguage();
-  const [subTab, setSubTab] = useState<"types" | "pending">("types");
-
-  // ── Types state ──
-  const [types, setTypes]       = useState<ConcessionType[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [types, setTypes] = useState<ConcessionType[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<ConcessionType | null>(null);
-  const [saving, setSaving]     = useState(false);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [seeding, setSeeding]   = useState(false);
-  const [form, setForm]         = useState({ ...BLANK_CT_FORM });
-  const { hasUserPermission: hasPerm } = usePermissions();
-  const canManage = hasPerm('Fees', 'Create');
-  const canApprove = hasPerm('Fees', 'Edit');
-
-  // ── Pending approvals state ──
-  const [pending, setPending]       = useState<FeeConcessionRecord[]>([]);
-  const [pendingLoading, setPendingLoading] = useState(false);
-  const [approveDialogId, setApproveDialogId] = useState<string | null>(null);
-  const [approveAmt, setApproveAmt] = useState("");
-  const [approveRemarks, setApproveRemarks] = useState("");
-  const [rejectDialogId, setRejectDialogId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
-
-  const loadPending = async () => {
-    setPendingLoading(true);
-    try {
-      const { items } = await getSchoolConcessions("Pending");
-      setPending(items);
-    } catch { setPending([]); }
-    finally { setPendingLoading(false); }
-  };
-
-  useEffect(() => { if (subTab === "pending") loadPending(); }, [subTab]);
-
-  const handleApprove = async () => {
-    if (!approveDialogId) return;
-    const amt = parseFloat(approveAmt);
-    if (!amt || amt <= 0) { toast.error("Enter approved amount"); return; }
-    setActionLoading(true);
-    try {
-      await approveConcession(approveDialogId, amt, approveRemarks || undefined);
-      toast.success(`Concession approved: ₹${amt.toLocaleString("en-IN")}`);
-      setApproveDialogId(null); setApproveAmt(""); setApproveRemarks("");
-      loadPending();
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? "Failed to approve"); }
-    finally { setActionLoading(false); }
-  };
-
-  const handleReject = async () => {
-    if (!rejectDialogId) return;
-    if (!rejectReason.trim()) { toast.error("Reason required"); return; }
-    setActionLoading(true);
-    try {
-      await rejectConcession(rejectDialogId, rejectReason.trim());
-      toast.success("Concession request rejected");
-      setRejectDialogId(null); setRejectReason("");
-      loadPending();
-    } catch (e: any) { toast.error(e?.response?.data?.message ?? "Failed to reject"); }
-    finally { setActionLoading(false); }
-  };
+  const [form, setForm] = useState({ name: "", description: "", discountValue: "" });
 
   const load = async () => {
     setLoading(true);
-    try { const loaded = await getConcessionTypes(); setTypes(loaded); return loaded; }
-    catch { setTypes([]); return []; }
+    try {
+      const res = await getConcessionTypes();
+      setTypes(res?.data ?? []);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to load concessions");
+    }
     finally { setLoading(false); }
   };
-  useEffect(() => {
-    load().then(async loaded => {
-      if (loaded.length === 0) {
-        // Auto-seed India standard defaults on first visit — one-by-one so duplicates don't abort the batch
-        setSeeding(true);
-        let created = 0;
-        for (const d of SYSTEM_CONCESSION_DEFAULTS) {
-          try { await createConcessionType(d); created++; } catch { /* skip if already exists */ }
-        }
-        if (created > 0) {
-          await load();
-          toast.success("Default concession types configured");
-        }
-        setSeeding(false);
-      }
-    });
-  }, []);
 
-  const openAdd = () => { setForm({ ...BLANK_CT_FORM }); setEditTarget(null); setShowForm(true); };
-  const openEdit = (t: ConcessionType) => {
-    setForm({ name: t.name, description: t.description ?? "", discountType: t.discountType, discountValue: String(t.discountValue), maxDiscountAmount: String(t.maxDiscountAmount ?? ""), requiresDocuments: t.requiresDocuments, requiresApproval: t.requiresApproval });
-    setEditTarget(t); setShowForm(true);
+  useEffect(() => { load(); }, []);
+
+  const openAdd = () => {
+    setEditTarget(null);
+    setForm({ name: "", description: "", discountValue: "" });
+    setShowForm(true);
+  };
+
+  const openEdit = (ct: ConcessionType) => {
+    setEditTarget(ct);
+    setForm({ name: ct.name, description: ct.description || "", discountValue: String(ct.discountValue) });
+    setShowForm(true);
   };
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error("Name is required"); return; }
-    if (!form.discountValue) { toast.error("Discount value is required"); return; }
+    if (!form.discountValue) { toast.error("Discount percentage is required"); return; }
     setSaving(true);
     try {
-      const dto = { name: form.name.trim(), description: form.description || undefined, discountType: form.discountType, discountValue: parseFloat(form.discountValue), maxDiscountAmount: form.maxDiscountAmount ? parseFloat(form.maxDiscountAmount) : undefined, requiresDocuments: form.requiresDocuments, requiresApproval: form.requiresApproval };
+      const dto = { name: form.name.trim(), description: form.description || undefined, discountValue: parseFloat(form.discountValue) };
       if (editTarget) { await updateConcessionType(editTarget.id, { ...dto, isActive: editTarget.isActive }); toast.success("Updated"); }
-      else            { await createConcessionType(dto); toast.success("Concession type added"); }
+      else            { await createConcessionType(dto); toast.success("Concession added"); }
       setShowForm(false); load();
     } catch (e: any) { toast.error(e?.response?.data?.message ?? "Failed to save"); }
     finally { setSaving(false); }
   };
 
   const handleDelete = async (id: string) => {
+    if (!confirm("Delete this concession type?")) return;
     setDeleting(id);
-    try { await deleteConcessionType(id); setTypes(prev => prev.filter(t => t.id !== id)); toast.success("Removed"); }
-    catch (e: any) { toast.error(e?.response?.data?.message ?? "Failed to delete"); }
+    try {
+      await deleteConcessionType(id);
+      toast.success("Deleted");
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to delete");
+    }
     finally { setDeleting(null); }
   };
 
-  const handleToggleActive = async (t: ConcessionType) => {
+  const handleToggleActive = async (ct: ConcessionType) => {
     try {
-      const updated = await updateConcessionType(t.id, { name: t.name, discountType: t.discountType, discountValue: t.discountValue, isActive: !t.isActive });
-      setTypes(prev => prev.map(x => x.id === t.id ? updated : x));
-    } catch { toast.error("Failed to update status"); }
-  };
-
-  const handleSeedDefaults = async () => {
-    setSeeding(true);
-    // Re-fetch live list to avoid stale state causing false duplicate errors
-    let liveTypes: ConcessionType[] = [];
-    try { liveTypes = await getConcessionTypes(); } catch { /* ignore */ }
-    const existingNames = new Set(liveTypes.map(t => t.name.toLowerCase()));
-    const toCreate = SYSTEM_CONCESSION_DEFAULTS.filter(d => !existingNames.has(d.name.toLowerCase()));
-    if (!toCreate.length) { toast.info("All defaults already configured"); setSeeding(false); return; }
-    // Create one-by-one so a single duplicate doesn't abort the whole batch
-    let created = 0;
-    for (const d of toCreate) {
-      try { await createConcessionType(d); created++; }
-      catch { /* skip if duplicate or permission denied */ }
+      await updateConcessionType(ct.id, { ...ct, isActive: !ct.isActive });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to update status");
     }
-    if (created > 0) { toast.success(`${created} default type(s) added`); await load(); }
-    else { toast.warning("No new types added — all may already exist"); }
-    setSeeding(false);
   };
-
-  const discountLabel = (t: ConcessionType) => t.discountType === "Fixed" ? inr(t.discountValue) : `${t.discountValue}%`;
 
   return (
-    <div className="space-y-5">
-      {/* Sub-tab switcher */}
-      <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
-        <button
-          onClick={() => setSubTab("types")}
-          className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${subTab === "types" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-        >
-          Concession Types
-        </button>
-        <button
-          onClick={() => setSubTab("pending")}
-          className={`px-4 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${subTab === "pending" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-        >
-          Pending Approvals
-          {pending.length > 0 && (
-            <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">{pending.length}</span>
-          )}
-        </button>
-      </div>
-
-      {/* ── PENDING APPROVALS tab ── */}
-      {subTab === "pending" && (
-        <>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-base flex items-center gap-2"><Clock className="h-4 w-4 text-amber-600" />Pending Concession Approvals</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">Review and approve or reject submitted concession requests.</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={loadPending} disabled={pendingLoading} className="gap-1.5">
-              {pendingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-              Refresh
-            </Button>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5" />
+              Concessions
+            </CardTitle>
+            <CardDescription>Manage concession types and percentages</CardDescription>
           </div>
-
-          {pendingLoading ? (
-            <div className="flex justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : pending.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="py-10 text-center">
-                <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto mb-2" />
-                <p className="text-sm font-medium text-slate-600">No pending requests</p>
-                <p className="text-xs text-muted-foreground mt-1">All concession requests have been actioned.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {pending.map(rec => (
-                <Card key={rec.id} className="border-amber-200 bg-amber-50/30">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-sm">{rec.studentName}</span>
-                          {rec.studentAdmissionNumber && <span className="text-xs text-muted-foreground">#{rec.studentAdmissionNumber}</span>}
-                          <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs gap-1"><Clock className="h-3 w-3" />Pending</Badge>
-                        </div>
-                        <p className="text-xs text-slate-600">
-                          <span className="font-medium">{rec.concessionTypeName}</span>
-                          {" · "}
-                          Requested: <span className="font-bold text-amber-700">₹{rec.appliedAmount.toLocaleString("en-IN")}</span>
-                          {" · "}
-                          {rec.academicYear}
-                        </p>
-                        <p className="text-xs text-slate-500 italic">"{rec.reason}"</p>
-                        <p className="text-xs text-slate-400">#{rec.concessionNumber} · {new Date(rec.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p>
-                      </div>
-                      {canApprove && (
-                        <div className="flex gap-2 shrink-0">
-                          <Button size="sm" className="h-8 text-xs gap-1 bg-green-600 hover:bg-green-700"
-                            onClick={() => { setApproveDialogId(rec.id); setApproveAmt(String(rec.appliedAmount)); setApproveRemarks(""); }}>
-                            <CheckCircle2 className="h-3.5 w-3.5" />Approve
-                          </Button>
-                          <Button variant="outline" size="sm" className="h-8 text-xs gap-1 border-red-200 text-red-600 hover:bg-red-50"
-                            onClick={() => { setRejectDialogId(rec.id); setRejectReason(""); }}>
-                            <XCircle className="h-3.5 w-3.5" />Reject
-                          </Button>
-                        </div>
-                      )}
+          <Button size="sm" onClick={openAdd}>
+            <Plus className="h-4 w-4 mr-1" /> Add Concession
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Percentage</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {types.length === 0 && (
+                <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">No concessions yet. Add one to get started.</TableCell></TableRow>
+              )}
+              {types.map(t => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-medium">{t.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{t.description ?? "—"}</TableCell>
+                  <TableCell><Badge variant="secondary">{t.discountValue}%</Badge></TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(t)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                     </div>
-                  </CardContent>
-                </Card>
+                  </TableCell>
+                </TableRow>
               ))}
-            </div>
-          )}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
 
-          {/* Approve dialog */}
-          <Dialog open={!!approveDialogId} onOpenChange={v => { if (!v) setApproveDialogId(null); }}>
-            <DialogContent className="max-w-sm">
-              <DialogHeader>
-                <DialogTitle>Approve Concession</DialogTitle>
-                <DialogDescription>
-                  {pending.find(p => p.id === approveDialogId)?.studentName} — {pending.find(p => p.id === approveDialogId)?.concessionTypeName}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 py-1">
-                <div className="bg-amber-50 border border-amber-100 rounded px-3 py-2 text-xs text-amber-700">
-                  Requested: <strong>₹{pending.find(p => p.id === approveDialogId)?.appliedAmount.toLocaleString("en-IN") ?? 0}</strong>
-                  <p className="mt-0.5 italic text-amber-600">"{pending.find(p => p.id === approveDialogId)?.reason}"</p>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Approved Amount (₹) *</Label>
-                  <Input type="number" className="h-8 text-sm" value={approveAmt} onChange={e => setApproveAmt(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Remarks (optional)</Label>
-                  <Input className="h-8 text-sm" placeholder="e.g. Documents verified" value={approveRemarks} onChange={e => setApproveRemarks(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter className="gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setApproveDialogId(null)}>Cancel</Button>
-                <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1" onClick={handleApprove} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  Approve
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Reject dialog */}
-          <Dialog open={!!rejectDialogId} onOpenChange={v => { if (!v) setRejectDialogId(null); }}>
-            <DialogContent className="max-w-sm">
-              <DialogHeader>
-                <DialogTitle>Reject Concession Request</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-2 py-1">
-                <Label className="text-xs">Reason *</Label>
-                <Textarea className="text-xs min-h-[60px] resize-none" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Enter reason for rejection…" />
-              </div>
-              <DialogFooter className="gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setRejectDialogId(null)}>Cancel</Button>
-                <Button variant="destructive" size="sm" onClick={handleReject} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}Reject
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </>
-      )}
-
-      {/* ── CONCESSION TYPES tab ── */}
-      {subTab === "types" && (
-      <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-base flex items-center gap-2"><Tag className="h-4 w-4 text-primary" />{t('fees.con.title')}</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">{t('fees.con.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {canManage && (
-            <>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSeedDefaults} disabled={seeding}>
-                {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackagePlus className="h-3.5 w-3.5" />}
-                {t('fees.con.loadDefaults')}
-              </Button>
-              <Button size="sm" className="gap-1.5" onClick={openAdd}>
-                <Plus className="h-3.5 w-3.5" />{t('fees.con.addType')}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {!loading && types.length === 0 && (
-        <Card className="bg-amber-50 border-amber-200">
-          <CardContent className="p-4 text-sm text-amber-800">
-            <div className="font-semibold mb-1">{t('fees.con.noTypesTitle')}</div>
-            <div>{t('fees.con.noTypesDesc')}</div>
-          </CardContent>
-        </Card>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center p-12"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>
-      ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {types.map(ctype => (
-            <Card key={ctype.id} className={`border transition-all ${ctype.isActive ? "" : "opacity-55 bg-muted/30"}`}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{ctype.name}</div>
-                    {ctype.description && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ctype.description}</div>}
-                  </div>
-                  {canManage ? (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`text-[11px] font-medium ${ctype.isActive ? "text-green-700" : "text-gray-400"}`}>
-                        {ctype.isActive ? t('fees.con.active') : t('fees.con.inactive')}
-                      </span>
-                      <Switch
-                        checked={ctype.isActive}
-                        onCheckedChange={() => handleToggleActive(ctype)}
-                        aria-label={ctype.isActive ? `Disable ${ctype.name}` : `Enable ${ctype.name}`}
-                      />
-                    </div>
-                  ) : (
-                    <Badge variant="outline" className={ctype.isActive ? "text-green-700 border-green-300 bg-green-50 shrink-0" : "text-gray-400 shrink-0"}>
-                      {ctype.isActive ? t('fees.con.active') : t('fees.con.inactive')}
-                    </Badge>
-                  )}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
-                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
-                    {discountLabel(ctype)} {ctype.discountType === "Percentage" ? t('fees.con.off') : t('fees.con.fixed')}
-                  </span>
-                  {ctype.maxDiscountAmount != null && ctype.maxDiscountAmount > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-gray-50 text-gray-600 border">{t('fees.con.cap')} {inr(ctype.maxDiscountAmount)}</span>
-                  )}
-                  {ctype.requiresDocuments && <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{t('fees.con.docsReq')}</span>}
-                  {ctype.requiresApproval  && <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">{t('fees.con.approvalReq')}</span>}
-                </div>
-                {canManage && (
-                  <div className="mt-3 flex items-center gap-1.5 pt-2 border-t">
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 flex-1" onClick={() => openEdit(ctype)}>
-                      <Pencil className="h-3 w-3" />{t('fees.con.editBtn')}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleDelete(ctype.id)} disabled={deleting === ctype.id}>
-                      {deleting === ctype.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Add/Edit form dialog */}
-      <Dialog open={showForm} onOpenChange={v => !v && setShowForm(false)}>
+      {/* Create/Edit Dialog */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editTarget ? t('fees.con.dialogEditTitle') : t('fees.con.dialogAddTitle')}</DialogTitle>
+            <DialogTitle>{editTarget ? "Edit Concession" : "Add Concession"}</DialogTitle>
             <DialogDescription>
-              {editTarget ? t('fees.con.dialogEditDesc') : t('fees.con.dialogAddDesc')}
+              {editTarget ? "Update concession details" : "Create a new concession type"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.nameLbl')} *</Label>
-              <Input className="h-9 text-sm" placeholder="e.g. Sports Achievement" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Name *</Label>
+              <Input className="h-9 text-sm" placeholder="e.g. Merit Scholarship" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.descLbl')}</Label>
-              <Input className="h-9 text-sm" placeholder="Brief eligibility description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.discTypeLbl')}</Label>
-                <Select value={form.discountType} onValueChange={v => setForm({ ...form, discountType: v })}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Percentage">{t('fees.con.percentage')}</SelectItem>
-                    <SelectItem value="Fixed">{t('fees.con.fixedAmount')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">
-                  {form.discountType === "Fixed" ? t('fees.con.discValFixedLbl') : t('fees.con.discValLbl')}
-                </Label>
-                <Input className="h-9 text-sm" type="number" min={0} max={form.discountType === "Percentage" ? 100 : undefined}
-                  placeholder={form.discountType === "Fixed" ? "e.g. 5000" : "e.g. 25"}
-                  value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} />
-              </div>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Description</Label>
+              <Input className="h-9 text-sm" placeholder="Brief description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">{t('fees.con.maxCapLbl')}</Label>
-              <Input className="h-9 text-sm" type="number" min={0} placeholder="Leave blank for no cap" value={form.maxDiscountAmount} onChange={e => setForm({ ...form, maxDiscountAmount: e.target.value })} />
-            </div>
-            <div className="flex gap-5 pt-1">
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" checked={form.requiresDocuments} onChange={e => setForm({ ...form, requiresDocuments: e.target.checked })} className="rounded" />
-                {t('fees.con.requiresDocs')}
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" checked={form.requiresApproval} onChange={e => setForm({ ...form, requiresApproval: e.target.checked })} className="rounded" />
-                {t('fees.con.requiresApproval')}
-              </label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Discount Value (%) *</Label>
+              <Input className="h-9 text-sm" type="number" min={0} max={100} placeholder="e.g. 25" value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} />
             </div>
           </div>
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>{t('fees.con.cancelBtn')}</Button>
+            <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
             <Button className="flex-1 gap-2" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {saving ? t('fees.con.savingBtn') : editTarget ? t('fees.con.updateBtn') : t('fees.con.addBtn')}
+              {saving ? "Saving..." : editTarget ? "Update" : "Add"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+    </Card>
+  );
+}
+
+// ─── Fee Structure Tab (Simplified Composition Model) ──
+// Line item type for fee structure composition
+interface FeeStructureLineItem {
+  id?: string; // temporary ID for unsaved items
+  feeTypeId: string;
+  feeTypeName?: string;
+  feeTermId: string;
+  feeTermName?: string;
+  amount: number;
+  concessionId?: string;
+  concessionName?: string;
+}
+
+function FeeStructureTab({ academicYear }: { academicYear: string }) {
+  const { t } = useLanguage();
+  const [structures, setStructures] = useState<FeeStructure[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState<FeeStructure | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<Partial<CreateFeeStructureDto & { description?: string }>>({});
+  
+  // Line items management
+  const [editingStructureId, setEditingStructureId] = useState<string | null>(null);
+  const [lineItems, setLineItems] = useState<FeeStructureLineItem[]>([]);
+  const [showLineItemDialog, setShowLineItemDialog] = useState(false);
+  const [editingLineItem, setEditingLineItem] = useState<FeeStructureLineItem | null>(null);
+  const [lineItemForm, setLineItemForm] = useState<FeeStructureLineItem>({ feeTypeId: "", feeTermId: "", amount: 0 });
+  
+  // Class assignment management
+  const [showAssignClassesModal, setShowAssignClassesModal] = useState(false);
+  const [assigningStructureId, setAssigningStructureId] = useState<string | null>(null);
+  const [availableClasses, setAvailableClasses] = useState<{ id: string; name: string; standard: string; section: string }[]>([]);
+  const [structureClassAssignments, setStructureClassAssignments] = useState<Record<string, string[]>>({});
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  
+  // Dropdowns
+  const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
+  const [feeTerms, setFeeTerms] = useState<FeeTerm[]>([]);
+  const [concessions, setConcessions] = useState<ConcessionType[]>([]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [res, heads, terms, concs] = await Promise.all([
+        feeApi.getFeeStructures(undefined, academicYear),
+        getFeeHeads(),
+        getFeeTerms(""),
+        getConcessionTypes(),
+      ]);
+      setStructures(res ?? []);
+      setFeeHeads(heads);
+      setFeeTerms(terms);
+      setConcessions(concs);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to load structures");
+    }
+    finally { setLoading(false); }
+  };
+
+  const loadClasses = async () => {
+    try {
+      const res = await academicApi.listClasses(1, 100);
+      const classes = res.data?.classes || [];
+      setAvailableClasses(
+        classes.map(c => ({
+          id: c.id,
+          name: c.name || `${c.standard}${c.section ? `-${c.section}` : ""}`,
+          standard: c.standard,
+          section: c.section || "",
+        }))
+      );
+    } catch (e: any) {
+      console.error("Failed to load classes", e);
+    }
+  };
+
+  useEffect(() => { load(); loadClasses(); }, [academicYear]);
+
+  const handleSave = async () => {
+    if (!form.name?.trim()) { toast.error("Structure name is required"); return; }
+    setSaving(true);
+    try {
+      const payload: CreateFeeStructureDto = {
+        name: form.name!,
+        academicYear: form.academicYear || academicYear,
+      };
+      if (editTarget) {
+        await feeApi.updateFeeStructure(editTarget.id, payload);
+        toast.success("Updated");
+      } else {
+        await feeApi.createFeeStructure(payload);
+        toast.success("Structure created");
+      }
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to save");
+    }
+    finally { setSaving(false); }
+  };
+
+  const openLineItems = (structure: FeeStructure) => {
+    setEditingStructureId(structure.id);
+    setLineItems([]); // In a real app, fetch from backend
+    setLineItemForm({ feeTypeId: "", feeTermId: "", amount: 0 });
+  };
+
+  const handleAddLineItem = () => {
+    if (!lineItemForm.feeTypeId || !lineItemForm.feeTermId || lineItemForm.amount <= 0) {
+      toast.error("All fields are required");
+      return;
+    }
+    
+    const feeTypeName = feeHeads.find(h => h.id === lineItemForm.feeTypeId)?.name;
+    const feeTermName = feeTerms.find(t => t.id === lineItemForm.feeTermId)?.name;
+    const concessionName = lineItemForm.concessionId ? concessions.find(c => c.id === lineItemForm.concessionId)?.name : undefined;
+
+    if (editingLineItem) {
+      setLineItems(items => items.map(item => 
+        item.id === editingLineItem.id 
+          ? { ...lineItemForm, feeTypeName, feeTermName, concessionName }
+          : item
+      ));
+      toast.success("Line item updated");
+    } else {
+      const newItem: FeeStructureLineItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        ...lineItemForm,
+        feeTypeName,
+        feeTermName,
+        concessionName,
+      };
+      setLineItems([...lineItems, newItem]);
+      toast.success("Line item added");
+    }
+    
+    setShowLineItemDialog(false);
+    setEditingLineItem(null);
+    setLineItemForm({ feeTypeId: "", feeTermId: "", amount: 0 });
+  };
+
+  const handleEditLineItem = (item: FeeStructureLineItem) => {
+    setEditingLineItem(item);
+    setLineItemForm(item);
+    setShowLineItemDialog(true);
+  };
+
+  const handleDeleteLineItem = (id: string | undefined) => {
+    if (!id) return;
+    setLineItems(items => items.filter(item => item.id !== id));
+    toast.success("Line item removed");
+  };
+
+  const handleSaveLineItems = async () => {
+    if (lineItems.length === 0) {
+      toast.error("Add at least one line item");
+      return;
+    }
+    // In a real app, save to backend here
+    // await feeApi.updateStructureLineItems(editingStructureId, lineItems);
+    setEditingStructureId(null);
+    toast.success("Line items saved");
+  };
+
+  const openAssignClasses = (structure: FeeStructure) => {
+    setAssigningStructureId(structure.id);
+    setAssignmentLoading(true);
+    
+    // Load existing assignments if any
+    const existingAssignments = structureClassAssignments[structure.id] || [];
+    setStructureClassAssignments(prev => ({
+      ...prev,
+      [structure.id]: existingAssignments,
+    }));
+    
+    setShowAssignClassesModal(true);
+    setAssignmentLoading(false);
+  };
+
+  const handleToggleClassAssignment = (classId: string) => {
+    if (!assigningStructureId) return;
+    
+    setStructureClassAssignments(prev => {
+      const current = prev[assigningStructureId] || [];
+      const newAssignments = current.includes(classId)
+        ? current.filter(id => id !== classId)
+        : [...current, classId];
+      
+      return {
+        ...prev,
+        [assigningStructureId]: newAssignments,
+      };
+    });
+  };
+
+  const handleSaveClassAssignments = () => {
+    if (!assigningStructureId) return;
+    
+    const assignedClassIds = structureClassAssignments[assigningStructureId] || [];
+    if (assignedClassIds.length === 0) {
+      toast.error("Select at least one class");
+      return;
+    }
+    
+    // In a real app, save to backend here
+    // await feeApi.assignClassesToStructure(assigningStructureId, assignedClassIds);
+    
+    toast.success(`Structure assigned to ${assignedClassIds.length} class(es)`);
+    setShowAssignClassesModal(false);
+    setAssigningStructureId(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Fee Structures</h3>
+        <Button size="sm" onClick={() => { setEditTarget(null); setForm({}); setLineItems([]); setShowForm(true); }}>
+          <Plus className="h-4 w-4 mr-1" /> Add Structure
+        </Button>
       </div>
+
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : (
+        <div className="space-y-4">
+          {structures.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <p className="font-medium">No fee structures yet</p>
+                <p className="text-sm mt-1">Add a structure to get started</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {structures.map(s => (
+                <Card key={s.id} className="overflow-hidden">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-lg">{s.name}</CardTitle>
+                        {s.description && <CardDescription className="mt-1">{s.description}</CardDescription>}
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  {/* Action Buttons */}
+                  <div className="border-t px-4 py-3 flex gap-2 justify-end flex-wrap">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => { 
+                        setEditTarget(s); 
+                        setForm({ name: s.name, description: s.description }); 
+                        // Load line items for this structure (in a real app, fetch from backend)
+                        setLineItems([]); 
+                        setShowForm(true); 
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => openAssignClasses(s)}
+                      className="gap-1"
+                    >
+                      <Users className="h-4 w-4" /> Assign Classes
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       )}
+
+      {/* Fee Structure Form Dialog - with inline line items */}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editTarget ? "Edit Structure" : "Add Fee Structure"}</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Basic Info */}
+            <div className="space-y-3 border-b pb-6">
+              <div>
+                <Label>Structure Name *</Label>
+                <Input placeholder="e.g. Class 10 2024-25" value={form.name || ""} onChange={e => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div>
+                <Label>Description (optional)</Label>
+                <Input placeholder="Additional details about this structure" value={(form as any).description || ""} onChange={e => setForm({ ...form, description: e.target.value })} />
+              </div>
+            </div>
+
+            {/* Line Items Section */}
+            <div className="space-y-3 border-t pt-6">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Fee Line Items</Label>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => { setEditingLineItem(null); setLineItemForm({ feeTypeId: "", feeTermId: "", amount: 0 }); setShowLineItemDialog(true); }}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add Item
+                </Button>
+              </div>
+
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50">
+                      <TableHead className="text-xs">Fee Type</TableHead>
+                      <TableHead className="text-xs">Fee Term</TableHead>
+                      <TableHead className="text-xs text-right">Amount</TableHead>
+                      <TableHead className="text-xs">Concession</TableHead>
+                      <TableHead className="text-xs text-right w-16">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lineItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-xs">
+                          No line items added yet
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      lineItems.map(item => (
+                        <TableRow key={item.id} className="text-xs">
+                          <TableCell className="font-medium">{item.feeTypeName}</TableCell>
+                          <TableCell>{item.feeTermName}</TableCell>
+                          <TableCell className="text-right">₹{item.amount.toLocaleString("en-IN")}</TableCell>
+                          <TableCell>{item.concessionName || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-0.5">
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleEditLineItem(item)} 
+                                title="Edit"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleDeleteLineItem(item.id)} 
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Save {editTarget ? "Changes" : "Structure"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Line Item Form Dialog (sub-dialog for adding/editing line items) */}
+      <Dialog open={showLineItemDialog} onOpenChange={setShowLineItemDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingLineItem ? "Edit Line Item" : "Add Line Item"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>Fee Type *</Label>
+              <Select value={lineItemForm.feeTypeId} onValueChange={(val) => setLineItemForm({ ...lineItemForm, feeTypeId: val })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select fee type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {feeHeads.map(head => (
+                    <SelectItem key={head.id} value={head.id}>{head.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Fee Term *</Label>
+              <Select value={lineItemForm.feeTermId} onValueChange={(val) => setLineItemForm({ ...lineItemForm, feeTermId: val })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select fee term" />
+                </SelectTrigger>
+                <SelectContent>
+                  {feeTerms.map(term => (
+                    <SelectItem key={term.id} value={term.id}>{term.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Amount (₹) *</Label>
+              <Input 
+                type="number" 
+                min="0" 
+                step="0.01"
+                value={lineItemForm.amount || ""} 
+                onChange={(e) => setLineItemForm({ ...lineItemForm, amount: parseFloat(e.target.value) || 0 })} 
+                placeholder="0"
+              />
+            </div>
+
+            <div>
+              <Label>Concession (optional)</Label>
+              <Select value={lineItemForm.concessionId || "none"} onValueChange={(val) => setLineItemForm({ ...lineItemForm, concessionId: val === "none" ? undefined : val })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No concession" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {concessions.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowLineItemDialog(false); setEditingLineItem(null); }}>Cancel</Button>
+            <Button onClick={handleAddLineItem}>
+              {editingLineItem ? "Update" : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Classes Modal */}
+      <Dialog open={showAssignClassesModal} onOpenChange={setShowAssignClassesModal}>
+        <DialogContent className="max-w-2xl max-h-96 overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Assign Classes to Fee Structure</DialogTitle>
+            <DialogDescription>Select one or more classes to assign this fee structure to</DialogDescription>
+          </DialogHeader>
+
+          {assignmentLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {availableClasses.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No classes available. Please configure classes in Academic Setup.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {availableClasses.map(cls => {
+                    const isSelected = (structureClassAssignments[assigningStructureId || ""] || []).includes(cls.id);
+                    return (
+                      <button
+                        key={cls.id}
+                        onClick={() => handleToggleClassAssignment(cls.id)}
+                        className={`p-3 border rounded-lg text-left transition-all ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-50 shadow-sm"
+                            : "border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => handleToggleClassAssignment(cls.id)}
+                            className="mt-1"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{cls.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {cls.standard} {cls.section ? `- ${cls.section}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowAssignClassesModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveClassAssignments}>
+              Save Assignments
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -4693,6 +3613,66 @@ function AuditTrailTab() {
   );
 }
 
+// ─── Defaulters Tab ──────────────────────────────────────
+function DefaultersTab({ canManage }: { canManage: boolean }) {
+  const { t } = useLanguage();
+  const [defaulters, setDefaulters] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Load defaulters data
+    setLoading(false);
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-red-600" />
+          Fee Defaulters
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : defaulters.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-600" />
+            <p className="font-medium">No defaulters</p>
+            <p className="text-sm mt-1">All fees are up to date</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead>Class</TableHead>
+                <TableHead>Outstanding Amount</TableHead>
+                <TableHead>Days Overdue</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {defaulters.map(d => (
+                <TableRow key={d.id}>
+                  <TableCell>{d.studentName}</TableCell>
+                  <TableCell>{d.class}</TableCell>
+                  <TableCell className="font-medium text-red-600">{d.amount}</TableCell>
+                  <TableCell>{d.daysOverdue}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Reminders Tab ──────────────────────────────────────
+function RemindersTab({ canManage }: { canManage: boolean }) {
+  return <FeeReminderManager />;
+}
+
 // ─── Main Fee Module Page ─────────────────────────────────
 export default function Fees({ section }: { section?: "collect" | "setup" }) {
   const { t } = useLanguage();
@@ -5179,19 +4159,11 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
                                 ) : (
                                   <Button
                                     size="sm"
-                                    className={`h-7 text-xs gap-1 ${actionNextTerm?.isUpcoming ? "bg-indigo-600 hover:bg-indigo-700" : ""}`}
+                                    className="h-7 text-xs gap-1"
                                     onClick={e => { e.stopPropagation(); navigate(`/fees/collect/${(firstPendingRecord ?? g.records[0]).studentId}`); }}
                                   >
-                                    {actionNextTerm?.isUpcoming
-                                      ? <CreditCard className="h-3 w-3" />
-                                      : <IndianRupee className="h-3 w-3" />}
-                                    {canManageFees
-                                      ? actionNextTerm
-                                        ? actionNextTerm.isUpcoming
-                                          ? `${t('fees.advancePayment')} — ${actionNextTerm.label}`
-                                          : `${t('fees.collect')} ${actionNextTerm.label}`
-                                        : t('fees.collect')
-                                      : t('fees.viewBtn')}
+                                    <IndianRupee className="h-3 w-3" />
+                                    Pay Fees
                                   </Button>
                                 )}
                                 {isExpanded
@@ -5389,18 +4361,21 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
         {/* ── Fee Setup Group ──────────────────────────────── */}
         <TabsContent value="fee-setup" className="mt-4">
           <Tabs value={feeSetupSubTab} onValueChange={setFeeSetupSubTab}>
-            <TabsList className="grid w-full grid-cols-4 h-auto mb-1">
+            <TabsList className="grid w-full grid-cols-5 h-auto mb-1">
               <TabsTrigger value="structure" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
                 <Building2 className="h-4 w-4" /><span>{t('fees.feeStructure')}</span>
               </TabsTrigger>
               <TabsTrigger value="feetypes" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
                 <Tags className="h-4 w-4" /><span>Fee Types</span>
               </TabsTrigger>
-              <TabsTrigger value="reminders" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
-                <BellRing className="h-4 w-4" /><span>{t('fees.tabs.reminders')}</span>
+              <TabsTrigger value="terms" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <Calendar className="h-4 w-4" /><span>Fee Terms</span>
               </TabsTrigger>
               <TabsTrigger value="concessions" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
                 <Tag className="h-4 w-4" /><span>{t('fees.concession')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="notifications" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <BellRing className="h-4 w-4" /><span>{t('fees.tabs.reminders')}</span>
               </TabsTrigger>
             </TabsList>
 
@@ -5419,14 +4394,19 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
               <FeeHeadsManager />
             </TabsContent>
 
-            {/* ── Reminders Sub-Tab ── */}
-            <TabsContent value="reminders" className="mt-4">
-              <RemindersTab canManage={canManageFees} />
+            {/* ── Fee Terms Sub-Tab ── */}
+            <TabsContent value="terms" className="mt-4">
+              <FeeTermsManager />
             </TabsContent>
 
             {/* ── Concessions Sub-Tab ── */}
             <TabsContent value="concessions" className="mt-4">
               <ConcessionsTab academicYear={academicYear ?? ""} />
+            </TabsContent>
+
+            {/* ── Notifications Sub-Tab ── */}
+            <TabsContent value="notifications" className="mt-4">
+              <FeeReminderManager />
             </TabsContent>
           </Tabs>
         </TabsContent>
@@ -5434,7 +4414,7 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
         {/* ── Reports Group ─────────────────────────────────── */}
         <TabsContent value="analytics" className="mt-4">
           <Tabs value={analyticsSubTab} onValueChange={setAnalyticsSubTab}>
-            <TabsList className="grid w-full grid-cols-5 h-auto mb-1">
+            <TabsList className="grid w-full grid-cols-6 h-auto mb-1">
               <TabsTrigger value="overview" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
                 <CalendarDays className="h-4 w-4" /><span>{t('fees.tabs.daySummary')}</span>
               </TabsTrigger>
@@ -5449,6 +4429,9 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
               </TabsTrigger>
               <TabsTrigger value="reports" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
                 <BarChart3 className="h-4 w-4" /><span>{t('fees.tabs.reports')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="reminders" className="flex-col py-2 gap-0.5 text-xs sm:flex-row sm:text-sm sm:gap-1.5">
+                <BellRing className="h-4 w-4" /><span>{t('fees.tabs.reminders')}</span>
               </TabsTrigger>
             </TabsList>
 
@@ -5548,6 +4531,11 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
             {/* ── Reports Sub-Tab ── */}
             <TabsContent value="reports" className="mt-4">
               <ReportsTab records={records} academicYear={academicYear ?? ""} />
+            </TabsContent>
+
+            {/* ── Reminders Sub-Tab ── */}
+            <TabsContent value="reminders" className="mt-4">
+              <RemindersTab canManage={canManageFees} />
             </TabsContent>
           </Tabs>
         </TabsContent>

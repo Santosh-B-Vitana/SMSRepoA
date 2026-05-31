@@ -1122,6 +1122,15 @@ export const createFeeTerm = async (feeStructureId: string, data: CreateFeeTermD
   return response.data;
 };
 
+export const updateFeeTerm = async (feeStructureId: string, termId: string, data: Partial<CreateFeeTermDto>): Promise<FeeTerm> => {
+  const response = await apiClient.put(`${BASE_PATH}/structures/${feeStructureId}/terms/${termId}`, data);
+  return response.data;
+};
+
+export const deleteFeeTerm = async (feeStructureId: string, termId: string): Promise<void> => {
+  await apiClient.delete(`${BASE_PATH}/structures/${feeStructureId}/terms/${termId}`);
+};
+
 // ========== RECEIPT TEMPLATES ==========
 
 export interface ReceiptTemplate {
@@ -1388,6 +1397,8 @@ export const feeApi = {
   deleteFeeHead,
   getFeeTerms,
   createFeeTerm,
+  updateFeeTerm,
+  deleteFeeTerm,
   getReceiptTemplates,
   createReceiptTemplate,
   updateReceiptTemplate,

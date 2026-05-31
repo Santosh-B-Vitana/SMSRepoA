@@ -12,18 +12,7 @@ import { Plus, Pencil, Trash2, Loader2, Tags } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { feeApi, FeeHead, CreateFeeHeadDto } from "@/services/api/feeApi";
 
-const FREQ_OPTIONS = [
-  { value: "termly",     label: "Every Installment" },
-  { value: "once",       label: "One-time" },
-  { value: "halfYearly", label: "Twice a Year" },
-  { value: "quarterly",  label: "Quarterly (4×/year)" },
-  { value: "monthly",    label: "Monthly (12×/year)" },
-];
 
-const FREQ_LABELS: Record<string, string> = {
-  termly: "Every Installment", once: "One-time",
-  halfYearly: "2×/yr", quarterly: "4×/yr", monthly: "12×/yr",
-};
 
 export function FeeHeadsManager() {
   const { toast } = useToast();
@@ -36,10 +25,6 @@ export function FeeHeadsManager() {
     name: "",
     code: "",
     description: "",
-    isVisibleOnReceipt: true,
-    isMandatory: false,
-    displayOrder: 0,
-    defaultFrequency: "termly",
   });
 
   const loadHeads = async () => {
@@ -58,13 +43,13 @@ export function FeeHeadsManager() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: "", code: "", description: "", isVisibleOnReceipt: true, isMandatory: false, displayOrder: heads.length, defaultFrequency: "termly" });
+    setForm({ name: "", code: "", description: "" });
     setDialogOpen(true);
   };
 
   const openEdit = (h: FeeHead) => {
     setEditing(h);
-    setForm({ name: h.name, code: h.code, description: h.description ?? "", isVisibleOnReceipt: h.isVisibleOnReceipt, isMandatory: h.isMandatory, displayOrder: h.displayOrder, defaultFrequency: h.defaultFrequency ?? "termly" });
+    setForm({ name: h.name, code: h.code, description: h.description ?? "" });
     setDialogOpen(true);
   };
 
@@ -119,12 +104,12 @@ export function FeeHeadsManager() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Tags className="h-5 w-5" />
-                Fee Heads
+                Fee Types
               </CardTitle>
-              <CardDescription>Manage normalized fee type labels used across structures</CardDescription>
+              <CardDescription>Manage fee type labels used across structures</CardDescription>
             </div>
             <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1" /> Add Fee Head
+              <Plus className="h-4 w-4 mr-1" /> Add Fee Type
             </Button>
           </div>
         </CardHeader>
@@ -135,34 +120,22 @@ export function FeeHeadsManager() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Order</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Code</TableHead>
                   <TableHead>Description</TableHead>
-                  <TableHead>Default Freq.</TableHead>
-                  <TableHead>On Receipt</TableHead>
-                  <TableHead>Mandatory</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {heads.length === 0 && (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No fee heads yet. Add one to get started.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">No fee types yet. Add one to get started.</TableCell></TableRow>
                 )}
                 {heads.map(h => (
                   <TableRow key={h.id}>
-                    <TableCell className="text-muted-foreground">{h.displayOrder}</TableCell>
                     <TableCell className="font-medium">{h.name}</TableCell>
                     <TableCell><Badge variant="outline">{h.code}</Badge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{h.description ?? "—"}</TableCell>
-                    <TableCell>
-                      {h.defaultFrequency
-                        ? <Badge variant="secondary" className="text-xs">{FREQ_LABELS[h.defaultFrequency] ?? h.defaultFrequency}</Badge>
-                        : <span className="text-muted-foreground text-xs">—</span>}
-                    </TableCell>
-                    <TableCell>{h.isVisibleOnReceipt ? <Badge variant="secondary">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
-                    <TableCell>{h.isMandatory ? <Badge>Required</Badge> : <Badge variant="outline">Optional</Badge>}</TableCell>
                     <TableCell>
                       <Switch checked={h.isActive} onCheckedChange={() => toggleActive(h)} />
                     </TableCell>
@@ -183,7 +156,7 @@ export function FeeHeadsManager() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Fee Head" : "New Fee Head"}</DialogTitle>
+            <DialogTitle>{editing ? "Edit Fee Type" : "New Fee Type"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -199,33 +172,6 @@ export function FeeHeadsManager() {
             <div className="space-y-1">
               <Label>Description</Label>
               <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional description" />
-            </div>
-            <div className="space-y-1">
-              <Label>Display Order</Label>
-              <Input type="number" value={form.displayOrder} onChange={e => setForm(f => ({ ...f, displayOrder: parseInt(e.target.value) || 0 }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Default Billing Frequency</Label>
-              <Select value={form.defaultFrequency ?? "termly"} onValueChange={v => setForm(f => ({ ...f, defaultFrequency: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select frequency" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FREQ_OPTIONS.map(o => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <Switch checked={form.isVisibleOnReceipt} onCheckedChange={v => setForm(f => ({ ...f, isVisibleOnReceipt: v }))} />
-                <Label>Show on Receipt</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch checked={form.isMandatory} onCheckedChange={v => setForm(f => ({ ...f, isMandatory: v }))} />
-                <Label>Mandatory</Label>
-              </div>
             </div>
           </div>
           <DialogFooter>
