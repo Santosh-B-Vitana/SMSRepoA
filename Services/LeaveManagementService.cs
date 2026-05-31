@@ -15,6 +15,7 @@ namespace SmsApi.Services
         Task<List<LeaveTypeResponse>> GetLeaveTypesAsync(Guid schoolId, string? applicableTo = null);
         Task<LeaveTypeResponse> CreateLeaveTypeAsync(CreateLeaveTypeRequest request);
         Task<LeaveTypeResponse?> UpdateLeaveTypeAsync(Guid id, UpdateLeaveTypeRequest request, Guid schoolId);
+        Task DeleteLeaveTypeAsync(Guid id, Guid schoolId);
         Task<LeaveRequestListResponse> GetLeaveRequestsAsync(Guid schoolId, int page = 1, int pageSize = 10, Guid? applicantId = null, string? status = null, string? staffEmail = null);
         Task<LeaveRequestResponse?> GetLeaveRequestByIdAsync(Guid id, Guid schoolId);
         Task<LeaveRequestResponse> CreateLeaveRequestAsync(CreateLeaveRequestRequest request);
@@ -127,6 +128,8 @@ namespace SmsApi.Services
                 throw new InvalidOperationException("A leave type with the same name already exists for this scope.");
             }
 
+            var oldMax = leaveType.MaxDaysPerYear;
+
             leaveType.Name = normalizedName;
             leaveType.Description = request.Description;
             leaveType.MaxDaysPerYear = request.MaxDaysPerYear;
@@ -137,6 +140,26 @@ namespace SmsApi.Services
             leaveType.IsPaid = request.IsPaid;
             leaveType.IsActive = request.IsActive;
             leaveType.UpdatedAt = DateTime.UtcNow;
+
+            // Propagate the new quota to all existing LeaveBalance records for the current academic year
+            // that still hold the old default (i.e. haven't been individually overridden).
+            if (request.MaxDaysPerYear != oldMax)
+            {
+                var currentYear = DateTime.UtcNow.Year.ToString();
+                var affectedBalances = await _context.LeaveBalances
+                    .Where(lb => lb.LeaveTypeId == id
+                              && lb.SchoolId == schoolId
+                              && lb.AcademicYear == currentYear
+                              && lb.TotalAllowed == oldMax)
+                    .ToListAsync();
+
+                foreach (var bal in affectedBalances)
+                {
+                    bal.TotalAllowed = request.MaxDaysPerYear;
+                    bal.Available = Math.Max(0, request.MaxDaysPerYear - bal.Used);
+                    bal.UpdatedAt = DateTime.UtcNow;
+                }
+            }
 
             await _context.SaveChangesAsync();
 
@@ -553,6 +576,19 @@ namespace SmsApi.Services
             return MapToLeaveRequestResponse(leaveRequest, null);
         }
 
+        public async Task DeleteLeaveTypeAsync(Guid id, Guid schoolId)
+        {
+            var leaveType = await _context.LeaveTypes
+                .FirstOrDefaultAsync(lt => lt.Id == id && lt.SchoolId == schoolId && !lt.IsDeleted);
+            if (leaveType == null)
+                throw new KeyNotFoundException($"Leave type with ID {id} not found");
+
+            leaveType.IsDeleted = true;
+            leaveType.IsActive = false;
+            leaveType.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<List<LeaveBalanceResponse>> GetLeaveBalanceAsync(Guid userId, string userType, Guid schoolId)
         {
             if (!AllowedUserTypes.Contains(userType))
@@ -562,7 +598,13 @@ namespace SmsApi.Services
 
             var currentYear = DateTime.UtcNow.Year.ToString();
 
-            var balances = await _context.LeaveBalances
+            // Fetch all active leave types applicable to this user
+            var allLeaveTypes = await _context.LeaveTypes
+                .Where(lt => lt.SchoolId == schoolId && lt.IsActive && !lt.IsDeleted
+                          && (lt.ApplicableTo == "All" || lt.ApplicableTo.ToLower() == userType.ToLower()))
+                .ToListAsync();
+
+            var existingBalances = await _context.LeaveBalances
                 .Include(lb => lb.LeaveType)
                 .Where(lb => lb.UserId == userId &&
                             lb.UserType.ToLower() == userType.ToLower() &&
@@ -570,7 +612,40 @@ namespace SmsApi.Services
                             lb.AcademicYear == currentYear)
                 .ToListAsync();
 
-            return balances.Select(MapToLeaveBalanceResponse).ToList();
+            // Auto-initialize missing balance records from LeaveType quota
+            var newBalances = new List<LeaveBalance>();
+            foreach (var lt in allLeaveTypes)
+            {
+                if (!existingBalances.Any(b => b.LeaveTypeId == lt.Id))
+                {
+                    var bal = new LeaveBalance
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        UserId = userId,
+                        UserType = userType,
+                        LeaveTypeId = lt.Id,
+                        LeaveType = lt,
+                        AcademicYear = currentYear,
+                        TotalAllowed = lt.MaxDaysPerYear,
+                        Used = 0,
+                        Available = lt.MaxDaysPerYear,
+                        CarriedForward = 0,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    newBalances.Add(bal);
+                }
+            }
+
+            if (newBalances.Count > 0)
+            {
+                _context.LeaveBalances.AddRange(newBalances);
+                await _context.SaveChangesAsync();
+                existingBalances.AddRange(newBalances);
+            }
+
+            return existingBalances.Select(MapToLeaveBalanceResponse).ToList();
         }
 
         public async Task<List<LeaveBalanceResponse>> GetMyLeaveBalanceAsync(string callerEmail, Guid schoolId)

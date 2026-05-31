@@ -117,13 +117,14 @@ function StatCard({ icon, value, label, sub, colorCls }: {
 
 // ─── AssignmentCard (clickable) ───────────────────────────────────────────────
 function AssignmentCard({
-  a, color, onClick, onGrade, sectionLabel,
+  a, color, onClick, onGrade, sectionLabel, canEdit = true,
 }: {
   a: AssignmentResponse;
   color: ReturnType<typeof pal>;
   onClick: () => void;
   onGrade: (a: AssignmentResponse) => void;
   sectionLabel?: string;
+  canEdit?: boolean;
 }) {
   const urgency = dueUrgency(a.dueDate);
   const submittedPct = a.submissionCount > 0
@@ -192,12 +193,14 @@ function AssignmentCard({
       {/* footer */}
       <div className="flex items-center gap-2 mt-auto pt-1 border-t border-current/10">
         <span className="text-[11px] text-muted-foreground font-medium flex-1">Max: {a.maxMarks ?? "—"} marks</span>
-        <button
-          onClick={e => { e.stopPropagation(); onGrade(a); }}
-          className={`flex items-center gap-0.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-current/20 ${color.text} hover:${color.bg} transition-colors`}
-        >
-          <Award className="h-3 w-3 mr-0.5" />Grade
-        </button>
+        {canEdit && (
+          <button
+            onClick={e => { e.stopPropagation(); onGrade(a); }}
+            className={`flex items-center gap-0.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-current/20 ${color.text} hover:${color.bg} transition-colors`}
+          >
+            <Award className="h-3 w-3 mr-0.5" />Grade
+          </button>
+        )}
         <span className={`flex items-center gap-0.5 text-[11px] font-medium ${color.text}`}>
           Details <ChevronRight className="h-3 w-3" />
         </span>
@@ -208,13 +211,14 @@ function AssignmentCard({
 
 // ─── Assignment Detail Sheet ──────────────────────────────────────────────────
 function AssignmentDetailSheet({
-  a, open, onClose, classLabel, onGrade,
+  a, open, onClose, classLabel, onGrade, canEdit = true,
 }: {
   a: AssignmentResponse | null;
   open: boolean;
   onClose: () => void;
   classLabel: string;
   onGrade: (a: AssignmentResponse) => void;
+  canEdit?: boolean;
 }) {
   if (!a) return null;
   const urgency = dueUrgency(a.dueDate);
@@ -342,13 +346,15 @@ function AssignmentDetailSheet({
 
           <Separator />
           {/* Grade students CTA */}
-          <Button
-            className="w-full"
-            onClick={() => { onClose(); onGrade(a); }}
-          >
-            <Award className="h-4 w-4 mr-2" />
-            Grade Students
-          </Button>
+          {canEdit && (
+            <Button
+              className="w-full"
+              onClick={() => { onClose(); onGrade(a); }}
+            >
+              <Award className="h-4 w-4 mr-2" />
+              Grade Students
+            </Button>
+          )}
 
         </div>
       </SheetContent>
@@ -689,7 +695,8 @@ export function AssignmentManager() {
   const { hasUserPermission, permissionsLoaded } = usePermissions();
   const { t } = useLanguage();
   const canCreateAssignment = hasUserPermission('Assignments', 'Create');
-  const canViewAssignments = hasUserPermission('Assignments', 'View');
+  const canEditAssignment   = hasUserPermission('Assignments', 'Edit');
+  const canViewAssignments  = hasUserPermission('Assignments', 'View');
   const accessDenied = permissionsLoaded && !canViewAssignments && !canCreateAssignment;
   const [assignments,      setAssignments]      = useState<AssignmentResponse[]>([]);
   const [classAssignments, setClassAssignments] = useState<MyClassAssignment[]>([]);
@@ -1061,7 +1068,7 @@ export function AssignmentManager() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                               {list.slice(0, 8).map(a => (
-                                <AssignmentCard key={a.id} a={a} color={c} sectionLabel={sec.sectionName ? `${className} · ${sec.sectionName}` : className} onClick={() => setSelectedAssignment(a)} onGrade={a => setGradingAssignment(a)} />
+                                <AssignmentCard key={a.id} a={a} color={c} sectionLabel={sec.sectionName ? `${className} · ${sec.sectionName}` : className} onClick={() => setSelectedAssignment(a)} onGrade={a => setGradingAssignment(a)} canEdit={canEditAssignment} />
                               ))}
                               {list.length > 8 && (
                                 <button
@@ -1092,7 +1099,7 @@ export function AssignmentManager() {
                 const sec2 = uniqueSections.find(s => s.classId === a.classId);
                 const secLabel = sec2 ? (sec2.sectionName ? `${sec2.className} · ${sec2.sectionName}` : sec2.className) : (a.className || undefined);
                 return (
-                  <AssignmentCard key={a.id} a={a} color={c} sectionLabel={secLabel} onClick={() => setSelectedAssignment(a)} onGrade={a => setGradingAssignment(a)} />
+                  <AssignmentCard key={a.id} a={a} color={c} sectionLabel={secLabel} onClick={() => setSelectedAssignment(a)} onGrade={a => setGradingAssignment(a)} canEdit={canEditAssignment} />
                 );
               })}
             </div>
@@ -1107,6 +1114,7 @@ export function AssignmentManager() {
         onClose={() => setSelectedAssignment(null)}
         classLabel={selectedAssignment ? labelForAssignment(selectedAssignment) : ""}
         onGrade={a => setGradingAssignment(a)}
+        canEdit={canEditAssignment}
       />
 
       {/* ── Assignment Grading Sheet ── */}

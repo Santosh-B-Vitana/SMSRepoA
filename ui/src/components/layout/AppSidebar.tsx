@@ -23,61 +23,61 @@ type NavItem = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user } = useAuth()
   const { t } = useLanguage()
-  const { hasUserPermission, isModuleEnabled } = usePermissions()
+  const { hasUserPermission, isModuleEnabled, permissionsLoaded, isRoleManaged } = usePermissions()
 
   const getNavigationItems = () => {
     if (!user) return []
 
     if (user.role === 'super_admin' || user.role === 'admin') {
       const adminItems: NavItem[] = [
-        { title: "OVERVIEW", isLabel: true },
+        { title: t('nav.sectionOverview'), isLabel: true },
         { title: t('nav.dashboard'), url: user.role === 'super_admin' ? "/super-admin-dashboard" : "/admin-dashboard", icon: LayoutDashboard },
 
-        { title: "PEOPLE & ENROLLMENT", isLabel: true },
+        { title: t('nav.sectionPeople'), isLabel: true },
         { title: t('nav.students'), url: "/students", icon: Users, moduleKey: "students" },
         { title: t('nav.staff'), url: "/staff", icon: UserCheck, moduleKey: "staff" },
         { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: "admissions" },
 
-        { title: "ACADEMICS & ASSESSMENT", isLabel: true },
+        { title: t('nav.sectionAcademics'), isLabel: true },
         { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },
         { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: "examinations" },
         { title: t('nav.timetable'), url: "/timetable", icon: Clock, moduleKey: "timetable" },
-        { title: "Curriculum Planner", url: "/syllabus", icon: ClipboardList },
+        { title: t('nav.curriculumPlanner'), url: "/syllabus", icon: ClipboardList },
 
-        { title: "FINANCE & ADMINISTRATION", isLabel: true },
-        { title: "Collect Fees", url: "/fees/collect", icon: Receipt, moduleKey: "fees" },
-        { title: "Fee Setup", url: "/fees/setup", icon: Settings, moduleKey: "fees" },
+        { title: t('nav.sectionFinanceAdmin'), isLabel: true },
+        { title: t('nav.collectFees'), url: "/fees/collect", icon: Receipt, moduleKey: "fees" },
+        { title: t('nav.feeSetup'), url: "/fees/setup", icon: Settings, moduleKey: "fees" },
         { title: t('nav.library'), url: "/library", icon: Library, moduleKey: "library" },
         { title: t('nav.roleManagement'), url: "/role-management", icon: Shield },
 
-        { title: "STUDENT SUPPORT SERVICES", isLabel: true },
+        { title: t('nav.sectionStudentSupport'), isLabel: true },
         { title: t('nav.transport'), url: "/transport", icon: Bus, moduleKey: "transport" },
         { title: t('nav.hostel'), url: "/hostel", icon: Home, moduleKey: "hostel" },
         { title: t('nav.health'), url: "/health", icon: Heart, moduleKey: "health" },
         { title: t('nav.visitorManagement'), url: "/visitor-management", icon: UserCog },
 
-        { title: "COMMUNICATIONS", isLabel: true },
+        { title: t('nav.sectionCommunications'), isLabel: true },
         { title: t('nav.communication'), url: "/communication", icon: MessageSquare, moduleKey: "communication" },
 
         ...(user.role === 'super_admin' ? [
-          { title: "SYSTEM ADMINISTRATION", isLabel: true },
+          { title: t('nav.sectionSystemAdmin'), isLabel: true },
           { title: t('nav.schools'), url: "/superadmin/schools", icon: Building },
-          { title: "User Management", url: "/superadmin/users", icon: UserCog },
+          { title: t('nav.userManagement'), url: "/superadmin/users", icon: UserCog },
         ] as NavItem[] : []),
 
-        { title: "ADDITIONAL FEATURES", isLabel: true },
+        { title: t('nav.sectionAdditional'), isLabel: true },
         { title: t('nav.alumni'), url: "/alumni", icon: GraduationCap },
         { title: t('nav.wallet'), url: "/wallet", icon: Wallet, moduleKey: "wallet" },
         { title: t('common.store'), url: "/store", icon: ShoppingBag, moduleKey: "store" },
         { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
 
-        { title: "GOVERNMENT & COMPLIANCE", isLabel: true },
-        { title: "DISE / UDISE Report", url: "/reports/dise", icon: FileText, moduleKey: "reports" },
+        { title: t('nav.sectionGovt'), isLabel: true },
+        { title: t('nav.diseReport'), url: "/reports/dise", icon: FileText, moduleKey: "reports" },
 
-        { title: "SETTINGS", isLabel: true },
+        { title: t('nav.sectionSettings'), isLabel: true },
         { title: t('nav.settings'), url: "/settings", icon: Settings },
-        { title: "Security", url: "/security", icon: Shield },
-        { title: "Advanced Analytics", url: "/advanced-analytics", icon: BarChart3, moduleKey: "analytics" },
+        { title: t('nav.security'), url: "/security", icon: Shield },
+        { title: t('nav.advancedAnalytics'), url: "/advanced-analytics", icon: BarChart3, moduleKey: "analytics" },
       ];
 
       // Keep module items visible even when disabled so users can open the existing
@@ -91,19 +91,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       // ── Terminal sections – always anchored at the bottom ─────────────────
       // COMMUNICATION: Announcements + optional full Communication channel + School Connect
       const communicationSection: NavItem[] = [
-        { title: "COMMUNICATION", isLabel: true },
-        { title: "Announcements", url: "/announcements", icon: Bell },
+        { title: t('nav.sectionCommunication'), isLabel: true },
+        { title: t('nav.announcements'), url: "/announcements", icon: Bell },
         ...(isModuleEnabled('communication') && hasUserPermission('Communication', 'View')
-          ? [{ title: "Communication", url: "/communication", icon: MessageSquare, moduleKey: 'communication' as const } as NavItem]
+          ? [{ title: t('nav.communication'), url: "/communication", icon: MessageSquare, moduleKey: 'communication' as const } as NavItem]
           : []),
-        { title: "School Connect", url: "/school-connect", icon: School },
+        { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
       ];
 
       // MY PROFILE: personal leave & attendance tracking
       const myProfileSection: NavItem[] = [
-        { title: "MY PROFILE", isLabel: true },
-        { title: "My Leave", url: "/leave-management", icon: Calendar },
-        { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
+        { title: t('nav.sectionMyProfile'), isLabel: true },
+        { title: t('nav.myLeave'), url: "/leave-management", icon: Calendar },
+        { title: t('nav.myAttendance'), url: "/my-attendance", icon: CalendarCheck },
       ];
 
       // ── Core designation-based navigation ─────────────────────────────────
@@ -111,179 +111,194 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       if (designation === 'principal' || designation === 'vice principal') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "SCHOOL MANAGEMENT", isLabel: true },
-          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
+          { title: t('nav.sectionSchoolMgmt'), isLabel: true },
+          { title: t('nav.myClasses'), url: "/my-classes", icon: GraduationCap },
           ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
-            ? [{ title: "Class Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as NavItem] : []),
-          { title: "My Timetable", url: "/timetable", icon: Clock },
+            ? [{ title: t('nav.classAttendance'), url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as NavItem] : []),
+          { title: t('nav.myTimetable'), url: "/timetable", icon: Clock },
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' as const },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
-          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
+            ? [{ title: t('nav.assignments'), url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: t('nav.myCurriculum'), url: "/syllabus", icon: BookOpen },
 
           // Principal gets the full communications section inline (incl. Communication channel)
-          { title: "COMMUNICATIONS", isLabel: true },
-          { title: "Announcements", url: "/announcements", icon: Bell },
-          { title: "Communication", url: "/communication", icon: MessageSquare },
-          { title: "School Connect", url: "/school-connect", icon: School },
+          { title: t('nav.sectionCommunications'), isLabel: true },
+          { title: t('nav.announcements'), url: "/announcements", icon: Bell },
+          { title: t('nav.communication'), url: "/communication", icon: MessageSquare },
+          { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
 
-          { title: "REPORTS & COMPLIANCE", isLabel: true },
-          { title: "DISE / UDISE Report", url: "/reports/dise", icon: FileText },
+          { title: t('nav.sectionReports'), isLabel: true },
+          { title: t('nav.diseReport'), url: "/reports/dise", icon: FileText },
 
-          { title: "MY PROFILE", isLabel: true },
-          { title: "My Leave", url: "/leave-management", icon: Calendar },
-          { title: "My Attendance", url: "/my-attendance", icon: CalendarCheck },
+          { title: t('nav.sectionMyProfile'), isLabel: true },
+          { title: t('nav.myLeave'), url: "/leave-management", icon: Calendar },
+          { title: t('nav.myAttendance'), url: "/my-attendance", icon: CalendarCheck },
         ];
       } else if (designation === 'head of department') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "DEPARTMENT", isLabel: true },
-          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-          { title: "My Timetable", url: "/timetable", icon: Clock },
+          { title: t('nav.sectionDepartment'), isLabel: true },
+          { title: t('nav.myClasses'), url: "/my-classes", icon: GraduationCap },
+          { title: t('nav.myTimetable'), url: "/timetable", icon: Clock },
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' as const },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
-          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
-          { title: "Staff", url: "/staff", icon: UserCheck },
+            ? [{ title: t('nav.assignments'), url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: t('nav.myCurriculum'), url: "/syllabus", icon: BookOpen },
+          { title: t('nav.staff'), url: "/staff", icon: UserCheck },
         ];
       } else if (designation === 'class teacher') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "TEACHING", isLabel: true },
-          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
-          { title: "My Timetable", url: "/timetable", icon: Clock },
+          { title: t('nav.sectionTeaching'), isLabel: true },
+          { title: t('nav.myClasses'), url: "/my-classes", icon: GraduationCap },
+          { title: t('nav.myTimetable'), url: "/timetable", icon: Clock },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
-          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
-          { title: "Diary", url: "/staff-diary", icon: FileText },
+            ? [{ title: t('nav.assignments'), url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: t('nav.myCurriculum'), url: "/syllabus", icon: BookOpen },
+          { title: t('nav.diary'), url: "/staff-diary", icon: FileText },
 
-          { title: "CLASSROOM", isLabel: true },
+          { title: t('nav.sectionClassroom'), isLabel: true },
           ...(hasUserPermission('Attendance', 'View') || hasUserPermission('Attendance', 'Create')
-            ? [{ title: "Class Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as NavItem] : []),
+            ? [{ title: t('nav.classAttendance'), url: "/attendance", icon: UserCheck, moduleKey: 'attendance' as const } as NavItem] : []),
           ...(hasUserPermission('Health', 'View')
-            ? [{ title: "Health Records", url: "/health", icon: HeartPulse, moduleKey: 'health' as const } as NavItem] : []),
+            ? [{ title: t('nav.healthRecords'), url: "/health", icon: HeartPulse, moduleKey: 'health' as const } as NavItem] : []),
         ];
-      } else if (designation === 'teacher') {
+      } else if (designation === 'teacher' || designation === 'subject teacher') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "TEACHING", isLabel: true },
-          { title: "My Classes", url: "/my-classes", icon: GraduationCap },
+          { title: t('nav.sectionTeaching'), isLabel: true },
+          { title: t('nav.myClasses'), url: "/my-classes", icon: GraduationCap },
           ...(hasUserPermission('Assignments', 'View') || hasUserPermission('Assignments', 'Create')
-            ? [{ title: "Assignments", url: "/assignments", icon: ClipboardList } as NavItem] : []),
-          { title: "My Timetable", url: "/timetable", icon: Clock },
-          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
-          { title: "Diary", url: "/staff-diary", icon: FileText },
+            ? [{ title: t('nav.assignments'), url: "/assignments", icon: ClipboardList } as NavItem] : []),
+          { title: t('nav.myTimetable'), url: "/timetable", icon: Clock },
+          { title: t('nav.myCurriculum'), url: "/syllabus", icon: BookOpen },
+          { title: t('nav.diary'), url: "/staff-diary", icon: FileText },
         ];
       } else if (designation === 'accountant') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "FINANCE", isLabel: true },
-          { title: "Collect Fees", url: "/fees/collect", icon: Receipt, moduleKey: 'fees' as const },
-          { title: "Wallet & Finance", url: "/wallet", icon: Wallet, moduleKey: 'wallet' as const },
-          { title: "Store", url: "/store", icon: ShoppingBag, moduleKey: 'store' as const },
+          { title: t('nav.sectionFinance'), isLabel: true },
+          { title: t('nav.collectFees'), url: "/fees/collect", icon: Receipt, moduleKey: 'fees' as const },
+          { title: t('nav.walletFinance'), url: "/wallet", icon: Wallet, moduleKey: 'wallet' as const },
+          { title: t('common.store'), url: "/store", icon: ShoppingBag, moduleKey: 'store' as const },
         ];
       } else if (designation === 'receptionist' || designation === 'front desk officer') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "FRONT DESK", isLabel: true },
-          { title: "Visitor Management", url: "/visitor-management", icon: UserCog },
+          { title: t('nav.sectionFrontDesk'), isLabel: true },
+          { title: t('nav.visitorManagement'), url: "/visitor-management", icon: UserCog },
 
-          { title: "ADMISSIONS", isLabel: true },
+          { title: t('nav.sectionAdmissions'), isLabel: true },
           { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: "admissions" as const },
         ];
       } else if (designation === 'hr manager') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "HR MANAGEMENT", isLabel: true },
-          { title: "Staff", url: "/staff", icon: UserCheck },
+          { title: t('nav.sectionHR'), isLabel: true },
+          { title: t('nav.staff'), url: "/staff", icon: UserCheck },
         ];
       } else if (designation === 'librarian') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "LIBRARY", isLabel: true },
-          { title: "Library", url: "/library", icon: Library, moduleKey: 'library' as const },
+          { title: t('nav.sectionLibrary'), isLabel: true },
+          { title: t('nav.library'), url: "/library", icon: Library, moduleKey: 'library' as const },
         ];
       } else if (designation === 'transport manager') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "TRANSPORT", isLabel: true },
-          { title: "Transport", url: "/transport", icon: Truck, moduleKey: 'transport' as const },
+          { title: t('nav.sectionTransport'), isLabel: true },
+          { title: t('nav.transport'), url: "/transport", icon: Truck, moduleKey: 'transport' as const },
         ];
       } else if (designation === 'hostel warden') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "HOSTEL", isLabel: true },
-          { title: "Hostel", url: "/hostel", icon: Home, moduleKey: 'hostel' as const },
-          { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
+          { title: t('nav.sectionHostel'), isLabel: true },
+          { title: t('nav.hostel'), url: "/hostel", icon: Home, moduleKey: 'hostel' as const },
+          { title: t('nav.health'), url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
         ];
       } else if (designation === 'admissions officer') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "ADMISSIONS", isLabel: true },
-          { title: "Students", url: "/students", icon: Users, moduleKey: 'students' as const },
+          { title: t('nav.sectionAdmissions'), isLabel: true },
+          { title: t('nav.students'), url: "/students", icon: Users, moduleKey: 'students' as const },
         ];
       } else if (designation === 'counselor') {
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
 
-          { title: "STUDENT SERVICES", isLabel: true },
-          { title: "Students", url: "/students", icon: Users, moduleKey: 'students' as const },
-          { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
+          { title: t('nav.sectionStudentServices'), isLabel: true },
+          { title: t('nav.students'), url: "/students", icon: Users, moduleKey: 'students' as const },
+          { title: t('nav.health'), url: "/health", icon: HeartPulse, moduleKey: 'health' as const },
         ];
       } else {
         // Unknown/custom designation – all nav built by permission augmentation
         coreItems = [
-          { title: "OVERVIEW", isLabel: true },
-          { title: "Dashboard", url: "/staff-dashboard", icon: LayoutDashboard },
+          { title: t('nav.sectionOverview'), isLabel: true },
+          { title: t('nav.dashboard'), url: "/staff-dashboard", icon: LayoutDashboard },
         ];
       }
 
       // ── Permission-based augmentation (role-management overrides) ─────────
-      const staffItems: NavItem[] = [...coreItems];
+      // Only augment once permissions are loaded — avoids flooding the nav with ghost
+      // sections during the brief loading window when hasUserPermission returns true
+      // for everything (its fail-open behaviour while the API call is in-flight).
+      if (!permissionsLoaded) {
+        return [...coreItems, ...communicationSection, ...myProfileSection];
+      }
+
+      // When the admin has configured an explicit role for this user, build the sidebar
+      // purely from the permission set — not from designation defaults. This ensures
+      // that a custom role with limited permissions actually limits the navigation.
+      const staffItems: NavItem[] = (isRoleManaged && permissionsLoaded)
+        ? [
+            { title: t('nav.sectionOverview'), isLabel: true },
+            { title: t('nav.dashboard'), url: '/staff-dashboard', icon: LayoutDashboard },
+          ]
+        : [...coreItems];
 
       // Students & Staff management — Admin & Principal only
       const isPrincipalRole = ['principal', 'vice principal'].includes(designation);
       
-      if (isPrincipalRole && hasUserPermission('Students', 'View') && !staffItems.some(i => i.url === '/students')) {
+      if ((isPrincipalRole || isRoleManaged) && hasUserPermission('Students', 'View') && !staffItems.some(i => i.url === '/students')) {
         staffItems.push(
-          { title: "PEOPLE & ENROLLMENT", isLabel: true },
-          { title: "Students", url: "/students", icon: Users, moduleKey: 'students' },
+          { title: t('nav.sectionPeople'), isLabel: true },
+          { title: t('nav.students'), url: "/students", icon: Users, moduleKey: 'students' },
         );
       }
 
-      if (isPrincipalRole && hasUserPermission('Staff', 'View') && !staffItems.some(i => i.url === '/staff')) {
+      if ((isPrincipalRole || isRoleManaged) && hasUserPermission('Staff', 'View') && !staffItems.some(i => i.url === '/staff')) {
         staffItems.push(
-          { title: "Staff", url: "/staff", icon: UserCheck, moduleKey: 'staff' },
+          { title: t('nav.staff'), url: "/staff", icon: UserCheck, moduleKey: 'staff' },
         );
       }
 
       if (isModuleEnabled('admissions') && hasUserPermission('Admissions', 'View') && !staffItems.some(i => i.url === '/admissions')) {
         staffItems.push(
-          { title: "ADMISSIONS", isLabel: true },
+          { title: t('nav.sectionAdmissions'), isLabel: true },
           { title: t('nav.admissions'), url: "/admissions", icon: UserPlus, moduleKey: 'admissions' },
         );
       }
@@ -296,48 +311,48 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       if (hasUserPermission('Assignments', 'View') && !staffItems.some(i => i.url === '/assignments')) {
         staffItems.push(
-          { title: "Assignments", url: "/assignments", icon: ClipboardList },
+          { title: t('nav.assignments'), url: "/assignments", icon: ClipboardList },
         );
       }
 
       if (isModuleEnabled('library') && hasUserPermission('Library', 'View') && !staffItems.some(i => i.url === '/library')) {
         staffItems.push(
-          { title: "LIBRARY", isLabel: true },
-          { title: "Library", url: "/library", icon: Library, moduleKey: 'library' },
+          { title: t('nav.sectionLibrary'), isLabel: true },
+          { title: t('nav.library'), url: "/library", icon: Library, moduleKey: 'library' },
         );
       }
 
       if (isModuleEnabled('transport') && hasUserPermission('Transport', 'View') && !staffItems.some(i => i.url === '/transport')) {
         staffItems.push(
-          { title: "TRANSPORT", isLabel: true },
-          { title: "Transport", url: "/transport", icon: Truck, moduleKey: 'transport' },
+          { title: t('nav.sectionTransport'), isLabel: true },
+          { title: t('nav.transport'), url: "/transport", icon: Truck, moduleKey: 'transport' },
         );
       }
 
       if (isModuleEnabled('hostel') && hasUserPermission('Hostel', 'View') && !staffItems.some(i => i.url === '/hostel')) {
         staffItems.push(
-          { title: "HOSTEL", isLabel: true },
-          { title: "Hostel", url: "/hostel", icon: Home, moduleKey: 'hostel' },
+          { title: t('nav.sectionHostel'), isLabel: true },
+          { title: t('nav.hostel'), url: "/hostel", icon: Home, moduleKey: 'hostel' },
         );
       }
 
       if (isModuleEnabled('fees') && hasUserPermission('Fees', 'View') && !staffItems.some(i => i.url === '/fees/collect' || i.url === '/fees')) {
         staffItems.push(
-          { title: "FINANCE", isLabel: true },
-          { title: "Collect Fees", url: "/fees/collect", icon: Receipt, moduleKey: 'fees' },
+          { title: t('nav.sectionFinance'), isLabel: true },
+          { title: t('nav.collectFees'), url: "/fees/collect", icon: Receipt, moduleKey: 'fees' },
         );
       }
 
       if (hasUserPermission('Visitor', 'View') && !staffItems.some(i => i.url === '/visitor-management')) {
         staffItems.push(
-          { title: "OPERATIONS", isLabel: true },
-          { title: "Visitor Management", url: "/visitor-management", icon: UserCog },
+          { title: t('nav.sectionOperations'), isLabel: true },
+          { title: t('nav.visitorManagement'), url: "/visitor-management", icon: UserCog },
         );
       }
 
       if (isModuleEnabled('examinations') && hasUserPermission('Examinations', 'View') && !staffItems.some(i => i.url === '/examinations')) {
         staffItems.push(
-          { title: "EXAMINATIONS", isLabel: true },
+          { title: t('nav.sectionExaminations'), isLabel: true },
           { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: 'examinations' },
         );
       }
@@ -348,7 +363,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         designation === 'head of department' || designation === 'principal' || designation === 'vice principal'
       )) {
         staffItems.push(
-          { title: "My Curriculum", url: "/syllabus", icon: BookOpen },
+          { title: t('nav.myCurriculum'), url: "/syllabus", icon: BookOpen },
         );
       }
 
@@ -359,29 +374,29 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         !staffItems.some(i => i.url === '/attendance')
       ) {
         staffItems.push(
-          { title: "ATTENDANCE", isLabel: true },
-          { title: "Class Attendance", url: "/attendance", icon: UserCheck, moduleKey: 'attendance' },
+          { title: t('nav.sectionAttendance'), isLabel: true },
+          { title: t('nav.classAttendance'), url: "/attendance", icon: UserCheck, moduleKey: 'attendance' },
         );
       }
 
       if (isModuleEnabled('health') && hasUserPermission('Health', 'View') && !staffItems.some(i => i.url === '/health')) {
         staffItems.push(
-          { title: "HEALTH", isLabel: true },
-          { title: "Health", url: "/health", icon: HeartPulse, moduleKey: 'health' },
+          { title: t('nav.sectionHealth'), isLabel: true },
+          { title: t('nav.health'), url: "/health", icon: HeartPulse, moduleKey: 'health' },
         );
       }
 
       if (hasUserPermission('Grades', 'View') && !staffItems.some(i => i.url === '/grades')) {
         staffItems.push(
-          { title: "GRADES", isLabel: true },
-          { title: "Grades", url: "/grades", icon: Star },
+          { title: t('nav.sectionGrades'), isLabel: true },
+          { title: t('nav.grades'), url: "/grades", icon: Star },
         );
       }
 
       if (!['principal', 'vice principal'].includes(designation) && hasUserPermission('Certificates', 'View') && !staffItems.some(i => i.url === '/certificates')) {
         staffItems.push(
-          { title: "CERTIFICATES", isLabel: true },
-          { title: "Certificates", url: "/certificates", icon: GraduationCap },
+          { title: t('nav.sectionCertificates'), isLabel: true },
+          { title: t('nav.certificates'), url: "/certificates", icon: GraduationCap },
         );
       }
 
@@ -401,8 +416,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('nav.childProfile'), url: "/child-profile", icon: User },
         { title: t('nav.fees'), url: "/parent-fees", icon: DollarSign },
         { title: t('nav.notifications'), url: "/parent-notifications", icon: MessageSquare },
-        { title: "Announcements", url: "/parent-announcements", icon: Megaphone },
-        { title: "Diary", url: "/parent-diary", icon: BookOpen },
+        { title: t('nav.announcements'), url: "/parent-announcements", icon: Megaphone },
+        { title: t('nav.diary'), url: "/parent-diary", icon: BookOpen },
         { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
       ]
     }

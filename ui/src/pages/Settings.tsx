@@ -1,10 +1,11 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings as SettingsIcon, Download, Upload, Bell } from "lucide-react";
+import { Settings as SettingsIcon, Download, Upload, Calendar } from "lucide-react";
 import { SettingsManager } from "@/components/settings/SettingsManager";
 import BiometricSettings from "@/components/settings/BiometricSettings";
 import { DataImportManager } from "@/components/superadmin/DataImportManager";
 import { DataExportManager } from "@/components/superadmin/DataExportManager";
+import { LeaveManagementSettings } from "@/components/settings/LeaveManagementSettings";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function Settings() {
@@ -25,7 +26,7 @@ export default function Settings() {
 
       {/* Settings Content */}
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-auto">
+        <TabsList className="grid w-full grid-cols-4 h-auto">
           <TabsTrigger value="general" className="flex items-center gap-2 py-3">
             <SettingsIcon className="h-4 w-4" />
             <span className="hidden sm:inline">{t('settings.general')}</span>
@@ -37,6 +38,10 @@ export default function Settings() {
           <TabsTrigger value="export" className="flex items-center gap-2 py-3">
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline">{t('settings.export')}</span>
+          </TabsTrigger>
+          <TabsTrigger value="leave" className="flex items-center gap-2 py-3">
+            <Calendar className="h-4 w-4" />
+            <span className="hidden sm:inline">Leave Management</span>
           </TabsTrigger>
         </TabsList>
 
@@ -50,6 +55,10 @@ export default function Settings() {
 
         <TabsContent value="export" className="mt-6">
           <DataExportManager />
+        </TabsContent>
+
+        <TabsContent value="leave" className="mt-6">
+          <LeaveManagementSettings />
         </TabsContent>
       </Tabs>
     </div>

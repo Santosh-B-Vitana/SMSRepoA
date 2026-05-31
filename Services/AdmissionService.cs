@@ -678,6 +678,10 @@ namespace SmsApi.Services
                     // Generate roll number
                     var rollNumber = await GetNextRollNumberAsync(schoolId, admissionInTx.ApplyingForClass);
 
+                    // Extract photo URL stored in Remarks JSON by UploadPhotoAsync
+                    var enrollAdditionalData = ParseAdditionalData(admissionInTx.Remarks);
+                    var admissionPhotoUrl = GetStringValue(enrollAdditionalData, "PhotoUrl");
+
                     var student = new Student
                     {
                         Id = Guid.NewGuid(),
@@ -695,6 +699,7 @@ namespace SmsApi.Services
                         IsActive = true,
                         GuardianName = admissionInTx.ParentName,
                         Address = admissionInTx.Address,
+                        PhotoUrl = !string.IsNullOrWhiteSpace(admissionPhotoUrl) ? admissionPhotoUrl : null,
                         AdmissionDate = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow

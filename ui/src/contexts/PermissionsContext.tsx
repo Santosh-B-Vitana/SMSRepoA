@@ -63,6 +63,8 @@ interface PermissionsContextType {
   hasUserPermission: (module: string, action: string) => boolean;
   /** All effective permission strings granted to this user via Role Management */
   userPermissions: Set<string>;
+  /** True when the admin has explicitly assigned at least one role to this user (custom roles take precedence over system roles) */
+  isRoleManaged: boolean;
   refreshPermissions: () => Promise<void>;
   // Legacy fields kept for backward compatibility
   schoolPermissions: SchoolPermissions[];
@@ -272,6 +274,7 @@ export const PermissionsProvider: React.FC<Props> = ({ children }) => {
     hasPermission,
     hasUserPermission,
     userPermissions,
+    isRoleManaged,
     refreshPermissions: fetchPermissions,
     schoolPermissions: legacySchoolPermissions,
     currentSchoolPermissions: null,

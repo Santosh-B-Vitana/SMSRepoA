@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -53,6 +53,8 @@ import {
 } from "@/schemas/admissionSchema";
 import { admissionService, type Admission } from "@/services/admissionService";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { academicApi, type ClassResponse } from "@/services/api/academicApi";
+import { boardApi, type SchoolBoardConfigResponse } from "@/services/api/boardApi";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -154,6 +156,46 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Classes & Boards (Academic step) ─────────────────────────────────────
+  const [schoolClasses, setSchoolClasses] = useState<ClassResponse[]>([]);
+  const [schoolBoards, setSchoolBoards]   = useState<SchoolBoardConfigResponse[]>([]);
+  const [selectedBoardId, setSelectedBoardId] = useState<string>("");
+
+  useEffect(() => {
+    academicApi.listClasses(1, 500).then(r => setSchoolClasses(r.classes || [])).catch(() => {});
+    boardApi.getSchoolBoards().then(r => setSchoolBoards(r.boards || [])).catch(() => {});
+  }, []);
+
+  // When board selection changes, clear classAppliedFor if it's no longer available
+  const handleBoardChange = (boardId: string) => {
+    setSelectedBoardId(boardId);
+    form.setValue("classAppliedFor", "", { shouldValidate: false });
+  };
+
+  // Unique sorted standards filtered by selected board
+  const filteredClassOptions = useMemo(() => {
+    let classes = schoolClasses;
+    if (selectedBoardId) {
+      classes = schoolClasses.filter(c => c.boardConfigurationId === selectedBoardId);
+    } else if (schoolBoards.length > 0) {
+      // Show classes with no explicit board when "All / No Board" is selected
+      const noBoardClasses = schoolClasses.filter(c => !c.boardConfigurationId);
+      classes = noBoardClasses.length > 0 ? noBoardClasses : schoolClasses;
+    }
+    const standards = Array.from(
+      new Set(classes.map(c => (c.standard || c.name || "").trim()).filter(Boolean))
+    );
+    return standards.sort((a, b) => {
+      const aNum = parseInt(a.replace(/\D/g, "")) || 0;
+      const bNum = parseInt(b.replace(/\D/g, "")) || 0;
+      return aNum !== bNum ? aNum - bNum : a.localeCompare(b);
+    });
+  }, [schoolClasses, selectedBoardId, schoolBoards.length]);
+
+  // Display label: pure numbers get "Class N" prefix, others shown as-is
+  const formatClassLabel = (standard: string) =>
+    /^\d+$/.test(standard) ? `Class ${standard}` : standard;
 
   const form = useForm<AdmissionFormData>({
     resolver:      zodResolver(admissionSchema),
@@ -604,17 +646,48 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">Class applied for and academic background</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                  {/* Board selector — shown only when the school has multiple boards configured */}
+                  {schoolBoards.length > 1 && (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Board</FormLabel>
+                      <Select
+                        value={selectedBoardId || "__all__"}
+                        onValueChange={v => handleBoardChange(v === "__all__" ? "" : v)}
+                      >
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select board" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__all__">All / School Default</SelectItem>
+                          {schoolBoards.map(b => (
+                            <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
+                              {b.boardName}{b.isDefault ? " (Default)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+
                   <FormField control={form.control} name="classAppliedFor" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Class Applied For <span className="text-destructive">*</span></FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {CLASS_OPTIONS.map((c) => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                          ))}
+                          {filteredClassOptions.length > 0
+                            ? filteredClassOptions.map(std => (
+                                <SelectItem key={std} value={std}>
+                                  {formatClassLabel(std)}
+                                </SelectItem>
+                              ))
+                            : CLASS_OPTIONS.map(c => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))
+                          }
                         </SelectContent>
                       </Select>
                       <FormMessage />

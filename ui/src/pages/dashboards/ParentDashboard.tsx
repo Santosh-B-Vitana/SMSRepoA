@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSchool } from "../../contexts/SchoolContext";
+import { useLanguage } from "../../contexts/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ function StatCard({ g, icon, label, value, sub, dot }: {
 export default function ParentDashboard() {
   const { user, logout } = useAuth();
   const { schoolInfo } = useSchool();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -167,7 +169,7 @@ export default function ParentDashboard() {
           <div className="absolute inset-0 rounded-full border-4 border-t-violet-600 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
           <GraduationCap className="absolute inset-0 m-auto h-6 w-6 text-violet-600" />
         </div>
-        <p className="text-sm font-medium text-muted-foreground">Loading your child's dashboard…</p>
+        <p className="text-sm font-medium text-muted-foreground">{t('parent.loadingDashboard')}</p>
       </div>
     </div>
   );
@@ -179,9 +181,9 @@ export default function ParentDashboard() {
         <div className="w-16 h-16 rounded-2xl bg-violet-100 dark:bg-violet-950/40 flex items-center justify-center">
           <GraduationCap className="h-8 w-8 text-violet-600" />
         </div>
-        <h3 className="text-lg font-semibold">No Children Linked</h3>
+        <h3 className="text-lg font-semibold">{t('parent.noChildrenLinked')}</h3>
         <p className="text-sm text-muted-foreground max-w-md">Your account does not have any children linked yet. Contact the school administration.</p>
-        <Badge variant="secondary">Contact School Admin</Badge>
+        <Badge variant="secondary">{t('parent.contactAdmin')}</Badge>
       </CardContent></Card>
     </div>
   );
@@ -222,10 +224,10 @@ export default function ParentDashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard g="from-violet-500 to-violet-700" icon={<Calendar className="h-4 w-4" />} label="Attendance" value={`${attPct}%`} sub={`${summary?.attendance?.presentDays ?? 0} / ${summary?.attendance?.totalDays ?? 0} days`} dot={attPct >= 75 ? "emerald" : "amber"} />
-          <StatCard g="from-blue-500 to-indigo-600" icon={<Trophy className="h-4 w-4" />} label="Latest Grade" value={examLoading ? "…" : (latest?.result.overallGrade ?? (latest ? `${latest.result.percentage.toFixed(0)}%` : "—"))} sub={latest ? latest.setup.name : "No results yet"} dot="blue" />
-          <StatCard g={summary?.fee?.pendingAmount ? "from-amber-500 to-orange-600" : "from-emerald-500 to-emerald-700"} icon={<BadgeIndianRupee className="h-4 w-4" />} label="Pending Fees" value={`₹${((summary?.fee?.pendingAmount ?? 0) / 1000).toFixed(1)}K`} sub={summary?.fee?.pendingAmount ? `of ₹${((summary?.fee?.totalAmount ?? 0) / 1000).toFixed(1)}K total` : "All clear! ✓"} dot={summary?.fee?.pendingAmount ? "amber" : "emerald"} />
-          <StatCard g={unreadCount > 0 ? "from-rose-500 to-rose-700" : "from-slate-400 to-slate-600"} icon={<Bell className="h-4 w-4" />} label="Notifications" value={`${unreadCount}`} sub={unreadCount > 0 ? "unread messages" : "All caught up"} dot={unreadCount > 0 ? "rose" : "slate"} />
+          <StatCard g="from-violet-500 to-violet-700" icon={<Calendar className="h-4 w-4" />} label={t('parent.attendanceStat')} value={`${attPct}%`} sub={`${summary?.attendance?.presentDays ?? 0} / ${summary?.attendance?.totalDays ?? 0} days`} dot={attPct >= 75 ? "emerald" : "amber"} />
+          <StatCard g="from-blue-500 to-indigo-600" icon={<Trophy className="h-4 w-4" />} label={t('parent.latestGrade')} value={examLoading ? "…" : (latest?.result.overallGrade ?? (latest ? `${latest.result.percentage.toFixed(0)}%` : "—"))} sub={latest ? latest.setup.name : "—"} dot="blue" />
+          <StatCard g={summary?.fee?.pendingAmount ? "from-amber-500 to-orange-600" : "from-emerald-500 to-emerald-700"} icon={<BadgeIndianRupee className="h-4 w-4" />} label={t('parent.pendingFees')} value={`₹${((summary?.fee?.pendingAmount ?? 0) / 1000).toFixed(1)}K`} sub={summary?.fee?.pendingAmount ? `of ₹${((summary?.fee?.totalAmount ?? 0) / 1000).toFixed(1)}K total` : "All clear! ✓"} dot={summary?.fee?.pendingAmount ? "amber" : "emerald"} />
+          <StatCard g={unreadCount > 0 ? "from-rose-500 to-rose-700" : "from-slate-400 to-slate-600"} icon={<Bell className="h-4 w-4" />} label={t('parent.notifications')} value={`${unreadCount}`} sub={unreadCount > 0 ? t('parent.unreadMessages') : t('parent.allCaughtUp')} dot={unreadCount > 0 ? "rose" : "slate"} />
         </div>
       )}
 
@@ -239,9 +241,9 @@ export default function ParentDashboard() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-violet-100 dark:bg-violet-950/50 flex items-center justify-center"><Calendar className="h-4 w-4 text-violet-600" /></span>
-                    Attendance Overview
+                    {t('parent.attendanceOverview')}
                   </CardTitle>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/child-profile")}>Full Report <ChevronRight className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/child-profile")}>{t('parent.fullReport')} <ChevronRight className="h-3.5 w-3.5" /></Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -249,15 +251,15 @@ export default function ParentDashboard() {
                   <AttRing pct={attPct} />
                   <div className="flex-1 space-y-3 min-w-0">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Academic year</span>
+                      <span className="text-muted-foreground">{t('parent.academicYear')}</span>
                       <span className={`font-black text-xl ${attColor(attPct)}`}>{attPct}%</span>
                     </div>
                     <Progress value={attPct} className="h-2" />
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { icon: <CheckCircle className="h-4 w-4 text-emerald-500" />, val: summary.attendance?.presentDays ?? 0, label: "Present", cls: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300" },
-                        { icon: <XCircle    className="h-4 w-4 text-rose-500" />,    val: summary.attendance?.absentDays  ?? 0, label: "Absent",  cls: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300" },
-                        { icon: <Timer      className="h-4 w-4 text-amber-500" />,   val: summary.attendance?.lateDays    ?? 0, label: "Late",    cls: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300" },
+                        { icon: <CheckCircle className="h-4 w-4 text-emerald-500" />, val: summary.attendance?.presentDays ?? 0, label: t('parent.present'), cls: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300" },
+                        { icon: <XCircle    className="h-4 w-4 text-rose-500" />,    val: summary.attendance?.absentDays  ?? 0, label: t('parent.absent'),  cls: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300" },
+                        { icon: <Timer      className="h-4 w-4 text-amber-500" />,   val: summary.attendance?.lateDays    ?? 0, label: t('parent.late'),    cls: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300" },
                       ].map(({ icon, val, label, cls }) => (
                         <div key={label} className={`flex items-center gap-1.5 p-2 rounded-xl ${cls}`}>
                           {icon}<div><p className="text-base font-black leading-none">{val}</p><p className="text-[10px] opacity-70 mt-0.5">{label}</p></div>
@@ -267,7 +269,7 @@ export default function ParentDashboard() {
                     {attPct < 75 && (
                       <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                         <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                        <p className="text-[11px] text-amber-700 dark:text-amber-300">Attendance below 75%. Regular attendance required to avoid exam de-bar.</p>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300">{t('parent.lowAttendanceWarning')}</p>
                       </div>
                     )}
                   </div>
@@ -282,9 +284,9 @@ export default function ParentDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <span className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/50 flex items-center justify-center"><Trophy className="h-4 w-4 text-blue-600" /></span>
-                  Exam Performance
+                  {t('parent.examPerformance')}
                 </CardTitle>
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/child-profile")}>All Results <ChevronRight className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/child-profile")}>{t('parent.allResults')} <ChevronRight className="h-3.5 w-3.5" /></Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -305,7 +307,7 @@ export default function ParentDashboard() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="font-semibold text-sm truncate flex-1">{e.setup.name}</p>
-                              {idx === 0 && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800 shrink-0 px-1.5">Latest</Badge>}
+                              {idx === 0 && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800 shrink-0 px-1.5">{t('parent.latestBadge')}</Badge>}
                             </div>
                             <div className="flex items-center gap-2 mt-1">
                               <Progress value={e.result.percentage} className="h-1.5 flex-1" />
@@ -316,7 +318,7 @@ export default function ParentDashboard() {
                         </div>
                         {open && (e.result.subjects ?? []).length > 0 && (
                           <div className="px-3 pb-3 border-t">
-                            <p className="text-[11px] font-semibold text-muted-foreground pt-2 pb-1.5 uppercase tracking-wide">Subject Breakdown</p>
+                            <p className="text-[11px] font-semibold text-muted-foreground pt-2 pb-1.5 uppercase tracking-wide">{t('parent.subjectBreakdown')}</p>
                             <div className="space-y-1.5">
                               {(e.result.subjects ?? []).map((s, si) => {
                                 const sp = s.maxMarks > 0 ? (s.marksObtained / s.maxMarks) * 100 : 0;
@@ -339,7 +341,7 @@ export default function ParentDashboard() {
               ) : (
                 <div className="py-8 text-center">
                   <Trophy className="h-10 w-10 text-muted-foreground/25 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No exam results published yet</p>
+                  <p className="text-sm text-muted-foreground">{t('parent.noExamResults')}</p>
                 </div>
               )}
             </CardContent>
@@ -351,12 +353,12 @@ export default function ParentDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <span className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center"><BookMarked className="h-4 w-4 text-emerald-600" /></span>
-                  Teacher's Diary
+                  {t('parent.teacherDiary')}
                   {diaryEntries.some(d => d.priority === "urgent") && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200 animate-pulse">Urgent</span>
                   )}
                 </CardTitle>
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/parent-diary")}>Open Diary <ChevronRight className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate("/parent-diary")}>{t('parent.openDiary')} <ChevronRight className="h-3.5 w-3.5" /></Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -396,8 +398,8 @@ export default function ParentDashboard() {
               ) : (
                 <div className="py-7 text-center">
                   <BookMarked className="h-9 w-9 text-muted-foreground/25 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No recent diary entries from teachers</p>
-                  <Button variant="outline" size="sm" className="mt-2 text-xs" onClick={() => navigate("/parent-diary")}>Open Diary</Button>
+                  <p className="text-sm text-muted-foreground">{t('parent.noDiaryEntries')}</p>
+                  <Button variant="outline" size="sm" className="mt-2 text-xs" onClick={() => navigate("/parent-diary")}>{t('parent.openDiary')}</Button>
                 </div>
               )}
             </CardContent>
@@ -411,7 +413,7 @@ export default function ParentDashboard() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <span className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center"><BadgeIndianRupee className="h-3.5 w-3.5 text-amber-600" /></span>
-                  Fee Summary
+                  {t('parent.feeSummary')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -424,12 +426,12 @@ export default function ParentDashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-center">
-                    <p className="text-[10px] text-muted-foreground">Paid</p>
+                    <p className="text-[10px] text-muted-foreground">{t('parent.paid')}</p>
                     <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">₹{(summary.fee.paidAmount / 1000).toFixed(1)}K</p>
                   </div>
                   <div className={`p-2.5 rounded-xl text-center border ${summary.fee.pendingAmount > 0 ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800" : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"}`}>
-                    <p className="text-[10px] text-muted-foreground">Pending</p>
-                    <p className={`text-sm font-black ${summary.fee.pendingAmount > 0 ? "text-amber-700 dark:text-amber-400" : "text-emerald-700 dark:text-emerald-400"}`}>{summary.fee.pendingAmount > 0 ? `₹${(summary.fee.pendingAmount / 1000).toFixed(1)}K` : "Nil ✓"}</p>
+                    <p className="text-[10px] text-muted-foreground">{t('parent.pendingLabel')}</p>
+                    <p className={`text-sm font-black ${summary.fee.pendingAmount > 0 ? "text-amber-700 dark:text-amber-400" : "text-emerald-700 dark:text-emerald-400"}`}>{summary.fee.pendingAmount > 0 ? `₹${(summary.fee.pendingAmount / 1000).toFixed(1)}K` : t('parent.nilFees')}</p>
                   </div>
                 </div>
                 {summary.fee.pendingAmount > 0 && (
@@ -437,7 +439,7 @@ export default function ParentDashboard() {
                     <BadgeIndianRupee className="h-3.5 w-3.5 mr-1" /> Pay ₹{summary.fee.pendingAmount.toLocaleString("en-IN")}
                   </Button>
                 )}
-                <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => navigate("/parent-fees")}>View All Transactions</Button>
+                <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => navigate("/parent-fees")}>{t('parent.viewAllTransactions')}</Button>
               </CardContent>
             </Card>
           )}
@@ -448,7 +450,7 @@ export default function ParentDashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <span className="w-6 h-6 rounded-lg bg-rose-100 dark:bg-rose-950/50 flex items-center justify-center"><Bell className="h-3.5 w-3.5 text-rose-600" /></span>
-                  Notifications
+                  {t('parent.notifications')}
                   {unreadCount > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white leading-none">{unreadCount}</span>}
                 </CardTitle>
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate("/parent-notifications")}>All <ChevronRight className="h-3.5 w-3.5 ml-0.5" /></Button>
@@ -467,7 +469,7 @@ export default function ParentDashboard() {
                     </div>
                   ))}
                 </div>
-              ) : <p className="text-xs text-muted-foreground text-center py-3">All caught up! 🎉</p>}
+              ) : <p className="text-xs text-muted-foreground text-center py-3">{t('parent.allCaughtUp')}</p>}
             </CardContent>
           </Card>
 
@@ -476,18 +478,18 @@ export default function ParentDashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-violet-600" />
-                Quick Actions
+                {t('parent.quickActions')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { icon: <GraduationCap className="h-4 w-4" />,    label: "Profile",  path: "/child-profile",       cls: "text-violet-600 bg-violet-50 dark:bg-violet-950/40" },
-                  { icon: <Trophy className="h-4 w-4" />,           label: "Results",  path: "/child-profile",       cls: "text-blue-600 bg-blue-50 dark:bg-blue-950/40" },
-                  { icon: <BookMarked className="h-4 w-4" />,       label: "Diary",    path: "/parent-diary",        cls: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },
-                  { icon: <BadgeIndianRupee className="h-4 w-4" />, label: "Fees",     path: "/parent-fees",         cls: "text-amber-600 bg-amber-50 dark:bg-amber-950/40" },
-                  { icon: <Bell className="h-4 w-4" />,             label: "Alerts",   path: "/parent-notifications", cls: "text-rose-600 bg-rose-50 dark:bg-rose-950/40" },
-                  { icon: <MessageSquare className="h-4 w-4" />,   label: "Connect",  path: "/school-connect",      cls: "text-cyan-600 bg-cyan-50 dark:bg-cyan-950/40" },
+                  { icon: <GraduationCap className="h-4 w-4" />,    label: t('parent.profileAction'),  path: "/child-profile",       cls: "text-violet-600 bg-violet-50 dark:bg-violet-950/40" },
+                  { icon: <Trophy className="h-4 w-4" />,           label: t('parent.resultsAction'),  path: "/child-profile",       cls: "text-blue-600 bg-blue-50 dark:bg-blue-950/40" },
+                  { icon: <BookMarked className="h-4 w-4" />,       label: t('parent.diaryAction'),    path: "/parent-diary",        cls: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },
+                  { icon: <BadgeIndianRupee className="h-4 w-4" />, label: t('parent.feesAction'),     path: "/parent-fees",         cls: "text-amber-600 bg-amber-50 dark:bg-amber-950/40" },
+                  { icon: <Bell className="h-4 w-4" />,             label: t('parent.alertsAction'),   path: "/parent-notifications", cls: "text-rose-600 bg-rose-50 dark:bg-rose-950/40" },
+                  { icon: <MessageSquare className="h-4 w-4" />,   label: t('parent.connectAction'),  path: "/school-connect",      cls: "text-cyan-600 bg-cyan-50 dark:bg-cyan-950/40" },
                 ].map(({ icon, label, path, cls }) => (
                   <button key={label} onClick={() => navigate(path)}
                     className="flex flex-col items-center gap-1.5 py-3 rounded-xl border hover:shadow-sm hover:border-violet-200 dark:hover:border-violet-800 transition-all group">
@@ -500,7 +502,7 @@ export default function ParentDashboard() {
           </Card>
 
           <Button variant="outline" size="sm" className="w-full gap-2 text-sm" onClick={() => setPwOpen(true)}>
-            <KeyRound className="h-4 w-4" /> Change Password
+            <KeyRound className="h-4 w-4" /> {t('parent.changePassword')}
           </Button>
         </div>
       </div>
@@ -509,7 +511,7 @@ export default function ParentDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-violet-600" /> All Children Overview
+              <TrendingUp className="h-4 w-4 text-violet-600" /> {t('parent.allChildrenOverview')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -526,11 +528,11 @@ export default function ParentDashboard() {
                     {d?.loading ? <div className="h-12 flex items-center justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
                     : s ? (
                       <div className="grid grid-cols-3 gap-1.5 text-center">
-                        <div className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-950/30"><p className="text-sm font-black text-violet-700 dark:text-violet-300">{s.attendance?.attendancePercent ?? 0}%</p><p className="text-[9px] text-muted-foreground">Attendance</p></div>
-                        <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/30"><p className="text-sm font-black text-blue-700 dark:text-blue-300">{s.exams?.results?.[0]?.grade ?? "—"}</p><p className="text-[9px] text-muted-foreground">Last Grade</p></div>
-                        <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/30"><p className="text-sm font-black text-amber-700 dark:text-amber-300">₹{((s.fee?.pendingAmount ?? 0) / 1000).toFixed(0)}K</p><p className="text-[9px] text-muted-foreground">Due</p></div>
+                        <div className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-950/30"><p className="text-sm font-black text-violet-700 dark:text-violet-300">{s.attendance?.attendancePercent ?? 0}%</p><p className="text-[9px] text-muted-foreground">{t('parent.attendanceMini')}</p></div>
+                        <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/30"><p className="text-sm font-black text-blue-700 dark:text-blue-300">{s.exams?.results?.[0]?.grade ?? "—"}</p><p className="text-[9px] text-muted-foreground">{t('parent.lastGradeMini')}</p></div>
+                        <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/30"><p className="text-sm font-black text-amber-700 dark:text-amber-300">₹{((s.fee?.pendingAmount ?? 0) / 1000).toFixed(0)}K</p><p className="text-[9px] text-muted-foreground">{t('parent.dueMini')}</p></div>
                       </div>
-                    ) : <p className="text-xs text-muted-foreground text-center py-2">No data</p>}
+                    ) : <p className="text-xs text-muted-foreground text-center py-2">{t('parent.noDataMini')}</p>}
                   </button>
                 );
               })}
@@ -543,8 +545,9 @@ export default function ParentDashboard() {
 }
 
 function HeroBanner({ name, school, child }: { name?: string; school?: string; child: StudentBasic | null }) {
+  const { t } = useLanguage();
   const h = new Date().getHours();
-  const greeting = h < 12 ? "Good Morning" : h < 17 ? "Good Afternoon" : "Good Evening";
+  const greeting = h < 12 ? t('parent.goodMorning') : h < 17 ? t('parent.goodAfternoon') : t('parent.goodEvening');
   const day = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return (
     <div className="relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(135deg,#5b21b6 0%,#4f46e5 50%,#2563eb 100%)" }}>
@@ -557,7 +560,7 @@ function HeroBanner({ name, school, child }: { name?: string; school?: string; c
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               <GraduationCap className="h-4 w-4 text-white/60" />
-              <span className="text-[11px] font-bold uppercase tracking-widest text-white/55">{school ?? "Parent Portal"}</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-white/55">{school ?? t('parent.portal')}</span>
             </div>
             <h1 className="text-2xl lg:text-3xl font-black text-white leading-tight tracking-tight">
               {greeting}, <span className="text-violet-200">{name?.split(" ")[0] ?? "Parent"}</span>

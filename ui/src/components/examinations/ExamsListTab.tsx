@@ -11,6 +11,7 @@
  *  - Create exam via wizard (+ button)
  */
 import { useState, useEffect, useCallback } from 'react';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -302,6 +303,9 @@ function ExamCard({
   onDelete: () => void;
   onDownloadHallTickets: () => void;
 }) {
+  const { hasUserPermission } = usePermissions();
+  const canEdit   = hasUserPermission('Examinations', 'Edit');
+  const canDelete = hasUserPermission('Examinations', 'Delete');
   const sc = STATUS_CFG[setup.status] ?? STATUS_CFG.draft;
   const currentStep = STATUS_TO_STEP[setup.status] ?? 0;
 
@@ -358,9 +362,11 @@ function ExamCard({
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button size="sm" variant="default" className="h-7 text-xs gap-1" onClick={onEnterMarks}>
-            <PenLine className="h-3 w-3" /> Enter Marks
-          </Button>
+          {canEdit && (
+            <Button size="sm" variant="default" className="h-7 text-xs gap-1" onClick={onEnterMarks}>
+              <PenLine className="h-3 w-3" /> Enter Marks
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={onViewTimetable}>
             <Eye className="h-3 w-3" /> Timetable
           </Button>
@@ -372,12 +378,12 @@ function ExamCard({
           >
             <Ticket className="h-3 w-3" /> Hall Tickets
           </Button>
-          {setup.status !== 'published' && (
+          {canEdit && setup.status !== 'published' && (
             <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={onReschedule}>
               <Clock className="h-3 w-3" /> Reschedule
             </Button>
           )}
-          {setup.status !== 'published' && (
+          {canDelete && setup.status !== 'published' && (
             <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 gap-1 ml-auto" onClick={onDelete}>
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -396,6 +402,8 @@ interface ExamsListTabProps {
 
 export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
   const { toast } = useToast();
+  const { hasUserPermission } = usePermissions();
+  const canCreate = hasUserPermission('Examinations', 'Create');
 
   const [setups, setSetups] = useState<ExamSetupBasicDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -544,7 +552,7 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </Button>
 
-        <Button onClick={() => setWizardOpen(true)} className="gap-2 ml-auto">
+        <Button onClick={() => setWizardOpen(true)} className="gap-2 ml-auto" disabled={!canCreate}>
           <Plus className="h-4 w-4" /> New Exam
         </Button>
       </div>
@@ -560,7 +568,7 @@ export function ExamsListTab({ onEnterMarks }: ExamsListTabProps) {
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
           <BookOpen className="h-10 w-10 opacity-30" />
           <p className="text-sm">No exam setups found.</p>
-          <Button onClick={() => setWizardOpen(true)} variant="outline" size="sm" className="gap-1">
+          <Button onClick={() => setWizardOpen(true)} variant="outline" size="sm" className="gap-1" disabled={!canCreate}>
             <Plus className="h-4 w-4" /> Create First Exam
           </Button>
         </div>

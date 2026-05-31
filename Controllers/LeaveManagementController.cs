@@ -102,6 +102,25 @@ namespace SmsApi.Controllers
             }
         }
 
+        [HttpDelete("types/{id}")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
+        public async Task<IActionResult> DeleteLeaveType(Guid id)
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty)
+                return Unauthorized();
+
+            try
+            {
+                await _leaveManagementService.DeleteLeaveTypeAsync(id, schoolId);
+                return NoContent();
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+        }
+
         // Leave Requests
         [HttpGet("requests")]
         [Authorize(Roles = "Admin,Principal,HRManager")]

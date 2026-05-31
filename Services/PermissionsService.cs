@@ -1260,17 +1260,25 @@ namespace SmsApi.Services
 
         public async Task<List<string>> GetUserEffectivePermissionsAsync(Guid userId, Guid schoolId)
         {
-            var roleIds = await _context.UserRoles
+            // Fetch all active role assignments for this user
+            var userRoles = await _context.UserRoles
                 .Where(ur => ur.UserId == userId && ur.SchoolId == schoolId && !ur.IsDeleted
                              && (ur.ValidTo == null || ur.ValidTo > DateTime.UtcNow))
-                .Select(ur => ur.RoleId)
+                .Select(ur => new { ur.RoleId, IsSystemRole = ur.Role != null && ur.Role.IsSystemRole })
                 .ToListAsync();
 
-            if (!roleIds.Any()) return new List<string>();
+            if (!userRoles.Any()) return new List<string>();
+
+            // When the user has at least one custom (non-system) role, use ONLY the custom roles.
+            // This allows admins to restrict staff by assigning a custom role without the
+            // auto-assigned system roles (Teacher / Class Teacher) granting extra permissions.
+            var customRoleIds = userRoles.Where(ur => !ur.IsSystemRole).Select(ur => ur.RoleId).ToList();
+            var effectiveRoleIds = customRoleIds.Any() ? customRoleIds
+                : userRoles.Select(ur => ur.RoleId).ToList();
 
             var permissions = await _context.RolePermissions
                 .Include(rp => rp.Permission)
-                .Where(rp => roleIds.Contains(rp.RoleId) && rp.IsGranted && !rp.IsDeleted && rp.Permission != null)
+                .Where(rp => effectiveRoleIds.Contains(rp.RoleId) && rp.IsGranted && !rp.IsDeleted && rp.Permission != null)
                 .Select(rp => rp.Permission!.Name)
                 .Distinct()
                 .ToListAsync();

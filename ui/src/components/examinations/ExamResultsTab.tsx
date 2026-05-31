@@ -28,6 +28,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import {
   PenLine, CheckCircle2, Send, Loader2, BookOpen, Trophy,
   TrendingUp, Users, Award, RotateCcw, Search, Calendar,
@@ -208,6 +209,9 @@ function ResultsView({ setupId }: { setupId: string }) {
 
 function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList: () => void }) {
   const { toast } = useToast();
+  const { hasUserPermission } = usePermissions();
+  const canEditExams = hasUserPermission('Examinations', 'Edit');
+  const canApproveExams = hasUserPermission('Examinations', 'Approve');
   const [setup, setSetup] = useState<ExamSetupDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSubject, setActiveSubject] = useState<string>('');
@@ -331,7 +335,7 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
       </div>
 
       {/* Actions */}
-      {isPublished && (
+      {isPublished && canEditExams && (
         <div className="flex gap-2 flex-wrap items-center">
           <Button
             size="sm"
@@ -348,13 +352,13 @@ function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList:
       )}
       {!isPublished && (
         <div className="flex gap-2 flex-wrap">
-          {canFinalize && (
+          {canFinalize && canEditExams && (
             <Button size="sm" className="gap-1" onClick={() => setConfirmFinalize(true)} disabled={finalizing}>
               {finalizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
               Calculate Grades
             </Button>
           )}
-          {canPublish && (
+          {canPublish && (canEditExams || canApproveExams) && (
             <Button size="sm" variant="default" className="gap-1 bg-green-600 hover:bg-green-700" onClick={() => setConfirmPublish(true)} disabled={publishing}>
               {publishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
               Publish Results

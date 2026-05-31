@@ -61,8 +61,12 @@ namespace SmsApi.Controllers
                 // If no  → no active roles configured → use designation-based fallback.
                 // Note: we intentionally check !IsDeleted so that removing all roles reverts to
                 // designation defaults rather than locking the user out permanently.
+                // isRoleManaged = true only when an admin has explicitly assigned a CUSTOM role.
+                // Auto-assigned system roles (Teacher / Class Teacher) must NOT trigger strict
+                // permission-only mode — those users still need their designation-based nav.
                 var isRoleManaged = await _db.UserRoles
-                    .AnyAsync(ur => ur.UserId == userId && ur.SchoolId == schoolId && !ur.IsDeleted);
+                    .AnyAsync(ur => ur.UserId == userId && ur.SchoolId == schoolId && !ur.IsDeleted
+                                   && ur.Role != null && !ur.Role.IsSystemRole);
 
                 var permissions = await _permissionsService.GetUserEffectivePermissionsAsync(userId, schoolId);
                 return Ok(new { permissions, isRoleManaged });

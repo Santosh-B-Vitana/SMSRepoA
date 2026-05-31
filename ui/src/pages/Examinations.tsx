@@ -25,6 +25,7 @@ import type { ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { useSchool } from "@/contexts/SchoolContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { generateProfessionalReportCard } from "@/utils/professionalPdfGenerator";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -197,6 +198,8 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
   onNavigate: (tab: string, event?: ExamEvent) => void;
 }) {
   const { t } = useLanguage();
+  const { hasUserPermission } = usePermissions();
+  const canEditExams = hasUserPermission('Examinations', 'Edit');
   const today = new Date();
   const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -287,7 +290,9 @@ function OverviewTab({ stats, statsLoading, events, eventsLoading, academicYear,
                           <p className="text-xs text-muted-foreground">Class {ev.classGroup}{ev.section ? ` – ${ev.section}` : ""} · Due {new Date(ev.dateTo).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
                         </div>
                       </div>
-                      <Button size="sm" className="h-7 text-xs shrink-0 ml-3" onClick={() => onNavigate("marks", ev)}>{t('exams.overview.actionRequired.btn.enterMarks')}</Button>
+                      {canEditExams && (
+                        <Button size="sm" className="h-7 text-xs shrink-0 ml-3" onClick={() => onNavigate("marks", ev)}>{t('exams.overview.actionRequired.btn.enterMarks')}</Button>
+                      )}
                     </div>
                   ))}
                   {pendingMarks.length > 6 && (

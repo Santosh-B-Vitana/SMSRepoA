@@ -214,28 +214,33 @@ namespace SmsApi.Services
         }
 
         // ----------------------------------------------------------------------
-        // PDF RENDERING  (1 ticket per A4 page  -  full-page, industry-grade)
+        // PDF RENDERING  –  Ultra-professional "Board Exam" grade layout
+        // One hall ticket per A4 page.
+        // Inspired by CBSE / ICSE / university admit-card conventions.
         // ----------------------------------------------------------------------
 
         private static double Mm(double mm) => mm * 2.8346;
         private static XColor Rgb(int r, int g, int b) => XColor.FromArgb(r, g, b);
         private static XColor Rgba(int r, int g, int b, int a) => XColor.FromArgb(a, r, g, b);
 
-        // Brand palette
-        private static readonly XColor ColPrimary   = XColor.FromArgb(21, 52, 112);   // deep navy
-        private static readonly XColor ColAccent    = XColor.FromArgb(220, 38, 38);   // crimson
-        private static readonly XColor ColGold      = XColor.FromArgb(202, 138, 4);   // gold
-        private static readonly XColor ColLightBlue = XColor.FromArgb(239, 246, 255); // pale blue
-        private static readonly XColor ColBorder    = XColor.FromArgb(186, 202, 224); // slate border
-        private static readonly XColor ColText      = XColor.FromArgb(17, 24, 39);
-        private static readonly XColor ColMuted     = XColor.FromArgb(107, 114, 128);
+        // ── Colour tokens ──────────────────────────────────────────────────────
+        private static readonly XColor ColNavy      = XColor.FromArgb(10,  36,  99);   // deep navy
+        private static readonly XColor ColNavyMid   = XColor.FromArgb(30,  64, 175);   // mid navy (accent)
+        private static readonly XColor ColGold      = XColor.FromArgb(180, 130,  20);  // rich gold
+        private static readonly XColor ColGoldLight = XColor.FromArgb(252, 243, 207);  // gold tint bg
+        private static readonly XColor ColRed       = XColor.FromArgb(185,  28,  28);  // warning red
+        private static readonly XColor ColBg        = XColor.FromArgb(249, 250, 255);  // near-white bg
+        private static readonly XColor ColBorder    = XColor.FromArgb(191, 210, 235);  // steel border
+        private static readonly XColor ColText      = XColor.FromArgb( 15,  23,  42);  // near-black
+        private static readonly XColor ColMuted     = XColor.FromArgb( 71,  85, 105);  // slate muted
+        private static readonly XColor ColTableEven = XColor.FromArgb(240, 246, 255);  // row stripe
         private static readonly XColor ColWhite     = XColors.White;
 
         private async Task<byte[]> BuildPdfAsync(
             School school, ExamSetup examSetup, List<HallTicketModel> tickets, byte[]? logoBytes)
         {
             var document = new PdfDocument();
-            document.Info.Title   = $"Hall Tickets - {Px(examSetup.Name)}";
+            document.Info.Title   = $"Hall Tickets – {Px(examSetup.Name)}";
             document.Info.Creator = school.Name;
 
             foreach (var ticket in tickets)
@@ -251,34 +256,79 @@ namespace SmsApi.Services
         {
             var page = doc.AddPage();
             page.Size = PdfSharpCore.PageSize.A4;
-            double W = page.Width.Point;   // 595.28
-            double H = page.Height.Point;  // 841.89
+            double W = page.Width.Point;    // 595.28
+            double H = page.Height.Point;   // 841.89
 
             using var gfx = XGraphics.FromPdfPage(page);
 
-            double mg = Mm(14);          // outer margin
-            double iW = W - 2 * mg;      // inner width  = 567.28 - 28 â‰ˆ 539
-            double y  = mg;              // running Y cursor
+            // ── helpers ────────────────────────────────────────────────────────
+            void HLine(double x, double yy, double w, XPen pen) =>
+                gfx.DrawLine(pen, x, yy, x + w, yy);
+            void VLine(double xx, double y1, double y2, XPen pen) =>
+                gfx.DrawLine(pen, xx, y1, xx, y2);
+            void FillRect(double x, double yy, double w, double h, XColor c) =>
+                gfx.DrawRectangle(new XSolidBrush(c), x, yy, w, h);
+            void StrokeRect(double x, double yy, double w, double h, XPen pen) =>
+                gfx.DrawRectangle(pen, x, yy, w, h);
+            void Txt(string text, XFont font, XColor ink, XRect rect,
+                     XStringFormat fmt, bool clip = false) =>
+                gfx.DrawString(text, font, new XSolidBrush(ink), rect, fmt);
 
-            // -- Outer card border ---------------------------------------------
-            var outerPen = new XPen(ColPrimary, 1.5);
-            gfx.DrawRectangle(outerPen, mg, y, iW, H - 2 * mg);
+            double mg  = Mm(12);          // outer margin
+            double iW  = W - 2 * mg;      // content width ≈ 539 pt
+            double cY  = mg;              // running Y cursor
 
-            // -- TOP DOUBLE RULE -----------------------------------------------
-            gfx.DrawRectangle(new XSolidBrush(ColPrimary), mg, y, iW, 5);
-            gfx.DrawRectangle(new XSolidBrush(ColGold),    mg, y + 5, iW, 2.5);
-            y += 7.5;
+            // ── PAGE BACKGROUND ────────────────────────────────────────────────
+            FillRect(0, 0, W, H, Rgb(245, 248, 255));
 
-            // -- HEADER: logo + school name + "HALL TICKET" badge --------------
-            double headerH = Mm(24);
-            gfx.DrawRectangle(new XSolidBrush(ColPrimary), mg, y, iW, headerH);
+            // ── DIAGONAL WATERMARK ─────────────────────────────────────────────
+            {
+                var wmState = gfx.Save();
+                gfx.TranslateTransform(W / 2, H / 2);
+                gfx.RotateTransform(-42);
+                var wmFont = new XFont("Arial", 68, XFontStyle.Bold);
+                gfx.DrawString("ADMIT CARD", wmFont,
+                    new XSolidBrush(XColor.FromArgb(10, 30, 70, 160)),
+                    new XRect(-300, -60, 600, 120), XStringFormats.Center);
+                gfx.Restore(wmState);
+            }
 
-            double hPad = Mm(4);
-            double logoSz = headerH - Mm(6);
-            double logoX  = mg + hPad;
-            double logoY  = y + (headerH - logoSz) / 2;
+            // ── OUTER CARD BORDER (double-rule) ────────────────────────────────
+            StrokeRect(mg - 4, mg - 4, iW + 8, H - 2 * mg + 8, new XPen(ColGold, 0.6));
+            StrokeRect(mg - 2, mg - 2, iW + 4, H - 2 * mg + 4, new XPen(ColNavy, 1.8));
 
-            // School logo
+            // ── CORNER REGISTER MARKS ──────────────────────────────────────────
+            {
+                double cs = Mm(4.5);
+                var cPen = new XPen(ColGold, 1.4);
+                double[] xs = { mg, mg + iW };
+                double[] ys = { mg, mg + (H - 2 * mg) };
+                foreach (var cx in xs)
+                {
+                    foreach (var cy in ys)
+                    {
+                        int dx = cx == mg ? 1 : -1;
+                        int dy = cy == mg ? 1 : -1;
+                        gfx.DrawLine(cPen, cx, cy, cx + dx * cs, cy);
+                        gfx.DrawLine(cPen, cx, cy, cx, cy + dy * cs);
+                    }
+                }
+            }
+
+            // ── HEADER BLOCK ───────────────────────────────────────────────────
+            double hdrH = Mm(32);
+            // background
+            FillRect(mg, cY, iW, hdrH, ColNavy);
+            // bottom gold accent on header
+            FillRect(mg, cY + hdrH - Mm(1.2), iW, Mm(1.2), ColGold);
+
+            // Logo
+            double logoPad  = Mm(5);
+            double logoSz   = hdrH - Mm(8);
+            double logoX    = mg + logoPad;
+            double logoY    = cY + (hdrH - logoSz) / 2;
+            bool   logoOk   = false;
+
             if (logoBytes != null)
             {
                 try
@@ -291,308 +341,345 @@ namespace SmsApi.Services
                         pngLogoBytes = pngStream.ToArray();
                     }
                     var logoImg = XImage.FromStream(() => new MemoryStream(pngLogoBytes));
-                    // Fit logo proportionally in logoSz Ã- logoSz square
-                    double aspect = logoImg.PixelWidth > 0
+                    double asp = logoImg.PixelWidth > 0
                         ? (double)logoImg.PixelHeight / logoImg.PixelWidth : 1;
-                    double lW = aspect <= 1 ? logoSz : logoSz / aspect;
-                    double lH = aspect <= 1 ? logoSz * aspect : logoSz;
+                    double lW = asp <= 1 ? logoSz : logoSz / asp;
+                    double lH = asp <= 1 ? logoSz * asp : logoSz;
+                    // white circle behind logo
+                    gfx.DrawEllipse(XBrushes.White,
+                        logoX - Mm(1), logoY + (logoSz - lH) / 2 - Mm(1),
+                        lW + Mm(2), lH + Mm(2));
                     gfx.DrawImage(logoImg, logoX, logoY + (logoSz - lH) / 2, lW, lH);
-                    logoX += lW + Mm(3);
+                    logoX += lW + Mm(4);
+                    logoOk = true;
                 }
-                catch (Exception ex) { _log.LogError(ex, "[HallTicket] Logo render failed"); logoX += Mm(2); }
+                catch (Exception ex) { _log.LogError(ex, "[HallTicket] Logo render failed"); }
             }
-            else
+
+            if (!logoOk)
             {
-                // Circular placeholder
-                gfx.DrawEllipse(new XSolidBrush(XColor.FromArgb(60, 255, 255, 255)),
+                // circle placeholder with initial
+                gfx.DrawEllipse(new XSolidBrush(XColor.FromArgb(80, 255, 255, 255)),
                     logoX, logoY, logoSz, logoSz);
-                gfx.DrawString(school.Name.Length > 0 ? school.Name[0].ToString() : "S",
-                    new XFont("Arial", 14, XFontStyle.Bold), XBrushes.White,
+                gfx.DrawEllipse(new XPen(ColGold, 1),
+                    logoX, logoY, logoSz, logoSz);
+                var initFont = new XFont("Arial", logoSz * 0.4, XFontStyle.Bold);
+                gfx.DrawString(school.Name.Length > 0 ? school.Name[0].ToString().ToUpperInvariant() : "S",
+                    initFont, XBrushes.White,
                     new XRect(logoX, logoY, logoSz, logoSz), XStringFormats.Center);
-                logoX += logoSz + Mm(3);
+                logoX += logoSz + Mm(4);
             }
 
-            // School name & details (left side of header)
-            double textAreaW = iW - (logoX - mg) - Mm(36);
-            var fontSchoolName = new XFont("Arial", 13, XFontStyle.Bold);
-            var fontSchoolSub  = new XFont("Arial", 7.5);
-            gfx.DrawString(Px(school.Name).ToUpperInvariant(), fontSchoolName, XBrushes.White,
-                new XRect(logoX, y + Mm(4), textAreaW, Mm(7)), XStringFormats.TopLeft);
+            // School name + sub-info
+            double txtAreaW = iW - (logoX - mg) - Mm(38);
+            var fSchoolBig  = new XFont("Arial", 14.5, XFontStyle.Bold);
+            var fSchoolSub  = new XFont("Arial", 8);
+            var fSchoolTiny = new XFont("Arial", 6.5);
 
-            double subY = y + Mm(11);
+            Txt(Px(school.Name).ToUpperInvariant(), fSchoolBig, ColWhite,
+                new XRect(logoX, cY + Mm(6), txtAreaW, Mm(8)), XStringFormats.TopLeft);
+
+            double si = cY + Mm(14);
             if (!string.IsNullOrWhiteSpace(school.Address))
             {
-                gfx.DrawString(Px(school.Address), fontSchoolSub,
-                    new XSolidBrush(Rgb(203, 213, 225)),
-                    new XRect(logoX, subY, textAreaW, Mm(4)), XStringFormats.TopLeft);
-                subY += Mm(4);
+                Txt(Px(school.Address), fSchoolSub, Rgb(191, 219, 254),
+                    new XRect(logoX, si, txtAreaW, Mm(4.5)), XStringFormats.TopLeft);
+                si += Mm(4.5);
             }
-            string contactLine = string.Join("   |   ",
-                new[] {
-                    string.IsNullOrWhiteSpace(school.Phone) ? null : $"Ph: {school.Phone}",
-                    string.IsNullOrWhiteSpace(school.Email) ? null : school.Email
-                }.Where(s => s != null));
-            if (!string.IsNullOrWhiteSpace(contactLine))
-                gfx.DrawString(Px(contactLine), fontSchoolSub, new XSolidBrush(Rgb(148, 163, 184)),
-                    new XRect(logoX, subY, textAreaW, Mm(4)), XStringFormats.TopLeft);
+            string contact = string.Join("   |   ", new[]
+            {
+                string.IsNullOrWhiteSpace(school.Phone) ? null : "Ph: " + school.Phone,
+                string.IsNullOrWhiteSpace(school.Email) ? null : school.Email
+            }.Where(s2 => s2 != null));
+            if (!string.IsNullOrWhiteSpace(contact))
+                Txt(Px(contact), fSchoolTiny, Rgb(148, 163, 184),
+                    new XRect(logoX, si, txtAreaW, Mm(4)), XStringFormats.TopLeft);
 
-            // "HALL TICKET" badge (right side of header)
-            double badgeW = Mm(34), badgeH = Mm(10);
-            double badgeX = mg + iW - badgeW - Mm(4);
-            double badgeY = y + (headerH - badgeH) / 2;
-            gfx.DrawRectangle(new XSolidBrush(ColAccent), badgeX, badgeY, badgeW, badgeH);
-            gfx.DrawString("HALL TICKET", new XFont("Arial", 9, XFontStyle.Bold),
-                XBrushes.White,
-                new XRect(badgeX, badgeY, badgeW, badgeH), XStringFormats.Center);
+            // "HALL TICKET / ADMIT CARD" pill badge
+            double bdgW = Mm(36), bdgH = Mm(11.5);
+            double bdgX = mg + iW - bdgW - Mm(4);
+            double bdgY = cY + (hdrH - bdgH) / 2 - Mm(1);
+            // outer gold ring
+            gfx.DrawRectangle(new XPen(ColGold, 1.2), new XSolidBrush(ColGold),
+                bdgX, bdgY, bdgW, bdgH);
+            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(220, 10, 36, 99)),
+                bdgX + 2, bdgY + 2, bdgW - 4, bdgH - 4);
+            Txt("HALL TICKET", new XFont("Arial", 7.5, XFontStyle.Bold), ColGold,
+                new XRect(bdgX, bdgY + 2, bdgW, Mm(5)), XStringFormats.TopCenter);
+            Txt("ADMIT CARD", new XFont("Arial", 6, XFontStyle.Regular), Rgb(148, 163, 184),
+                new XRect(bdgX, bdgY + Mm(5.5), bdgW, Mm(4)), XStringFormats.TopCenter);
 
-            y += headerH;
+            cY += hdrH;
 
-            // Gold accent line below header
-            gfx.DrawRectangle(new XSolidBrush(ColGold), mg, y, iW, 2);
-            y += 2;
+            // ── EXAM NAME BAND ─────────────────────────────────────────────────
+            double ebH = Mm(9.5);
+            FillRect(mg, cY, iW, ebH, Rgb(30, 58, 138));     // slightly lighter navy
+            // left accent bar
+            FillRect(mg, cY, Mm(2.5), ebH, ColGold);
 
-            // -- EXAM INFO STRIPE ----------------------------------------------
-            double stripeH = Mm(9);
-            gfx.DrawRectangle(new XSolidBrush(ColLightBlue), mg, y, iW, stripeH);
+            Txt(Px(t.ExamName).ToUpperInvariant(), new XFont("Arial", 9.5, XFontStyle.Bold), ColWhite,
+                new XRect(mg + Mm(5), cY + 3, iW * 0.62, ebH - 4), XStringFormats.TopLeft);
+            string classMeta = Px(t.ClassName)
+                + (string.IsNullOrWhiteSpace(t.SectionName) ? "" : "  –  " + Px(t.SectionName))
+                + "   |   A.Y. " + Px(t.AcademicYear);
+            Txt(classMeta, new XFont("Arial", 8), Rgb(186, 214, 255),
+                new XRect(mg + Mm(5), cY + ebH - Mm(5), iW - Mm(10), Mm(4.5)), XStringFormats.TopLeft);
+            cY += ebH;
 
-            var fontExamBold = new XFont("Arial", 9.5, XFontStyle.Bold);
-            var fontExamSub  = new XFont("Arial", 8);
-            string classLabel = Px(t.ClassName) + (string.IsNullOrWhiteSpace(t.SectionName) ? "" : $"  -  {Px(t.SectionName)}");
-            gfx.DrawString(Px(t.ExamName), fontExamBold, new XSolidBrush(ColPrimary),
-                new XRect(mg + Mm(4), y + 3, iW * 0.55, stripeH - 4), XStringFormats.TopLeft);
-            gfx.DrawString($"Class: {classLabel}   |   Academic Year: {Px(t.AcademicYear)}", fontExamSub,
-                new XSolidBrush(ColMuted),
-                new XRect(mg + iW * 0.55, y + 4, iW * 0.42, stripeH - 6), XStringFormats.TopRight);
+            // gold rule under exam band
+            FillRect(mg, cY, iW, Mm(0.8), ColGold);
+            cY += Mm(0.8);
 
-            // thin border top/bottom
-            gfx.DrawLine(new XPen(ColBorder, 0.5), mg, y, mg + iW, y);
-            gfx.DrawLine(new XPen(ColBorder, 0.5), mg, y + stripeH, mg + iW, y + stripeH);
-            y += stripeH;
+            // ── STUDENT DETAILS + PHOTO ────────────────────────────────────────
+            double detH  = Mm(54);
+            double pW    = Mm(32);
+            double pH    = Mm(42);
+            double pX    = mg + iW - pW - Mm(5);
+            double pY    = cY + (detH - pH) / 2;
+            double dW    = iW - pW - Mm(14);
 
-            // -- STUDENT DETAILS + PHOTO BLOCK ---------------------------------
-            double detBlockH = Mm(46);
-            double photoW    = Mm(28);
-            double photoH    = Mm(36);
-            double photoX    = mg + iW - photoW - Mm(5);
-            double photoY    = y + (detBlockH - photoH) / 2;
-            double detW      = iW - photoW - Mm(14);
+            FillRect(mg, cY, iW, detH, ColBg);
 
-            // Light background for student area
-            gfx.DrawRectangle(new XSolidBrush(XColor.FromArgb(252, 253, 255)),
-                mg, y, iW, detBlockH);
-
-            // Photo box
+            // Photo
             bool photoDrawn = false;
             if (t.PhotoBytes != null)
             {
                 try
                 {
-                    // Convert to PNG via ImageSharp to handle any input format (JPEG, WebP, HEIC, etc.)
                     byte[] pngBytes;
-                    using (var imgSharp = SixLabors.ImageSharp.Image.Load(t.PhotoBytes))
-                    using (var pngStream = new MemoryStream())
+                    using (var img2 = SixLabors.ImageSharp.Image.Load(t.PhotoBytes))
+                    using (var ms2  = new MemoryStream())
                     {
-                        imgSharp.SaveAsPng(pngStream);
-                        pngBytes = pngStream.ToArray();
+                        img2.SaveAsPng(ms2);
+                        pngBytes = ms2.ToArray();
                     }
                     var photoImg = XImage.FromStream(() => new MemoryStream(pngBytes));
-                    // crop to fit aspect-ratio inside box
-                    double aspect = photoImg.PixelWidth > 0
+                    double asp = photoImg.PixelWidth > 0
                         ? (double)photoImg.PixelHeight / photoImg.PixelWidth : 1.25;
-                    double pW, pH;
-                    if (aspect >= photoH / photoW)
-                    { pW = photoH / aspect; pH = photoH; }
-                    else
-                    { pW = photoW; pH = photoW * aspect; }
-                    double pX = photoX + (photoW - pW) / 2;
-                    double pY = photoY + (photoH - pH) / 2;
-                    // white background behind photo
-                    gfx.DrawRectangle(XBrushes.White, photoX, photoY, photoW, photoH);
-                    gfx.DrawImage(photoImg, pX, pY, pW, pH);
+                    double rW, rH;
+                    if (asp >= pH / pW) { rW = pH / asp; rH = pH; }
+                    else                { rW = pW; rH = pW * asp; }
+                    FillRect(pX, pY, pW, pH, ColWhite);
+                    gfx.DrawImage(photoImg, pX + (pW - rW) / 2, pY + (pH - rH) / 2, rW, rH);
                     photoDrawn = true;
                 }
                 catch (Exception ex) { _log.LogError(ex, "[HallTicket] Photo render failed for {Name}", t.StudentName); }
             }
             if (!photoDrawn)
             {
-                // Initials-based placeholder: light blue-grey background with student's initials
-                gfx.DrawRectangle(new XSolidBrush(Rgb(219, 228, 242)), photoX, photoY, photoW, photoH);
+                FillRect(pX, pY, pW, pH, Rgb(219, 234, 254));
                 var parts    = t.StudentName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 var initials = parts.Length >= 2
                     ? $"{parts[0][0]}{parts[^1][0]}"
                     : (parts.Length == 1 ? parts[0][0].ToString() : "?");
-                var fontInit = new XFont("Arial", photoW * 0.38, XFontStyle.Bold);
-                gfx.DrawString(initials.ToUpperInvariant(), fontInit, new XSolidBrush(Rgb(59, 93, 147)),
-                    new XRect(photoX, photoY, photoW, photoH), XStringFormats.Center);
+                gfx.DrawString(initials.ToUpperInvariant(),
+                    new XFont("Arial", pW * 0.35, XFontStyle.Bold),
+                    new XSolidBrush(Rgb(37, 99, 235)),
+                    new XRect(pX, pY, pW, pH), XStringFormats.Center);
             }
-            // Photo border
-            gfx.DrawRectangle(new XPen(ColBorder, 0.75), photoX, photoY, photoW, photoH);
+            // photo frame — double-border
+            StrokeRect(pX - 1, pY - 1, pW + 2, pH + 2, new XPen(ColGold, 1));
+            StrokeRect(pX,     pY,     pW,     pH,     new XPen(ColBorder, 0.6));
+            // "AFFIX PHOTO" caption
+            Txt("AFFIX PHOTO", new XFont("Arial", 5.5), ColMuted,
+                new XRect(pX, pY + pH + 2, pW, Mm(4)), XStringFormats.TopCenter);
 
-            // Student detail fields (left side)
-            var fontLabel = new XFont("Arial", 7.5);
-            var fontValue = new XFont("Arial", 8.5, XFontStyle.Bold);
-            var fontValueNorm = new XFont("Arial", 8);
+            // Fields
+            var fLabel = new XFont("Arial", 6.8);
+            var fVal   = new XFont("Arial", 9,   XFontStyle.Bold);
+            var fValSm = new XFont("Arial", 8.5);
 
-            double dX   = mg + Mm(5);
-            double dY   = y + Mm(5);
-            double rowH = Mm(7);
+            double fx   = mg + Mm(5);
+            double fy   = cY + Mm(5);
+            double fRH  = Mm(8.5);
 
-            void Field(string label, string value, bool bold = false, double? extraWidth = null)
+            void DrawField(string label, string value, XFont valFont, double? wOverride = null)
             {
-                double fW = extraWidth ?? detW;
-                gfx.DrawString(label.ToUpperInvariant(), fontLabel,
-                    new XSolidBrush(ColMuted), new XRect(dX, dY, 80, Mm(4)), XStringFormats.TopLeft);
-                gfx.DrawString(value, bold ? fontValue : fontValueNorm,
-                    new XSolidBrush(ColText), new XRect(dX, dY + Mm(3.5), fW, Mm(5)), XStringFormats.TopLeft);
+                double fw = wOverride ?? dW;
+                Txt(label.ToUpperInvariant(), fLabel, ColMuted,
+                    new XRect(fx, fy, 110, Mm(4)), XStringFormats.TopLeft);
+                Txt(value, valFont, ColText,
+                    new XRect(fx, fy + Mm(3.5), fw, Mm(5)), XStringFormats.TopLeft);
                 // underline
-                gfx.DrawLine(new XPen(ColBorder, 0.4), dX, dY + rowH - 1, dX + fW * 0.9, dY + rowH - 1);
-                dY += rowH + Mm(1);
+                HLine(fx, fy + fRH - 1, fw * 0.88, new XPen(ColBorder, 0.4));
+                fy += fRH + Mm(0.8);
             }
 
-            // Hall ticket no - large highlight box
-            double htBoxH = Mm(9);
-            gfx.DrawRectangle(new XSolidBrush(ColPrimary), dX, dY, detW * 0.55, htBoxH);
-            gfx.DrawString("HALL TICKET NUMBER", new XFont("Arial", 6.5),
-                new XSolidBrush(Rgb(148, 163, 184)), new XRect(dX + 5, dY + 2, detW * 0.55 - 6, Mm(4)),
-                XStringFormats.TopLeft);
-            gfx.DrawString(t.HallTicketNo, new XFont("Arial", 13, XFontStyle.Bold),
-                XBrushes.White, new XRect(dX + 5, dY + Mm(3.5), detW * 0.55 - 6, Mm(6)),
-                XStringFormats.TopLeft);
-            dY += htBoxH + Mm(2.5);
+            // Hall Ticket Number — prominent highlight box
+            double htBxH = Mm(11);
+            double htBxW = dW * 0.62;
+            FillRect(fx, fy, htBxW, htBxH, ColNavy);
+            // left gold stripe on box
+            FillRect(fx, fy, Mm(2.5), htBxH, ColGold);
+            Txt("HALL TICKET NUMBER", new XFont("Arial", 6, XFontStyle.Regular),
+                Rgb(148, 163, 184),
+                new XRect(fx + Mm(4), fy + 2, htBxW - Mm(5), Mm(4)), XStringFormats.TopLeft);
+            Txt(t.HallTicketNo, new XFont("Arial", 15, XFontStyle.Bold),
+                ColWhite,
+                new XRect(fx + Mm(4), fy + Mm(4.5), htBxW - Mm(5), Mm(7)), XStringFormats.TopLeft);
+            // serial on right side of box
+            string serialStr = $"SL: {t.SerialNo:D4}";
+            Txt(serialStr, new XFont("Arial", 6), Rgb(100, 130, 180),
+                new XRect(fx + htBxW - Mm(14), fy + Mm(1), Mm(13), Mm(5)), XStringFormats.TopRight);
+            fy += htBxH + Mm(3);
 
-            Field("Student Name",    Px(t.StudentName).ToUpperInvariant(), bold: true);
-            Field("Date of Birth",   t.DateOfBirth);
+            DrawField("Student Name",  Px(t.StudentName).ToUpperInvariant(), fVal);
+            DrawField("Date of Birth", t.DateOfBirth, fValSm);
 
-            // Two-column row: Admission No & Roll No
-            double half = detW * 0.45;
-            gfx.DrawString("ADMISSION NO", fontLabel, new XSolidBrush(ColMuted),
-                new XRect(dX, dY, 80, Mm(4)), XStringFormats.TopLeft);
-            gfx.DrawString("ROLL NUMBER", fontLabel, new XSolidBrush(ColMuted),
-                new XRect(dX + half + Mm(3), dY, 80, Mm(4)), XStringFormats.TopLeft);
-            gfx.DrawString(t.AdmissionNo, fontValueNorm, new XSolidBrush(ColText),
-                new XRect(dX, dY + Mm(3.5), half, Mm(5)), XStringFormats.TopLeft);
-            gfx.DrawString(t.RollNo, fontValueNorm, new XSolidBrush(ColText),
-                new XRect(dX + half + Mm(3), dY + Mm(3.5), half, Mm(5)), XStringFormats.TopLeft);
-            gfx.DrawLine(new XPen(ColBorder, 0.4), dX, dY + rowH - 1, dX + half * 0.9, dY + rowH - 1);
-            gfx.DrawLine(new XPen(ColBorder, 0.4), dX + half + Mm(3), dY + rowH - 1,
-                dX + half + Mm(3) + half * 0.9, dY + rowH - 1);
+            // Two-column: Admission No & Roll No
+            {
+                double half2 = dW * 0.46;
+                Txt("ADMISSION NO.", fLabel, ColMuted,
+                    new XRect(fx,              fy, 90, Mm(4)), XStringFormats.TopLeft);
+                Txt("ROLL NUMBER", fLabel, ColMuted,
+                    new XRect(fx + half2 + Mm(4), fy, 90, Mm(4)), XStringFormats.TopLeft);
+                Txt(t.AdmissionNo, fValSm, ColText,
+                    new XRect(fx,              fy + Mm(3.5), half2, Mm(5)), XStringFormats.TopLeft);
+                Txt(t.RollNo, fValSm, ColText,
+                    new XRect(fx + half2 + Mm(4), fy + Mm(3.5), half2, Mm(5)), XStringFormats.TopLeft);
+                HLine(fx,              fy + fRH - 1, half2 * 0.9,  new XPen(ColBorder, 0.4));
+                HLine(fx + half2 + Mm(4), fy + fRH - 1, half2 * 0.9, new XPen(ColBorder, 0.4));
+                fy += fRH + Mm(0.8);
+            }
 
-            y += detBlockH;
-            gfx.DrawLine(new XPen(ColBorder, 0.5), mg, y, mg + iW, y);
+            cY += detH;
+            FillRect(mg, cY, iW, Mm(0.6), ColNavy);
+            cY += Mm(0.6);
 
-            // -- SUBJECT SCHEDULE TABLE ----------------------------------------
+            // ── EXAMINATION SCHEDULE TABLE ─────────────────────────────────────
             if (t.Subjects.Any())
             {
                 // Section header
-                double sHdrH = Mm(7);
-                gfx.DrawRectangle(new XSolidBrush(Rgb(30, 58, 95)), mg, y, iW, sHdrH);
-                gfx.DrawString("EXAMINATION SCHEDULE", new XFont("Arial", 8.5, XFontStyle.Bold),
-                    XBrushes.White, new XRect(mg + Mm(4), y + 2, iW - Mm(8), sHdrH - 4),
-                    XStringFormats.TopLeft);
-                y += sHdrH;
+                double sHdrH = Mm(7.5);
+                FillRect(mg, cY, iW, sHdrH, ColNavy);
+                FillRect(mg, cY, Mm(2.5), sHdrH, ColGold);
+                Txt("EXAMINATION SCHEDULE", new XFont("Arial", 9, XFontStyle.Bold), ColWhite,
+                    new XRect(mg + Mm(5), cY + 2, iW - Mm(10), sHdrH - 2), XStringFormats.TopLeft);
+                cY += sHdrH;
 
-                // Column widths
-                double c1 = iW * 0.28, c2 = iW * 0.17, c3 = iW * 0.22,
-                       c4 = iW * 0.20, c5 = iW * 0.13;
-                double tRH = Mm(6.5);
+                // Column proportions
+                double c1 = iW * 0.27, c2 = iW * 0.17, c3 = iW * 0.23,
+                       c4 = iW * 0.21, c5 = iW * 0.12;
+                double tRH2 = Mm(7.5);
 
-                // Table header
-                gfx.DrawRectangle(new XSolidBrush(Rgb(240, 244, 252)), mg, y, iW, tRH);
-                var tHdrFont = new XFont("Arial", 7.5, XFontStyle.Bold);
-                var hInk = new XSolidBrush(Rgb(30, 58, 95));
-                double hx = mg + Mm(2);
-                gfx.DrawString("SUBJECT",    tHdrFont, hInk, new XRect(hx, y + 2, c1 - 4, tRH - 2), XStringFormats.TopLeft);  hx += c1;
-                gfx.DrawString("DATE",       tHdrFont, hInk, new XRect(hx, y + 2, c2,     tRH - 2), XStringFormats.TopCenter); hx += c2;
-                gfx.DrawString("TIMINGS",    tHdrFont, hInk, new XRect(hx, y + 2, c3,     tRH - 2), XStringFormats.TopCenter); hx += c3;
-                gfx.DrawString("VENUE",      tHdrFont, hInk, new XRect(hx, y + 2, c4,     tRH - 2), XStringFormats.TopCenter); hx += c4;
-                gfx.DrawString("MAX MARKS",  tHdrFont, hInk, new XRect(hx, y + 2, c5 - 4, tRH - 2), XStringFormats.TopCenter);
-                gfx.DrawLine(new XPen(ColBorder, 0.5), mg, y + tRH, mg + iW, y + tRH);
-                y += tRH;
+                // Table header row
+                FillRect(mg, cY, iW, tRH2, Rgb(236, 245, 255));
+                var fTH = new XFont("Arial", 7.5, XFontStyle.Bold);
+                var cHdr = new XSolidBrush(ColNavy);
+                double hx2 = mg + Mm(2);
+                Txt("SUBJECT",   fTH, ColNavy, new XRect(hx2, cY + 2, c1 - 4, tRH2 - 2), XStringFormats.TopLeft);   hx2 += c1;
+                Txt("DATE",      fTH, ColNavy, new XRect(hx2, cY + 2, c2,     tRH2 - 2), XStringFormats.TopCenter);  hx2 += c2;
+                Txt("TIMINGS",   fTH, ColNavy, new XRect(hx2, cY + 2, c3,     tRH2 - 2), XStringFormats.TopCenter);  hx2 += c3;
+                Txt("VENUE",     fTH, ColNavy, new XRect(hx2, cY + 2, c4,     tRH2 - 2), XStringFormats.TopCenter);  hx2 += c4;
+                Txt("MAX MKS",   fTH, ColNavy, new XRect(hx2, cY + 2, c5 - 4, tRH2 - 2), XStringFormats.TopCenter);
+                // gold underline on header
+                HLine(mg, cY + tRH2 - 1, iW, new XPen(ColGold, 1));
+                cY += tRH2;
 
-                var tRowFont = new XFont("Arial", 8);
-                var tRowBold = new XFont("Arial", 8, XFontStyle.Bold);
-                for (int r = 0; r < t.Subjects.Count; r++)
+                var fTR = new XFont("Arial", 8);
+                var fTB = new XFont("Arial", 8, XFontStyle.Bold);
+                for (int ri = 0; ri < t.Subjects.Count; ri++)
                 {
-                    var s = t.Subjects[r];
-                    XBrush bg = r % 2 == 0 ? XBrushes.White : new XSolidBrush(Rgb(248, 250, 255));
-                    gfx.DrawRectangle(bg, mg, y, iW, tRH);
+                    var s3 = t.Subjects[ri];
+                    bool even = ri % 2 == 0;
+                    FillRect(mg, cY, iW, tRH2, even ? ColWhite : ColTableEven);
 
-                    string subLabel = s.SubjectName;
-                    if (!string.IsNullOrWhiteSpace(s.SubjectCode))
-                        subLabel += $" ({s.SubjectCode})";
+                    string subLabel2 = s3.SubjectName;
+                    if (!string.IsNullOrWhiteSpace(s3.SubjectCode))
+                        subLabel2 += $" ({s3.SubjectCode})";
 
-                    var rInk = new XSolidBrush(ColText);
-                    double rx = mg + Mm(2);
-                    gfx.DrawString(Px(subLabel), tRowBold, rInk, new XRect(rx, y + 2, c1 - 4, tRH - 2), XStringFormats.TopLeft);  rx += c1;
-                    gfx.DrawString(FmtDate(s.ExamDate), tRowFont, rInk, new XRect(rx, y + 2, c2, tRH - 2), XStringFormats.TopCenter); rx += c2;
-                    gfx.DrawString(FmtTimeRange(s.StartTime, s.EndTime), tRowFont, rInk, new XRect(rx, y + 2, c3, tRH - 2), XStringFormats.TopCenter); rx += c3;
-                    gfx.DrawString(Px(s.Venue ?? "-"), tRowFont, rInk, new XRect(rx, y + 2, c4, tRH - 2), XStringFormats.TopCenter); rx += c4;
-                    gfx.DrawString(s.MaxMarks > 0 ? s.MaxMarks.ToString("0") : "-",
-                        tRowFont, rInk, new XRect(rx, y + 2, c5 - 4, tRH - 2), XStringFormats.TopCenter);
-                    gfx.DrawLine(new XPen(ColBorder, 0.3), mg, y + tRH, mg + iW, y + tRH);
-                    y += tRH;
+                    double rx2 = mg + Mm(2);
+                    Txt(Px(subLabel2),          fTB, ColText, new XRect(rx2, cY + 2, c1 - 4, tRH2 - 2), XStringFormats.TopLeft);    rx2 += c1;
+                    Txt(FmtDate(s3.ExamDate),   fTR, ColText, new XRect(rx2, cY + 2, c2,     tRH2 - 2), XStringFormats.TopCenter);   rx2 += c2;
+                    Txt(FmtTimeRange(s3.StartTime, s3.EndTime), fTR, ColText, new XRect(rx2, cY + 2, c3, tRH2 - 2), XStringFormats.TopCenter); rx2 += c3;
+                    Txt(Px(s3.Venue ?? "–"),    fTR, ColText, new XRect(rx2, cY + 2, c4,     tRH2 - 2), XStringFormats.TopCenter);   rx2 += c4;
+                    Txt(s3.MaxMarks > 0 ? s3.MaxMarks.ToString("0") : "–",
+                                                fTR, ColText, new XRect(rx2, cY + 2, c5 - 4, tRH2 - 2), XStringFormats.TopCenter);
+                    HLine(mg, cY + tRH2, iW, new XPen(ColBorder, 0.3));
+                    cY += tRH2;
                 }
-                gfx.DrawLine(new XPen(ColBorder, 0.5), mg, y, mg + iW, y);
+                HLine(mg, cY, iW, new XPen(ColNavy, 0.8));
+                cY += Mm(0.5);
             }
 
-            // -- INSTRUCTIONS --------------------------------------------------
-            double insH = Mm(28);
-            gfx.DrawRectangle(new XSolidBrush(Rgb(255, 252, 235)), mg, y, iW, insH);
-            // amber left strip
-            gfx.DrawRectangle(new XSolidBrush(Rgb(217, 119, 6)), mg, y, 4, insH);
+            // ── INSTRUCTIONS ──────────────────────────────────────────────────
+            double insH2 = Mm(30);
+            FillRect(mg, cY, iW, insH2, ColGoldLight);
+            // left accent
+            FillRect(mg, cY, Mm(2.5), insH2, ColGold);
+            // top border
+            HLine(mg, cY, iW, new XPen(ColGold, 0.8));
 
-            gfx.DrawString("IMPORTANT INSTRUCTIONS", new XFont("Arial", 7.5, XFontStyle.Bold),
-                new XSolidBrush(Rgb(146, 64, 14)),
-                new XRect(mg + 10, y + Mm(2), iW - 14, Mm(5)), XStringFormats.TopLeft);
+            Txt("IMPORTANT INSTRUCTIONS TO CANDIDATES",
+                new XFont("Arial", 7.5, XFontStyle.Bold), Rgb(120, 60, 0),
+                new XRect(mg + Mm(5), cY + Mm(2.5), iW - Mm(10), Mm(5)), XStringFormats.TopLeft);
 
-            string[] instructions = {
-                "1.  This Hall Ticket is the candidate's authorisation to appear in the examination. No candidate will be admitted without it.",
-                "2.  Candidates must report to the Examination Hall at least 15 minutes before the commencement of each paper.",
-                "3.  No electronic devices including mobile phones, smart watches or calculators are permitted unless specified.",
-                "4.  Any damage to / loss of this Hall Ticket must be immediately reported to the school office.",
-                "5.  This Hall Ticket is valid only for the examinations listed above and for the Academic Year " + t.AcademicYear + ".",
+            string[] instr = {
+                "1.  This Hall Ticket must be produced on demand during every examination session. Admission will be denied without it.",
+                "2.  Candidates must be seated 15 minutes before the commencement of each paper and must not leave before the examination ends.",
+                "3.  Electronic devices (mobile phones, smart watches, programmable calculators etc.) are strictly prohibited in the exam hall.",
+                "4.  Any tampering or damage to this Hall Ticket must be immediately reported to the Examination Controller.",
+                "5.  This Hall Ticket is valid only for the examinations listed herein for the Academic Year " + t.AcademicYear + ".",
             };
-            var insFont = new XFont("Arial", 7);
-            double insY = y + Mm(7);
-            foreach (var line in instructions)
+            var insF = new XFont("Arial", 7);
+            double insYY = cY + Mm(7.5);
+            foreach (var line in instr)
             {
-                gfx.DrawString(line, insFont, new XSolidBrush(Rgb(120, 53, 15)),
-                    new XRect(mg + 10, insY, iW - 14, Mm(5)), XStringFormats.TopLeft);
-                insY += Mm(4.5);
+                Txt(line, insF, Rgb(101, 50, 0),
+                    new XRect(mg + Mm(5), insYY, iW - Mm(8), Mm(5)), XStringFormats.TopLeft);
+                insYY += Mm(4.6);
             }
-            y += insH;
-            gfx.DrawLine(new XPen(ColBorder, 0.5), mg, y, mg + iW, y);
+            cY += insH2;
+            HLine(mg, cY, iW, new XPen(ColGold, 0.8));
+            cY += Mm(0.4);
 
-            // -- SIGNATURE STRIP -----------------------------------------------
-            double sigH = Mm(20);
-            gfx.DrawRectangle(XBrushes.White, mg, y, iW, sigH);
-
-            string[] sigLabels = { "Candidate's Signature", "Parent / Guardian Signature", "Principal's Signature" };
-            double sigColW = iW / 3;
-            var sigFont    = new XFont("Arial", 7);
-            for (int s2 = 0; s2 < 3; s2++)
+            // ── SIGNATURE STRIP ───────────────────────────────────────────────
+            double sigH2 = Mm(22);
+            FillRect(mg, cY, iW, sigH2, ColWhite);
+            string[] sigLabels2 = { "Candidate's Signature", "Parent / Guardian Signature", "Principal / Controller of Examinations" };
+            double sCW = iW / 3;
+            var fSig = new XFont("Arial", 7);
+            for (int si2 = 0; si2 < 3; si2++)
             {
-                double sx = mg + s2 * sigColW;
-                double lineY = y + Mm(13);
-                double lineX1 = sx + Mm(4);
-                double lineX2 = sx + sigColW - Mm(4);
-                gfx.DrawLine(new XPen(ColBorder, 0.75), lineX1, lineY, lineX2, lineY);
-                gfx.DrawString(sigLabels[s2], sigFont, new XSolidBrush(ColMuted),
-                    new XRect(sx, lineY + 3, sigColW, Mm(5)), XStringFormats.TopCenter);
-                if (s2 > 0)
-                    gfx.DrawLine(new XPen(ColBorder, 0.4), sx, y + Mm(2), sx, y + sigH - Mm(2));
+                double sx2 = mg + si2 * sCW;
+                // vertical divider
+                if (si2 > 0)
+                    VLine(sx2, cY + Mm(2), cY + sigH2 - Mm(2), new XPen(ColBorder, 0.5));
+                // signature line
+                double lineY2 = cY + Mm(15);
+                HLine(sx2 + Mm(4), lineY2, sCW - Mm(8), new XPen(ColNavy, 0.9));
+                // label
+                Txt(sigLabels2[si2], fSig, ColMuted,
+                    new XRect(sx2, lineY2 + 3, sCW, Mm(5)), XStringFormats.TopCenter);
+                // "Date:" sub-label
+                Txt("Date: _____________", new XFont("Arial", 6), Rgb(160, 160, 160),
+                    new XRect(sx2, lineY2 + Mm(5), sCW, Mm(4)), XStringFormats.TopCenter);
             }
 
-            // -- BOTTOM RULE ---------------------------------------------------
-            double botY = mg + (H - 2 * mg) - 7.5;
-            gfx.DrawRectangle(new XSolidBrush(ColGold),    mg, botY, iW, 2.5);
-            gfx.DrawRectangle(new XSolidBrush(ColPrimary), mg, botY + 2.5, iW, 5);
+            // Office Use Only box (right-most column)
+            double ouBoxX = mg + 2 * sCW + Mm(4);
+            double ouBoxY = cY + Mm(2);
+            double ouBoxW = sCW - Mm(8);
+            double ouBoxH = Mm(10);
+            StrokeRect(ouBoxX, ouBoxY, ouBoxW, ouBoxH, new XPen(ColBorder, 0.6));
+            Txt("For Office Use Only", new XFont("Arial", 5.5), ColMuted,
+                new XRect(ouBoxX, ouBoxY + 2, ouBoxW, Mm(4)), XStringFormats.TopCenter);
 
-            // Footer text
-            var footerFont = new XFont("Arial", 6.5);
-            string footer  = $"{Px(school.Name)}   |   {Px(t.ExamName)}   |   {Px(t.AcademicYear)}   |   Generated on {DateTime.UtcNow:dd MMM yyyy}";
-            gfx.DrawString(footer, footerFont, new XSolidBrush(Rgb(148, 163, 184)),
-                new XRect(mg, botY - 10, iW, 9), XStringFormats.TopCenter);
+            cY += sigH2;
+
+            // ── FOOTER BAND ───────────────────────────────────────────────────
+            double botY2 = mg + (H - 2 * mg) - Mm(7.5);
+            FillRect(mg, botY2,           iW, Mm(1.0), ColGold);
+            FillRect(mg, botY2 + Mm(1.0), iW, Mm(6.5), ColNavy);
+
+            string footer2 = $"{Px(school.Name).ToUpperInvariant()}   |   {Px(t.ExamName)}   |   Academic Year: {Px(t.AcademicYear)}   |   Generated: {DateTime.UtcNow:dd MMM yyyy}";
+            Txt(footer2, new XFont("Arial", 6.5), Rgb(148, 163, 184),
+                new XRect(mg + Mm(3), botY2 + Mm(1.2), iW - Mm(6), Mm(6)), XStringFormats.TopLeft);
+
+            // Hall ticket no + serial compact (bottom right)
+            string htFooter = $"HT: {t.HallTicketNo}   |   SL: {t.SerialNo:D4}";
+            Txt(htFooter, new XFont("Arial", 7, XFontStyle.Bold), Rgb(252, 211, 77),
+                new XRect(mg + Mm(3), botY2 + Mm(1.2), iW - Mm(6), Mm(6)), XStringFormats.TopRight);
         }
 
         // ----------------------------------------------------------------------

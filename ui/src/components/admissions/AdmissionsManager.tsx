@@ -1,9 +1,10 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Search, Users, CheckCircle, Loader2, Pencil, Trash2, UserCheck, GraduationCap } from "lucide-react";
+import { usePermissions } from "@/contexts/PermissionsContext";
+import { Plus, Search, Users, CheckCircle, Loader2, Pencil, Trash2, UserCheck, GraduationCap, FileText, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import { useAdmissions, useAdmissionStats } from "@/hooks/useAdmissions";
 import { AdmissionForm } from "./AdmissionForm";
 import { admissionService } from "@/services/admissionService";
 import type { Admission, AdmissionFull } from "@/services/admissionService";
+import { academicApi, type ClassResponse } from "@/services/api/academicApi";
 
 const statusColors: Record<string, string> = {
   pending:    "bg-yellow-100 text-yellow-800",
@@ -39,6 +41,11 @@ export function AdmissionsManager() {
   const { toast } = useToast();
   const { t } = useLanguage();
   const { user } = useAuth();
+  const { hasUserPermission } = usePermissions();
+  const canCreate  = hasUserPermission('Admissions', 'Create');
+  const canEdit    = hasUserPermission('Admissions', 'Edit');
+  const canDelete  = hasUserPermission('Admissions', 'Delete');
+  const canApprove = hasUserPermission('Admissions', 'Approve');
   const queryClient = useQueryClient();
 
   const designation = (user as any)?.designation?.toLowerCase() ?? "";
@@ -59,6 +66,26 @@ export function AdmissionsManager() {
   const [admitNumber, setAdmitNumber]     = useState("");
   const [admitSection, setAdmitSection]   = useState("A");
   const [admitBusy, setAdmitBusy]         = useState(false);
+
+  // School classes (for section filtering in admit dialog)
+  const [schoolClasses, setSchoolClasses] = useState<ClassResponse[]>([]);
+  useEffect(() => {
+    academicApi.listClasses(1, 500).then(r => setSchoolClasses(r.classes || [])).catch(() => {});
+  }, []);
+
+  // Sections available for the class being admitted into
+  const admitSections = admitTarget
+    ? Array.from(new Set(
+        schoolClasses
+          .filter(c => (c.standard || c.name || "").trim() === admitTarget.appliedClass)
+          .map(c => (c.section || "").trim())
+          .filter(Boolean)
+      )).sort()
+    : [];
+
+  // Print/view admission state
+  const [printTarget, setPrintTarget]     = useState<AdmissionFull | null>(null);
+  const [printLoading, setPrintLoading]   = useState(false);
 
   // Success dialog after admit
   const [enrolledStudent, setEnrolledStudent] = useState<{
@@ -100,9 +127,27 @@ export function AdmissionsManager() {
 
   // Opens the proper Admit dialog
   const openAdmitDialog = (admission: Admission) => {
+    const sections = Array.from(new Set(
+      schoolClasses
+        .filter(c => (c.standard || c.name || "").trim() === admission.appliedClass)
+        .map(c => (c.section || "").trim())
+        .filter(Boolean)
+    )).sort();
     setAdmitTarget(admission);
     setAdmitNumber("");
-    setAdmitSection("A");
+    setAdmitSection(sections.length > 0 ? sections[0] : "A");
+  };
+
+  const handlePrintView = async (admission: Admission) => {
+    setPrintLoading(true);
+    try {
+      const full = await admissionService.getAdmissionById(admission.id);
+      setPrintTarget(full);
+    } catch {
+      toast({ title: "Could not load application details", variant: "destructive" });
+    } finally {
+      setPrintLoading(false);
+    }
   };
 
   const handleAdmitSubmit = async () => {
@@ -218,9 +263,14 @@ export function AdmissionsManager() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SECTIONS.map(s => (
-                      <SelectItem key={s} value={s}>Section {s}</SelectItem>
-                    ))}
+                    {admitSections.length > 0
+                      ? admitSections.map(s => (
+                          <SelectItem key={s} value={s}>Section {s}</SelectItem>
+                        ))
+                      : SECTIONS.map(s => (
+                          <SelectItem key={s} value={s}>Section {s}</SelectItem>
+                        ))
+                    }
                   </SelectContent>
                 </Select>
               </div>
@@ -280,6 +330,80 @@ export function AdmissionsManager() {
         </DialogContent>
       </Dialog>
 
+      {/* ── View / Print Admission Form Dialog ───────────────────────── */}
+      <Dialog open={!!printTarget} onOpenChange={(open) => { if (!open) setPrintTarget(null); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              Admission Application — {printTarget?.applicationNumber}
+            </DialogTitle>
+          </DialogHeader>
+          {printTarget && (
+            <div className="space-y-4 pt-1" id="admission-print-area">
+              {/* Photo + basic info */}
+              <div className="flex gap-4 items-start">
+                {printTarget.photoUrl && (
+                  <img
+                    src={printTarget.photoUrl}
+                    alt="Student"
+                    className="w-24 h-24 object-cover rounded-lg border flex-shrink-0"
+                  />
+                )}
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold">
+                    {(printTarget as any).firstName ?? ""} {(printTarget as any).lastName ?? printTarget.studentName}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">Application: <strong>{printTarget.applicationNumber}</strong></p>
+                  <p className="text-sm text-muted-foreground">Applied Class: <strong>{printTarget.appliedClass}</strong></p>
+                  <p className="text-sm text-muted-foreground">Academic Year: <strong>{printTarget.academicYear}</strong></p>
+                  <Badge className={`${statusColors[printTarget.status] ?? ""} capitalize`}>{printTarget.status}</Badge>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm border rounded-lg p-4">
+                <div><span className="text-muted-foreground">Date of Birth</span><br /><strong>{new Date(printTarget.dateOfBirth).toLocaleDateString()}</strong></div>
+                <div><span className="text-muted-foreground">Gender</span><br /><strong>{printTarget.gender}</strong></div>
+                <div><span className="text-muted-foreground">Blood Group</span><br /><strong>{(printTarget as any).bloodGroup || "—"}</strong></div>
+                <div><span className="text-muted-foreground">Category</span><br /><strong>{(printTarget as any).category || "—"}</strong></div>
+                <div><span className="text-muted-foreground">Nationality</span><br /><strong>{(printTarget as any).nationality || "—"}</strong></div>
+                <div><span className="text-muted-foreground">Application Date</span><br /><strong>{new Date(printTarget.applicationDate).toLocaleDateString()}</strong></div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm border rounded-lg p-4">
+                <div className="col-span-2"><span className="text-muted-foreground">Address</span><br /><strong>{printTarget.address}{(printTarget as any).city ? `, ${(printTarget as any).city}` : ""}{(printTarget as any).state ? `, ${(printTarget as any).state}` : ""}{(printTarget as any).pincode ? ` – ${(printTarget as any).pincode}` : ""}</strong></div>
+                <div><span className="text-muted-foreground">Guardian</span><br /><strong>{printTarget.guardianName}</strong></div>
+                <div><span className="text-muted-foreground">Guardian Phone</span><br /><strong>{printTarget.guardianPhone}</strong></div>
+                {(printTarget as any).fatherName && <div><span className="text-muted-foreground">Father's Name</span><br /><strong>{(printTarget as any).fatherName}</strong></div>}
+                {(printTarget as any).motherName && <div><span className="text-muted-foreground">Mother's Name</span><br /><strong>{(printTarget as any).motherName}</strong></div>}
+              </div>
+              {(printTarget.previousSchool) && (
+                <div className="text-sm border rounded-lg p-4">
+                  <span className="text-muted-foreground">Previous School</span><br />
+                  <strong>{printTarget.previousSchool}</strong>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setPrintTarget(null)}>Close</Button>
+                <Button
+                  onClick={() => {
+                    const el = document.getElementById("admission-print-area");
+                    if (!el) return;
+                    const win = window.open("", "_blank");
+                    if (!win) return;
+                    win.document.write(`<html><head><title>Admission Form – ${printTarget.applicationNumber}</title><style>body{font-family:sans-serif;padding:24px;color:#111}img{border-radius:8px;border:1px solid #ddd}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:12px}.col-span-2{grid-column:span 2}h3{margin:0 0 4px}p{margin:2px 0;font-size:14px}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;background:#ede9fe;color:#6d28d9}@media print{button{display:none}}</style></head><body>${el.innerHTML}</body></html>`);
+                    win.document.close();
+                    win.focus();
+                    setTimeout(() => win.print(), 300);
+                  }}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <AnimatedBackground variant="mesh" className="fixed inset-0 -z-10 opacity-30" />
 
       <div className="space-y-6 relative z-10">
@@ -289,6 +413,7 @@ export function AdmissionsManager() {
               <h1 className="text-display gradient-text">{t('admissions.title')}</h1>
               <p className="text-muted-foreground mt-2">{t('admissions.manageDesc')}</p>
             </div>
+            {canCreate && (
             <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (!open) { setFormKey(k => k + 1); setEditAdmission(null); } }}>
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto">
@@ -305,6 +430,7 @@ export function AdmissionsManager() {
                 />
               </DialogContent>
             </Dialog>
+            )}
           </div>
         </AnimatedWrapper>
 
@@ -447,7 +573,7 @@ export function AdmissionsManager() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1">
-                                  {!isReceptionist && (
+                                  {canApprove && (
                                     <Select
                                       value={admission.status}
                                       onValueChange={v => handleStatusChange(admission.id, v)}
@@ -465,7 +591,7 @@ export function AdmissionsManager() {
                                       </SelectContent>
                                     </Select>
                                   )}
-                                  {!isReceptionist && admission.status !== "enrolled" && (
+                                  {canApprove && admission.status !== "enrolled" && (
                                     <Button
                                       variant="outline"
                                       size="sm"
@@ -479,13 +605,24 @@ export function AdmissionsManager() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    title="View / Print application"
+                                    disabled={printLoading}
+                                    onClick={() => handlePrintView(admission)}
+                                  >
+                                    <FileText className="h-4 w-4" />
+                                  </Button>
+                                  {canEdit && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
                                     title="Edit application"
                                     disabled={admission.status === "enrolled"}
                                     onClick={() => handleEditClick(admission)}
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
-                                  {!isReceptionist && (
+                                  )}
+                                  {canDelete && (
                                     <Button
                                       variant="ghost"
                                       size="sm"

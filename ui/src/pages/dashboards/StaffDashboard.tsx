@@ -284,9 +284,9 @@ function PersonalAttendanceCard({ records, onNavigate }: { records: StaffAttenda
     <div className="space-y-4">
       {rate !== null && (
         <div className="flex items-center justify-between">
-          <div><p className="text-3xl font-bold leading-none">{rate}%</p><p className="text-xs text-muted-foreground mt-1">This month's rate</p></div>
+          <div><p className="text-3xl font-bold leading-none">{rate}%</p><p className="text-xs text-muted-foreground mt-1">{t('staffDash.thisMonthRate')}</p></div>
           <div className={`px-3 py-1.5 rounded-full text-sm font-semibold ${rate >= 90 ? "bg-green-100 text-green-700" : rate >= 75 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
-            {rate >= 90 ? "Excellent" : rate >= 75 ? "Good" : "Low"}
+            {rate >= 90 ? t('staffDash.excellent') : rate >= 75 ? t('staffDash.good') : t('staffDash.low')}
           </div>
         </div>
       )}
