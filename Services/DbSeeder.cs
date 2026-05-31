@@ -1719,8 +1719,10 @@ namespace SmsApi.Services
             {
                 try
                 {
+#pragma warning disable CS0618
                     var className = student.Class ?? "Class 1";
                     var sectionName = student.Section ?? "A";
+#pragma warning restore CS0618
 
                     if (!classMap.TryGetValue(className, out var classEntity))
                     {

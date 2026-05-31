@@ -114,11 +114,15 @@ namespace SmsApi.Controllers
                 request.SchoolId = _tenant.GetEffectiveSchoolId();
                 var structure = await _feeService.CreateFeeStructureAsync(request);
 
-                // Auto-assign the new structure to every active student in the class
-                var (assigned, skipped) = await _feeService.BulkAssignStructureAsync(structure.Id, structure.SchoolId);
-                _logger.LogInformation(
-                    "Auto-assigned structure {StructureId} to {Assigned} student(s) in Class {Class} ({Skipped} skipped).",
-                    structure.Id, assigned, structure.Class, skipped);
+                // Auto-assign the new structure to every active student in the class (only if a class is set)
+                int assigned = 0, skipped = 0;
+                if (!string.IsNullOrEmpty(structure.Class))
+                {
+                    (assigned, skipped) = await _feeService.BulkAssignStructureAsync(structure.Id, structure.SchoolId);
+                    _logger.LogInformation(
+                        "Auto-assigned structure {StructureId} to {Assigned} student(s) in Class {Class} ({Skipped} skipped).",
+                        structure.Id, assigned, structure.Class, skipped);
+                }
 
                 return CreatedAtAction(
                     nameof(GetFeeStructure),
@@ -1283,12 +1287,14 @@ namespace SmsApi.Controllers
 
                 if (studentRecs.Count == 0)
                 {
+#pragma warning disable CS0618
                     result.Add(new SiblingFeeInfoDto
                     {
                         StudentId = s.Id,
                         StudentName = s.Name,
                         Class = s.Class ?? "",
                         Section = s.Section ?? "",
+#pragma warning restore CS0618
                         IsAnchor = s.Id == anchor.Id,
                         TotalFee = 0,
                         PaidAmount = 0,
@@ -1323,12 +1329,14 @@ namespace SmsApi.Controllers
                     var installments = BuildInstallments(structure, rec.TotalAmount, rec.PaidAmount, rec.FeeHeadOverrides);
                     var planLabel = GetInstallmentPlanLabel(structure?.InstallmentCount ?? 1);
 
+#pragma warning disable CS0618
                     result.Add(new SiblingFeeInfoDto
                     {
                         StudentId = s.Id,
                         StudentName = s.Name,
                         Class = s.Class ?? "",
                         Section = s.Section ?? "",
+#pragma warning restore CS0618
                         IsAnchor = s.Id == anchor.Id && firstRecord,
                         TotalFee = rec.TotalAmount,
                         PaidAmount = rec.PaidAmount,
@@ -1659,10 +1667,12 @@ namespace SmsApi.Controllers
                 await _context.SaveChangesAsync();
 
                 // Return summary
+#pragma warning disable CS0618
                 var studentSummaries = await _context.Students
                     .Where(s => allStudentIds.Contains(s.Id) && s.SchoolId == schoolId)
                     .Select(s => new { s.Id, s.Name, s.Class, s.Section })
                     .ToListAsync();
+#pragma warning restore CS0618
 
                 return Ok(new
                 {
@@ -1705,10 +1715,12 @@ namespace SmsApi.Controllers
                     throw new ArgumentException("Percentage cannot exceed 100.");
 
                 // Verify student exists and is a staff child
+#pragma warning disable CS0618
                 var student = await _context.Students
                     .Where(s => s.Id == request.StudentId && s.SchoolId == schoolId && !s.IsDeleted)
                     .Select(s => new { s.Id, s.Name, s.GuardianStaffId, s.Class, s.Section })
                     .FirstOrDefaultAsync()
+#pragma warning restore CS0618
                     ?? throw new KeyNotFoundException("Student not found.");
 
                 if (student.GuardianStaffId == null)
@@ -2137,6 +2149,24 @@ namespace SmsApi.Controllers
             catch (Exception) { return StatusCode(500, new { message = "Failed to update fee head." }); }
         }
 
+        /// <summary>Partially update a fee head (e.g. toggle IsActive)</summary>
+        [HttpPatch("heads/{id}")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult> PatchFeeHead(Guid id, [FromBody] PatchFeeHeadRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var entity = await _context.FeeHeads.FirstOrDefaultAsync(h => h.Id == id && h.SchoolId == schoolId && !h.IsDeleted);
+                if (entity == null) return NotFound(new { message = "Fee head not found." });
+                if (request.IsActive.HasValue) entity.IsActive = request.IsActive.Value;
+                entity.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return NoContent();
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to patch fee head." }); }
+        }
+
         /// <summary>Delete a fee head (soft delete)</summary>
         [HttpDelete("heads/{id}")]
         [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
@@ -2168,12 +2198,16 @@ namespace SmsApi.Controllers
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 var components = await _context.FeeStructureComponents
                     .Include(c => c.FeeHead)
+                    .Include(c => c.FeeTerm)
+                    .Include(c => c.ConcessionType)
                     .Where(c => c.FeeStructureId == structureId && c.SchoolId == schoolId && !c.IsDeleted)
                     .OrderBy(c => c.FeeHead!.DisplayOrder)
                     .Select(c => new FeeStructureComponentResponse
                     {
                         Id = c.Id, FeeHeadId = c.FeeHeadId,
                         FeeHeadName = c.FeeHead!.Name, FeeHeadCode = c.FeeHead.Code,
+                        FeeTermId = c.FeeTermId, FeeTermName = c.FeeTerm != null ? c.FeeTerm.Name : null,
+                        ConcessionTypeId = c.ConcessionTypeId, ConcessionName = c.ConcessionType != null ? c.ConcessionType.Name : null,
                         Amount = c.Amount, Remarks = c.Remarks
                     }).ToListAsync();
                 return Ok(components);
@@ -2200,7 +2234,8 @@ namespace SmsApi.Controllers
                 var newComponents = request.Select(r => new SmsApi.Models.Entities.FeeStructureComponent
                 {
                     Id = Guid.NewGuid(), SchoolId = schoolId, FeeStructureId = structureId,
-                    FeeHeadId = r.FeeHeadId, Amount = r.Amount, Remarks = r.Remarks
+                    FeeHeadId = r.FeeHeadId, FeeTermId = r.FeeTermId, ConcessionTypeId = r.ConcessionTypeId,
+                    Amount = r.Amount, Remarks = r.Remarks
                 }).ToList();
                 _context.FeeStructureComponents.AddRange(newComponents);
 
@@ -2343,6 +2378,147 @@ namespace SmsApi.Controllers
                 return Ok(new { message = $"{newTerms.Count} terms saved." });
             }
             catch (Exception) { return StatusCode(500, new { message = "Failed to save fee terms." }); }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // SCHOOL-LEVEL FEE TERMS — Standalone terms not tied to a fee structure
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>Get all school-level fee terms (not tied to a specific structure)</summary>
+        [HttpGet("terms")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff,Parent,Student")]
+        public async Task<ActionResult<List<FeeTermResponse>>> GetSchoolFeeTerms()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var terms = await _context.FeeTerms
+                    .Where(t => t.SchoolId == schoolId && t.FeeStructureId == null && !t.IsDeleted)
+                    .OrderBy(t => t.TermNumber)
+                    .Select(t => new FeeTermResponse
+                    {
+                        Id = t.Id, Name = t.Name, TermNumber = t.TermNumber,
+                        Amount = t.Amount, DueDate = t.DueDate, Status = t.Status, Remarks = t.Remarks
+                    }).ToListAsync();
+                return Ok(terms);
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to fetch fee terms." }); }
+        }
+
+        /// <summary>Create a school-level fee term</summary>
+        [HttpPost("terms")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult<FeeTermResponse>> CreateSchoolFeeTerm([FromBody] CreateFeeTermRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var term = new SmsApi.Models.Entities.FeeTerm
+                {
+                    Id = Guid.NewGuid(), SchoolId = schoolId, FeeStructureId = null,
+                    Name = request.Name, TermNumber = request.TermNumber, Amount = request.Amount,
+                    DueDate = request.DueDate, Status = "pending", Remarks = request.Remarks
+                };
+                _context.FeeTerms.Add(term);
+                await _context.SaveChangesAsync();
+                return CreatedAtAction(nameof(GetSchoolFeeTerms), new FeeTermResponse
+                {
+                    Id = term.Id, Name = term.Name, TermNumber = term.TermNumber,
+                    Amount = term.Amount, DueDate = term.DueDate, Status = term.Status, Remarks = term.Remarks
+                });
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to create fee term." }); }
+        }
+
+        /// <summary>Update a school-level fee term</summary>
+        [HttpPut("terms/{id}")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult<FeeTermResponse>> UpdateSchoolFeeTerm(Guid id, [FromBody] CreateFeeTermRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var term = await _context.FeeTerms.FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
+                if (term == null) return NotFound(new { message = "Fee term not found." });
+                term.Name = request.Name;
+                term.TermNumber = request.TermNumber;
+                term.Amount = request.Amount;
+                term.DueDate = request.DueDate;
+                term.Remarks = request.Remarks;
+                term.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return Ok(new FeeTermResponse
+                {
+                    Id = term.Id, Name = term.Name, TermNumber = term.TermNumber,
+                    Amount = term.Amount, DueDate = term.DueDate, Status = term.Status, Remarks = term.Remarks
+                });
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to update fee term." }); }
+        }
+
+        /// <summary>Delete a school-level fee term</summary>
+        [HttpDelete("terms/{id}")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult> DeleteSchoolFeeTerm(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var term = await _context.FeeTerms.FirstOrDefaultAsync(t => t.Id == id && t.SchoolId == schoolId && !t.IsDeleted);
+                if (term == null) return NotFound(new { message = "Fee term not found." });
+                // Soft delete
+                term.IsDeleted = true;
+                term.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return NoContent();
+            }
+            catch (Exception) { return StatusCode(500, new { message = "Failed to delete fee term." }); }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // BULK CLASS ASSIGNMENT — Set all classes for a fee structure at once
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>Bulk-replace all class assignments for a fee structure</summary>
+        [HttpPost("structures/{id}/assign-classes")]
+        [Authorize(Roles = "Admin,Principal,Finance,FinanceOfficer,Accountant,Teacher,Staff")]
+        public async Task<ActionResult> AssignClassesToStructure(Guid id, [FromBody] AssignClassesRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var structure = await _context.FeeStructures.FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId && !s.IsDeleted);
+                if (structure == null) return NotFound(new { message = "Fee structure not found." });
+
+                var newClasses = request.ClassIds ?? new List<string>();
+
+                // Check for conflicts: each class may only be assigned to one structure per academic year
+                if (newClasses.Count > 0)
+                {
+                    var allOtherStructures = await _context.FeeStructures
+                        .Where(fs => fs.Id != id && fs.SchoolId == schoolId && !fs.IsDeleted && fs.AcademicYear == structure.AcademicYear)
+                        .Select(fs => new { fs.Name, fs.Class })
+                        .ToListAsync();
+
+                    foreach (var className in newClasses)
+                    {
+                        var conflict = allOtherStructures.FirstOrDefault(fs =>
+                            fs.Class.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                    .Any(c => string.Equals(c, className, StringComparison.OrdinalIgnoreCase)));
+                        if (conflict != null)
+                            return Conflict(new { message = $"Class '{className}' is already linked to fee structure '{conflict.Name}'." });
+                    }
+                }
+
+                structure.Class = string.Join(", ", newClasses);
+                structure.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { classes = structure.Class, count = newClasses.Count });
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "Failed to assign classes.", error = ex.Message }); }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -3210,6 +3386,11 @@ public class CreateFeeHeadRequest
     [MaxLength(20)] public string? DefaultFrequency { get; set; }
 }
 
+public class PatchFeeHeadRequest
+{
+    public bool? IsActive { get; set; }
+}
+
 public class FeeHeadResponse
 {
     public Guid Id { get; set; }
@@ -3227,6 +3408,8 @@ public class FeeHeadResponse
 public class CreateFeeStructureComponentRequest
 {
     [Required] public Guid FeeHeadId { get; set; }
+    public Guid? FeeTermId { get; set; }
+    public Guid? ConcessionTypeId { get; set; }
     [Required] public decimal Amount { get; set; }
     [MaxLength(200)] public string? Remarks { get; set; }
 }
@@ -3237,6 +3420,10 @@ public class FeeStructureComponentResponse
     public Guid FeeHeadId { get; set; }
     public string FeeHeadName { get; set; } = string.Empty;
     public string? FeeHeadCode { get; set; }
+    public Guid? FeeTermId { get; set; }
+    public string? FeeTermName { get; set; }
+    public Guid? ConcessionTypeId { get; set; }
+    public string? ConcessionName { get; set; }
     public decimal Amount { get; set; }
     public string? Remarks { get; set; }
 }
@@ -3246,7 +3433,7 @@ public class CreateFeeTermRequest
 {
     [Required][MaxLength(100)] public string Name { get; set; } = string.Empty;
     [Required] public int TermNumber { get; set; }
-    [Required] public decimal Amount { get; set; }
+    public decimal Amount { get; set; } = 0;
     [Required] public DateTime DueDate { get; set; }
     [MaxLength(500)] public string? Remarks { get; set; }
 }
@@ -3294,6 +3481,13 @@ public class PromoteFeeStructureRequest
     [Required] public string TargetAcademicYear { get; set; } = string.Empty;
     /// <summary>Optional % increase to apply to all amounts. 0 = copy as-is.</summary>
     public decimal IncrementPercent { get; set; } = 0;
+}
+
+// ── AssignClasses DTO ─────────────────────────────────────────────────────────
+public class AssignClassesRequest
+{
+    /// <summary>List of class names (or IDs) to assign. Replaces existing assignments.</summary>
+    public List<string> ClassIds { get; set; } = new();
 }
 
 // ── BulkFeePayment Upload DTO ─────────────────────────────────────────────────

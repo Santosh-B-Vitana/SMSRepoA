@@ -8,14 +8,13 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Loader2, Tags } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Plus, Pencil, Trash2, Loader2, Tags, Info } from "lucide-react";
+import { toast } from "sonner";
 import { feeApi, FeeHead, CreateFeeHeadDto } from "@/services/api/feeApi";
 
 
 
 export function FeeHeadsManager() {
-  const { toast } = useToast();
   const [heads, setHeads] = useState<FeeHead[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -33,7 +32,7 @@ export function FeeHeadsManager() {
       const data = await feeApi.getFeeHeads();
       setHeads(data);
     } catch {
-      toast({ title: "Failed to load fee heads", variant: "destructive" });
+      toast.error("Failed to load fee heads");
     } finally {
       setLoading(false);
     }
@@ -55,22 +54,22 @@ export function FeeHeadsManager() {
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.code.trim()) {
-      toast({ title: "Name and Code are required", variant: "destructive" });
+      toast.error("Name and Code are required");
       return;
     }
     setSaving(true);
     try {
       if (editing) {
         await feeApi.updateFeeHead(editing.id, form);
-        toast({ title: "Fee head updated" });
+        toast.success("Fee head updated");
       } else {
         await feeApi.createFeeHead(form);
-        toast({ title: "Fee head created" });
+        toast.success("Fee head created");
       }
       setDialogOpen(false);
       await loadHeads();
     } catch {
-      toast({ title: "Save failed", variant: "destructive" });
+      toast.error("Save failed");
     } finally {
       setSaving(false);
     }
@@ -80,10 +79,10 @@ export function FeeHeadsManager() {
     if (!confirm("Delete this fee head?")) return;
     try {
       await feeApi.deleteFeeHead(id);
-      toast({ title: "Fee head deleted" });
+      toast.success("Fee head deleted");
       await loadHeads();
     } catch {
-      toast({ title: "Delete failed", variant: "destructive" });
+      toast.error("Delete failed");
     }
   };
 
@@ -92,7 +91,7 @@ export function FeeHeadsManager() {
       await feeApi.updateFeeHead(h.id, { isActive: !h.isActive });
       setHeads(prev => prev.map(x => x.id === h.id ? { ...x, isActive: !h.isActive } : x));
     } catch {
-      toast({ title: "Update failed", variant: "destructive" });
+      toast.error("Update failed");
     }
   };
 
@@ -107,6 +106,10 @@ export function FeeHeadsManager() {
                 Fee Types
               </CardTitle>
               <CardDescription>Manage fee type labels used across structures</CardDescription>
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2 flex items-center gap-2">
+                <Info className="h-4 w-4 shrink-0" />
+                Transport and Hostel fees are automatically added to student fee records at payment time — no setup required here.
+              </p>
             </div>
             <Button size="sm" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-1" /> Add Fee Type

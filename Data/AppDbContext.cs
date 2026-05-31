@@ -1067,9 +1067,15 @@ namespace SmsApi.Data
                     .OnDelete(DeleteBehavior.SetNull)
                     .IsRequired(false);
 
-                // Uniqueness is now (FeeStructureId, FeeHeadId, FeeTermId) so the same head
-                // can appear in multiple terms with different amounts.
-                entity.HasIndex(e => new { e.FeeStructureId, e.FeeHeadId, e.FeeTermId }).IsUnique();
+                // Optional FK to ConcessionType
+                entity.HasOne(f => f.ConcessionType)
+                    .WithMany()
+                    .HasForeignKey(f => f.ConcessionTypeId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
+
+                // Index for efficient lookups — not unique since same head may appear in multiple rows
+                entity.HasIndex(e => new { e.FeeStructureId, e.FeeHeadId, e.FeeTermId });
             });
 
             // ── ClassFeeStructure ──────────────────────────────────────────────
@@ -1131,6 +1137,7 @@ namespace SmsApi.Data
                 entity.HasOne(f => f.FeeStructure)
                     .WithMany()
                     .HasForeignKey(f => f.FeeStructureId)
+                    .IsRequired(false)
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.HasIndex(e => new { e.FeeStructureId, e.TermNumber });

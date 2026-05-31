@@ -22,7 +22,7 @@ import {
   Tags, Upload, ShieldOff, Check, BellRing, Eye, Wand2, X, GraduationCap, ArrowLeft, RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
-import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, FeeHead, FeeStructureComponent, toggleStructureActive, FeeConcessionRecord, getSchoolConcessions, approveConcession, rejectConcession, FeeTerm, getFeeHeads, getFeeTerms } from "@/services/api/feeApi";
+import { feeApi, FeeRecord, FeeStructure, CreateFeeStructureDto, TermSchedule, AgingBucket, FeeAuditLogEntry, InvoiceBreakdown, getSchoolAging, getAuditTrail, getInvoice, bulkAssignStructure, addExtraCharges, editPayment, linkStructure, updateFeeRecord, patchModuleFees, getFeeRecordById, ConcessionType, getConcessionTypes, createConcessionType, updateConcessionType, deleteConcessionType, applyFeeHeadOverrides, removeDiscount, syncStudentFeeRecords, recalculateFeeTotals, getLinkedClasses, linkClass, unlinkClass, ClassFeeStructureLink, getStructureComponents, setStructureComponents, updateStructureLineItems, assignClassesToStructure, getAssignedClasses, FeeHead, FeeStructureComponent, toggleStructureActive, FeeConcessionRecord, getSchoolConcessions, approveConcession, rejectConcession, FeeTerm, getFeeHeads, getFeeTerms } from "@/services/api/feeApi";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -1680,9 +1680,6 @@ function CollectPaymentDialog({
                                     setConcessionMode(ct.discountType.toLowerCase() === "fixed" ? "fixed" : "percent");
                                     setConcessionValue(String(ct.discountValue));
                                   }
-                                } else {
-                                  const ct = CONCESSION_TYPES.find(t => t.value === v);
-                                  if (ct) { setConcessionMode(ct.discountType); setConcessionValue(String(ct.discountValue)); }
                                 }
                               }
                             }}>
@@ -1690,7 +1687,7 @@ function CollectPaymentDialog({
                               <SelectContent>
                                 {apiConcessionTypes.length > 0
                                   ? apiConcessionTypes.filter(t => t.isActive).map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
-                                  : CONCESSION_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)
+                                  : <SelectItem value="__no_types__" disabled>No concession types configured</SelectItem>
                                 }
                                 <SelectItem value="__custom__">✏️ Custom…</SelectItem>
                               </SelectContent>
@@ -2251,7 +2248,7 @@ function ConcessionsTab({ academicYear }: { academicYear: string }) {
     setLoading(true);
     try {
       const res = await getConcessionTypes();
-      setTypes(res?.data ?? []);
+      setTypes(res ?? []);
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Failed to load concessions");
     }
@@ -2277,7 +2274,7 @@ function ConcessionsTab({ academicYear }: { academicYear: string }) {
     if (!form.discountValue) { toast.error("Discount percentage is required"); return; }
     setSaving(true);
     try {
-      const dto = { name: form.name.trim(), description: form.description || undefined, discountValue: parseFloat(form.discountValue) };
+      const dto = { name: form.name.trim(), description: form.description || undefined, discountType: "Percentage", discountValue: parseFloat(form.discountValue) };
       if (editTarget) { await updateConcessionType(editTarget.id, { ...dto, isActive: editTarget.isActive }); toast.success("Updated"); }
       else            { await createConcessionType(dto); toast.success("Concession added"); }
       setShowForm(false); load();
@@ -2403,8 +2400,6 @@ interface FeeStructureLineItem {
   feeTermId: string;
   feeTermName?: string;
   amount: number;
-  concessionId?: string;
-  concessionName?: string;
 }
 
 function FeeStructureTab({ academicYear }: { academicYear: string }) {
@@ -2421,7 +2416,13 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const [lineItems, setLineItems] = useState<FeeStructureLineItem[]>([]);
   const [showLineItemDialog, setShowLineItemDialog] = useState(false);
   const [editingLineItem, setEditingLineItem] = useState<FeeStructureLineItem | null>(null);
-  const [lineItemForm, setLineItemForm] = useState<FeeStructureLineItem>({ feeTypeId: "", feeTermId: "", amount: 0 });
+  const [lineItemForm, setLineItemForm] = useState<Omit<FeeStructureLineItem, 'id'>>({ feeTypeId: "", feeTermId: "", amount: 0 });
+  
+  // View structure dialog (read-only)
+  const [showViewDialog, setShowViewDialog] = useState(false);
+  const [viewTarget, setViewTarget] = useState<FeeStructure | null>(null);
+  const [viewLineItems, setViewLineItems] = useState<FeeStructureLineItem[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
   
   // Class assignment management
   const [showAssignClassesModal, setShowAssignClassesModal] = useState(false);
@@ -2429,25 +2430,23 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const [availableClasses, setAvailableClasses] = useState<{ id: string; name: string; standard: string; section: string }[]>([]);
   const [structureClassAssignments, setStructureClassAssignments] = useState<Record<string, string[]>>({});
   const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [classTakenByStructure, setClassTakenByStructure] = useState<Record<string, { structureId: string; structureName: string; currentNames: string[] }>>({})
   
   // Dropdowns
   const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
   const [feeTerms, setFeeTerms] = useState<FeeTerm[]>([]);
-  const [concessions, setConcessions] = useState<ConcessionType[]>([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [res, heads, terms, concs] = await Promise.all([
+      const [res, heads, terms] = await Promise.all([
         feeApi.getFeeStructures(undefined, academicYear),
         getFeeHeads(),
-        getFeeTerms(""),
-        getConcessionTypes(),
+        getFeeTerms(),
       ]);
       setStructures(res ?? []);
       setFeeHeads(heads);
       setFeeTerms(terms);
-      setConcessions(concs);
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Failed to load structures");
     }
@@ -2457,7 +2456,7 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
   const loadClasses = async () => {
     try {
       const res = await academicApi.listClasses(1, 100);
-      const classes = res.data?.classes || [];
+      const classes = res.classes || [];
       setAvailableClasses(
         classes.map(c => ({
           id: c.id,
@@ -2481,25 +2480,75 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         name: form.name!,
         academicYear: form.academicYear || academicYear,
       };
+      let structureId: string;
       if (editTarget) {
         await feeApi.updateFeeStructure(editTarget.id, payload);
-        toast.success("Updated");
+        structureId = editTarget.id;
       } else {
-        await feeApi.createFeeStructure(payload);
-        toast.success("Structure created");
+        const created = await feeApi.createFeeStructure(payload);
+        structureId = created.id;
       }
+      // Persist line items
+      if (lineItems.length > 0) {
+        await updateStructureLineItems(structureId, lineItems.map(item => ({
+          feeHeadId: item.feeTypeId,
+          feeTermId: item.feeTermId || undefined,
+          amount: item.amount,
+        })));
+      }
+      toast.success(editTarget ? "Structure updated" : "Structure created");
       setShowForm(false);
       load();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Failed to save");
+      const data = e?.response?.data;
+      const msg = data?.message
+        ?? (data?.errors ? Object.values(data.errors as Record<string, string[]>).flat().join("; ") : null)
+        ?? data?.title
+        ?? "Failed to save";
+      toast.error(msg);
     }
     finally { setSaving(false); }
   };
 
-  const openLineItems = (structure: FeeStructure) => {
+  const openLineItems = async (structure: FeeStructure) => {
     setEditingStructureId(structure.id);
-    setLineItems([]); // In a real app, fetch from backend
+    setLineItems([]);
     setLineItemForm({ feeTypeId: "", feeTermId: "", amount: 0 });
+    try {
+      const components = await getStructureComponents(structure.id);
+      setLineItems(components.map(c => ({
+        id: c.id,
+        feeTypeId: c.feeHeadId,
+        feeTypeName: c.feeHeadName,
+        feeTermId: c.feeTermId ?? "",
+        feeTermName: c.feeTermName,
+        amount: c.amount,
+      })));
+    } catch {
+      toast.error("Failed to load line items");
+    }
+  };
+
+  const openView = async (structure: FeeStructure) => {
+    setViewTarget(structure);
+    setViewLineItems([]);
+    setViewLoading(true);
+    setShowViewDialog(true);
+    try {
+      const components = await getStructureComponents(structure.id);
+      setViewLineItems(components.map(c => ({
+        id: c.id,
+        feeTypeId: c.feeHeadId,
+        feeTypeName: c.feeHeadName,
+        feeTermId: c.feeTermId ?? "",
+        feeTermName: c.feeTermName,
+        amount: c.amount,
+      })));
+    } catch {
+      toast.error("Failed to load line items");
+    } finally {
+      setViewLoading(false);
+    }
   };
 
   const handleAddLineItem = () => {
@@ -2510,12 +2559,11 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
     
     const feeTypeName = feeHeads.find(h => h.id === lineItemForm.feeTypeId)?.name;
     const feeTermName = feeTerms.find(t => t.id === lineItemForm.feeTermId)?.name;
-    const concessionName = lineItemForm.concessionId ? concessions.find(c => c.id === lineItemForm.concessionId)?.name : undefined;
 
     if (editingLineItem) {
       setLineItems(items => items.map(item => 
         item.id === editingLineItem.id 
-          ? { ...lineItemForm, feeTypeName, feeTermName, concessionName }
+          ? { ...item, ...lineItemForm, feeTypeName, feeTermName }
           : item
       ));
       toast.success("Line item updated");
@@ -2525,7 +2573,6 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         ...lineItemForm,
         feeTypeName,
         feeTermName,
-        concessionName,
       };
       setLineItems([...lineItems, newItem]);
       toast.success("Line item added");
@@ -2553,25 +2600,66 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
       toast.error("Add at least one line item");
       return;
     }
-    // In a real app, save to backend here
-    // await feeApi.updateStructureLineItems(editingStructureId, lineItems);
-    setEditingStructureId(null);
-    toast.success("Line items saved");
+    if (!editingStructureId) return;
+    try {
+      await updateStructureLineItems(editingStructureId, lineItems.map(item => ({
+        feeHeadId: item.feeTypeId,
+        feeTermId: item.feeTermId || undefined,
+        amount: item.amount,
+      })));
+      toast.success("Line items saved");
+      setEditingStructureId(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to save line items");
+    }
   };
 
-  const openAssignClasses = (structure: FeeStructure) => {
+  const handleDeleteStructure = async (structure: FeeStructure) => {
+    if (!confirm(`Delete "${structure.name}"? This cannot be undone. Existing fee records are not affected.`)) return;
+    try {
+      await feeApi.deleteFeeStructure(structure.id);
+      toast.success("Structure deleted");
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to delete structure");
+    }
+  };
+
+  const openAssignClasses = async (structure: FeeStructure) => {
     setAssigningStructureId(structure.id);
     setAssignmentLoading(true);
-    
-    // Load existing assignments if any
-    const existingAssignments = structureClassAssignments[structure.id] || [];
-    setStructureClassAssignments(prev => ({
-      ...prev,
-      [structure.id]: existingAssignments,
-    }));
-    
     setShowAssignClassesModal(true);
-    setAssignmentLoading(false);
+
+    // Build map of classes taken by OTHER structures
+    const taken: Record<string, { structureId: string; structureName: string; currentNames: string[] }> = {};
+    structures.forEach(st => {
+      if (st.id === structure.id) return;
+      const names = (st.class ?? "").split(",").map(c => c.trim()).filter(Boolean);
+      names.forEach(name => {
+        const found = availableClasses.find(c =>
+          c.name === name || `${c.standard}${c.section ? `-${c.section}` : ""}` === name
+        );
+        if (found) taken[found.id] = { structureId: st.id, structureName: st.name, currentNames: names };
+      });
+    });
+    setClassTakenByStructure(taken);
+
+    try {
+      const assigned = await getAssignedClasses(structure.id);
+      // Map class names back to IDs using availableClasses
+      const assignedIds = assigned.map(name => {
+        const found = availableClasses.find(c =>
+          c.name === name || `${c.standard}${c.section ? `-${c.section}` : ""}` === name
+        );
+        return found?.id ?? name;
+      });
+      setStructureClassAssignments(prev => ({ ...prev, [structure.id]: assignedIds }));
+    } catch {
+      toast.error("Failed to load class assignments");
+    } finally {
+      setAssignmentLoading(false);
+    }
   };
 
   const handleToggleClassAssignment = (classId: string) => {
@@ -2590,82 +2678,170 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
     });
   };
 
-  const handleSaveClassAssignments = () => {
+  const handleSaveClassAssignments = async () => {
     if (!assigningStructureId) return;
-    
+
     const assignedClassIds = structureClassAssignments[assigningStructureId] || [];
     if (assignedClassIds.length === 0) {
       toast.error("Select at least one class");
       return;
     }
-    
-    // In a real app, save to backend here
-    // await feeApi.assignClassesToStructure(assigningStructureId, assignedClassIds);
-    
-    toast.success(`Structure assigned to ${assignedClassIds.length} class(es)`);
-    setShowAssignClassesModal(false);
-    setAssigningStructureId(null);
+
+    // Detect classes being reassigned from another structure
+    const reassigning = assignedClassIds.filter(id => classTakenByStructure[id]);
+    if (reassigning.length > 0) {
+      const names = reassigning.map(id => availableClasses.find(c => c.id === id)?.name ?? id);
+      const fromStructures = [...new Set(reassigning.map(id => classTakenByStructure[id]?.structureName))].filter(Boolean);
+      if (!confirm(`${names.join(", ")} ${names.length > 1 ? "are" : "is"} currently assigned to "${fromStructures.join('", "')}". Reassign ${names.length > 1 ? "them" : "it"} to this structure?`)) return;
+    }
+
+    const classNames = assignedClassIds.map(id => availableClasses.find(c => c.id === id)?.name ?? id);
+
+    try {
+      // First unlink reassigned classes from their current structures
+      if (reassigning.length > 0) {
+        const unlinkedStructures = new Map<string, string[]>();
+        for (const classId of reassigning) {
+          const info = classTakenByStructure[classId];
+          if (!info) continue;
+          if (!unlinkedStructures.has(info.structureId)) {
+            unlinkedStructures.set(info.structureId, [...info.currentNames]);
+          }
+          const className = availableClasses.find(c => c.id === classId)?.name ?? classId;
+          unlinkedStructures.set(info.structureId,
+            (unlinkedStructures.get(info.structureId) ?? []).filter(n => n.toLowerCase() !== className.toLowerCase())
+          );
+        }
+        for (const [structId, remainingNames] of unlinkedStructures) {
+          await assignClassesToStructure(structId, remainingNames);
+        }
+      }
+
+      await assignClassesToStructure(assigningStructureId, classNames);
+      toast.success(`Structure assigned to ${classNames.length} class(es)`);
+      setShowAssignClassesModal(false);
+      setAssigningStructureId(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? "Failed to save class assignments");
+    }
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Fee Structures</h3>
-        <Button size="sm" onClick={() => { setEditTarget(null); setForm({}); setLineItems([]); setShowForm(true); }}>
-          <Plus className="h-4 w-4 mr-1" /> Add Structure
+        <div>
+          <h3 className="font-semibold text-base">Fee Structures</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Define fee components, assign to classes, and manage installment schedules</p>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={() => { setEditTarget(null); setForm({}); setLineItems([]); setShowForm(true); }}>
+          <Plus className="h-4 w-4" /> Add Structure
         </Button>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        <div className="flex justify-center py-12"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {structures.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="py-8 text-center text-muted-foreground">
-                <p className="font-medium">No fee structures yet</p>
-                <p className="text-sm mt-1">Add a structure to get started</p>
+            <Card className="border-dashed border-2">
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Building2 className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p className="font-semibold">No fee structures yet</p>
+                <p className="text-sm mt-1">Create your first structure to get started</p>
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4">
-              {structures.map(s => (
-                <Card key={s.id} className="overflow-hidden">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-start justify-between gap-4">
+            <div className="grid gap-3">
+              {structures.map(s => {
+                const classLabel = s.class ? s.class.split(",").map(c => c.trim()).filter(Boolean) : [];
+                return (
+                  <Card key={s.id} className="group overflow-hidden hover:shadow-md transition-all duration-200 border border-border/60">
+                    <div className="flex items-center gap-4 px-5 py-4">
+                      {/* Icon badge */}
+                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <Building2 className="h-5 w-5 text-primary" />
+                      </div>
+                      {/* Name + meta */}
                       <div className="flex-1 min-w-0">
-                        <CardTitle className="text-lg">{s.name}</CardTitle>
-                        {s.description && <CardDescription className="mt-1">{s.description}</CardDescription>}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-base">{s.name}</span>
+                          {s.academicYear && (
+                            <Badge variant="outline" className="text-xs font-normal py-0">{s.academicYear}</Badge>
+                          )}
+                        </div>
+                        {s.description && (
+                          <p className="text-sm text-muted-foreground mt-0.5 truncate">{s.description}</p>
+                        )}
+                        {classLabel.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                            <span className="text-xs text-muted-foreground">Classes:</span>
+                            {classLabel.slice(0, 4).map(c => (
+                              <Badge key={c} variant="secondary" className="text-xs py-0 h-5">{c}</Badge>
+                            ))}
+                            {classLabel.length > 4 && (
+                              <Badge variant="secondary" className="text-xs py-0 h-5">+{classLabel.length - 4} more</Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 text-muted-foreground hover:text-foreground"
+                          onClick={() => openView(s)}
+                        >
+                          <Eye className="h-4 w-4" /> View
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            setEditTarget(s);
+                            setForm({ name: s.name, description: s.description });
+                            setLineItems([]);
+                            setEditingStructureId(s.id);
+                            setShowForm(true);
+                            // Load existing line items
+                            getStructureComponents(s.id).then(components => {
+                              setLineItems(components.map(c => ({
+                                id: c.id,
+                                feeTypeId: c.feeHeadId,
+                                feeTypeName: c.feeHeadName,
+                                feeTermId: c.feeTermId ?? "",
+                                feeTermName: c.feeTermName,
+                                amount: c.amount,
+                              })));
+                            }).catch(() => {});
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" /> Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => openAssignClasses(s)}
+                        >
+                          <Users className="h-4 w-4" /> Assign Classes
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          title="Delete structure"
+                          onClick={() => handleDeleteStructure(s)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                  </CardHeader>
-
-                  {/* Action Buttons */}
-                  <div className="border-t px-4 py-3 flex gap-2 justify-end flex-wrap">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => { 
-                        setEditTarget(s); 
-                        setForm({ name: s.name, description: s.description }); 
-                        // Load line items for this structure (in a real app, fetch from backend)
-                        setLineItems([]); 
-                        setShowForm(true); 
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => openAssignClasses(s)}
-                      className="gap-1"
-                    >
-                      <Users className="h-4 w-4" /> Assign Classes
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -2711,14 +2887,13 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                       <TableHead className="text-xs">Fee Type</TableHead>
                       <TableHead className="text-xs">Fee Term</TableHead>
                       <TableHead className="text-xs text-right">Amount</TableHead>
-                      <TableHead className="text-xs">Concession</TableHead>
                       <TableHead className="text-xs text-right w-16">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {lineItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-xs">
+                        <TableCell colSpan={4} className="text-center text-muted-foreground py-6 text-xs">
                           No line items added yet
                         </TableCell>
                       </TableRow>
@@ -2728,7 +2903,6 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                           <TableCell className="font-medium">{item.feeTypeName}</TableCell>
                           <TableCell>{item.feeTermName}</TableCell>
                           <TableCell className="text-right">₹{item.amount.toLocaleString("en-IN")}</TableCell>
-                          <TableCell>{item.concessionName || "—"}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-0.5">
                               <Button 
@@ -2817,21 +2991,6 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
                 placeholder="0"
               />
             </div>
-
-            <div>
-              <Label>Concession (optional)</Label>
-              <Select value={lineItemForm.concessionId || "none"} onValueChange={(val) => setLineItemForm({ ...lineItemForm, concessionId: val === "none" ? undefined : val })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="No concession" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {concessions.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           <DialogFooter>
@@ -2843,68 +3002,163 @@ function FeeStructureTab({ academicYear }: { academicYear: string }) {
         </DialogContent>
       </Dialog>
 
+      {/* View Structure Dialog (read-only) */}
+      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              {viewTarget?.name}
+            </DialogTitle>
+            {viewTarget?.description && (
+              <DialogDescription>{viewTarget.description}</DialogDescription>
+            )}
+          </DialogHeader>
+
+          {/* Meta badges */}
+          <div className="flex items-center gap-2 flex-wrap -mt-1">
+            {viewTarget?.academicYear && (
+              <Badge variant="outline" className="gap-1"><Calendar className="h-3 w-3" />{viewTarget.academicYear}</Badge>
+            )}
+            {viewTarget?.class && viewTarget.class.split(",").filter(Boolean).map(c => (
+              <Badge key={c} variant="secondary" className="text-xs">{c.trim()}</Badge>
+            ))}
+          </div>
+
+          {/* Line items table */}
+          <div className="mt-2">
+            <p className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide text-xs">Fee Line Items</p>
+            {viewLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            ) : viewLineItems.length === 0 ? (
+              <div className="border-2 border-dashed rounded-lg py-8 text-center text-muted-foreground text-sm">
+                No line items configured for this structure.
+              </div>
+            ) : (
+              <>
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-xs font-semibold">Fee Type</TableHead>
+                        <TableHead className="text-xs font-semibold">Fee Term</TableHead>
+                        <TableHead className="text-xs font-semibold text-right">Amount (₹)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {viewLineItems.map((item, idx) => (
+                        <TableRow key={item.id ?? idx}>
+                          <TableCell className="font-medium text-sm">{item.feeTypeName ?? item.feeTypeId}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{item.feeTermName ?? (item.feeTermId ? item.feeTermId : "—")}</TableCell>
+                          <TableCell className="text-right font-semibold text-sm">₹{item.amount.toLocaleString("en-IN")}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="flex justify-end mt-3 pt-3 border-t">
+                  <span className="text-sm text-muted-foreground mr-2">Total</span>
+                  <span className="font-bold text-base">₹{viewLineItems.reduce((s, i) => s + i.amount, 0).toLocaleString("en-IN")}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="mt-2">
+            <Button variant="outline" onClick={() => setShowViewDialog(false)}>Close</Button>
+            <Button onClick={() => {
+              setShowViewDialog(false);
+              if (viewTarget) {
+                setEditTarget(viewTarget);
+                setForm({ name: viewTarget.name, description: viewTarget.description });
+                setLineItems(viewLineItems);
+                setShowForm(true);
+              }
+            }} className="gap-1.5">
+              <Pencil className="h-4 w-4" /> Edit Structure
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Assign Classes Modal */}
       <Dialog open={showAssignClassesModal} onOpenChange={setShowAssignClassesModal}>
-        <DialogContent className="max-w-2xl max-h-96 overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Assign Classes to Fee Structure</DialogTitle>
-            <DialogDescription>Select one or more classes to assign this fee structure to</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Assign Classes to Fee Structure
+            </DialogTitle>
+            <DialogDescription>Select one or more classes. This structure's fees will apply to students in these classes.</DialogDescription>
           </DialogHeader>
 
           {assignmentLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : availableClasses.length === 0 ? (
+            <div className="border-2 border-dashed rounded-lg py-10 text-center text-muted-foreground text-sm">
+              <GraduationCap className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              No classes available. Configure classes in Academic Setup first.
             </div>
           ) : (
-            <div className="space-y-3">
-              {availableClasses.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No classes available. Please configure classes in Academic Setup.
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {availableClasses.map(cls => {
-                    const isSelected = (structureClassAssignments[assigningStructureId || ""] || []).includes(cls.id);
-                    return (
-                      <button
-                        key={cls.id}
-                        onClick={() => handleToggleClassAssignment(cls.id)}
-                        className={`p-3 border rounded-lg text-left transition-all ${
-                          isSelected
-                            ? "border-blue-500 bg-blue-50 shadow-sm"
-                            : "border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => handleToggleClassAssignment(cls.id)}
-                            className="mt-1"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm">{cls.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {cls.standard} {cls.section ? `- ${cls.section}` : ""}
-                            </p>
-                          </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                <span>{availableClasses.length} classes available</span>
+                <span>{(structureClassAssignments[assigningStructureId || ""] || []).length} selected</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                {availableClasses.map(cls => {
+                  const isSelected = (structureClassAssignments[assigningStructureId || ""] || []).includes(cls.id);
+                  const takenBy = classTakenByStructure[cls.id];
+                  return (
+                    <button
+                      key={cls.id}
+                      onClick={() => handleToggleClassAssignment(cls.id)}
+                      className={`px-3 py-2.5 border rounded-lg text-left transition-all text-sm font-medium ${
+                        isSelected
+                          ? "border-primary bg-primary/5 text-primary shadow-sm"
+                          : takenBy
+                          ? "border-amber-300 bg-amber-50 hover:border-amber-400 hover:bg-amber-100"
+                          : "border-border hover:border-primary/40 hover:bg-muted/50"
+                      }`}
+                      title={takenBy && !isSelected ? `Currently assigned to "${takenBy.structureName}" — click to reassign` : undefined}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? "bg-primary border-primary" : "border-muted-foreground/40"}`}>
+                          {isSelected && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        <div className="min-w-0">
+                          <span className="truncate block">{cls.name}</span>
+                          {takenBy && !isSelected && (
+                            <span className="text-[10px] text-amber-700 truncate block leading-none mt-0.5">→ {takenBy.structureName}</span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {Object.keys(classTakenByStructure).length > 0 && (
+                <p className="text-xs text-amber-700 flex items-center gap-1 pt-1">
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  Amber classes are already assigned to another structure — select to reassign.
+                </p>
               )}
             </div>
           )}
 
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setShowAssignClassesModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveClassAssignments}>
-              Save Assignments
+            {(() => {
+              const reassignCount = (structureClassAssignments[assigningStructureId || ""] || []).filter(id => classTakenByStructure[id]).length;
+              return reassignCount > 0 ? (
+                <p className="text-xs text-amber-700 flex items-center gap-1 mr-auto">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  {reassignCount} class{reassignCount > 1 ? "es" : ""} will be moved from another structure
+                </p>
+              ) : null;
+            })()}
+            <Button variant="outline" onClick={() => setShowAssignClassesModal(false)}>Cancel</Button>
+            <Button onClick={handleSaveClassAssignments} className="gap-1.5">
+              <Check className="h-4 w-4" /> Save Assignments
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3700,6 +3954,8 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [stats, setStats] = useState({ totalCollected: 0, totalPending: 0, totalOverdue: 0, collectionRate: 0 });
+  const [setupKpis, setSetupKpis] = useState({ structures: 0, feeTypes: 0, feeTerms: 0, concessions: 0 });
+  const [setupLoading, setSetupLoading] = useState(true);
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
   const [recentPaymentsLoading, setRecentPaymentsLoading] = useState(false);
 
@@ -3791,7 +4047,21 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
 
   // Sync collectYear with global year on first load only (don't fire loadData with all-years before context resolves)
   useEffect(() => { if (academicYear && !collectYear) setCollectYear(academicYear); }, [academicYear]);
-  useEffect(() => { if (!collectYear) return; loadData(); loadStats(); loadRecentPayments(); }, [collectYear]);
+  // Load setup KPIs independently on mount (fast — no dependency on slow loadData)
+  useEffect(() => {
+    setSetupLoading(true);
+    Promise.all([feeApi.getFeeStructures(), getFeeHeads(), getFeeTerms(), getConcessionTypes()])
+      .then(([structs, heads, terms, concs]) =>
+        setSetupKpis({ structures: structs.length, feeTypes: heads.length, feeTerms: terms.length, concessions: concs.length }))
+      .catch(() => {})
+      .finally(() => setSetupLoading(false));
+  }, []);
+  useEffect(() => {
+    if (!collectYear) return;
+    loadData();
+    loadStats();
+    loadRecentPayments();
+  }, [collectYear]);
   // Re-fetch when page/pageSize changes
   useEffect(() => { if (!collectYear) return; loadData(); }, [feeRecordsPage, feeRecordsPageSize]);
 
@@ -3885,7 +4155,7 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => loadData()}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />{t('fees.btnRefresh')}
           </Button>
-          {canManageFees && (
+          {section !== "setup" && canManageFees && (
             <Button
               variant="outline" size="sm" className="gap-1.5"
               disabled={syncingStudents}
@@ -3906,7 +4176,7 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
               {syncingStudents ? "Syncing…" : "Sync All Students"}
             </Button>
           )}
-          {canManageFees && (
+          {section !== "setup" && canManageFees && (
             <Button
               variant="outline" size="sm" className="gap-1.5"
               disabled={recalculating}
@@ -3927,7 +4197,7 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
               {recalculating ? "Recalculating…" : "Recalculate Totals"}
             </Button>
           )}
-          {canManageFees && (
+          {section !== "setup" && canManageFees && (
             <Button size="sm" className="gap-1.5" onClick={() => { setQuickSearch(""); setQuickRecord(null); setQuickOpen(true); }}>
               <Plus className="h-3.5 w-3.5" />{t('fees.quickCollect')}
             </Button>
@@ -3936,22 +4206,44 @@ export default function Fees({ section }: { section?: "collect" | "setup" }) {
       </div>
 
       {/* ── KPI Bar ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {kpiCards.map(k => (
-          <Card key={k.label} className="hover:shadow-sm transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-medium text-muted-foreground leading-tight">{k.label}</span>
-                <div className={`h-8 w-8 rounded-full ${k.bg} flex items-center justify-center shrink-0`}>{k.icon}</div>
-              </div>
-              <div className={`text-xl font-bold ${k.color}`}>
-                {statsLoading && k.label !== t('fees.kpi.todayCollection') ? <span className="text-muted-foreground text-base">—</span> : k.value}
-              </div>
-              <div className="text-xs text-muted-foreground mt-0.5">{k.sub}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {section === "setup" ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Fee Structures", value: setupLoading ? "—" : String(setupKpis.structures), sub: "Configured structures", color: "text-blue-600", bg: "bg-blue-50", icon: <Building2 className="h-5 w-5 text-blue-600" /> },
+            { label: "Fee Types", value: setupLoading ? "—" : String(setupKpis.feeTypes), sub: "Active fee heads", color: "text-violet-600", bg: "bg-violet-50", icon: <Tags className="h-5 w-5 text-violet-600" /> },
+            { label: "Fee Terms", value: setupLoading ? "—" : String(setupKpis.feeTerms), sub: "Installment schedules", color: "text-amber-600", bg: "bg-amber-50", icon: <Calendar className="h-5 w-5 text-amber-600" /> },
+            { label: "Concessions", value: setupLoading ? "—" : String(setupKpis.concessions), sub: "Discount types", color: "text-emerald-600", bg: "bg-emerald-50", icon: <Tag className="h-5 w-5 text-emerald-600" /> },
+          ].map(k => (
+            <Card key={k.label} className="hover:shadow-sm transition-shadow border-0 shadow-none bg-muted/40">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{k.label}</span>
+                  <div className={`h-8 w-8 rounded-lg ${k.bg} flex items-center justify-center shrink-0`}>{k.icon}</div>
+                </div>
+                <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{k.sub}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {kpiCards.map(k => (
+            <Card key={k.label} className="hover:shadow-sm transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-medium text-muted-foreground leading-tight">{k.label}</span>
+                  <div className={`h-8 w-8 rounded-full ${k.bg} flex items-center justify-center shrink-0`}>{k.icon}</div>
+                </div>
+                <div className={`text-xl font-bold ${k.color}`}>
+                  {statsLoading && k.label !== t('fees.kpi.todayCollection') ? <span className="text-muted-foreground text-base">—</span> : k.value}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{k.sub}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>

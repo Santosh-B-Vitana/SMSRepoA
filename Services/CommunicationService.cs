@@ -1402,6 +1402,7 @@ namespace SmsApi.Services
             // Load all students in matching classes (SQL-safe), then filter by section in-memory
             var allStudentsInClasses = await _context.Students
                 .Include(s => s.Guardians!.Where(g => !g.IsDeleted))
+#pragma warning disable CS0618
                 .Where(s => s.SchoolId == schoolId && !s.IsDeleted && classNames.Contains(s.Class))
                 .ToListAsync();
 
@@ -1409,11 +1410,14 @@ namespace SmsApi.Services
             var students = allStudentsInClasses.Where(s =>
                     classesWithAllSections.Contains(s.Class) ||
                     sectionAssignments.Any(a => a.ClassName == s.Class && a.SectionName == s.Section))
+#pragma warning restore CS0618
                 .ToList();
 
             // Resolve portal user IDs for guardians by matching email to UserLogins
             var guardianEmails = students
+#pragma warning disable CS0618
                 .SelectMany(s => s.Guardians ?? new List<StudentGuardian>())
+#pragma warning restore CS0618
                 .Where(g => !g.IsDeleted && g.Email != null)
                 .Select(g => g.Email!)
                 .Distinct()
@@ -1432,10 +1436,14 @@ namespace SmsApi.Services
                 Name = s.Name,
                 Email = s.Email ?? "",
                 PhotoUrl = s.PhotoUrl,
+#pragma warning disable CS0618
                 Class = s.Class,
                 Section = s.Section,
+#pragma warning restore CS0618
                 RollNumber = s.RollNumber ?? "",
+#pragma warning disable CS0618
                 Guardians = (s.Guardians ?? new List<StudentGuardian>())
+#pragma warning restore CS0618
                     .Where(g => !g.IsDeleted)
                     .Select(g => new GuardianInfoDto
                     {

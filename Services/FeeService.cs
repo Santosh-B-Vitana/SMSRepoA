@@ -208,8 +208,6 @@ namespace SmsApi.Services
                 throw new ArgumentException("Fee structure name is required and cannot exceed 100 characters");
             if (request.Name.Trim().Length < 3)
                 throw new ArgumentException("Fee structure name must be at least 3 characters.");
-            if (string.IsNullOrWhiteSpace(request.Class))
-                throw new ArgumentException("Class is required.");
             if (string.IsNullOrWhiteSpace(request.AcademicYear))
                 throw new ArgumentException("Academic year is required.");
             if (request.AcademicYear.Length > 20)
@@ -219,11 +217,10 @@ namespace SmsApi.Services
 
             var existingStructure = await _context.FeeStructures
                 .AnyAsync(fs => fs.SchoolId == request.SchoolId!.Value &&
-                               fs.Class == request.Class &&
                                fs.AcademicYear == request.AcademicYear &&
                                fs.Name == request.Name);
             if (existingStructure)
-                throw new InvalidOperationException("A fee structure with this name already exists for this class and academic year");
+                throw new InvalidOperationException("A fee structure with this name already exists for this academic year");
 
             // VALIDATION 2: All fee components must be non-negative
             if (request.TuitionFee < 0 || request.AdmissionFee < 0 || request.ExamFee < 0 ||
@@ -236,19 +233,16 @@ namespace SmsApi.Services
             if (feeComponents.Any(c => c > 10_000_000))
                 throw new ArgumentException("Individual fee component cannot exceed 10,000,000.");
 
-            // VALIDATION 3: At least one fee component must be greater than zero
-            var totalFee = request.TuitionFee + request.AdmissionFee + request.ExamFee + 
-                          request.LibraryFee + request.LabFee + request.SportsFee + 
-                          request.TransportFee + request.HostelFee + request.UniformFee + 
-                          request.BooksFee + request.DevelopmentFee + request.Miscellaneous;
-            if (totalFee <= 0)
-                throw new ArgumentException("Total fee must be greater than zero");
-
-            // VALIDATION 4: Installment count must be positive if specified
+            // VALIDATION 3: Installment count must be positive if specified
             if (request.InstallmentCount < 0)
                 throw new ArgumentException("Installment count cannot be negative");
             if (request.InstallmentCount > 12)
                 throw new ArgumentException("Installment count cannot exceed 12.");
+
+            var totalFee = request.TuitionFee + request.AdmissionFee + request.ExamFee +
+                          request.LibraryFee + request.LabFee + request.SportsFee +
+                          request.TransportFee + request.HostelFee + request.UniformFee +
+                          request.BooksFee + request.DevelopmentFee + request.Miscellaneous;
 
             // Calculate total from components
             var totalAmount = totalFee;

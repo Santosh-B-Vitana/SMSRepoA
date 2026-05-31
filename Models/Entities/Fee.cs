@@ -13,9 +13,8 @@ namespace SmsApi.Models.Entities
         [MaxLength(200)]
         public string Name { get; set; } = string.Empty;
         
-        [Required]
         [MaxLength(20)]
-        public string Class { get; set; } = string.Empty;
+        public string? Class { get; set; }
         
         [Required]
         [MaxLength(20)]
@@ -329,6 +328,9 @@ namespace SmsApi.Models.Entities
         /// <summary>Optional: if set, this component belongs to a specific FeeTerm.</summary>
         public Guid? FeeTermId { get; set; }
 
+        /// <summary>Optional: pre-applied concession on this line item.</summary>
+        public Guid? ConcessionTypeId { get; set; }
+
         [Required]
         [Column(TypeName = "decimal(12,2)")]
         public decimal Amount { get; set; }
@@ -350,6 +352,9 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("FeeTermId")]
         public virtual FeeTerm? FeeTerm { get; set; }
+
+        [ForeignKey("ConcessionTypeId")]
+        public virtual ConcessionType? ConcessionType { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -362,8 +367,8 @@ namespace SmsApi.Models.Entities
         [Required]
         public Guid SchoolId { get; set; }
 
-        [Required]
-        public Guid FeeStructureId { get; set; }
+        /// <summary>Optional: null for school-level terms not tied to a specific structure.</summary>
+        public Guid? FeeStructureId { get; set; }
 
         [Required]
         [MaxLength(100)]

@@ -57,7 +57,7 @@ export interface FeeStructure {
 export interface CreateFeeStructureDto {
   schoolId?: string; // omitted: backend injects from tenant context
   name: string;
-  class: string;
+  class?: string;
   academicYear: string;
   tuitionFee?: number;
   admissionFee?: number;
@@ -1095,7 +1095,7 @@ export const deleteFeeHead = async (id: string): Promise<void> => {
 
 export interface FeeTerm {
   id: string;
-  feeStructureId: string;
+  feeStructureId?: string;
   name: string;
   termNumber: number;
   amount: number;
@@ -1107,28 +1107,49 @@ export interface FeeTerm {
 export interface CreateFeeTermDto {
   name: string;
   termNumber: number;
-  amount: number;
+  amount?: number;
   dueDate: string;
   remarks?: string;
 }
 
-export const getFeeTerms = async (feeStructureId: string): Promise<FeeTerm[]> => {
-  const response = await apiClient.get(`${BASE_PATH}/structures/${feeStructureId}/terms`);
+/**
+ * Get fee terms.
+ * - If feeStructureId is a non-empty string, fetches per-structure terms (legacy).
+ * - If feeStructureId is empty string or omitted, fetches school-level standalone terms.
+ */
+export const getFeeTerms = async (feeStructureId?: string): Promise<FeeTerm[]> => {
+  if (feeStructureId) {
+    const response = await apiClient.get(`${BASE_PATH}/structures/${feeStructureId}/terms`);
+    return response.data;
+  }
+  const response = await apiClient.get(`${BASE_PATH}/terms`);
   return response.data;
 };
 
-export const createFeeTerm = async (feeStructureId: string, data: CreateFeeTermDto): Promise<FeeTerm> => {
-  const response = await apiClient.post(`${BASE_PATH}/structures/${feeStructureId}/terms`, data);
+export const createFeeTerm = async (feeStructureId: string | undefined, data: CreateFeeTermDto): Promise<FeeTerm> => {
+  if (feeStructureId) {
+    const response = await apiClient.post(`${BASE_PATH}/structures/${feeStructureId}/terms`, data);
+    return response.data;
+  }
+  const response = await apiClient.post(`${BASE_PATH}/terms`, data);
   return response.data;
 };
 
-export const updateFeeTerm = async (feeStructureId: string, termId: string, data: Partial<CreateFeeTermDto>): Promise<FeeTerm> => {
-  const response = await apiClient.put(`${BASE_PATH}/structures/${feeStructureId}/terms/${termId}`, data);
+export const updateFeeTerm = async (feeStructureId: string | undefined, termId: string, data: Partial<CreateFeeTermDto>): Promise<FeeTerm> => {
+  if (feeStructureId) {
+    const response = await apiClient.put(`${BASE_PATH}/structures/${feeStructureId}/terms/${termId}`, data);
+    return response.data;
+  }
+  const response = await apiClient.put(`${BASE_PATH}/terms/${termId}`, data);
   return response.data;
 };
 
-export const deleteFeeTerm = async (feeStructureId: string, termId: string): Promise<void> => {
-  await apiClient.delete(`${BASE_PATH}/structures/${feeStructureId}/terms/${termId}`);
+export const deleteFeeTerm = async (feeStructureId: string | undefined, termId: string): Promise<void> => {
+  if (feeStructureId) {
+    await apiClient.delete(`${BASE_PATH}/structures/${feeStructureId}/terms/${termId}`);
+    return;
+  }
+  await apiClient.delete(`${BASE_PATH}/terms/${termId}`);
 };
 
 // ========== RECEIPT TEMPLATES ==========
@@ -1285,19 +1306,25 @@ export const deleteConcessionType = async (id: string): Promise<void> => {
   await apiClient.delete(`${CONCESSION_TYPES_PATH}/${id}`);
 };
 
-// ========== FEE STRUCTURE COMPONENTS ==========
+// ========== FEE STRUCTURE COMPONENTS (LINE ITEMS) ==========
 
 export interface FeeStructureComponent {
   id?: string;
   feeHeadId: string;
   feeHeadName: string;
   feeHeadCode?: string;
+  feeTermId?: string;
+  feeTermName?: string;
+  concessionTypeId?: string;
+  concessionName?: string;
   amount: number;
   remarks?: string;
 }
 
 export interface CreateFeeStructureComponentDto {
   feeHeadId: string;
+  feeTermId?: string;
+  concessionTypeId?: string;
   amount: number;
   remarks?: string;
 }
@@ -1311,6 +1338,9 @@ export const setStructureComponents = async (structureId: string, components: Cr
   const response = await apiClient.post(`${BASE_PATH}/structures/${structureId}/components`, components);
   return response.data;
 };
+
+// Alias matching the UI's expected function name
+export const updateStructureLineItems = setStructureComponents;
 
 // ========== LINKED CLASSES ==========
 
@@ -1346,6 +1376,19 @@ export const linkClass = async (structureId: string, className: string): Promise
 /** Unlink a class from a fee structure by patching the backend class list. */
 export const unlinkClass = async (structureId: string, className: string): Promise<void> => {
   await apiClient.patch(`${BASE_PATH}/structures/${structureId}/classes`, { removeClass: className });
+};
+
+/** Bulk-replace all class assignments for a fee structure (new UI). */
+export const assignClassesToStructure = async (structureId: string, classIds: string[]): Promise<{ classes: string; count: number }> => {
+  const response = await apiClient.post(`${BASE_PATH}/structures/${structureId}/assign-classes`, { classIds });
+  return response.data;
+};
+
+/** Get the list of class names currently assigned to a structure. */
+export const getAssignedClasses = async (structureId: string): Promise<string[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/structures/${structureId}`);
+  const cls: string = response.data?.class ?? '';
+  return cls.split(',').map((c: string) => c.trim()).filter(Boolean);
 };
 
 // ========== TOGGLE STRUCTURE ACTIVE ==========
@@ -1415,6 +1458,16 @@ export const feeApi = {
   seedFeeStructures,
   applyFeeHeadOverrides,
   removeDiscount,
+  // Fee structure line items (components)
+  getStructureComponents,
+  setStructureComponents,
+  updateStructureLineItems,
+  // Class assignments
+  assignClassesToStructure,
+  getAssignedClasses,
+  linkClass,
+  unlinkClass,
+  toggleStructureActive,
 };
 
 export default feeApi;

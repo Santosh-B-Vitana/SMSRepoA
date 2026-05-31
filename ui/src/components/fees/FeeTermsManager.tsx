@@ -6,11 +6,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Loader2, Calendar } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { feeApi, FeeTerm, CreateFeeTermDto } from "@/services/api/feeApi";
 
 export function FeeTermsManager() {
-  const { toast } = useToast();
   const [terms, setTerms] = useState<FeeTerm[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -26,8 +25,8 @@ export function FeeTermsManager() {
   const loadTerms = async () => {
     setLoading(true);
     try {
-      // Fetch all fee terms from a global endpoint (not tied to specific structure)
-      const data = await feeApi.getFeeTerms("");
+      // Fetch all school-level fee terms (not tied to a specific structure)
+      const data = await feeApi.getFeeTerms();
       setTerms(data);
     } catch {
       toast.error("Failed to load fee terms");
@@ -73,10 +72,10 @@ export function FeeTermsManager() {
     setSaving(true);
     try {
       if (editing) {
-        await feeApi.updateFeeTerm("", editing.id, form);
+        await feeApi.updateFeeTerm(undefined, editing.id, form);
         toast.success("Fee term updated");
       } else {
-        await feeApi.createFeeTerm("", form);
+        await feeApi.createFeeTerm(undefined, form);
         toast.success("Fee term created");
       }
       setDialogOpen(false);
@@ -91,7 +90,7 @@ export function FeeTermsManager() {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this fee term? This action cannot be undone.")) return;
     try {
-      await feeApi.deleteFeeTerm("", id);
+      await feeApi.deleteFeeTerm(undefined, id);
       toast.success("Fee term deleted");
       await loadTerms();
     } catch (e: any) {

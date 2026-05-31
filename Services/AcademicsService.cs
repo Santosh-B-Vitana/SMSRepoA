@@ -1625,10 +1625,12 @@ namespace SmsApi.Services
         {
             var studentGroups = await _context.Students
                 .Where(s => s.SchoolId == schoolId
+#pragma warning disable CS0618
                     && !string.IsNullOrWhiteSpace(s.Class)
                     && !string.IsNullOrWhiteSpace(s.Section)
                     && s.Status == "active")
                 .GroupBy(s => new { s.Class, s.Section })
+#pragma warning restore CS0618
                 .Select(g => new
                 {
                     ClassName = g.Key.Class.Trim(),
@@ -2395,7 +2397,10 @@ namespace SmsApi.Services
                         ClassId = s.ClassId,
                         Name = s.Name,
                         Capacity = s.Capacity,
-                        StudentsCount = students.Count(st => st.Section == s.Id.ToString() && st.Class == c.Name),
+                        StudentsCount = students.Count(st =>
+#pragma warning disable CS0618
+                            st.Section == s.Id.ToString() && st.Class == c.Name),
+#pragma warning restore CS0618
                         Status = s.Status
                     }).ToList()
                 };

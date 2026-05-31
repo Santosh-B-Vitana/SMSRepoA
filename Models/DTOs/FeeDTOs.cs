@@ -26,9 +26,8 @@ namespace SmsApi.Models.DTOs
         [MaxLength(100)]
         public string Name { get; set; } = string.Empty;
 
-        [Required]
         [MaxLength(50)]
-        public string Class { get; set; } = string.Empty;
+        public string? Class { get; set; }
 
         [Required]
         [MaxLength(20)]

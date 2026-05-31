@@ -12,12 +12,12 @@ public class CreateFeeStructureRequestValidator : AbstractValidator<CreateFeeStr
             .Length(3, 100).WithMessage("Name must be between 3 and 100 characters");
 
         RuleFor(x => x.Class)
-            .NotEmpty().WithMessage("Class is required")
-            .MaximumLength(50).WithMessage("Class cannot exceed 50 characters");
+            .MaximumLength(50).WithMessage("Class cannot exceed 50 characters")
+            .When(x => !string.IsNullOrEmpty(x.Class));
 
         RuleFor(x => x.AcademicYear)
             .NotEmpty().WithMessage("Academic year is required")
-            .Matches(@"^\d{4}-\d{4}$").WithMessage("Academic year must be in format YYYY-YYYY");
+            .Matches(@"^\d{4}-\d{2,4}$").WithMessage("Academic year must be in format YYYY-YY or YYYY-YYYY");
 
         RuleFor(x => x.TuitionFee).GreaterThanOrEqualTo(0).WithMessage("Tuition fee cannot be negative");
         RuleFor(x => x.AdmissionFee).GreaterThanOrEqualTo(0).WithMessage("Admission fee cannot be negative");
@@ -32,14 +32,9 @@ public class CreateFeeStructureRequestValidator : AbstractValidator<CreateFeeStr
         RuleFor(x => x.DevelopmentFee).GreaterThanOrEqualTo(0).WithMessage("Development fee cannot be negative");
         RuleFor(x => x.Miscellaneous).GreaterThanOrEqualTo(0).WithMessage("Miscellaneous fee cannot be negative");
 
-        RuleFor(x => x).Must(x =>
-            x.TuitionFee + x.AdmissionFee + x.ExamFee + x.LibraryFee + x.LabFee +
-            x.SportsFee + x.TransportFee + x.HostelFee + x.UniformFee + x.BooksFee +
-            x.DevelopmentFee + x.Miscellaneous > 0)
-            .WithMessage("At least one fee component must be greater than zero");
-
+        // Legacy fee components are optional — fees are now added as line items via the components API
         RuleFor(x => x.InstallmentCount)
-            .InclusiveBetween(1, 12).WithMessage("Installment count must be between 1 and 12");
+            .InclusiveBetween(0, 12).WithMessage("Installment count must be between 0 and 12");
     }
 }
 
