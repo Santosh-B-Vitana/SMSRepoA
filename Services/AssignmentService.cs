@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Models.Entities;
+using SmsApi.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -716,14 +717,9 @@ namespace SmsApi.Services
         }
         private async Task NotifyParentOnGradeAsync(Guid studentId, Guid schoolId, Assignment assignment, decimal marksObtained, string? feedback)
         {
-            // Look up parent login IDs by joining StudentGuardians → UserLogins on email
-            var parentLoginIds = await (
-                from sg in _context.StudentGuardians
-                join ul in _context.UserLogins on sg.Email equals ul.Email
-                where sg.StudentId == studentId && !sg.IsDeleted
-                      && ul.Role == "parent" && ul.Status == "active" && !ul.IsDeleted
-                select ul.Id
-            ).Distinct().ToListAsync();
+            // Resolve EVERY linked active parent account across legacy + modern guardian models.
+            var parentLoginIds = await ParentRecipientResolver
+                .GetParentUserIdsForStudentAsync(_context, schoolId, studentId);
 
             if (parentLoginIds.Count == 0) return;
 
@@ -748,6 +744,7 @@ namespace SmsApi.Services
                 ReferenceType = "Assignment",
                 ActionUrl     = "/parent-assignments",
                 Priority      = "Normal",
+                StudentId     = studentId,
             }).ToList();
 
             _context.Notifications.AddRange(notifications);
@@ -767,36 +764,35 @@ namespace SmsApi.Services
 
             if (studentIds.Count == 0) return;
 
-            // Look up parent login IDs by joining StudentGuardians → UserLogins on email
-            var parentLoginIds = await (
-                from sg in _context.StudentGuardians
-                join ul in _context.UserLogins on sg.Email equals ul.Email
-                where studentIds.Contains(sg.StudentId) && !sg.IsDeleted
-                      && ul.Role == "parent" && ul.Status == "active" && !ul.IsDeleted
-                select ul.Id
-            ).Distinct().ToListAsync();
+            // Resolve parents per student across legacy + modern guardian models so each parent
+            // receives one notification per linked child (tagged with that child's StudentId).
+            var parentsByStudent = await ParentRecipientResolver
+                .GetParentUserIdsByStudentAsync(_context, assignment.SchoolId, studentIds);
 
-            if (parentLoginIds.Count == 0) return;
+            if (parentsByStudent.Count == 0) return;
 
             var subject = await _context.Subjects
                 .Where(s => s.Id == assignment.SubjectId)
                 .Select(s => s.Name)
                 .FirstOrDefaultAsync() ?? "a subject";
 
-            var notifications = parentLoginIds.Select(loginId => new Notification
-            {
-                Id            = Guid.NewGuid(),
-                SchoolId      = assignment.SchoolId,
-                RecipientId   = loginId,
-                RecipientType = "Parent",
-                Type          = "Assignment",
-                Title         = $"New Assignment: {assignment.Title}",
-                Content       = $"A new assignment has been posted for {subject}. Due: {assignment.DueDate:dd MMM yyyy}.",
-                ReferenceId   = assignment.Id,
-                ReferenceType = "Assignment",
-                ActionUrl     = "/parent-assignments",
-                Priority      = "Normal",
-            }).ToList();
+            var notifications = parentsByStudent
+                .SelectMany(kv => kv.Value.Select(loginId => new Notification
+                {
+                    Id            = Guid.NewGuid(),
+                    SchoolId      = assignment.SchoolId,
+                    RecipientId   = loginId,
+                    RecipientType = "Parent",
+                    Type          = "Assignment",
+                    Title         = $"New Assignment: {assignment.Title}",
+                    Content       = $"A new assignment has been posted for {subject}. Due: {assignment.DueDate:dd MMM yyyy}.",
+                    ReferenceId   = assignment.Id,
+                    ReferenceType = "Assignment",
+                    ActionUrl     = "/parent-assignments",
+                    Priority      = "Normal",
+                    StudentId     = kv.Key,
+                }))
+                .ToList();
 
             _context.Notifications.AddRange(notifications);
             await _context.SaveChangesAsync();

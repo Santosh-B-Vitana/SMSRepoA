@@ -127,6 +127,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("roles")]
         public async Task<ActionResult<RoleResponse>> CreateRole([FromBody] CreateRoleRequest request)
         {
@@ -141,6 +142,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPut("roles/{id}")]
         public async Task<ActionResult<RoleResponse>> UpdateRole(Guid id, [FromBody] UpdateRoleRequest request)
         {
@@ -156,6 +158,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpDelete("roles/{id}")]
         public async Task<ActionResult> DeleteRole(Guid id)
         {
@@ -185,6 +188,7 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>Replace all permissions for a role � full matrix save</summary>
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPut("roles/{roleId}/permissions")]
         public async Task<ActionResult> SetRolePermissions(Guid roleId, [FromBody] SetRolePermissionsRequest request)
         {
@@ -225,6 +229,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("permissions")]
         public async Task<ActionResult<PermissionResponse>> CreatePermission([FromBody] CreatePermissionRequest request)
         {
@@ -240,6 +245,7 @@ namespace SmsApi.Controllers
 
         // --- User-Role Assignments ------------------------------------------------
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("user-roles")]
         public async Task<ActionResult<UserRoleResponse>> AssignRoleToUser([FromBody] AssignRoleRequest request)
         {
@@ -268,6 +274,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpDelete("user-roles/user/{userId}/role/{roleId}")]
         public async Task<ActionResult> RemoveUserRole(Guid userId, Guid roleId)
         {
@@ -283,6 +290,7 @@ namespace SmsApi.Controllers
 
         // --- Bulk role-permission (legacy endpoint, kept) -------------------------
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("role-permissions")]
         public async Task<ActionResult<RolePermissionResponse>> AssignPermissionsToRole([FromBody] AssignPermissionsRequest request)
         {

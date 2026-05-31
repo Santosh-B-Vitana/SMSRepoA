@@ -268,17 +268,30 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
     return () => { mounted = false; };
   }, [role.id]);
 
+  // Any granted action in a module implies View access for that module —
+  // otherwise a user could get Edit/Delete without being able to open the list page.
+  function withViewImplied(set: Set<string>): Set<string> {
+    const n = new Set(set);
+    groups.forEach(g => {
+      if (g.permissions.some(p => n.has(p.id))) {
+        const view = g.permissions.find(p => p.action === 'View');
+        if (view) n.add(view.id);
+      }
+    });
+    return n;
+  }
+
   function toggle(id: string) {
-    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return withViewImplied(n); });
   }
   function toggleModule(group: PermissionGroupResponse, checked: boolean) {
-    setSelectedIds(prev => { const n = new Set(prev); group.permissions.forEach(p => checked ? n.add(p.id) : n.delete(p.id)); return n; });
+    setSelectedIds(prev => { const n = new Set(prev); group.permissions.forEach(p => checked ? n.add(p.id) : n.delete(p.id)); return withViewImplied(n); });
   }
   function toggleAction(action: string, checked: boolean) {
     setSelectedIds(prev => {
       const n = new Set(prev);
       groups.forEach(g => g.permissions.filter(p => p.action === action).forEach(p => checked ? n.add(p.id) : n.delete(p.id)));
-      return n;
+      return withViewImplied(n);
     });
   }
 

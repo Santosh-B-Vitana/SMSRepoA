@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Models.Entities;
+using SmsApi.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -745,23 +746,9 @@ namespace SmsApi.Services
                         .Distinct()
                         .ToListAsync();
 
-                    // Collect guardian emails for those students (legacy StudentGuardians table).
-                    var guardianEmails = await _context.StudentGuardians
-                        .Where(g => g.SchoolId == announcement.SchoolId
-                                    && studentIds.Contains(g.StudentId)
-                                    && g.Email != null)
-                        .Select(g => g.Email!)
-                        .Distinct()
-                        .ToListAsync();
-
-                    loginIds = await _context.UserLogins
-                        .Where(u => u.SchoolId == announcement.SchoolId
-                                    && u.Role == "Parent"
-                                    && !u.IsDeleted
-                                    && guardianEmails.Contains(u.Email))
-                        .Select(u => u.Id)
-                        .Distinct()
-                        .ToListAsync();
+                    // Resolve parents across legacy + modern guardian models so no parent is missed.
+                    loginIds = await ParentRecipientResolver
+                        .GetParentUserIdsForStudentsAsync(_context, announcement.SchoolId, studentIds);
                     break;
                 }
 
@@ -776,22 +763,8 @@ namespace SmsApi.Services
                         .Distinct()
                         .ToListAsync();
 
-                    var guardianEmails = await _context.StudentGuardians
-                        .Where(g => g.SchoolId == announcement.SchoolId
-                                    && studentIds.Contains(g.StudentId)
-                                    && g.Email != null)
-                        .Select(g => g.Email!)
-                        .Distinct()
-                        .ToListAsync();
-
-                    loginIds = await _context.UserLogins
-                        .Where(u => u.SchoolId == announcement.SchoolId
-                                    && u.Role == "Parent"
-                                    && !u.IsDeleted
-                                    && guardianEmails.Contains(u.Email))
-                        .Select(u => u.Id)
-                        .Distinct()
-                        .ToListAsync();
+                    loginIds = await ParentRecipientResolver
+                        .GetParentUserIdsForStudentsAsync(_context, announcement.SchoolId, studentIds);
                     break;
                 }
 

@@ -1256,6 +1256,24 @@ namespace SmsApi.Controllers
                 .ThenByDescending(r => r.CreatedAt)
                 .ToListAsync();
 
+            // ── De-duplicate true duplicate fee records ───────────────────────────────
+            // A student must have at most ONE record per (FeeStructure + AcademicYear).
+            // Legacy data / repeated "Assign Classes" runs can produce exact duplicates
+            // which would otherwise double-count fees and render the same sibling several
+            // times in the payment UI. Collapse them here, keeping the record with the most
+            // money already collected (and, as a tie-breaker, the most recent) so no payment
+            // is ever hidden. Ad-hoc records without a structure are keyed by their own Id and
+            // are never collapsed (they may legitimately differ).
+            feeRecords = feeRecords
+                .GroupBy(r => r.FeeStructureId.HasValue
+                    ? $"S:{r.StudentId}:{r.FeeStructureId}:{r.AcademicYear}"
+                    : $"R:{r.Id}")
+                .Select(g => g
+                    .OrderByDescending(r => r.PaidAmount)
+                    .ThenByDescending(r => r.CreatedAt)
+                    .First())
+                .ToList();
+
             // Load linked fee structures so we can build installment breakdowns
             var structureIds = feeRecords
                 .Where(r => r.FeeStructureId.HasValue)

@@ -13,6 +13,7 @@ import { LoadingState, EmptyState, ExportButton, ImportButton, ErrorBoundary } f
 import { AnimatedBackground } from "@/components/common/AnimatedBackground";
 import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
+import { useCan } from "@/components/common/Can";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -27,6 +28,7 @@ interface StudentStats {
 export function StudentsManager() {
   const { t } = useLanguage();
   const { academicYear } = useAcademicYear();
+  const canCreate = useCan("Students", "Create");
 
   // ── paginated list state ──────────────────────────────────────────────────
   const [students, setStudents] = useState<StudentBasic[]>([]);
@@ -159,6 +161,7 @@ export function StudentsManager() {
                 <p className="text-muted-foreground mt-2">{t("studentMgmt.subtitle")}</p>
               </div>
               <div className="flex gap-2 flex-wrap items-center">
+                {canCreate && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -167,6 +170,7 @@ export function StudentsManager() {
                   <ArrowUpCircle className="w-4 h-4 mr-2" />
                   {t("students.bulkPromotion")}
                 </Button>
+                )}
                 <ImportButton
                   columns={[
                     { key: "name", label: "Name", required: true },
@@ -199,10 +203,12 @@ export function StudentsManager() {
                     { key: "status", label: "Status" },
                   ]}
                 />
+                {canCreate && (
                 <Button onClick={() => setIsAddDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-2" />
                   {t("studentMgmt.addStudent")}
                 </Button>
+                )}
               </div>
             </div>
           </AnimatedWrapper>
@@ -276,10 +282,10 @@ export function StudentsManager() {
               <EmptyState
                 title={t("students.noStudentsFound")}
                 description={t("students.noStudentsDesc")}
-                action={{
+                action={canCreate ? {
                   label: t("students.addStudent"),
                   onClick: () => setIsAddDialogOpen(true),
-                }}
+                } : undefined}
               />
             ) : (
               <StudentList

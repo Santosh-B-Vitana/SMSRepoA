@@ -53,6 +53,15 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
+                // Respect the globally-selected academic year (X-Academic-Year header) unless the
+                // caller explicitly overrides it via the query filter. Keeps the admissions list in
+                // sync with the header year selector like Students/Fees.
+                if (string.IsNullOrWhiteSpace(filters.AcademicYear)
+                    && HttpContext.Items["AcademicYearHeaderValue"] is string headerYear
+                    && !string.IsNullOrWhiteSpace(headerYear))
+                {
+                    filters.AcademicYear = headerYear;
+                }
                 var result = await _service.GetApplicationsAsync(schoolId, filters, page, pageSize);
                 return Ok(result);
             }

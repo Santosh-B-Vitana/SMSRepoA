@@ -48,6 +48,24 @@ function formatTimeAgo(d: string) {
   return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+// Visual styling per notification type for a clearer, scannable alert feed.
+function notifVisual(type?: string): { icon: React.ReactNode; cls: string } {
+  switch ((type ?? "").toLowerCase()) {
+    case "fee": case "payment": case "finance":
+      return { icon: <BadgeIndianRupee className="h-3.5 w-3.5" />, cls: "text-amber-600 bg-amber-100 dark:bg-amber-950/50" };
+    case "exam": case "result": case "examination":
+      return { icon: <Trophy className="h-3.5 w-3.5" />, cls: "text-blue-600 bg-blue-100 dark:bg-blue-950/50" };
+    case "diary": case "homework": case "assignment":
+      return { icon: <BookMarked className="h-3.5 w-3.5" />, cls: "text-emerald-600 bg-emerald-100 dark:bg-emerald-950/50" };
+    case "announcement": case "notice": case "circular":
+      return { icon: <MessageSquare className="h-3.5 w-3.5" />, cls: "text-violet-600 bg-violet-100 dark:bg-violet-950/50" };
+    case "attendance":
+      return { icon: <Calendar className="h-3.5 w-3.5" />, cls: "text-rose-600 bg-rose-100 dark:bg-rose-950/50" };
+    default:
+      return { icon: <Bell className="h-3.5 w-3.5" />, cls: "text-slate-600 bg-slate-100 dark:bg-slate-800/60" };
+  }
+}
+
 function AttRing({ pct }: { pct: number }) {
   const r = 30, c = 2 * Math.PI * r, fill = Math.min(pct, 100) / 100 * c;
   const clr = pct >= 90 ? "#10b981" : pct >= 75 ? "#3b82f6" : pct >= 60 ? "#f59e0b" : "#ef4444";
@@ -97,9 +115,18 @@ export default function ParentDashboard() {
   const [selectedChild, setSelectedChild] = useState("");
   const [pwOpen,        setPwOpen]        = useState(false);
   const [diaryEntries,  setDiaryEntries]  = useState<DiaryEntry[]>([]);
+  const [diaryLoading,  setDiaryLoading]  = useState(false);
   const [expandedExam,  setExpandedExam]  = useState<string | null>(null);
   const [examEntries,   setExamEntries]   = useState<{ setup: ExamSetupBasicDto; result: StudentExamResultSummaryDto }[]>([]);
   const [examLoading,   setExamLoading]   = useState(false);
+
+  // Map studentId → child short name so parent-global notifications can show
+  // which child each alert relates to (essential for parents with multiple kids).
+  const childNameById = React.useMemo(() => {
+    const m = new Map<string, string>();
+    children.forEach(c => m.set(c.id, c.name));
+    return m;
+  }, [children]);
 
   const requirePwChange = !!(user as Record<string, unknown>)?.requirePasswordChange;
   useEffect(() => { if (requirePwChange) setPwOpen(true); }, [requirePwChange]);
@@ -126,22 +153,29 @@ export default function ParentDashboard() {
   }, []);
 
   const loadDiary = useCallback(async (sid: string) => {
+    setDiaryLoading(true);
     try {
       const from = new Date(); from.setDate(from.getDate() - 30);
       const data = await diaryApi.getForParent(sid, { fromDate: from.toISOString().split("T")[0], toDate: new Date().toISOString().split("T")[0] });
       setDiaryEntries(Array.isArray(data) ? data.slice(0, 5) : []);
-    } catch { setDiaryEntries([]); }
+    } catch { setDiaryEntries([]); } finally { setDiaryLoading(false); }
   }, []);
 
   useEffect(() => { if (selectedChild) { loadExams(selectedChild); loadDiary(selectedChild); } }, [selectedChild, loadExams, loadDiary]);
 
-  // Reload dashboard notifications whenever the selected child changes
-  useEffect(() => {
-    if (!selectedChild) return;
-    notificationApi.getMyNotifications({ page: 1, pageSize: 5, studentId: selectedChild })
-      .then(res => { setNotifications(res.notifications); setUnreadCount(res.unreadCount); })
-      .catch(() => {});
-  }, [selectedChild]);
+  // Dashboard notifications are a PARENT-GLOBAL feed across ALL children.
+  // Notifications are targeted to the parent's account (RecipientId == userId), so
+  // omitting studentId returns every child's alerts. This fixes the multi-child gap
+  // where switching the selected child hid the other children's notifications.
+  const loadNotifications = useCallback(async () => {
+    try {
+      const res = await notificationApi.getMyNotifications({ page: 1, pageSize: 8 });
+      setNotifications(res.notifications);
+      setUnreadCount(res.unreadCount);
+    } catch { /* non-blocking — notifications are best-effort */ }
+  }, []);
+
+  useEffect(() => { if (children.length > 0) loadNotifications(); }, [children.length, loadNotifications]);
 
   useEffect(() => {
     (async () => {
@@ -362,7 +396,9 @@ export default function ParentDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              {diaryEntries.length > 0 ? (
+              {diaryLoading ? (
+                <div className="space-y-2">{[0,1,2].map(i => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}</div>
+              ) : diaryEntries.length > 0 ? (
                 <div className="space-y-2">
                   {diaryEntries.map(entry => {
                     const cat = CATEGORY_CONFIG[entry.category as DiaryCategory] ?? CATEGORY_CONFIG.note;
@@ -458,18 +494,43 @@ export default function ParentDashboard() {
             </CardHeader>
             <CardContent>
               {notifications.length > 0 ? (
-                <div className="space-y-1.5">
-                  {notifications.slice(0, 4).map(n => (
-                    <div key={n.id} className={`flex gap-2 p-2 rounded-lg ${!n.isRead ? "bg-primary/5" : ""}`}>
-                      <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${!n.isRead ? "bg-violet-500" : "bg-transparent"}`} />
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-xs leading-snug line-clamp-2 ${!n.isRead ? "font-semibold" : ""}`}>{n.title}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{formatTimeAgo(n.createdAt)}</p>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  {notifications.slice(0, 5).map(n => {
+                    const v = notifVisual(n.type);
+                    const childName = n.studentId ? childNameById.get(n.studentId) : undefined;
+                    const clickable = !!n.actionUrl;
+                    return (
+                      <button
+                        key={n.id}
+                        disabled={!clickable}
+                        onClick={() => { if (n.actionUrl) navigate(n.actionUrl); }}
+                        className={`w-full flex gap-2.5 p-2 rounded-xl text-left transition-colors ${clickable ? "hover:bg-muted/60 cursor-pointer" : "cursor-default"} ${!n.isRead ? "bg-rose-50/60 dark:bg-rose-950/20" : ""}`}
+                      >
+                        <span className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${v.cls}`}>{v.icon}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-1.5">
+                            <p className={`text-xs leading-snug line-clamp-2 flex-1 ${!n.isRead ? "font-semibold" : ""}`}>{n.title}</p>
+                            {!n.isRead && <span className="mt-1 w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {children.length > 1 && childName && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 leading-none">{childName}</span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground">{formatTimeAgo(n.createdAt)}</span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              ) : <p className="text-xs text-muted-foreground text-center py-3">{t('parent.allCaughtUp')}</p>}
+              ) : (
+                <div className="py-6 text-center">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center mx-auto mb-2">
+                    <CheckCircle className="h-5 w-5 text-emerald-500" />
+                  </div>
+                  <p className="text-xs font-medium text-muted-foreground">{t('parent.allCaughtUp')}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 

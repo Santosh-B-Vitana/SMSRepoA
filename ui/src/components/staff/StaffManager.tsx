@@ -24,6 +24,7 @@ import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
 import { StaffAttendanceManager } from "@/components/attendance/StaffAttendanceManager";
 import { AdvancedPagination } from "@/components/common/AdvancedPagination";
+import { useCan } from "@/components/common/Can";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -31,6 +32,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 export function StaffManager() {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const canCreate = useCan("Staff", "Create");
   const [staff, setStaff] = useState<Staff[]>([]);
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
@@ -231,10 +233,12 @@ export function StaffManager() {
                         { key: 'status', label: 'Status' },
                       ]}
                     />
+                    {canCreate && (
                     <Button className="gap-1.5" onClick={() => setIsAddDialogOpen(true)}>
                       <Plus className="h-4 w-4" />
                       {t('staffMgmt.addStaff')}
                     </Button>
+                    )}
                   </>
                 ) : (
                   <Button variant="outline" onClick={() => setView("directory")} className="gap-1.5">

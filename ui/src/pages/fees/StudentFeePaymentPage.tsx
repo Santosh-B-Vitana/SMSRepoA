@@ -250,6 +250,26 @@ export default function StudentFeePaymentPage({ studentIdOverride, viewOnlyConce
     return groups;
   }, [lineItems]);
 
+  // Deduplicate sibling cards: a student must appear at most ONCE in the Siblings list,
+  // even if the backend returns several fee records for them. Aggregate the money fields
+  // so the card reflects the student's complete outstanding balance across all records.
+  const siblingCards = useMemo(() => {
+    const map = new Map<string, SiblingFeeInfo>();
+    siblings
+      .filter(s => !s.isAnchor)
+      .forEach(s => {
+        const existing = map.get(s.studentId);
+        if (existing) {
+          existing.totalFee += s.totalFee;
+          existing.paidAmount += s.paidAmount;
+          existing.pendingAmount += s.pendingAmount;
+        } else {
+          map.set(s.studentId, { ...s });
+        }
+      });
+    return Array.from(map.values());
+  }, [siblings]);
+
   // Selected items for preview
   const selectedItems = lineItems.filter(item => item.selected);
   const totalAmount = selectedItems.reduce((sum, item) => sum + (item.amount - item.discountAmount), 0);
@@ -401,14 +421,13 @@ export default function StudentFeePaymentPage({ studentIdOverride, viewOnlyConce
           </div>
 
           {/* Siblings */}
-          {siblings.filter(s => !s.isAnchor).length > 0 && (
+          {siblingCards.length > 0 && (
             <div>
               <p className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide flex items-center gap-2">
                 <Users className="h-4 w-4" /> Siblings
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {siblings
-                  .filter(s => !s.isAnchor)
+                {siblingCards
                   .map(sib => {
                     const isSelected = selectedStudentIds.has(sib.studentId);
                     return (

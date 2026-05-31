@@ -93,6 +93,8 @@ builder.Services.AddApplicationServices(builder.Configuration, builder.Environme
 
 // ── Caching (Redis in prod, in-memory in dev) ─────────────────────────────────────
 builder.Services.AddCachingInfrastructure(builder.Configuration);
+// In-process memory cache (used by RBAC permission enforcement for short-TTL profile caching)
+builder.Services.AddMemoryCache();
 
 // ── Health checks (provider-agnostic EF Core CanConnectAsync + Redis) ────────────
 builder.Services.AddHealthCheckInfrastructure(builder.Configuration);
@@ -209,6 +211,10 @@ app.UseMiddleware<SmsApi.Middleware.UserStatusCheckMiddleware>();
 
 // Use School Feature Access Middleware (after authentication)
 app.UseMiddleware<SmsApi.Middleware.SchoolFeatureAccessMiddleware>();
+
+// Fine-grained Role-Management permission enforcement (custom roles).
+// Gates write operations for users that hold a custom role; everyone else passes through.
+app.UseMiddleware<SmsApi.Middleware.RolePermissionEnforcementMiddleware>();
 
 // Audit logging: records POST/PUT/PATCH/DELETE to AuditLogs table (after auth, before response wrapper)
 app.UseMiddleware<SmsApi.Middleware.AuditLoggingMiddleware>();

@@ -2675,6 +2675,46 @@ namespace SmsApi.Services
 
             int fixed_ = 0, skipped = 0;
 
+            // ── Step 1: Remove true duplicate fee records ────────────────────────────
+            // A student may have at most ONE record per (FeeStructure + AcademicYear).
+            // Repeated assignment runs / legacy imports can create exact duplicates that
+            // double-count fees. For each duplicate group we keep the record with the most
+            // money collected (tie-break: most recent) and soft-delete the others — but ONLY
+            // when the discarded record has zero payments, so no collected cent is ever lost.
+            var duplicateGroups = records
+                .GroupBy(r => $"{r.StudentId}:{r.FeeStructureId}:{r.AcademicYear}")
+                .Where(g => g.Count() > 1);
+
+            foreach (var group in duplicateGroups)
+            {
+                var ordered = group
+                    .OrderByDescending(r => r.PaidAmount)
+                    .ThenByDescending(r => r.CreatedAt)
+                    .ToList();
+                var keep = ordered.First();
+                foreach (var dup in ordered.Skip(1))
+                {
+                    if (dup.PaidAmount > 0)
+                    {
+                        // Never auto-delete a record that holds payments — flag for manual review.
+                        _logger.LogWarning(
+                            "RecalculateFeeTotals: duplicate record {DupId} for student {StudentId} has PaidAmount {Paid} and was NOT removed (kept {KeepId}).",
+                            dup.Id, dup.StudentId, dup.PaidAmount, keep.Id);
+                        continue;
+                    }
+                    dup.IsDeleted = true;
+                    dup.UpdatedAt = DateTime.UtcNow;
+                    _logger.LogInformation(
+                        "RecalculateFeeTotals: soft-deleted duplicate record {DupId} for student {StudentId} (kept {KeepId}).",
+                        dup.Id, dup.StudentId, keep.Id);
+                    fixed_++;
+                }
+            }
+
+            // Exclude records we just soft-deleted from the total-recompute pass below.
+            records = records.Where(r => !r.IsDeleted).ToList();
+
+            // ── Step 2: Recompute totals from current fee-head fields ────────────────
             foreach (var record in records)
             {
                 var fs = record.FeeStructure;
