@@ -68,11 +68,9 @@ namespace SmsApi.Models.DTOs
         [Required]
         public string SchoolName { get; set; } = string.Empty;
 
-        /// <summary>
-        /// AiSensy campaign name that includes both OTP and welcome-kit template parameters.
-        /// </summary>
+        /// <summary>MSG91 flow/template identifier used for both OTP and welcome-kit sends.</summary>
         [Required]
-        public string WelcomeCampaignName { get; set; } = string.Empty;
+        public string TemplateIdentifier { get; set; } = string.Empty;
 
         /// <summary>Optional URL to a welcome PDF or onboarding document sent via WhatsApp.</summary>
         public string? WelcomeDocumentUrl { get; set; }

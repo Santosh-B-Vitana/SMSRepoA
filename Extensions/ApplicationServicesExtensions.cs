@@ -69,8 +69,8 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IAnnouncementService, AnnouncementService>();
         services.AddScoped<ICommunicationService, CommunicationService>();
 
-        // ── Outbound channel messaging (WhatsApp/SMS via AiSensy) ──────────
-        services.AddNotificationServices(configuration);
+        // ── Outbound channel messaging (MSG91: SMS + WhatsApp + Email) ───────
+        services.AddNotificationServices(configuration, environment);
 
         // ── Documents (chain-of-responsibility access policies) ────────────
         services.AddScoped<IDocumentService, DocumentService>();

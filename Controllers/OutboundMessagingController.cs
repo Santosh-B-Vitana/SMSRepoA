@@ -15,7 +15,7 @@ using SmsApi.Services.Messaging;
 namespace SmsApi.Controllers
 {
     /// <summary>
-    /// Outbound channel messaging — dispatches WhatsApp and/or SMS via the AiSensy provider.
+    /// Outbound channel messaging — dispatches SMS, WhatsApp, and Email via MSG91.
     /// All sends are concurrent; each channel result is independently audited in AuditLogs.
     /// </summary>
     [ApiController]
@@ -116,12 +116,12 @@ namespace SmsApi.Controllers
             try
             {
                 // Both WhatsApp and SMS fire concurrently in a single manager call.
-                // The AiSensy campaign handles the channel-specific template rendering;
-                // templateParameters are positional: [fullName, otpCode, schoolName].
+                // MSG91 handles channel-specific template rendering via the configured template ID.
+                // templateParameters are positional: [fullName, otpCode, schoolName] → var1, var2, var3.
                 var channelRequest = new ChannelMessageRequest(
                     destination: request.PhoneNumber,
                     recipientName: request.FullName,
-                    templateOrCampaignIdentifier: request.WelcomeCampaignName,
+                    templateOrCampaignIdentifier: request.TemplateIdentifier,
                     templateParameters: new List<string>
                     {
                         request.FullName,

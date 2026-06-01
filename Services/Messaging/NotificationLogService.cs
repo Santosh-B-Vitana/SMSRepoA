@@ -43,7 +43,7 @@ public sealed class NotificationLogService : BaseService, INotificationLogServic
             var entry = new AuditLog
             {
                 HttpMethod       = "POST",
-                Path             = "campaign/t1/api/v2",
+                Path             = "outbound-messaging",
                 // QueryString holds destination for efficient filtering in GetLogsAsync
                 QueryString      = request.Destination,
                 ActionType       = result.IsSuccess ? "ChannelMessage_Sent" : "ChannelMessage_Failed",
