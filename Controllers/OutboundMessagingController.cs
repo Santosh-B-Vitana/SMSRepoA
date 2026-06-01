@@ -42,13 +42,17 @@ namespace SmsApi.Controllers
         private Guid GetSchoolId()
         {
             var claim = User.FindFirst("SchoolId")?.Value;
-            return Guid.Parse(claim ?? throw new UnauthorizedAccessException("SchoolId claim missing."));
+            if (string.IsNullOrEmpty(claim) || !Guid.TryParse(claim, out var id))
+                throw new UnauthorizedAccessException("SchoolId claim missing or invalid.");
+            return id;
         }
 
         private Guid GetUserId()
         {
             var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            return Guid.Parse(claim ?? throw new UnauthorizedAccessException("UserId claim missing."));
+            if (string.IsNullOrEmpty(claim) || !Guid.TryParse(claim, out var id))
+                throw new UnauthorizedAccessException("UserId claim missing or invalid.");
+            return id;
         }
 
         // ── Generic dispatch ─────────────────────────────────────────────────
@@ -68,7 +72,8 @@ namespace SmsApi.Controllers
             {
                 var channels = ParseChannels(request.Channels);
 
-                var attrs = request.CustomAttributes ?? new Dictionary<string, string>();
+                // Copy to avoid mutating the deserialized DTO
+                var attrs = new Dictionary<string, string>(request.CustomAttributes ?? new());
                 attrs["schoolId"] = GetSchoolId().ToString();
                 attrs["userId"]   = GetUserId().ToString();
 
@@ -83,9 +88,13 @@ namespace SmsApi.Controllers
                     channels);
 
                 var results = await _manager.SendAsync(channelRequest, ct);
-                await Task.WhenAll(results.Select(r => _logService.LogAsync(channelRequest, r, ct)));
+                await _logService.LogBatchAsync(channelRequest, results, ct);
 
                 return Ok(ToResponse(results));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {
@@ -94,16 +103,16 @@ namespace SmsApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Outbound dispatch failed for {Destination}", request.Destination);
-                return StatusCode(500, new { message = "Dispatch failed.", error = ex.Message });
+                return StatusCode(500, new { message = "Dispatch failed." });
             }
         }
 
         // ── Use-case: User registration ──────────────────────────────────────
 
         /// <summary>
-        /// Demonstrates concurrent multi-channel dispatch for a user-registration event:
-        /// sends an OTP via SMS and a welcome kit (with optional document) via WhatsApp
-        /// in a single parallel call through the channel engine.
+        /// Dispatches a user-registration notification: OTP via SMS and welcome kit via WhatsApp,
+        /// concurrently. Each channel uses its own MSG91 template identifier because SMS Flow IDs
+        /// and WhatsApp template names are separate namespaces in the MSG91 platform.
         /// </summary>
         [HttpPost("user-registration")]
         [Authorize(Roles = "Admin,Principal,SuperAdmin")]
@@ -115,41 +124,63 @@ namespace SmsApi.Controllers
         {
             try
             {
-                // Both WhatsApp and SMS fire concurrently in a single manager call.
-                // MSG91 handles channel-specific template rendering via the configured template ID.
-                // templateParameters are positional: [fullName, otpCode, schoolName] → var1, var2, var3.
-                var channelRequest = new ChannelMessageRequest(
+                // SMS and WhatsApp use different MSG91 template namespaces (Flow ID vs template name),
+                // so they are built as separate requests and dispatched concurrently.
+                var schoolId = GetSchoolId().ToString();
+                var userId   = GetUserId().ToString();
+                var templateParams = new List<string> { request.FullName, request.OtpCode, request.SchoolName };
+
+                var smsRequest = new ChannelMessageRequest(
                     destination: request.PhoneNumber,
                     recipientName: request.FullName,
-                    templateOrCampaignIdentifier: request.TemplateIdentifier,
-                    templateParameters: new List<string>
-                    {
-                        request.FullName,
-                        request.OtpCode,
-                        request.SchoolName
-                    },
+                    templateOrCampaignIdentifier: request.SmsTemplateIdentifier,
+                    templateParameters: templateParams,
                     customAttributes: new Dictionary<string, string>
                     {
-                        ["schoolId"] = GetSchoolId().ToString(),
-                        ["userId"]   = GetUserId().ToString(),
+                        ["schoolId"] = schoolId,
+                        ["userId"]   = userId,
+                        ["event"]    = "UserRegistration"
+                    },
+                    mediaUrl: null,
+                    mediaFilename: null,
+                    channels: new[] { CommunicationChannel.Sms });
+
+                var waRequest = new ChannelMessageRequest(
+                    destination: request.PhoneNumber,
+                    recipientName: request.FullName,
+                    templateOrCampaignIdentifier: request.WhatsAppTemplateIdentifier,
+                    templateParameters: templateParams,
+                    customAttributes: new Dictionary<string, string>
+                    {
+                        ["schoolId"] = schoolId,
+                        ["userId"]   = userId,
                         ["event"]    = "UserRegistration"
                     },
                     mediaUrl: request.WelcomeDocumentUrl,
                     mediaFilename: request.WelcomeDocumentFilename,
-                    channels: new[] { CommunicationChannel.WhatsApp, CommunicationChannel.Sms });
+                    channels: new[] { CommunicationChannel.WhatsApp });
 
-                var results = await _manager.SendAsync(channelRequest, ct);
+                var dispatched = await Task.WhenAll(
+                    _manager.SendAsync(smsRequest, ct),
+                    _manager.SendAsync(waRequest, ct));
 
-                // Audit both channel results concurrently
-                await Task.WhenAll(results.Select(r => _logService.LogAsync(channelRequest, r, ct)));
+                // Log sequentially — both share the same scoped DbContext
+                await _logService.LogBatchAsync(smsRequest, dispatched[0], ct);
+                await _logService.LogBatchAsync(waRequest, dispatched[1], ct);
+
+                var allResults = dispatched[0].Concat(dispatched[1]).ToList();
 
                 _logger.LogInformation(
                     "Registration messages dispatched for {Phone}: WhatsApp={WA}, SMS={SMS}",
                     request.PhoneNumber,
-                    results.FirstOrDefault(r => r.Channel == CommunicationChannel.WhatsApp)?.IsSuccess,
-                    results.FirstOrDefault(r => r.Channel == CommunicationChannel.Sms)?.IsSuccess);
+                    dispatched[1].FirstOrDefault(r => r.Channel == CommunicationChannel.WhatsApp)?.IsSuccess,
+                    dispatched[0].FirstOrDefault(r => r.Channel == CommunicationChannel.Sms)?.IsSuccess);
 
-                return Ok(ToResponse(results));
+                return Ok(ToResponse(allResults));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {
@@ -158,7 +189,7 @@ namespace SmsApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Registration dispatch failed for {Phone}", request.PhoneNumber);
-                return StatusCode(500, new { message = "Registration message dispatch failed.", error = ex.Message });
+                return StatusCode(500, new { message = "Registration message dispatch failed." });
             }
         }
 
@@ -186,7 +217,7 @@ namespace SmsApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to retrieve outbound messaging logs");
-                return StatusCode(500, new { message = "Could not retrieve logs.", error = ex.Message });
+                return StatusCode(500, new { message = "Could not retrieve logs." });
             }
         }
 

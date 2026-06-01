@@ -52,7 +52,9 @@ namespace SmsApi.Models.DTOs
 
     /// <summary>
     /// Drives the user-registration notification: OTP via SMS + welcome kit via WhatsApp,
-    /// both dispatched concurrently through a single IChannelNotificationManager call.
+    /// both dispatched concurrently through IChannelNotificationManager.
+    /// SMS and WhatsApp use separate template identifiers because MSG91 Flow IDs (SMS)
+    /// and WhatsApp template names are different objects in the MSG91 platform.
     /// </summary>
     public class UserRegistrationMessageRequest
     {
@@ -68,9 +70,13 @@ namespace SmsApi.Models.DTOs
         [Required]
         public string SchoolName { get; set; } = string.Empty;
 
-        /// <summary>MSG91 flow/template identifier used for both OTP and welcome-kit sends.</summary>
+        /// <summary>MSG91 Flow ID for the OTP SMS template.</summary>
         [Required]
-        public string TemplateIdentifier { get; set; } = string.Empty;
+        public string SmsTemplateIdentifier { get; set; } = string.Empty;
+
+        /// <summary>MSG91 WhatsApp template name for the welcome-kit message.</summary>
+        [Required]
+        public string WhatsAppTemplateIdentifier { get; set; } = string.Empty;
 
         /// <summary>Optional URL to a welcome PDF or onboarding document sent via WhatsApp.</summary>
         public string? WelcomeDocumentUrl { get; set; }

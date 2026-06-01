@@ -17,8 +17,19 @@ public sealed class NotificationManager : IChannelNotificationManager
         IEnumerable<IChannelProvider> providers,
         ILogger<NotificationManager> logger)
     {
-        _providers = providers.ToDictionary(p => p.Channel);
-        _logger    = logger;
+        _logger = logger;
+
+        var dict = new Dictionary<CommunicationChannel, IChannelProvider>();
+        foreach (var provider in providers)
+        {
+            if (dict.TryGetValue(provider.Channel, out var existing))
+                throw new InvalidOperationException(
+                    $"Duplicate provider registration for channel '{provider.Channel}': " +
+                    $"'{existing.GetType().Name}' and '{provider.GetType().Name}'. " +
+                    "Each channel must have exactly one registered IChannelProvider.");
+            dict[provider.Channel] = provider;
+        }
+        _providers = dict;
     }
 
     public async Task<IReadOnlyList<ChannelMessageResult>> SendAsync(

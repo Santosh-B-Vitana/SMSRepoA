@@ -70,7 +70,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<ICommunicationService, CommunicationService>();
 
         // ── Outbound channel messaging (MSG91: SMS + WhatsApp + Email) ───────
-        services.AddNotificationServices(configuration, environment);
+        services.AddNotificationServices(environment);
 
         // ── Documents (chain-of-responsibility access policies) ────────────
         services.AddScoped<IDocumentService, DocumentService>();

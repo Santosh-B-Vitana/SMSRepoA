@@ -26,7 +26,6 @@ public static class NotificationServicesExtensions
 {
     public static IServiceCollection AddNotificationServices(
         this IServiceCollection services,
-        IConfiguration configuration,
         IWebHostEnvironment environment)
     {
         // ── In-process cache for branch credential resolution ──────────────

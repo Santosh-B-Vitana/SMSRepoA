@@ -20,52 +20,70 @@ public sealed class NotificationLogService : BaseService, INotificationLogServic
     {
         try
         {
-            var requestBody = JsonSerializer.Serialize(new
-            {
-                destination     = request.Destination,
-                campaign        = request.TemplateOrCampaignIdentifier,
-                recipientName   = request.RecipientName,
-                templateParams  = request.TemplateParameters,
-                messageId       = result.MessageId
-            });
-
-            // Parse schoolId from CustomAttributes if the caller supplied it
-            Guid? schoolId = null;
-            if (request.CustomAttributes.TryGetValue("schoolId", out var schoolIdStr)
-                && Guid.TryParse(schoolIdStr, out var parsedSchoolId))
-                schoolId = parsedSchoolId;
-
-            Guid? userId = null;
-            if (request.CustomAttributes.TryGetValue("userId", out var userIdStr)
-                && Guid.TryParse(userIdStr, out var parsedUserId))
-                userId = parsedUserId;
-
-            var entry = new AuditLog
-            {
-                HttpMethod       = "POST",
-                Path             = "outbound-messaging",
-                // QueryString holds destination for efficient filtering in GetLogsAsync
-                QueryString      = request.Destination,
-                ActionType       = result.IsSuccess ? "ChannelMessage_Sent" : "ChannelMessage_Failed",
-                EntityType       = result.Channel.ToString(),
-                StatusCode       = (int)result.StatusCode,
-                RequestBody      = requestBody,
-                ExceptionMessage = result.ErrorMessage,
-                SchoolId         = schoolId,
-                UserId           = userId,
-                Timestamp        = DateTime.UtcNow,
-                DurationMs       = 0
-            };
-
-            _context.AuditLogs.Add(entry);
+            _context.AuditLogs.Add(BuildEntry(request, result));
             await _context.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            // Audit failure must not surface to the caller — the message was already dispatched
             LogOperationError(nameof(LogAsync), ex,
                 new { request.Destination, channel = result.Channel.ToString() });
         }
+    }
+
+    public async Task LogBatchAsync(
+        ChannelMessageRequest request,
+        IReadOnlyList<ChannelMessageResult> results,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            foreach (var result in results)
+                _context.AuditLogs.Add(BuildEntry(request, result));
+
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            LogOperationError(nameof(LogBatchAsync), ex, new { request.Destination });
+        }
+    }
+
+    private static AuditLog BuildEntry(ChannelMessageRequest request, ChannelMessageResult result)
+    {
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            destination = request.Destination,
+            campaign = request.TemplateOrCampaignIdentifier,
+            recipientName = request.RecipientName,
+            templateParams = request.TemplateParameters,
+            messageId = result.MessageId
+        });
+
+        Guid? schoolId = null;
+        if (request.CustomAttributes.TryGetValue("schoolId", out var schoolIdStr)
+            && Guid.TryParse(schoolIdStr, out var parsedSchoolId))
+            schoolId = parsedSchoolId;
+
+        Guid? userId = null;
+        if (request.CustomAttributes.TryGetValue("userId", out var userIdStr)
+            && Guid.TryParse(userIdStr, out var parsedUserId))
+            userId = parsedUserId;
+
+        return new AuditLog
+        {
+            HttpMethod = "POST",
+            Path = "outbound-messaging",
+            QueryString = request.Destination,
+            ActionType = result.IsSuccess ? "ChannelMessage_Sent" : "ChannelMessage_Failed",
+            EntityType = result.Channel.ToString(),
+            StatusCode = (int)result.StatusCode,
+            RequestBody = requestBody,
+            ExceptionMessage = result.ErrorMessage,
+            SchoolId = schoolId,
+            UserId = userId,
+            Timestamp = DateTime.UtcNow,
+            DurationMs = 0
+        };
     }
 
     public async Task<IReadOnlyList<AuditLog>> GetLogsAsync(

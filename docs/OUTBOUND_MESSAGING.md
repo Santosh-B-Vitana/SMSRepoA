@@ -295,13 +295,18 @@ Auth: `Admin`, `Principal`, `SuperAdmin`
   "fullName": "Priya Nair",
   "otpCode": "847291",
   "schoolName": "Vitana International School",
-  "welcomeCampaignName": "student_welcome_v1",
+  "smsTemplateIdentifier": "msg91_flow_id_for_otp",
+  "whatsAppTemplateIdentifier": "student_welcome_v1",
   "welcomeDocumentUrl": "https://cdn.school.com/welcome-kit-2026.pdf",
   "welcomeDocumentFilename": "WelcomeKit_2026.pdf"
 }
 ```
 
-**Template parameters sent to MSG91 (positional):** `[fullName, otpCode, schoolName]` → `var1`, `var2`, `var3`
+> `smsTemplateIdentifier` is a MSG91 **Flow ID** (numeric string).  
+> `whatsAppTemplateIdentifier` is a MSG91 **WhatsApp template name** (e.g. `student_welcome_v1`).  
+> These are separate namespaces in the MSG91 platform — they cannot share the same value.
+
+**Template parameters sent to MSG91 (positional, both channels):** `[fullName, otpCode, schoolName]` → `var1`, `var2`, `var3`
 
 **Response:** same `ChannelDispatchResponse` shape as `/dispatch`.
 

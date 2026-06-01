@@ -13,6 +13,14 @@ public interface INotificationLogService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Persists all channel results from a single dispatch in one DB round-trip.
+    /// Safe to call from Task.WhenAll alternatives — uses a single DbContext.SaveChangesAsync.
+    /// Exceptions are caught internally — a log failure never surfaces to the caller.
+    /// </summary>
+    Task LogBatchAsync(ChannelMessageRequest request, IReadOnlyList<ChannelMessageResult> results,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves channel message audit records from AuditLogs filtered by channel and/or date.
     /// </summary>
     Task<IReadOnlyList<AuditLog>> GetLogsAsync(
