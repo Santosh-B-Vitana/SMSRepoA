@@ -62,6 +62,10 @@ namespace SmsApi.Models.DTOs
         public const int     MaxGatewayNameLen = 100;
         public const int     MaxReasonLen      = 500;
         public const string  DefaultCurrency   = "INR";
+
+        // Cashfree payment methods - Valid methods: cc, dc, ppc, ccc, emi, paypal, upi, nb, app, paylater, applepay
+        // For v2023-08-01 API: Using cc (credit card), dc (debit card), nb (net banking), upi (UPI)
+        public const string CashfreePaymentMethods = "cc,dc,nb,upi";
     }
 
     // ─── Payment Gateway Config DTOs ─────────────────────────────────────────────

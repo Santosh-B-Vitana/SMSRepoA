@@ -2392,6 +2392,186 @@ namespace SmsApi.Controllers
         }
 
         // ═══════════════════════════════════════════════════════════════════════
+        // TEST CASHFREE PAYMENT — Sample parent pay fee implementation
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Test endpoint: Initiate a Cashfree payment for parent fee payment.
+        /// Creates a test payment transaction and returns Cashfree redirect URL.
+        /// 
+        /// Flow:
+        /// 1. Parents select fee records to pay
+        /// 2. Click "Test Pay Fee" button
+        /// 3. This endpoint creates Cashfree order
+        /// 4. Returns redirect_url to payment gateway
+        /// 5. Cashfree handles payment securely
+        /// 6. Callback updates fee record status
+        /// 
+        /// Cashfree Integration (Redirect Flow):
+        /// - API: https://www.cashfree.com/docs/payments/online/web/redirect
+        /// - Mode: Redirect-based payment (customer redirected to Cashfree hosted page)
+        /// - Session ID: Used to track payment session on client side
+        /// - Order ID: Unique order identifier for reconciliation
+        /// 
+        /// Test Credentials (Sandbox):
+        /// - App ID: From Cashfree merchant account
+        /// - Secret Key: For HMAC signature verification
+        /// - Test Card: 4111111111111111 with any future date and CVV
+        /// </summary>
+        [HttpPost("test-pay-cashfree")]
+        [Authorize(Roles = "Parent,Student,Admin,Principal")]
+        public async Task<ActionResult> TestPayFeeCashfree([FromBody] TestPayFeeRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                
+                // Get fee record
+                var feeRecord = await _context.FeeRecords
+                    .Include(f => f.Student)
+                    .FirstOrDefaultAsync(f => f.Id == request.FeeRecordId && f.SchoolId == schoolId && !f.IsDeleted);
+
+                if (feeRecord == null)
+                    return NotFound(new { message = "Fee record not found." });
+
+                // Parent/Student authorization check
+                if (userRole == "Parent" || userRole == "Student")
+                {
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, feeRecord.StudentId);
+                    if (!canAccess)
+                        return StatusCode(403, new { message = "You can only pay for your own child's fees." });
+                }
+
+                // Validate fee record has pending amount
+                if (feeRecord.PendingAmount <= 0)
+                    return BadRequest(new { message = "No pending fees for this record." });
+
+                // Validate amount
+                var payAmount = request.Amount ?? feeRecord.PendingAmount;
+                if (payAmount <= 0 || payAmount > feeRecord.PendingAmount)
+                    return BadRequest(new { message = $"Invalid amount. Pending: ₹{feeRecord.PendingAmount}. Requested: ₹{payAmount}" });
+
+                // Get Cashfree gateway config
+                var cashfreeConfig = await _context.PaymentGatewayConfigs
+                    .FirstOrDefaultAsync(c => c.SchoolId == schoolId 
+                        && c.GatewayName.ToLower() == "cashfree" 
+                        && c.IsActive && !c.IsDeleted);
+
+                if (cashfreeConfig == null)
+                    return BadRequest(new { message = "Cashfree payment gateway not configured for this school." });
+
+                // Create order ID (Cashfree format: alphanumeric, max 150 chars)
+                var orderId = $"ORDER-{schoolId.ToString().Substring(0, 8)}-{feeRecord.Id.ToString().Substring(0, 8)}-{DateTime.UtcNow.Ticks}";
+
+                // Get student email/phone for Cashfree
+                var studentGuardian = await _context.StudentGuardians
+                    .Where(g => g.StudentId == feeRecord.StudentId && g.SchoolId == schoolId && !g.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                var customerEmail = studentGuardian?.Email ?? "parent@school.local";
+                var customerPhone = studentGuardian?.Phone ?? "";
+
+                // Prepare Cashfree payment initiation request
+                var paymentInitRequest = new InitiatePaymentRequest
+                {
+                    SchoolId = schoolId,
+                    PayerId = _tenant.UserId,
+                    PayerType = "Parent",
+                    Amount = payAmount,
+                    Currency = "INR",
+                    Purpose = "FeePayment",
+                    ReferenceId = feeRecord.Id,
+                    ReferenceType = "FeeRecord",
+                    CustomerName = studentGuardian?.Name ?? feeRecord.Student?.FirstName ?? "Student",
+                    CustomerEmail = customerEmail,
+                    CustomerPhone = customerPhone,
+                    GatewayName = "Cashfree",
+                    ReturnUrl = request.ReturnUrl ?? $"{Request.Scheme}://{Request.Host}/parent-fees/payment-callback",
+                    NotifyUrl = request.NotifyUrl ?? $"{Request.Scheme}://{Request.Host}/api/payment-gateway/webhook/cashfree",
+                    AdditionalData = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        order_id = orderId,
+                        student_id = feeRecord.StudentId.ToString(),
+                        student_name = feeRecord.Student?.FirstName ?? "Student",
+                        fee_record_id = feeRecord.Id.ToString(),
+                        academic_year = feeRecord.AcademicYear
+                    })
+                };
+
+                // Call payment gateway service to initiate Cashfree payment
+                var response = await _paymentGatewayService.InitiatePaymentAsync(schoolId, paymentInitRequest);
+
+                // Log audit trail
+                _context.FeeAuditLogs.Add(new SmsApi.Models.Entities.FeeAuditLog
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    EntityType = "Payment",
+                    EntityId = response.Id,
+                    FeeRecordId = feeRecord.Id,
+                    StudentId = feeRecord.StudentId,
+                    Action = "cashfree_payment_initiated",
+                    PerformedByUserId = _tenant.UserId,
+                    PerformedByName = studentGuardian?.Name ?? "Parent",
+                    Amount = payAmount,
+                    Remarks = $"Cashfree redirect payment initiated. Order ID: {orderId}",
+                    Timestamp = DateTime.UtcNow,
+                    OldValues = null,
+                    NewValues = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        response.PaymentSessionId,
+                        response.PaymentLink,
+                        response.GatewayOrderId,
+                        status = "initiated"
+                    })
+                });
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Cashfree payment initiated - School: {SchoolId}, Fee Record: {FeeRecordId}, Amount: {Amount}, Session: {SessionId}",
+                    schoolId, feeRecord.Id, payAmount, response.PaymentSessionId);
+
+                return Ok(new
+                {
+                    success = true,
+                    transactionId = response.TransactionId,
+                    paymentSessionId = response.PaymentSessionId,
+                    paymentLink = response.PaymentLink,
+                    redirectUrl = response.PaymentLink ?? $"https://checkout.cashfree.com/pay/{response.PaymentSessionId}",
+                    orderId = orderId,
+                    amount = payAmount,
+                    currency = "INR",
+                    studentName = feeRecord.Student?.FirstName ?? "Student",
+                    feeRecordId = feeRecord.Id.ToString(),
+                    message = "Payment session created. Redirect to Cashfree checkout."
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Test Cashfree payment - Validation error");
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Test Cashfree payment - Invalid operation");
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                _logger.LogWarning(ex, "Test Cashfree payment - Resource not found");
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Test Cashfree payment failed");
+                return StatusCode(500, new { message = "Payment initiation failed. Please try again.", error = ex.Message });
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
         // DELETED RECEIPTS — Audit view of soft-deleted payment transactions
         // ═══════════════════════════════════════════════════════════════════════
 
@@ -2494,6 +2674,22 @@ namespace SmsApi.Controllers
 public class EmailReceiptRequest
 {
     public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>Request DTO for testing Cashfree parent fee payment.</summary>
+public class TestPayFeeRequest
+{
+    /// <summary>Fee record ID to pay</summary>
+    public Guid FeeRecordId { get; set; }
+
+    /// <summary>Amount to pay (optional, defaults to full pending amount)</summary>
+    public decimal? Amount { get; set; }
+
+    /// <summary>Optional return URL after payment completion</summary>
+    public string? ReturnUrl { get; set; }
+
+    /// <summary>Optional notification/webhook URL for Cashfree callbacks</summary>
+    public string? NotifyUrl { get; set; }
 }
 
 public class PreviewConcessionsRequest

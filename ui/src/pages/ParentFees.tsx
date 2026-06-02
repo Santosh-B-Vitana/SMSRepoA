@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/services/api/studentApi";
 import { getFeeRecords, getFeeStructureById, type FeeRecord, type FeeStructure, type TermSchedule } from "@/services/api/feeApi";
+import { CashfreeTestPayButton } from "@/components/fees/CashfreeTestPayButton";
 import { toast } from "sonner";
 
 interface ChildFeeData {
@@ -264,11 +265,26 @@ export default function ParentFees() {
                   <Button variant="outline" size="sm" onClick={() => navigate(`/parent-fees/${cf.child.id}`)}>
                     View Details <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
-                  {cf.pendingAmount > 0 && (
-                    <Button size="sm" onClick={() => navigate(`/parent-fees/${cf.child.id}/pay`)}>
-                      <CreditCard className="h-4 w-4 mr-1.5" />
-                      Pay Now
-                    </Button>
+                  {cf.pendingAmount > 0 && cf.feeRecords.length > 0 && (
+                    <>
+                      {/* Traditional Payment Flow */}
+                      <Button size="sm" onClick={() => navigate(`/parent-fees/${cf.child.id}/pay`)}>
+                        <CreditCard className="h-4 w-4 mr-1.5" />
+                        Pay Now
+                      </Button>
+                      
+                      {/* Test Cashfree Payment - Sample Implementation */}
+                      <CashfreeTestPayButton
+                        feeRecordId={cf.feeRecords[0]?.id || ""}
+                        studentName={cf.child.name}
+                        amount={100}
+                        onPaymentSuccess={() => {
+                          // Refresh fee data after successful payment
+                          loadFees();
+                        }}
+                        size="sm"
+                      />
+                    </>
                   )}
                 </div>
               </CardContent>

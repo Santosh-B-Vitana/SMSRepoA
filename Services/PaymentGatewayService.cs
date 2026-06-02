@@ -182,12 +182,42 @@ namespace SmsApi.Services
             {
                 try
                 {
-                    var cfRequest = new CashfreeCreateOrderRequest { OrderId = transactionId, OrderAmount = request.Amount, OrderCurrency = currency, CustomerDetails = new CashfreeCustomerDetails { CustomerId = request.PayerId.ToString("N"), CustomerName = request.CustomerName?.Trim(), CustomerEmail = request.CustomerEmail?.Trim(), CustomerPhone = request.CustomerPhone?.Trim() ?? "9999999999" }, OrderMeta = new CashfreeOrderMeta { ReturnUrl = request.ReturnUrl ?? config.ReturnUrl, NotifyUrl = request.NotifyUrl ?? config.WebhookUrl, PaymentMethods = "cc,dc,nb,upi,wallet" }, OrderNote = request.Purpose, OrderTags = new Dictionary<string, string> { ["schoolId"] = schoolId.ToString(), ["payerId"] = request.PayerId.ToString(), ["payerType"] = request.PayerType, ["purpose"] = request.Purpose, ["referenceId"] = request.ReferenceId?.ToString() ?? string.Empty } };
+                    // Validate Cashfree credentials are configured
+                    if (string.IsNullOrWhiteSpace(config.ApiKey) || string.IsNullOrWhiteSpace(config.ApiSecret))
+                    {
+                        _logger.LogError("Cashfree credentials not configured for school {SchoolId}. ApiKey={HasKey}, ApiSecret={HasSecret}",
+                            schoolId, !string.IsNullOrWhiteSpace(config.ApiKey), !string.IsNullOrWhiteSpace(config.ApiSecret));
+                        throw new InvalidOperationException(
+                            "Cashfree gateway not properly configured. " +
+                            "Please configure Client ID (ApiKey) and Client Secret (ApiSecret) in the payment gateway settings. " +
+                            "Get credentials from: https://www.cashfree.com/dashboard");
+                    }
+
+                    var cfRequest = new CashfreeCreateOrderRequest { OrderId = transactionId, OrderAmount = request.Amount, OrderCurrency = currency, CustomerDetails = new CashfreeCustomerDetails { CustomerId = request.PayerId.ToString("N"), CustomerName = request.CustomerName?.Trim(), CustomerEmail = request.CustomerEmail?.Trim(), CustomerPhone = request.CustomerPhone?.Trim() ?? "9999999999" }, OrderMeta = new CashfreeOrderMeta { ReturnUrl = request.ReturnUrl ?? config.ReturnUrl, NotifyUrl = request.NotifyUrl ?? config.WebhookUrl, PaymentMethods = PaymentGatewayConstants.CashfreePaymentMethods }, OrderNote = request.Purpose, OrderTags = new Dictionary<string, string> { ["schoolId"] = schoolId.ToString(), ["payerId"] = request.PayerId.ToString(), ["payerType"] = request.PayerType, ["purpose"] = request.Purpose, ["referenceId"] = request.ReferenceId?.ToString() ?? string.Empty } };
                     var isSandbox = config.Mode?.Equals(PaymentGatewayConstants.ModeTest, StringComparison.OrdinalIgnoreCase) ?? true;
-                    var cfResponse = await _cashfree.CreateOrderAsync(cfRequest, config.ApiKey, config.ApiSecret ?? string.Empty, isSandbox);
-                    paymentSessionId = cfResponse.PaymentSessionId; paymentLink = cfResponse.Payments?.Url;
+                    
+                    _logger.LogInformation("Initiating Cashfree order - Amount: {Amount}, Mode: {Mode}, Environment: {Env}",
+                        request.Amount, config.Mode, isSandbox ? "Sandbox" : "Production");
+                    
+                    var cfResponse = await _cashfree.CreateOrderAsync(cfRequest, config.ApiKey, config.ApiSecret, isSandbox);
+                    paymentSessionId = cfResponse.PaymentSessionId; 
+                    paymentLink = cfResponse.Payments?.Url;
                 }
-                catch (Exception ex) { _logger.LogError(ex, "Cashfree CreateOrder failed for school {SchoolId}", schoolId); throw new InvalidOperationException($"Failed to create payment order: {ex.Message}"); }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("authentication"))
+                {
+                    _logger.LogError(ex, "Cashfree authentication failed for school {SchoolId}. Check credentials are correct and match the environment mode (Test vs Production).", schoolId);
+                    throw new InvalidOperationException(
+                        "Cashfree authentication failed. Please verify: " +
+                        "1. Client ID (ApiKey) is correct " +
+                        "2. Client Secret (ApiSecret) is correct " +
+                        "3. Credentials match the Mode (Test credentials for Test mode, Production credentials for Production mode) " +
+                        "Visit https://www.cashfree.com/dashboard to verify credentials.");
+                }
+                catch (Exception ex) 
+                { 
+                    _logger.LogError(ex, "Cashfree CreateOrder failed for school {SchoolId}", schoolId); 
+                    throw new InvalidOperationException($"Failed to create payment order: {ex.Message}"); 
+                }
             }
 
             var transaction = new GatewayPaymentTransaction { Id = Guid.NewGuid(), SchoolId = schoolId, TransactionId = transactionId, GatewayName = gatewayName, PayerId = request.PayerId, PayerType = request.PayerType, Amount = request.Amount, TransactionFee = fee, NetAmount = request.Amount - fee, Currency = currency, Purpose = request.Purpose, ReferenceId = request.ReferenceId, ReferenceType = request.ReferenceType, Status = PaymentGatewayConstants.StatusInitiated, CustomerEmail = request.CustomerEmail?.Trim(), CustomerPhone = request.CustomerPhone?.Trim(), AdditionalData = request.AdditionalData, CreatedAt = DateTime.UtcNow };
