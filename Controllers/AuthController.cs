@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITwoFactorService _twoFactor;
     private readonly ILoginAttemptService _loginAttempts;
+    private readonly ISchoolConfigService _schoolConfigService;
 
     private const int MAX_FAILED_ATTEMPTS = 5;
     private const int LOCKOUT_MINUTES = 15;
@@ -34,7 +35,8 @@ public class AuthController : ControllerBase
         ILogger<AuthController> logger,
         AppDbContext context,
         ITwoFactorService twoFactor,
-        ILoginAttemptService loginAttempts)
+        ILoginAttemptService loginAttempts,
+        ISchoolConfigService schoolConfigService)
     {
         _configuration = configuration;
         _tokenService = tokenService;
@@ -42,6 +44,7 @@ public class AuthController : ControllerBase
         _context = context;
         _twoFactor = twoFactor;
         _loginAttempts = loginAttempts;
+        _schoolConfigService = schoolConfigService;
     }
 
     /// <summary>
@@ -283,11 +286,19 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { message = billingMessage ?? "School subscription is not active. Contact support." });
 
             if (userLogin.RefreshTokenExpiry == null || userLogin.RefreshTokenExpiry < DateTime.UtcNow)
+            {
+                // Session expired — clear the domain cache so the next login gets a fresh CRM lookup
+                _schoolConfigService.InvalidateDomainCache(HttpContext.Request.Host.Host);
                 return Unauthorized(new { message = "Refresh token has expired. Please log in again." });
+            }
 
             if (string.IsNullOrEmpty(userLogin.RefreshTokenHash) ||
                 !BCrypt.Net.BCrypt.Verify(request.RefreshToken, userLogin.RefreshTokenHash))
+            {
+                // Invalid token — clear cache to force fresh CRM state on re-login
+                _schoolConfigService.InvalidateDomainCache(HttpContext.Request.Host.Host);
                 return Unauthorized(new { message = "Invalid refresh token" });
+            }
 
             // Rotate refresh token
             var newRawRefreshToken = GenerateSecureToken();
@@ -335,6 +346,10 @@ public class AuthController : ControllerBase
             userLogin.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
         }
+
+        // Invalidate the domain cache so the next login performs a fresh CRM lookup.
+        // This ensures any DBServer/DBName changes take effect immediately after logout.
+        _schoolConfigService.InvalidateDomainCache(HttpContext.Request.Host.Host);
 
         return Ok(new { message = "Logged out successfully" });
     }

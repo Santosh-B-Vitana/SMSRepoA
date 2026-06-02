@@ -1,6 +1,8 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using SmsApi.Data;
+using SmsApi.Models.CRM;
 using Serilog;
 
 namespace SmsApi.Extensions;
@@ -22,44 +24,96 @@ public static class DatabaseExtensions
 {
     public static WebApplicationBuilder AddDatabase(
         this WebApplicationBuilder builder,
-        string connectionString)
+        string credentialTemplate)
     {
         var provider = builder.Configuration.GetValue<string>("DatabaseProvider")
                        ?? "PostgreSQL";
+        
+        var trustCert = builder.Configuration.GetValue<bool>("DB_TRUST_SERVER_CERTIFICATE", true);
 
         Log.Information("Configuring database provider: {Provider}", provider);
 
         if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
         {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseSqlServer(connectionString, sqlOptions =>
+            builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
+            {
+                var cs = ResolvePerRequestConnectionString(serviceProvider, credentialTemplate, provider, trustCert);
+                options.UseSqlServer(cs, sqlOptions =>
                 {
-                    // Retry on transient failures (network, connection pool)
                     sqlOptions.EnableRetryOnFailure(
                         maxRetryCount: 3,
                         maxRetryDelay: TimeSpan.FromSeconds(5),
                         errorNumbersToAdd: null);
                     sqlOptions.CommandTimeout(30);
-
-                    // Migrations table: use dbo schema (SQL Server convention)
                     sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
-                }));
+                });
+            });
         }
         else
         {
-            // Default: PostgreSQL (local dev + AWS RDS for PostgreSQL)
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseNpgsql(connectionString, npgsqlOptions =>
+            builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
+            {
+                var cs = ResolvePerRequestConnectionString(serviceProvider, credentialTemplate, provider, trustCert);
+                options.UseNpgsql(cs, npgsqlOptions =>
                 {
                     npgsqlOptions.EnableRetryOnFailure(
                         maxRetryCount: 3,
                         maxRetryDelay: TimeSpan.FromSeconds(5),
                         errorCodesToAdd: null);
                     npgsqlOptions.CommandTimeout(30);
-                }));
+                });
+            });
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// Builds a per-request connection string by substituting the DBServer and DBName
+    /// from <see cref="SchoolConfig"/> (resolved from the request domain) into the
+    /// credential template. Falls back to the template as-is when no SchoolConfig is
+    /// found (e.g. design-time migrations, health checks, or unmatched domains).
+    /// </summary>
+    private static string ResolvePerRequestConnectionString(
+        IServiceProvider serviceProvider,
+        string credentialTemplate,
+        string provider,
+        bool trustCert = false)
+    {
+        var httpContextAccessor = serviceProvider.GetRequiredService<IHttpContextAccessor>();
+        var schoolConfig = httpContextAccessor.HttpContext?.Items["SchoolConfig"] as SchoolConfig;
+
+        // No SchoolConfig: either a bypassed path (health, swagger, files), a startup/migration
+        // context (no HttpContext), or seeding — fall back to the credential template as-is.
+        // The SchoolDbContextMiddleware already short-circuits unknown domains with 503 before
+        // any controller/service resolves AppDbContext, so the fallback here is safe.
+        if (schoolConfig == null)
+            return credentialTemplate;
+
+        if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            var csBuilder = new SqlConnectionStringBuilder()
+            {
+                DataSource = schoolConfig.DBServer,
+                InitialCatalog = schoolConfig.DBName,
+                UserID = "sms_app_admin", //Ideally, get this from secret manager
+                Password = "VitanaSMSApp1", //Ideally, get this from secret manager
+                ConnectTimeout = 30,
+                Encrypt = true,
+                TrustServerCertificate = trustCert
+            };
+            return csBuilder.ConnectionString;
+        }
+        else
+        {
+            // PostgreSQL: swap Host and Database fields
+            var csBuilder = new Npgsql.NpgsqlConnectionStringBuilder(credentialTemplate)
+            {
+                Host = schoolConfig.DBServer,
+                Database = schoolConfig.DBName
+            };
+            return csBuilder.ConnectionString;
+        }
     }
 
     /// <summary>
@@ -114,6 +168,7 @@ public static class DatabaseExtensions
         }
 
         var cs = configuration.GetConnectionString("DefaultConnection");
+        
         if (string.IsNullOrEmpty(cs))
             throw new InvalidOperationException(
                 "Database connection string not found. " +

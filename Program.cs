@@ -181,6 +181,10 @@ app.UseSerilogRequestLogging(options =>
 // Extract academic year from request headers for use throughout pipeline
 app.UseAcademicYearContext();
 
+// Resolve SchoolConfig from CRM by request domain; populates HttpContext.Items["SchoolConfig"]
+// so AppDbContext is dynamically configured with the correct per-tenant DBServer/DBName.
+app.UseSchoolDbContext();
+
 // Response compression (before any content is written)
 app.UseResponseCompression();
 

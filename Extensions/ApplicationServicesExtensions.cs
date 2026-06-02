@@ -22,6 +22,9 @@ public static class ApplicationServicesExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ITenantContext, TenantContextAccessor>();
 
+        // ── CRM: school config lookup with 6-hour cache ────────────────────
+        services.AddScoped<ISchoolConfigService, SchoolConfigService>();
+
         // ── Core auth / token services ─────────────────────────────────────
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IReceiptService, ReceiptService>();
