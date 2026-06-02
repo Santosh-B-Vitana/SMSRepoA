@@ -1,0 +1,206 @@
+{
+  "schools": [
+    {
+      "schoolId": "550e8400-e29b-41d4-a716-446655440000",
+      "schoolName": "Vitana International School",
+      "defaults": {
+        "sms": {
+          "provider": "SmsStriker",
+          "apiKey": "REPLACE_WITH_SMSSTRIKER_API_KEY",
+          "senderId": "VITANA",
+          "smsType": "1",
+          "isEnabled": true
+        },
+        "email": {
+          "provider": "Office24by7",
+          "userAuthToken": "REPLACE_WITH_OFFICE24BY7_AUTH_TOKEN",
+          "fromEmail": "noreply@vitana.edu",
+          "templateId": "REPLACE_WITH_OFFICE24BY7_TEMPLATE_ID",
+          "isEnabled": true
+        },
+        "whatsapp": {
+          "provider": "Office24by7",
+          "apiKey": "REPLACE_WITH_OFFICE24BY7_WA_API_KEY",
+          "wabaNumber": "+91XXXXXXXXXX",
+          "isEnabled": true
+        },
+        "msg91Sms": {
+          "provider": "Msg91",
+          "authKey": "REPLACE_WITH_MSG91_AUTH_KEY",
+          "templateId": "REPLACE_WITH_MSG91_SMS_TEMPLATE_ID",
+          "senderId": "VITANA",
+          "dltEntityId": "REPLACE_WITH_DLT_ENTITY_ID",
+          "isEnabled": true
+        },
+        "msg91WhatsApp": {
+          "provider": "Msg91",
+          "authKey": "REPLACE_WITH_MSG91_AUTH_KEY",
+          "integratedNumber": "+91XXXXXXXXXX",
+          "isEnabled": true
+        },
+        "msg91Email": {
+          "provider": "Msg91",
+          "authKey": "REPLACE_WITH_MSG91_AUTH_KEY",
+          "domain": "mail.vitana.edu",
+          "fromEmail": "noreply@vitana.edu",
+          "fromName": "Vitana International School",
+          "templateId": "REPLACE_WITH_MSG91_EMAIL_TEMPLATE_ID",
+          "isEnabled": true
+        }
+      },
+      "branches": [
+        {
+          "branchId": "aaaaaaaa-0000-0000-0000-000000000001",
+          "branchName": "Main Campus",
+          "useSchoolDefaults": true
+        },
+        {
+          "branchId": "bbbbbbbb-0000-0000-0000-000000000002",
+          "branchName": "North Campus",
+          "useSchoolDefaults": false,
+          "sms": {
+            "provider": "SmsStriker",
+            "apiKey": "REPLACE_WITH_NORTH_SMSSTRIKER_KEY",
+            "senderId": "NORTHVIT",
+            "smsType": "1",
+            "isEnabled": true
+          },
+          "email": {
+            "provider": "Office24by7",
+            "userAuthToken": "REPLACE_WITH_NORTH_OFFICE24BY7_TOKEN",
+            "fromEmail": "north@vitana.edu",
+            "templateId": "REPLACE_WITH_NORTH_OFFICE24BY7_TEMPLATE_ID",
+            "isEnabled": true
+          },
+          "msg91Sms": {
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_NORTH_MSG91_AUTH_KEY",
+            "templateId": "REPLACE_WITH_NORTH_MSG91_SMS_TEMPLATE_ID",
+            "senderId": "NORTHVIT",
+            "dltEntityId": "REPLACE_WITH_NORTH_DLT_ENTITY_ID",
+            "isEnabled": true
+          },
+          "msg91WhatsApp": {
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_NORTH_MSG91_AUTH_KEY",
+            "integratedNumber": "+91XXXXXXXXXX",
+            "isEnabled": true
+          },
+          "msg91Email": {
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_NORTH_MSG91_AUTH_KEY",
+            "domain": "north.vitana.edu",
+            "fromEmail": "north@vitana.edu",
+            "fromName": "Vitana North Campus",
+            "templateId": "REPLACE_WITH_NORTH_MSG91_EMAIL_TEMPLATE_ID",
+            "isEnabled": true
+          }
+        },
+        {
+          "branchId": "cccccccc-0000-0000-0000-000000000003",
+          "branchName": "South Campus",
+          "useSchoolDefaults": false,
+          "sms": {
+            "provider": "SmsStriker",
+            "apiKey": "REPLACE_WITH_SOUTH_SMSSTRIKER_KEY",
+            "senderId": "SOUTHVIT",
+            "smsType": "1",
+            "isEnabled": true
+          },
+          "email": {
+            "provider": "Office24by7",
+            "userAuthToken": "REPLACE_WITH_SOUTH_OFFICE24BY7_TOKEN",
+            "fromEmail": "south@vitana.edu",
+            "templateId": "REPLACE_WITH_SOUTH_OFFICE24BY7_TEMPLATE_ID",
+            "isEnabled": true
+          },
+          "whatsapp": {
+            "provider": "Office24by7",
+            "apiKey": "REPLACE_WITH_SOUTH_OFFICE24BY7_WA_KEY",
+            "wabaNumber": "+91XXXXXXXXXX",
+            "isEnabled": true
+          },
+          "msg91Sms": {
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_SOUTH_MSG91_AUTH_KEY",
+            "templateId": "REPLACE_WITH_SOUTH_MSG91_SMS_TEMPLATE_ID",
+            "senderId": "SOUTHVIT",
+            "dltEntityId": "REPLACE_WITH_SOUTH_DLT_ENTITY_ID",
+            "isEnabled": true
+          },
+          "msg91WhatsApp": {
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_SOUTH_MSG91_AUTH_KEY",
+            "integratedNumber": "+91XXXXXXXXXX",
+            "isEnabled": true
+          },
+          "msg91Email": {
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_SOUTH_MSG91_AUTH_KEY",
+            "domain": "south.vitana.edu",
+            "fromEmail": "south@vitana.edu",
+            "fromName": "Vitana South Campus",
+            "templateId": "REPLACE_WITH_SOUTH_MSG91_EMAIL_TEMPLATE_ID",
+            "isEnabled": true
+          }
+        }
+      ]
+    },
+    {
+      "schoolId": "660e8400-e29b-41d4-a716-446655440001",
+      "schoolName": "Greenwood Academy",
+      "defaults": {
+        "sms": {
+          "provider": "SmsStriker",
+          "apiKey": "REPLACE_WITH_GREENWOOD_SMSSTRIKER_KEY",
+          "senderId": "GRNWOD",
+          "smsType": "1",
+          "isEnabled": true
+        },
+        "email": {
+          "provider": "Office24by7",
+          "userAuthToken": "REPLACE_WITH_GREENWOOD_OFFICE24BY7_TOKEN",
+          "fromEmail": "info@greenwood.edu",
+          "templateId": "REPLACE_WITH_GREENWOOD_OFFICE24BY7_TEMPLATE_ID",
+          "isEnabled": true
+        },
+        "whatsapp": {
+          "provider": "Office24by7",
+          "apiKey": "REPLACE_WITH_GREENWOOD_OFFICE24BY7_WA_KEY",
+          "wabaNumber": "+91XXXXXXXXXX",
+          "isEnabled": true
+        },
+        "msg91Sms": {
+          "provider": "Msg91",
+          "authKey": "REPLACE_WITH_GREENWOOD_MSG91_AUTH_KEY",
+          "templateId": "REPLACE_WITH_GREENWOOD_MSG91_SMS_TEMPLATE_ID",
+          "senderId": "GRNWOD",
+          "dltEntityId": "REPLACE_WITH_GREENWOOD_DLT_ENTITY_ID",
+          "isEnabled": true
+        },
+        "msg91WhatsApp": {
+          "provider": "Msg91",
+          "authKey": "REPLACE_WITH_GREENWOOD_MSG91_AUTH_KEY",
+          "integratedNumber": "+91XXXXXXXXXX",
+          "isEnabled": true
+        },
+        "msg91Email": {
+          "provider": "Msg91",
+          "authKey": "REPLACE_WITH_GREENWOOD_MSG91_AUTH_KEY",
+          "domain": "mail.greenwood.edu",
+          "fromEmail": "info@greenwood.edu",
+          "fromName": "Greenwood Academy",
+          "templateId": "REPLACE_WITH_GREENWOOD_MSG91_EMAIL_TEMPLATE_ID",
+          "isEnabled": true
+        }
+      },
+      "branches": [
+        {
+          "branchId": "dddddddd-0000-0000-0000-000000000001",
+          "branchName": "Central Branch",
+          "useSchoolDefaults": true
+        }
+      ]
+    }
+  ]
+}
