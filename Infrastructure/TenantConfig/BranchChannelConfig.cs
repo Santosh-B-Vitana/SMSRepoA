@@ -84,6 +84,8 @@ namespace SmsApi.Infrastructure.TenantConfig
         public string Provider      { get; set; } = "Office24by7";
         public string UserAuthToken { get; set; } = string.Empty;
         public string FromEmail     { get; set; } = string.Empty;
+        /// <summary>Office24by7 template ID configured in the platform.</summary>
+        public string TemplateId    { get; set; } = string.Empty;
         public bool   IsEnabled     { get; set; } = true;
     }
 

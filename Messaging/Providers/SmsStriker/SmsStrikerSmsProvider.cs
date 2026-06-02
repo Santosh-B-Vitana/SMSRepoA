@@ -1,6 +1,7 @@
 using System.Net;
-using System.Text;
-using System.Web;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using SmsApi.Infrastructure.Resilience;
 using SmsApi.Infrastructure.TenantConfig;
@@ -10,19 +11,17 @@ namespace SmsApi.Messaging.Providers.SmsStriker
 {
     /// <summary>
     /// Sends transactional / promotional SMS via SMS Striker.
-    /// Endpoint: GET https://www.smsstriker.com/API/sendsmsapi.php
+    /// Endpoint: POST https://www.smsstriker.com/API/sendsmsapi.php
+    /// Content-Type: application/json
     ///
-    /// Credentials are resolved per-branch from ISchoolBranchConfigResolver at send time —
-    /// never from appsettings.json. If no config is found for the active branch the send is
-    /// immediately short-circuited with UnprocessableEntity to prevent cross-tenant leakage.
+    /// Ecosystem: SmsStriker.
+    /// Credentials resolved per-branch from ISchoolBranchConfigResolver at send time.
     /// </summary>
     public sealed class SmsStrikerSmsProvider : IChannelProvider
     {
         public CommunicationChannel Channel => CommunicationChannel.Sms;
 
-        private const string ClientName = "SmsStriker";
-        private const string ApiPath    = "API/sendsmsapi.php";
-
+        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
         private readonly IHttpClientFactory _httpFactory;
         private readonly ISchoolBranchContext _branchCtx;
         private readonly ISchoolBranchConfigResolver _resolver;
@@ -38,52 +37,47 @@ namespace SmsApi.Messaging.Providers.SmsStriker
             _branchCtx   = branchCtx;
             _resolver    = resolver;
             _logger      = logger;
+            _retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(logger);
         }
 
         public async Task<ChannelMessageResult> SendAsync(
             ChannelMessageRequest request,
             CancellationToken cancellationToken = default)
         {
-            // ── 1. Tenant isolation guard ────────────────────────────────────
             if (!_branchCtx.TryGetSchoolId(out var schoolId))
                 return ChannelMessageResult.Failure(Channel,
-                    "No active school context — cannot resolve SMS credentials.",
+                    "No active school context — cannot resolve SMS Striker credentials.",
                     HttpStatusCode.Unauthorized);
 
-            var branchId = _branchCtx.BranchId; // Guid.Empty → school defaults
+            var branchId = _branchCtx.BranchId;
+            var config   = await _resolver.GetSmsConfigAsync(schoolId, branchId, cancellationToken);
 
-            var config = await _resolver.GetSmsConfigAsync(schoolId, branchId, cancellationToken);
             if (config is null || !config.IsEnabled)
             {
                 _logger.LogWarning(
                     "SMS Striker: no config for school={School} branch={Branch}. Send aborted.",
                     schoolId, branchId);
                 return ChannelMessageResult.Failure(Channel,
-                    $"No SMS configuration found for school {schoolId} / branch {branchId}.",
+                    $"No SMS Striker configuration for school {schoolId} / branch {branchId}.",
                     HttpStatusCode.UnprocessableEntity);
             }
 
-            // ── 2. Build DLT-compliant message body ──────────────────────────
-            var messageBody = BuildMessageBody(
-                request.TemplateOrCampaignIdentifier,
-                request.TemplateParameters);
+            var payload = new SmsStrikerPayload
+            {
+                Key  = config.ApiKey,
+                From = config.SenderId,
+                To   = request.Destination,
+                Msg  = BuildMessageBody(request.TemplateOrCampaignIdentifier, request.TemplateParameters),
+                Type = config.SmsType
+            };
 
-            // ── 3. Build query string ────────────────────────────────────────
-            var qs = new StringBuilder();
-            qs.Append($"key={HttpUtility.UrlEncode(config.ApiKey)}");
-            qs.Append($"&from={HttpUtility.UrlEncode(config.SenderId)}");
-            qs.Append($"&type={HttpUtility.UrlEncode(config.SmsType)}");
-            qs.Append($"&to={HttpUtility.UrlEncode(request.Destination)}");
-            qs.Append($"&msg={HttpUtility.UrlEncode(messageBody)}");
-
-            // ── 4. Send with Polly retry ─────────────────────────────────────
-            var retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(_logger);
             try
             {
-                var response = await retryPolicy.ExecuteAsync(async () =>
+                var response = await _retryPolicy.ExecuteAsync(async () =>
                 {
-                    var client = _httpFactory.CreateClient(ClientName);
-                    return await client.GetAsync($"{ApiPath}?{qs}", cancellationToken);
+                    var client = _httpFactory.CreateClient(ProviderConstants.SmsStriker.ClientName);
+                    return await client.PostAsJsonAsync(
+                        ProviderConstants.SmsStriker.SendSms, payload, cancellationToken);
                 });
 
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -107,17 +101,11 @@ namespace SmsApi.Messaging.Providers.SmsStriker
                 _logger.LogError(ex,
                     "SMS Striker send failed for {Dest} school={School} branch={Branch}",
                     request.Destination, schoolId, branchId);
-                return ChannelMessageResult.Failure(Channel, ex.Message,
-                    HttpStatusCode.InternalServerError);
+                return ChannelMessageResult.Failure(Channel, ex.Message, HttpStatusCode.InternalServerError);
             }
         }
 
-        // ── Helpers ──────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Substitutes positional placeholders {1}, {2}, … in the DLT-approved template text.
-        /// If the template contains no placeholders, parameters are appended after a space.
-        /// </summary>
+        /// <summary>Substitutes positional placeholders {1}, {2}, … in the DLT template text.</summary>
         private static string BuildMessageBody(string template, IEnumerable<string> parameters)
         {
             var result = template;
@@ -130,24 +118,38 @@ namespace SmsApi.Messaging.Providers.SmsStriker
             return result;
         }
 
-        /// <summary>SMS Striker returns the Job Id in the response body (plain text or JSON).</summary>
         private static string? TryExtractJobId(string body)
         {
             if (string.IsNullOrWhiteSpace(body)) return null;
-
-            // Try JSON first
             try
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(body);
-                if (doc.RootElement.TryGetProperty("jobId", out var j)) return j.GetString();
-                if (doc.RootElement.TryGetProperty("job_id", out var j2)) return j2.GetString();
-                if (doc.RootElement.TryGetProperty("id", out var j3)) return j3.GetString();
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("Job Id", out var j1)) return j1.GetString();
+                if (doc.RootElement.TryGetProperty("jobId",  out var j2)) return j2.GetString();
+                if (doc.RootElement.TryGetProperty("job_id", out var j3)) return j3.GetString();
             }
-            catch { }
-
-            // Fall back: treat the whole body as the ID (plain-text gateway style)
-            var trimmed = body.Trim();
-            return trimmed.Length <= 100 ? trimmed : null;
+            catch { /* non-JSON response */ }
+            return null;
         }
+    }
+
+    // ── Payload model ────────────────────────────────────────────────────────
+
+    internal sealed class SmsStrikerPayload
+    {
+        [JsonPropertyName("key")]
+        public string Key { get; set; } = string.Empty;
+
+        [JsonPropertyName("from")]
+        public string From { get; set; } = string.Empty;
+
+        [JsonPropertyName("to")]
+        public string To { get; set; } = string.Empty;
+
+        [JsonPropertyName("msg")]
+        public string Msg { get; set; } = string.Empty;
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
     }
 }

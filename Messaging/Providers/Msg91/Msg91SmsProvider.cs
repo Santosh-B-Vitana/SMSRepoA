@@ -12,15 +12,15 @@ namespace SmsApi.Messaging.Providers.Msg91
     /// <summary>
     /// Sends DLT-compliant SMS via MSG91 Flow API v5.
     /// Endpoint: POST https://api.msg91.com/api/v5/flow/
-    /// Headers:  authkey: {branch.AuthKey}
+    /// Auth:     authkey header per request.
+    ///
+    /// Ecosystem: Msg91.
     /// </summary>
     public sealed class Msg91SmsProvider : IChannelProvider
     {
         public CommunicationChannel Channel => CommunicationChannel.Sms;
 
-        private const string ClientName = "Msg91";
-        private const string ApiPath    = "api/v5/flow/";
-
+        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
         private readonly IHttpClientFactory _httpFactory;
         private readonly ISchoolBranchContext _branchCtx;
         private readonly ISchoolBranchConfigResolver _resolver;
@@ -36,13 +36,13 @@ namespace SmsApi.Messaging.Providers.Msg91
             _branchCtx   = branchCtx;
             _resolver    = resolver;
             _logger      = logger;
+            _retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(logger);
         }
 
         public async Task<ChannelMessageResult> SendAsync(
             ChannelMessageRequest request,
             CancellationToken cancellationToken = default)
         {
-            // ── Tenant isolation guard ───────────────────────────────────────
             if (!_branchCtx.TryGetSchoolId(out var schoolId))
                 return ChannelMessageResult.Failure(Channel,
                     "No active school context — cannot resolve MSG91 SMS credentials.",
@@ -61,30 +61,25 @@ namespace SmsApi.Messaging.Providers.Msg91
                     HttpStatusCode.UnprocessableEntity);
             }
 
-            // ── Build MSG91 v5 flow payload ──────────────────────────────────
-            // Variables are mapped by ordinal: TemplateParameters[0] → var1, etc.
             var recipient = new Msg91SmsRecipient { Mobiles = request.Destination };
             for (var i = 0; i < request.TemplateParameters.Count; i++)
                 recipient.Variables[$"var{i + 1}"] = request.TemplateParameters[i];
 
             var payload = new Msg91SmsPayload
             {
-                TemplateId        = config.TemplateId,
-                SenderId          = config.SenderId,
-                ShortUrl          = "0",
-                RealTimeResponse  = "1",
-                Recipients        = new List<Msg91SmsRecipient> { recipient }
+                TemplateId       = config.TemplateId,
+                SenderId         = config.SenderId,
+                ShortUrl         = "0",
+                RealTimeResponse = "1",
+                Recipients       = new List<Msg91SmsRecipient> { recipient }
             };
 
-            // ── Send with Polly retry ────────────────────────────────────────
-            var retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(_logger);
             try
             {
-                var response = await retryPolicy.ExecuteAsync(async () =>
+                var response = await _retryPolicy.ExecuteAsync(async () =>
                 {
-                    var client = _httpFactory.CreateClient(ClientName);
-                    // MSG91 auth via header, not body
-                    var req = new HttpRequestMessage(HttpMethod.Post, ApiPath)
+                    var client = _httpFactory.CreateClient(ProviderConstants.Msg91.ClientName);
+                    var req = new HttpRequestMessage(HttpMethod.Post, ProviderConstants.Msg91.SendSms)
                     {
                         Content = JsonContent.Create(payload)
                     };
@@ -113,8 +108,7 @@ namespace SmsApi.Messaging.Providers.Msg91
                 _logger.LogError(ex,
                     "MSG91 SMS failed for {Dest} school={School} branch={Branch}",
                     request.Destination, schoolId, branchId);
-                return ChannelMessageResult.Failure(Channel, ex.Message,
-                    HttpStatusCode.InternalServerError);
+                return ChannelMessageResult.Failure(Channel, ex.Message, HttpStatusCode.InternalServerError);
             }
         }
 
@@ -156,8 +150,6 @@ namespace SmsApi.Messaging.Providers.Msg91
         [JsonPropertyName("mobiles")]
         public string Mobiles { get; set; } = string.Empty;
 
-        // Dynamic variable substitution: var1, var2, var3…
-        // Written as individual JSON properties via a custom converter.
         [JsonExtensionData]
         public Dictionary<string, object?> Variables { get; set; } = new();
     }

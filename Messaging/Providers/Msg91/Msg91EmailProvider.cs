@@ -12,15 +12,15 @@ namespace SmsApi.Messaging.Providers.Msg91
     /// <summary>
     /// Sends transactional email via MSG91 Email API v5.
     /// Endpoint: POST https://api.msg91.com/api/v5/email/send
-    /// Headers:  authkey: {branch.AuthKey}
+    /// Auth:     authkey header per request.
+    ///
+    /// Ecosystem: Msg91.
     /// </summary>
     public sealed class Msg91EmailProvider : IChannelProvider
     {
         public CommunicationChannel Channel => CommunicationChannel.Email;
 
-        private const string ClientName = "Msg91";
-        private const string ApiPath    = "api/v5/email/send";
-
+        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
         private readonly IHttpClientFactory _httpFactory;
         private readonly ISchoolBranchContext _branchCtx;
         private readonly ISchoolBranchConfigResolver _resolver;
@@ -36,13 +36,13 @@ namespace SmsApi.Messaging.Providers.Msg91
             _branchCtx   = branchCtx;
             _resolver    = resolver;
             _logger      = logger;
+            _retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(logger);
         }
 
         public async Task<ChannelMessageResult> SendAsync(
             ChannelMessageRequest request,
             CancellationToken cancellationToken = default)
         {
-            // ── Tenant isolation guard ───────────────────────────────────────
             if (!_branchCtx.TryGetSchoolId(out var schoolId))
                 return ChannelMessageResult.Failure(Channel,
                     "No active school context — cannot resolve MSG91 email credentials.",
@@ -61,17 +61,14 @@ namespace SmsApi.Messaging.Providers.Msg91
                     HttpStatusCode.UnprocessableEntity);
             }
 
-            // ── Build payload ────────────────────────────────────────────────
             var payload = BuildPayload(config, request);
 
-            // ── Send with Polly retry ────────────────────────────────────────
-            var retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(_logger);
             try
             {
-                var response = await retryPolicy.ExecuteAsync(async () =>
+                var response = await _retryPolicy.ExecuteAsync(async () =>
                 {
-                    var client = _httpFactory.CreateClient(ClientName);
-                    var req = new HttpRequestMessage(HttpMethod.Post, ApiPath)
+                    var client = _httpFactory.CreateClient(ProviderConstants.Msg91.ClientName);
+                    var req = new HttpRequestMessage(HttpMethod.Post, ProviderConstants.Msg91.SendEmail)
                     {
                         Content = JsonContent.Create(payload)
                     };
@@ -100,16 +97,12 @@ namespace SmsApi.Messaging.Providers.Msg91
                 _logger.LogError(ex,
                     "MSG91 email failed for {Dest} school={School} branch={Branch}",
                     request.Destination, schoolId, branchId);
-                return ChannelMessageResult.Failure(Channel, ex.Message,
-                    HttpStatusCode.InternalServerError);
+                return ChannelMessageResult.Failure(Channel, ex.Message, HttpStatusCode.InternalServerError);
             }
         }
 
-        // ── Payload builder ──────────────────────────────────────────────────
-
         private static Msg91EmailPayload BuildPayload(Msg91EmailConfig config, ChannelMessageRequest request)
         {
-            // Merge CustomAttributes + positional params into variables dict
             var variables = new Dictionary<string, string>(request.CustomAttributes);
             for (var i = 0; i < request.TemplateParameters.Count; i++)
                 variables[$"var{i + 1}"] = request.TemplateParameters[i];

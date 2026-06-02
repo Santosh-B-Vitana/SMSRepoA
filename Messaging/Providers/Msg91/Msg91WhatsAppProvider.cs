@@ -12,19 +12,19 @@ namespace SmsApi.Messaging.Providers.Msg91
     /// <summary>
     /// Sends WhatsApp template messages via MSG91 outbound bulk API v5.
     /// Endpoint: POST https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/
-    /// Headers:  authkey: {branch.AuthKey}
+    /// Auth:     authkey header per request.
+    ///
+    /// Ecosystem: Msg91.
     ///
     /// Supports optional media attachment via Base64-encoded document streaming.
-    /// If request.MediaUrl is a base64 string (starts with "data:"), it is embedded directly.
+    /// If request.MediaUrl starts with "data:", it is embedded as Base64.
     /// If it is an HTTPS URL, it is passed as a remote link.
     /// </summary>
     public sealed class Msg91WhatsAppProvider : IChannelProvider
     {
         public CommunicationChannel Channel => CommunicationChannel.WhatsApp;
 
-        private const string ClientName = "Msg91";
-        private const string ApiPath    = "api/v5/whatsapp/whatsapp-outbound-message/bulk/";
-
+        private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
         private readonly IHttpClientFactory _httpFactory;
         private readonly ISchoolBranchContext _branchCtx;
         private readonly ISchoolBranchConfigResolver _resolver;
@@ -40,13 +40,13 @@ namespace SmsApi.Messaging.Providers.Msg91
             _branchCtx   = branchCtx;
             _resolver    = resolver;
             _logger      = logger;
+            _retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(logger);
         }
 
         public async Task<ChannelMessageResult> SendAsync(
             ChannelMessageRequest request,
             CancellationToken cancellationToken = default)
         {
-            // ── Tenant isolation guard ───────────────────────────────────────
             if (!_branchCtx.TryGetSchoolId(out var schoolId))
                 return ChannelMessageResult.Failure(Channel,
                     "No active school context — cannot resolve MSG91 WhatsApp credentials.",
@@ -65,17 +65,14 @@ namespace SmsApi.Messaging.Providers.Msg91
                     HttpStatusCode.UnprocessableEntity);
             }
 
-            // ── Build payload ────────────────────────────────────────────────
             var payload = BuildPayload(config, request);
 
-            // ── Send with Polly retry ────────────────────────────────────────
-            var retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(_logger);
             try
             {
-                var response = await retryPolicy.ExecuteAsync(async () =>
+                var response = await _retryPolicy.ExecuteAsync(async () =>
                 {
-                    var client = _httpFactory.CreateClient(ClientName);
-                    var req = new HttpRequestMessage(HttpMethod.Post, ApiPath)
+                    var client = _httpFactory.CreateClient(ProviderConstants.Msg91.ClientName);
+                    var req = new HttpRequestMessage(HttpMethod.Post, ProviderConstants.Msg91.SendWhatsApp)
                     {
                         Content = JsonContent.Create(payload)
                     };
@@ -104,17 +101,14 @@ namespace SmsApi.Messaging.Providers.Msg91
                 _logger.LogError(ex,
                     "MSG91 WhatsApp failed for {Dest} school={School} branch={Branch}",
                     request.Destination, schoolId, branchId);
-                return ChannelMessageResult.Failure(Channel, ex.Message,
-                    HttpStatusCode.InternalServerError);
+                return ChannelMessageResult.Failure(Channel, ex.Message, HttpStatusCode.InternalServerError);
             }
         }
 
-        // ── Payload builder ──────────────────────────────────────────────────
-
         private static Msg91WaPayload BuildPayload(Msg91WhatsAppConfig config, ChannelMessageRequest request)
         {
-            // Body parameters from TemplateParameters
             var bodyComponents = new List<Msg91WaComponent>();
+
             if (request.TemplateParameters.Count > 0)
             {
                 bodyComponents.Add(new Msg91WaComponent
@@ -126,7 +120,6 @@ namespace SmsApi.Messaging.Providers.Msg91
                 });
             }
 
-            // Header media component (document/image) when MediaUrl is provided
             if (!string.IsNullOrWhiteSpace(request.MediaUrl))
             {
                 var doc = new Msg91WaDocument
@@ -135,8 +128,7 @@ namespace SmsApi.Messaging.Providers.Msg91
                     Caption  = string.Empty
                 };
 
-                // Base64 inline stream vs remote URL
-                if (request.MediaUrl!.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                if (request.MediaUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
                     doc.Base64 = request.MediaUrl;
                 else
                     doc.Link = request.MediaUrl;
@@ -259,7 +251,6 @@ namespace SmsApi.Messaging.Providers.Msg91
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Link { get; set; }
 
-        /// <summary>Full base64 data URI for inline document streaming, e.g. "data:application/pdf;base64,..."</summary>
         [JsonPropertyName("base64")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Base64 { get; set; }

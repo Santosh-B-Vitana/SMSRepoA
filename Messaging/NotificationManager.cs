@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace SmsApi.Messaging;
 
 /// <summary>
-/// Routes each requested channel to its registered <see cref="IChannelProvider"/>.
+/// Routes each requested channel to its registered IChannelProvider.
 /// One provider is registered per channel; swap providers in DI without touching this class.
 /// Dispatches all requested channels concurrently via Task.WhenAll.
 /// </summary>
@@ -46,7 +46,7 @@ public sealed class NotificationManager : IChannelNotificationManager
             _providers.TryGetValue(channel, out var provider)
                 ? provider.SendAsync(request, cancellationToken)
                 : Task.FromResult(ChannelMessageResult.Failure(channel,
-                    $"No provider registered for channel {channel}.",
+                    $"No provider registered for channel '{channel}'.",
                     HttpStatusCode.NotImplemented)));
 
         return await Task.WhenAll(tasks);

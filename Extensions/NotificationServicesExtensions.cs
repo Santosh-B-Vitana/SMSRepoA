@@ -1,6 +1,7 @@
 using SmsApi.Infrastructure.TenantConfig;
 using SmsApi.Messaging;
 using SmsApi.Messaging.Providers.Msg91;
+using SmsApi.Messaging.Providers.SmsStriker;
 using SmsApi.Services;
 using SmsApi.Services.Messaging;
 
@@ -9,18 +10,17 @@ namespace SmsApi.Extensions;
 /// <summary>
 /// Registers the outbound channel messaging engine.
 ///
-/// Active provider: MSG91 (SMS + WhatsApp + Email).
+/// ── Active stack ─────────────────────────────────────────────────────────
+/// Currently: MSG91 (SMS + WhatsApp + Email).
 ///
-/// To switch providers, replace the three AddScoped lines below with the
-/// alternative implementations — no other code changes are required:
+/// ── To switch to SmsStriker / Office24by7 ────────────────────────────────
+/// 1. Comment out the three MSG91 AddScoped lines.
+/// 2. Uncomment the two SmsStriker/Office24by7 AddScoped lines.
+/// 3. Populate the sms / email credential blocks in tenant-configs.json.
 ///
-///   SMS     : SmsStrikerSmsProvider    (Messaging/Providers/SmsStriker/)
-///   Email   : Office24by7EmailProvider (Messaging/Providers/Office24by7/)
-///   WhatsApp: (implement IChannelProvider with Channel = WhatsApp)
-///
-/// All providers read per-branch credentials from tenant-configs.json via
-/// ISchoolBranchConfigResolver. Add the branch credential block to that
-/// file for whichever provider you activate.
+/// All HTTP clients (MSG91, SmsStriker, Office24by7) are always registered
+/// so switching never requires adding a new AddHttpClient call.
+/// ─────────────────────────────────────────────────────────────────────────
 /// </summary>
 public static class NotificationServicesExtensions
 {
@@ -28,35 +28,54 @@ public static class NotificationServicesExtensions
         this IServiceCollection services,
         IWebHostEnvironment environment)
     {
-        // ── In-process cache for branch credential resolution ──────────────
+        // ── In-process cache for credential resolution ────────────────────────
         services.AddMemoryCache();
 
         // ── Branch context (SchoolId + BranchId from JWT / X-Branch-Id header) ─
         services.AddScoped<ISchoolBranchContext, SchoolBranchContextAccessor>();
 
-        // ── Config resolver (tenant-configs.json → IMemoryCache, 30-min TTL) ─
-        // Singleton: JSON tree is immutable at runtime. Replace with a
-        // DbContext-backed implementation here when the DB schema is finalised.
+        // ── Config resolver (tenant-configs.json → IMemoryCache, 30-min TTL) ──
         services.AddSingleton<ISchoolBranchConfigResolver, SchoolBranchConfigResolver>();
 
-        // ── MSG91 HttpClient ───────────────────────────────────────────────
-        // Auth key is injected per-request inside each provider — never here.
-        services.AddHttpClient("Msg91", client =>
+        // ── HTTP clients ──────────────────────────────────────────────────────
+        // All three are always registered so switching providers is a one-line swap.
+        // Auth credentials are injected per-request inside each provider, never here.
+        services.AddHttpClient(ProviderConstants.Msg91.ClientName, client =>
         {
-            client.BaseAddress = new Uri("https://api.msg91.com/");
+            client.BaseAddress = new Uri(ProviderConstants.Msg91.BaseUrl);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
             client.Timeout = TimeSpan.FromSeconds(25);
         });
 
-        // ── Active channel providers (MSG91) ──────────────────────────────
+        services.AddHttpClient(ProviderConstants.SmsStriker.ClientName, client =>
+        {
+            client.BaseAddress = new Uri(ProviderConstants.SmsStriker.BaseUrl);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            client.Timeout = TimeSpan.FromSeconds(25);
+        });
+
+        services.AddHttpClient(ProviderConstants.Office24by7.ClientName, client =>
+        {
+            client.BaseAddress = new Uri(ProviderConstants.Office24by7.BaseUrl);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            client.Timeout = TimeSpan.FromSeconds(25);
+        });
+
+        // ── Active providers ──────────────────────────────────────────────────
+
+        // Ecosystem B — MSG91 (currently active)
         services.AddScoped<IChannelProvider, Msg91SmsProvider>();
         services.AddScoped<IChannelProvider, Msg91WhatsAppProvider>();
         services.AddScoped<IChannelProvider, Msg91EmailProvider>();
 
-        // ── Orchestrator ───────────────────────────────────────────────────
+        // Ecosystem A — SmsStriker + Office24by7 (uncomment to activate instead of MSG91)
+        // services.AddScoped<IChannelProvider, SmsStrikerSmsProvider>();
+        // services.AddScoped<IChannelProvider, Office24by7EmailProvider>();
+
+        // ── Orchestrator ──────────────────────────────────────────────────────
         services.AddScoped<IChannelNotificationManager, NotificationManager>();
 
-        // ── Audit log service (writes to existing AuditLogs table) ─────────
+        // ── Audit log service ─────────────────────────────────────────────────
         services.AddScoped<INotificationLogService, NotificationLogService>();
 
         return services;
