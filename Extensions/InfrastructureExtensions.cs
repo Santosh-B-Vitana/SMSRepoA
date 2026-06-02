@@ -41,10 +41,12 @@ public static class InfrastructureExtensions
     /// Health checks: provider-agnostic DB + Redis (if configured) + self.
     /// Uses EF Core's CanConnectAsync — works with PostgreSQL and SQL Server.
     /// Endpoints: /health, /health/live, /health/ready
+    /// Note: Health Checks UI dashboard is disabled on production (unnecessary overhead on IIS).
     /// </summary>
     public static IServiceCollection AddHealthCheckInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
         var hcBuilder = services.AddHealthChecks()
             .AddDatabaseHealthCheck()   // provider-agnostic via EF Core CanConnectAsync
@@ -61,13 +63,16 @@ public static class InfrastructureExtensions
                 tags: new[] { "cache", "redis", "ready" });
         }
 
-        // Health UI (optional — only useful when running Seq/Grafana in same host)
-        services.AddHealthChecksUI(setup =>
+        // Health Checks UI dashboard — only register in development (overhead on IIS)
+        if (environment.IsDevelopment())
         {
-            setup.AddHealthCheckEndpoint("API", "/health");
-            setup.SetEvaluationTimeInSeconds(60);
-            setup.MaximumHistoryEntriesPerEndpoint(50);
-        }).AddInMemoryStorage();
+            services.AddHealthChecksUI(setup =>
+            {
+                setup.AddHealthCheckEndpoint("API", "/health");
+                setup.SetEvaluationTimeInSeconds(60);
+                setup.MaximumHistoryEntriesPerEndpoint(50);
+            }).AddInMemoryStorage();
+        }
 
         return services;
     }

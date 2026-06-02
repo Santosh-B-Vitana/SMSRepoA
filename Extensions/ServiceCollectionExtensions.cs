@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -65,6 +66,36 @@ public static class ServiceCollectionExtensions
                 options.RedirectStatusCode = StatusCodes.Status308PermanentRedirect;
                 options.HttpsPort = 443;
             });
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Configure Data Protection for IIS/production environments.
+    /// On IIS, the app pool typically lacks access to HKLM registry and user profile.
+    /// This method configures file-based key storage and disables isolation policies
+    /// to prevent ephemeral key warnings.
+    /// </summary>
+    public static IServiceCollection ConfigureDataProtection(
+        this IServiceCollection services,
+        IHostEnvironment environment,
+        IConfiguration configuration)
+    {
+        var dataProtectionBuilder = services.AddDataProtection();
+
+        if (!environment.IsDevelopment())
+        {
+            // Use file-based storage for encryption keys on production/IIS
+            // Keys are stored in a persistent location that survives app restarts
+            var keyStoragePath = configuration["DataProtection:KeyStoragePath"]
+                ?? Path.Combine(Directory.GetCurrentDirectory(), "keys");
+
+            if (!Directory.Exists(keyStoragePath))
+                Directory.CreateDirectory(keyStoragePath);
+
+            dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keyStoragePath));
+            Serilog.Log.Information("Data Protection: keys will be persisted to {Path}", keyStoragePath);
         }
 
         return services;

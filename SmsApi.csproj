@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -9,6 +9,11 @@
     <!-- ASP0019/SYSLIB0023: Framework-level warnings, not our code -->
     <!-- CS8601/CS8602/CS8604/CS8619: NULL-SAFETY WARNINGS — DO NOT SUPPRESS; fix these -->
     <NoWarn>CS8618;CS0168;CS1998;CS0219;ASP0019;SYSLIB0023</NoWarn>
+    
+    <!-- Publish optimization: trim satellite assemblies and unnecessary folders -->
+    <TrimUnusedMetadata>true</TrimUnusedMetadata>
+    <SelfContained>false</SelfContained>
+    <UserSecretsId>16e279b4-a907-4b06-b626-63a5ce90ec6f</UserSecretsId>
   </PropertyGroup>
 
   <!-- Exclude integration test projects so the main project doesn't glob their .cs files -->
@@ -105,6 +110,14 @@
     <None Remove="SmsApi.IntegrationTests\**\*" />
     <None Remove="artifacts\**\*" />
     <Content Remove="artifacts\**\*" />
+    
+    <!-- Exclude unnecessary folders and environment-specific config files from publish -->
+    <None Remove="ui\**\*" />
+    <None Remove="publish\**\*" />
+    <Content Remove="appsettings.Production.json" />
+    
+    <!-- Trim satellite assemblies (localization resources) to reduce publish size -->
+    <TrimmerRootAssembly Include="SmsApi" />
   </ItemGroup>
 
 </Project>

@@ -76,6 +76,12 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
     serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(120);
 });
+
+// ── Data Protection: configure for IIS/production environments ──────────────
+// On IIS, the app pool typically lacks access to HKLM registry and user profile.
+// Use file-based key storage in a shared folder instead.
+builder.Services.ConfigureDataProtection(builder.Environment, builder.Configuration);
+
 // Configure configuration sources - IMPORTANT: Load from environment variables for production secrets
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
@@ -111,7 +117,7 @@ builder.Services.AddCachingInfrastructure(builder.Configuration);
 builder.Services.AddMemoryCache();
 
 // ── Health checks (provider-agnostic EF Core CanConnectAsync + Redis) ────────────
-builder.Services.AddHealthCheckInfrastructure(builder.Configuration);
+builder.Services.AddHealthCheckInfrastructure(builder.Configuration, builder.Environment);
 
 // ── OpenTelemetry distributed tracing + metrics ───────────────────────────────────
 builder.Services.AddObservability(builder.Configuration, builder.Environment);
@@ -138,22 +144,27 @@ builder.Services.AddAuthorizationPolicies();
 
 var app = builder.Build();
 
-// ── Ensure DB schema is up to date before seeding ─────────────────────────
-await ApplyDatabaseMigrationsAsync(app);
+if(app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
 
-// ── Startup seeding: ensure school + admin user exist ──────────────────────
-/*await SeedEssentialDataAsync(app);*/
+    // ── Ensure DB schema is up to date before seeding ─────────────────────────
+    await ApplyDatabaseMigrationsAsync(app);
 
-// ── Test data seeding: students, staff, parents, fees, transport, exams ────
-/*await SeedTestDataAsync(app);*/
+    // ── Startup seeding: ensure school + admin user exist ──────────────────────
+    await SeedEssentialDataAsync(app);
 
-// ── Backfill: assign system roles to existing staff logins that have none ──
-/*{
-    using var scope = app.Services.CreateScope();
-    var staffSvc = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IStaffService>();
-    var demoSchoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
-    await staffSvc.BulkAutoAssignRolesAsync(demoSchoolId);
-}*/
+    // ── Test data seeding: students, staff, parents, fees, transport, exams ────
+    await SeedTestDataAsync(app);
+
+    // ── Backfill: assign system roles to existing staff logins that have none ──
+    {
+        using var scope = app.Services.CreateScope();
+        var staffSvc = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IStaffService>();
+        var demoSchoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+        await staffSvc.BulkAutoAssignRolesAsync(demoSchoolId);
+    }
+}
 
 // Performance monitoring (logs slow requests > 500ms, SLA breach > 2000ms)
 app.UsePerformanceMonitoring();
@@ -211,11 +222,11 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 // HSTS: tell browsers to always use HTTPS (production only — skip in dev/test)
-if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+/*if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
 {
     app.UseHttpsRedirection();
     app.UseHsts();
-}
+}*/
 
 // Rate limiting
 app.UseRateLimiter();

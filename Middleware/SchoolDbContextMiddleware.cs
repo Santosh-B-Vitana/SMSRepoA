@@ -50,12 +50,13 @@ public class SchoolDbContextMiddleware
             }
             else
             {
-                _logger.LogWarning("SchoolDbContext: no active SchoolConfig found for domain {Host}", host);
-                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync(
-                    "{\"message\":\"School not found or inactive for this domain. Contact support.\"}");
-                return;
+                // No CRM entry for this domain — log a warning and continue.
+                // The per-request connection string resolver falls back to the
+                // credential template from appsettings, which is the correct
+                // behaviour for single-school IIS deployments.
+                _logger.LogWarning(
+                    "SchoolDbContext: no active SchoolConfig found for domain {Host}; "
+                    + "falling back to default connection string.", host);
             }
         }
 
