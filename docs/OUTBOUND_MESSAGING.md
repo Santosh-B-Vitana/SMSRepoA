@@ -1,19 +1,20 @@
-# Outbound Messaging — MSG91 (SMS · WhatsApp · Email)
+# Outbound Messaging — SMS · WhatsApp · Email
 
-**Last Updated:** June 1, 2026 | **Version:** 2.0.0 | **Project:** SMSRepoA  
-**Provider:** [MSG91](https://msg91.com) | **Base URL:** `https://api.msg91.com/api/v5/`
+**Last Updated:** June 2, 2026 | **Version:** 3.0.0 | **Project:** SMSRepoA
 
 ---
 
 ## Index
 
 - [Overview](#overview)
+- [Provider Ecosystems](#provider-ecosystems)
 - [Architecture](#architecture)
 - [Configuration](#configuration)
   - [tenant-configs.json schema](#tenant-configsjson-schema)
   - [Branch credential resolution](#branch-credential-resolution)
+  - [Branch context resolution](#branch-context-resolution)
   - [Switching providers](#switching-providers)
-- [MSG91 API endpoints used](#msg91-api-endpoints-used)
+- [API endpoints reference](#api-endpoints-reference)
 - [Sending Messages (HTTP API)](#sending-messages-http-api)
   - [Generic dispatch](#1-generic-dispatch)
   - [User registration example](#2-user-registration-otp--welcome-kit)
@@ -24,16 +25,19 @@
   - [Single channel](#single-channel)
   - [Passing branch context](#passing-branch-context)
 - [Audit logging](#audit-logging)
-- [Adding or swapping a provider](#adding-or-swapping-a-provider)
+- [Adding a new provider](#adding-a-new-provider)
 - [Error handling](#error-handling)
 
 ---
 
 ## Overview
 
-The outbound messaging engine routes SMS, WhatsApp, and Email through MSG91's v5 API.
-Credentials are resolved **per school and per branch** from `tenant-configs.json` at runtime —
-nothing is hardcoded in `appsettings.json`.
+The outbound messaging engine routes SMS, WhatsApp, and Email through external provider APIs.
+Two provider ecosystems are implemented. Only one is active at a time — switching is a
+three-line code change with no HTTP client or infrastructure work required.
+
+Credentials are resolved **per school and per branch** from `tenant-configs.json` at runtime.
+Nothing is hardcoded in `appsettings.json`.
 
 All channels in a single request fire **concurrently** via `Task.WhenAll`.
 
@@ -41,8 +45,20 @@ All channels in a single request fire **concurrently** via `Task.WhenAll`.
 - HTTP transport and `IHttpClientFactory` lifecycle
 - Per-branch credential lookup and caching
 - Polly retry logic (3 exponential retries: 2 s, 4 s, 8 s + jitter)
-- MSG91 payload construction (template components, Base64 media, variable mapping)
+- Provider-specific payload construction
 - Audit writes to `AuditLogs`
+
+---
+
+## Provider Ecosystems
+
+| Ecosystem | SMS | WhatsApp | Email | Config keys |
+|-----------|-----|----------|-------|-------------|
+| **Ecosystem B — MSG91** *(active)* | `Msg91SmsProvider` | `Msg91WhatsAppProvider` | `Msg91EmailProvider` | `msg91Sms`, `msg91WhatsApp`, `msg91Email` |
+| **Ecosystem A — SmsStriker / Office24by7** | `SmsStrikerSmsProvider` | *(not yet implemented)* | `Office24by7EmailProvider` | `sms`, `email` |
+
+**Active ecosystem is set in code** (`NotificationServicesExtensions.cs`), not in config.
+See [Switching providers](#switching-providers).
 
 ---
 
@@ -62,9 +78,36 @@ ISchoolBranchConfigResolver   reads tenant-configs.json → IMemoryCache (30-min
 IChannelNotificationManager   single inject point for controllers and services
         │
         │  routes by CommunicationChannel enum
-        ├──► Msg91SmsProvider      → POST api.msg91.com/api/v5/flow/
-        ├──► Msg91WhatsAppProvider → POST api.msg91.com/api/v5/whatsapp/...
-        └──► Msg91EmailProvider    → POST api.msg91.com/api/v5/email/send
+        │
+        │  ── Ecosystem B (MSG91, currently active) ─────────────────────────
+        ├──► Msg91SmsProvider      → POST https://api.msg91.com/api/v5/flow/
+        ├──► Msg91WhatsAppProvider → POST https://api.msg91.com/api/v5/whatsapp/...
+        └──► Msg91EmailProvider    → POST https://api.msg91.com/api/v5/email/send
+        │
+        │  ── Ecosystem A (SmsStriker / Office24by7, inactive) ───────────────
+        ├──► SmsStrikerSmsProvider    → POST https://www.smsstriker.com/API/sendsmsapi.php
+        └──► Office24by7EmailProvider → POST https://apis.office24by7.com/getgenericsp
+```
+
+**Source layout:**
+
+```
+Messaging/
+  ProviderConstants.cs          ← all base URLs and API paths
+  IChannelProvider.cs
+  IChannelNotificationManager.cs
+  NotificationManager.cs
+  ChannelMessageRequest.cs
+  ChannelMessageResult.cs
+  CommunicationChannel.cs
+  Providers/
+    Msg91/
+      Msg91SmsProvider.cs
+      Msg91WhatsAppProvider.cs
+      Msg91EmailProvider.cs
+    SmsStriker/
+      SmsStrikerSmsProvider.cs
+      Office24by7EmailProvider.cs   ← Office24by7 email lives in SmsStriker folder
 ```
 
 **Key types:**
@@ -73,7 +116,7 @@ IChannelNotificationManager   single inject point for controllers and services
 |------|-----------|---------|
 | `CommunicationChannel` | `SmsApi.Messaging` | Enum: `WhatsApp`, `Sms`, `Email`, `Push` |
 | `ChannelMessageRequest` | `SmsApi.Messaging` | Provider-agnostic outbound request |
-| `ChannelMessageResult` | `SmsApi.Messaging` | Per-channel result with `IsSuccess`, `MessageId`, `ErrorMessage` |
+| `ChannelMessageResult` | `SmsApi.Messaging` | Per-channel result: `IsSuccess`, `MessageId`, `ErrorMessage` |
 | `IChannelProvider` | `SmsApi.Messaging` | Contract each provider implements (`Channel` + `SendAsync`) |
 | `IChannelNotificationManager` | `SmsApi.Messaging` | **Inject this** in your code |
 | `ISchoolBranchContext` | `SmsApi.Services` | BranchId from JWT / `X-Branch-Id` header |
@@ -87,9 +130,17 @@ IChannelNotificationManager   single inject point for controllers and services
 ### `tenant-configs.json`
 
 Place this file in the **project root** alongside `appsettings.json`.
-It is read once at startup by `SchoolBranchConfigResolver` via `IWebHostEnvironment.ContentRootPath`.
+Read once at startup by `SchoolBranchConfigResolver` via `IWebHostEnvironment.ContentRootPath`.
 
-**Schema:**
+Both ecosystem credential blocks (`msg91*` and `sms`/`email`) can coexist in the same file.
+The active ecosystem is determined by which providers are registered in code — unused
+credential blocks are simply ignored at runtime.
+
+> **Never commit live API keys.** Replace the `REPLACE_WITH_*` placeholder strings with
+> real values via a secrets manager or environment-variable substitution in CI/CD before
+> the file is written to the server.
+
+**Full schema (both ecosystems):**
 
 ```json
 {
@@ -98,27 +149,45 @@ It is read once at startup by `SchoolBranchConfigResolver` via `IWebHostEnvironm
       "schoolId": "<uuid>",
       "schoolName": "Vitana International School",
       "defaults": {
+
+        "── Ecosystem A: SmsStriker + Office24by7 ──────────────────────────": "",
+        "sms": {
+          "provider": "SmsStriker",
+          "apiKey": "REPLACE_WITH_SMSSTRIKER_API_KEY",
+          "senderId": "VITANA",
+          "smsType": "1",
+          "isEnabled": true
+        },
+        "email": {
+          "provider": "Office24by7",
+          "userAuthToken": "REPLACE_WITH_OFFICE24BY7_AUTH_TOKEN",
+          "fromEmail": "noreply@vitana.edu",
+          "templateId": "REPLACE_WITH_OFFICE24BY7_TEMPLATE_ID",
+          "isEnabled": true
+        },
+
+        "── Ecosystem B: MSG91 ─────────────────────────────────────────────": "",
         "msg91Sms": {
           "provider": "Msg91",
-          "authKey": "SCHOOL_AUTH_KEY",
-          "templateId": "TEMPLATE_ID",
+          "authKey": "REPLACE_WITH_MSG91_AUTH_KEY",
+          "templateId": "REPLACE_WITH_MSG91_SMS_FLOW_ID",
           "senderId": "VITANA",
-          "dltEntityId": "DLT_ENTITY_ID",
+          "dltEntityId": "REPLACE_WITH_DLT_ENTITY_ID",
           "isEnabled": true
         },
         "msg91WhatsApp": {
           "provider": "Msg91",
-          "authKey": "SCHOOL_AUTH_KEY",
-          "integratedNumber": "+911234567890",
+          "authKey": "REPLACE_WITH_MSG91_AUTH_KEY",
+          "integratedNumber": "+91XXXXXXXXXX",
           "isEnabled": true
         },
         "msg91Email": {
           "provider": "Msg91",
-          "authKey": "SCHOOL_AUTH_KEY",
+          "authKey": "REPLACE_WITH_MSG91_AUTH_KEY",
           "domain": "mail.vitana.edu",
           "fromEmail": "noreply@vitana.edu",
           "fromName": "Vitana International School",
-          "templateId": "EMAIL_TEMPLATE_ID",
+          "templateId": "REPLACE_WITH_MSG91_EMAIL_TEMPLATE_ID",
           "isEnabled": true
         }
       },
@@ -133,10 +202,11 @@ It is read once at startup by `SchoolBranchConfigResolver` via `IWebHostEnvironm
           "branchName": "North Campus",
           "useSchoolDefaults": false,
           "msg91Sms": {
-            "authKey": "NORTH_AUTH_KEY",
-            "templateId": "NORTH_TEMPLATE_ID",
+            "provider": "Msg91",
+            "authKey": "REPLACE_WITH_NORTH_MSG91_AUTH_KEY",
+            "templateId": "REPLACE_WITH_NORTH_MSG91_SMS_FLOW_ID",
             "senderId": "NORTHVIT",
-            "dltEntityId": "NORTH_DLT_ENTITY_ID",
+            "dltEntityId": "REPLACE_WITH_NORTH_DLT_ENTITY_ID",
             "isEnabled": true
           }
         }
@@ -146,23 +216,72 @@ It is read once at startup by `SchoolBranchConfigResolver` via `IWebHostEnvironm
 }
 ```
 
-> **Never commit live API keys.** Use placeholder strings during development and inject real values
-> via a secrets manager or environment variable substitution in CI/CD before the file is written
-> to disk on the server.
+> Note: the comment-style keys (`"── Ecosystem A: ..."`) are shown for readability only.
+> Remove them from your actual file — JSON parsers may reject keys with duplicate prefixes.
+
+#### Ecosystem A credential fields
+
+**`sms` block — SmsStriker:**
+
+| Field | Description |
+|-------|-------------|
+| `apiKey` | Authentication key from SMS Striker dashboard |
+| `senderId` | DLT-approved alphanumeric sender ID (max 6 chars for India) |
+| `smsType` | `"1"` = Transactional, `"2"` = Promotional |
+
+**`email` block — Office24by7:**
+
+| Field | Description |
+|-------|-------------|
+| `userAuthToken` | Auth token from Office24by7 user panel |
+| `fromEmail` | Verified sender email address |
+| `templateId` | Template ID configured in the Office24by7 platform |
+
+#### Ecosystem B credential fields
+
+**`msg91Sms` block:**
+
+| Field | Description |
+|-------|-------------|
+| `authKey` | MSG91 auth key (sent as `authkey` request header) |
+| `templateId` | MSG91 Flow ID for the DLT-approved SMS template |
+| `senderId` | DLT-registered 6-char sender ID |
+| `dltEntityId` | Entity ID registered with TRAI |
+
+**`msg91WhatsApp` block:**
+
+| Field | Description |
+|-------|-------------|
+| `authKey` | MSG91 auth key |
+| `integratedNumber` | Activated WABA number in E.164 format (e.g. `+91XXXXXXXXXX`) |
+
+**`msg91Email` block:**
+
+| Field | Description |
+|-------|-------------|
+| `authKey` | MSG91 auth key |
+| `domain` | MSG91 verified sending domain (e.g. `mail.school.edu`) |
+| `fromEmail` | Sender email address |
+| `fromName` | Display name shown to the recipient |
+| `templateId` | MSG91 transactional email template ID |
+
+---
 
 ### Branch credential resolution
 
 The resolver applies this fallback chain for every send:
 
 ```
-1. BranchId == Guid.Empty           → use school defaults directly
-2. Branch found, useSchoolDefaults  → use school defaults
-3. Branch found, channel config set → use branch-level config
-4. Branch found, channel config null→ fall back to school defaults
-5. School not found                 → return null → provider short-circuits (422)
+1. BranchId == Guid.Empty            → use school defaults directly
+2. Branch found, useSchoolDefaults   → use school defaults
+3. Branch found, channel config set  → use branch-level config
+4. Branch found, channel config null → fall back to school defaults silently
+5. School not found                  → return null → provider short-circuits (422)
 ```
 
 Cache key: `cfg:{schoolId}:{branchId}:{channel}` — TTL 30 minutes, in-process `IMemoryCache`.
+
+---
 
 ### Branch context resolution
 
@@ -172,56 +291,82 @@ Cache key: `cfg:{schoolId}:{branchId}:{channel}` — TTL 30 minutes, in-process 
 2. Request header `X-Branch-Id` (admin portal branch-switcher)
 3. `Guid.Empty` — school-level defaults are used
 
-Callers should also pass `schoolId` and `branchId` in `CustomAttributes` for the audit log:
-
-```csharp
-customAttributes: new Dictionary<string, string>
-{
-    ["schoolId"] = schoolId.ToString(),
-    ["branchId"] = branchId.ToString(),
-    ["userId"]   = userId.ToString()
-}
-```
+---
 
 ### Switching providers
 
-The active providers are the **only thing that needs changing**.
-Open `Extensions/NotificationServicesExtensions.cs` and swap these three lines:
+Open `Extensions/NotificationServicesExtensions.cs`. The relevant section:
 
 ```csharp
-// Active (MSG91)
+// Ecosystem B — MSG91 (currently active)
 services.AddScoped<IChannelProvider, Msg91SmsProvider>();
 services.AddScoped<IChannelProvider, Msg91WhatsAppProvider>();
 services.AddScoped<IChannelProvider, Msg91EmailProvider>();
 
-// Alternatives (dead code — providers exist, just not registered)
-// services.AddScoped<IChannelProvider, SmsStrikerSmsProvider>();     // SMS Striker
-// services.AddScoped<IChannelProvider, Office24by7EmailProvider>();  // Office24by7 Email
+// Ecosystem A — SmsStriker + Office24by7 (uncomment to activate instead of MSG91)
+// services.AddScoped<IChannelProvider, SmsStrikerSmsProvider>();
+// services.AddScoped<IChannelProvider, Office24by7EmailProvider>();
 ```
 
-Also register the corresponding `HttpClient` and add the branch's credential block to
-`tenant-configs.json`. No other code changes are required.
+**To switch to SmsStriker / Office24by7:**
+1. Comment out the three MSG91 `AddScoped` lines.
+2. Uncomment the two SmsStriker / Office24by7 `AddScoped` lines.
+3. Fill in the `sms` and `email` credential blocks in `tenant-configs.json`.
+
+No `AddHttpClient` changes are needed — all three HTTP clients (`Msg91`, `SmsStriker`,
+`Office24by7`) are always registered regardless of which providers are active.
+
+> Note: Ecosystem A has no WhatsApp provider yet. Dispatching `"WhatsApp"` while Ecosystem A
+> is active returns `statusCode: 501` for that channel; SMS and Email proceed normally.
 
 ---
 
-## MSG91 API endpoints used
+## API endpoints reference
+
+### Ecosystem B — MSG91
 
 | Channel | Method | Endpoint |
-|---------|--------|---------|
+|---------|--------|----------|
 | SMS | `POST` | `https://api.msg91.com/api/v5/flow/` |
 | WhatsApp | `POST` | `https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/` |
 | Email | `POST` | `https://api.msg91.com/api/v5/email/send` |
 
-Auth is via `authkey` request header (per-branch, resolved at call time).
-No credentials appear in the `AddHttpClient` registration.
+Auth: `authkey` request header (per-branch, resolved at call time — never in `AddHttpClient`).
 
-**SMS variable substitution** — `TemplateParameters[0]` → `var1`, `[1]` → `var2`, etc. (via `JsonExtensionData` on the recipient object).
+### Ecosystem A — SmsStriker / Office24by7
 
-**WhatsApp media** — `MediaUrl` can be either:
-- An `https://` remote URL (passed as `document.link`)
-- A Base64 data URI starting with `data:` (passed as `document.base64` for inline streaming)
+| Channel | Method | Endpoint |
+|---------|--------|----------|
+| SMS | `POST` | `https://www.smsstriker.com/API/sendsmsapi.php` |
+| Email | `POST` | `https://apis.office24by7.com/getgenericsp` |
 
-**Email variables** — merged from `CustomAttributes` + positional `TemplateParameters` (`param1`, `param2`, …) into the MSG91 `variables` object.
+Auth: SMS Striker uses `key` in the JSON body. Office24by7 uses `user_auth_token` in the
+JSON body. Both resolved from `tenant-configs.json` at call time.
+
+---
+
+### Variable / template parameter mapping
+
+**MSG91 SMS** — `TemplateParameters[0]` → `var1`, `[1]` → `var2`, etc.
+(Written as extension data on the recipient object via `[JsonExtensionData]`.)
+
+**MSG91 WhatsApp** — `TemplateParameters` map to WhatsApp template `body` components in order.
+`templateOrCampaignIdentifier` is the **WhatsApp template name** (e.g. `student_welcome_v1`).
+
+**MSG91 Email** — merged from `CustomAttributes` (named) + `TemplateParameters` (`param1`,
+`param2`, …) into the MSG91 `variables` object.
+
+**SMS Striker** — `TemplateParameters` substitute positional placeholders `{1}`, `{2}`, … in
+the DLT-approved template text. `templateOrCampaignIdentifier` is the full template string.
+
+**Office24by7 Email** — `templateOrCampaignIdentifier` is the email **subject**. Template
+variables are merged from `CustomAttributes` (named, matching `##key##` placeholders) +
+`TemplateParameters` (`param1`, `param2`, …) into `variables_data`. `templateId` comes from
+the branch credential config, not the request.
+
+**MSG91 WhatsApp media** — `MediaUrl` can be:
+- An `https://` remote URL → passed as `document.link`
+- A Base64 data URI starting with `data:` → passed as `document.base64` for inline streaming
 
 ---
 
@@ -236,7 +381,7 @@ Responses are wrapped by `ApiResponseWrapperMiddleware`:
 
 ### 1. Generic dispatch
 
-**`POST api/outbound-messaging/dispatch`**  
+**`POST api/outbound-messaging/dispatch`**
 Auth: any authenticated user
 
 **Request:**
@@ -257,7 +402,7 @@ Auth: any authenticated user
 }
 ```
 
-> `channels` accepts any combination of `"WhatsApp"`, `"Sms"`, `"Email"`, `"Push"` (case-insensitive).  
+> `channels` accepts any combination of `"WhatsApp"`, `"Sms"`, `"Email"`, `"Push"` (case-insensitive).
 > `mediaUrl` / `mediaFilename` are optional. Omitting them excludes the media component from the WhatsApp payload.
 
 **Response (200):**
@@ -269,15 +414,15 @@ Auth: any authenticated user
     "results": [
       { "channel": "Sms",      "isSuccess": true,  "messageId": "request_id_abc", "errorMessage": null, "statusCode": 200 },
       { "channel": "WhatsApp", "isSuccess": true,  "messageId": "message_id_xyz", "errorMessage": null, "statusCode": 200 },
-      { "channel": "Email",    "isSuccess": true,  "messageId": "msg_ref_123",    "errorMessage": null, "statusCode": 200 }
+      { "channel": "Email",    "isSuccess": true,  "messageId": "ok",             "errorMessage": null, "statusCode": 200 }
     ]
   }
 }
 ```
 
 > A `501 Not Implemented` result means no provider is registered for that channel.
-> A `422 Unprocessable Entity` result means no `tenant-configs.json` entry exists for
-> the active school/branch — the send was blocked before any HTTP call was made.
+> A `422 Unprocessable Entity` result means no `tenant-configs.json` entry exists for the
+> active school/branch — the send was blocked before any HTTP call was made.
 
 ---
 
@@ -285,7 +430,7 @@ Auth: any authenticated user
 
 Sends an OTP via SMS and a welcome document via WhatsApp **concurrently** in one call.
 
-**`POST api/outbound-messaging/user-registration`**  
+**`POST api/outbound-messaging/user-registration`**
 Auth: `Admin`, `Principal`, `SuperAdmin`
 
 **Request:**
@@ -302,11 +447,11 @@ Auth: `Admin`, `Principal`, `SuperAdmin`
 }
 ```
 
-> `smsTemplateIdentifier` is a MSG91 **Flow ID** (numeric string).  
-> `whatsAppTemplateIdentifier` is a MSG91 **WhatsApp template name** (e.g. `student_welcome_v1`).  
-> These are separate namespaces in the MSG91 platform — they cannot share the same value.
+> `smsTemplateIdentifier` is a MSG91 **Flow ID** (numeric string).
+> `whatsAppTemplateIdentifier` is a MSG91 **WhatsApp template name** (e.g. `student_welcome_v1`).
+> These are separate namespaces in the MSG91 platform and cannot share the same value.
 
-**Template parameters sent to MSG91 (positional, both channels):** `[fullName, otpCode, schoolName]` → `var1`, `var2`, `var3`
+**Template parameters sent to providers (both channels):** `[fullName, otpCode, schoolName]`
 
 **Response:** same `ChannelDispatchResponse` shape as `/dispatch`.
 
@@ -314,7 +459,7 @@ Auth: `Admin`, `Principal`, `SuperAdmin`
 
 ### 3. Query delivery logs
 
-**`GET api/outbound-messaging/logs`**  
+**`GET api/outbound-messaging/logs`**
 Auth: `Admin`, `Principal`, `SuperAdmin`
 
 | Query param | Type | Description |
@@ -357,24 +502,20 @@ public class FeeService
 var request = new ChannelMessageRequest(
     destination: guardian.PhoneNumber,
     recipientName: guardian.FullName,
-    templateOrCampaignIdentifier: "fee_overdue_alert",  // MSG91 template/flow ID
+    templateOrCampaignIdentifier: "fee_overdue_alert",  // MSG91 Flow ID or template name
     templateParameters: new List<string> { student.Name, fee.Amount.ToString("C"), fee.DueDate.ToString("dd-MMM-yyyy") },
     customAttributes: new Dictionary<string, string>
     {
         ["schoolId"] = schoolId.ToString(),
-        ["branchId"] = branchId.ToString(),
         ["userId"]   = actingUserId.ToString()
     },
-    mediaUrl: receiptUrl,      // optional — null omits WhatsApp media component
+    mediaUrl: receiptUrl,         // null omits the WhatsApp media component
     mediaFilename: "FeeReceipt.pdf",
     channels: new[] { CommunicationChannel.WhatsApp, CommunicationChannel.Sms }
 );
 
-// All channels fire concurrently
 var results = await _messaging.SendAsync(request, cancellationToken);
-
-// Audit all results — exceptions inside LogAsync never surface
-await Task.WhenAll(results.Select(r => _log.LogAsync(request, r, cancellationToken)));
+await _log.LogBatchAsync(request, results, cancellationToken);
 
 foreach (var result in results)
 {
@@ -399,14 +540,13 @@ var results = await _messaging.SendAsync(request);
 
 ### Passing branch context
 
-`ISchoolBranchContext` reads `BranchId` automatically from JWT or the `X-Branch-Id` header.
-Pass `schoolId` and `branchId` in `CustomAttributes` so the audit log captures them:
+`ISchoolBranchContext` reads `BranchId` automatically from the JWT or `X-Branch-Id` header.
+Pass `schoolId` and `userId` in `CustomAttributes` so the audit log captures them:
 
 ```csharp
 customAttributes: new Dictionary<string, string>
 {
     ["schoolId"] = schoolId.ToString(),
-    ["branchId"] = branchId.ToString(),
     ["userId"]   = currentUserId.ToString()
 }
 ```
@@ -420,11 +560,11 @@ Every send — success or failure — is written to the existing `AuditLogs` tab
 | `AuditLogs` column | Value written |
 |--------------------|---------------|
 | `HttpMethod` | `"POST"` |
-| `Path` | MSG91 endpoint path (e.g. `"api/v5/flow/"`) |
+| `Path` | `"outbound-messaging"` |
 | `QueryString` | Destination phone or email (for indexed lookup) |
 | `ActionType` | `"ChannelMessage_Sent"` or `"ChannelMessage_Failed"` |
 | `EntityType` | `"Sms"`, `"WhatsApp"`, `"Email"` |
-| `StatusCode` | HTTP status from MSG91 |
+| `StatusCode` | HTTP status returned by the provider |
 | `RequestBody` | JSON `{ destination, campaign, recipientName, templateParams, messageId }` |
 | `ExceptionMessage` | Provider error detail on failure |
 | `SchoolId` / `UserId` | Extracted from `CustomAttributes["schoolId"]` / `["userId"]` |
@@ -447,7 +587,7 @@ ORDER BY "Timestamp" DESC;
 
 -- Per-channel breakdown for a school
 SELECT "EntityType", COUNT(*),
-       SUM(CASE WHEN "ActionType" = 'ChannelMessage_Sent' THEN 1 ELSE 0 END) AS sent,
+       SUM(CASE WHEN "ActionType" = 'ChannelMessage_Sent'   THEN 1 ELSE 0 END) AS sent,
        SUM(CASE WHEN "ActionType" = 'ChannelMessage_Failed' THEN 1 ELSE 0 END) AS failed
 FROM "AuditLogs"
 WHERE "SchoolId" = '550e8400-e29b-41d4-a716-446655440000'
@@ -457,41 +597,63 @@ GROUP BY "EntityType";
 
 ---
 
-## Adding or swapping a provider
+## Adding a new provider
 
-**To add a new channel or replace MSG91:**
-
-1. **Implement `IChannelProvider`:**
+1. **Implement `IChannelProvider`** under `Messaging/Providers/YourVendor/`:
 
 ```csharp
-// Messaging/Providers/MyVendor/MyVendorSmsProvider.cs
 public sealed class MyVendorSmsProvider : IChannelProvider
 {
     public CommunicationChannel Channel => CommunicationChannel.Sms;
 
+    private readonly AsyncRetryPolicy<HttpResponseMessage> _retryPolicy;
+    // ... inject IHttpClientFactory, ISchoolBranchContext, ISchoolBranchConfigResolver, ILogger
+
+    public MyVendorSmsProvider(..., ILogger<MyVendorSmsProvider> logger)
+    {
+        // Initialize retry policy once per instance — not inside SendAsync
+        _retryPolicy = ResiliencePolicies.GetHttpRetryPolicy(logger);
+    }
+
     public async Task<ChannelMessageResult> SendAsync(
         ChannelMessageRequest request, CancellationToken ct = default)
     {
-        // 1. Call _branchCtx.TryGetSchoolId() — short-circuit if absent
-        // 2. Call _resolver.GetMsg91SmsConfigAsync() (or add your own method)
-        // 3. Short-circuit with Failure(HttpStatusCode.UnprocessableEntity) if config is null
-        // 4. Build payload, call _httpFactory.CreateClient("MyVendor"), POST with Polly retry
+        // 1. _branchCtx.TryGetSchoolId() — return Unauthorized if absent
+        // 2. _resolver.GetSmsConfigAsync() — return UnprocessableEntity if null / disabled
+        // 3. Build payload
+        // 4. _retryPolicy.ExecuteAsync(() => _httpFactory.CreateClient("MyVendor").PostAsJsonAsync(...))
         // 5. Return Success(messageId) or Failure(error, statusCode)
     }
 }
 ```
 
-2. **Register in `Extensions/NotificationServicesExtensions.cs`:**
+2. **Add the base URL to `ProviderConstants.cs`:**
 
 ```csharp
-services.AddHttpClient("MyVendor", client => {
-    client.BaseAddress = new Uri("https://api.myvendor.com/");
-    client.Timeout = TimeSpan.FromSeconds(20);
+internal static class MyVendor
+{
+    public const string ClientName = "MyVendor";
+    public const string BaseUrl    = "https://api.myvendor.com/";
+    public const string SendSms    = "v1/messages";
+}
+```
+
+3. **Register the HTTP client and provider in `NotificationServicesExtensions.cs`:**
+
+```csharp
+services.AddHttpClient(ProviderConstants.MyVendor.ClientName, client =>
+{
+    client.BaseAddress = new Uri(ProviderConstants.MyVendor.BaseUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(25);
 });
 services.AddScoped<IChannelProvider, MyVendorSmsProvider>();
 ```
 
-3. **Add credentials to `tenant-configs.json`** under the branch or school defaults.
+4. **Add the credential config class to `BranchChannelConfig.cs`** and a resolver method to
+`ISchoolBranchConfigResolver` / `SchoolBranchConfigResolver`.
+
+5. **Add the credential block to `tenant-configs.json`** under school defaults and relevant branches.
 
 `NotificationManager` picks up the new provider automatically via `IEnumerable<IChannelProvider>`.
 No other code changes required.
@@ -502,16 +664,17 @@ No other code changes required.
 
 ### Provider failures
 
-Providers never throw — they return `ChannelMessageResult.Failure(...)`. Always check `result.IsSuccess`.
+Providers never throw — they return `ChannelMessageResult.Failure(...)`.
+Always check `result.IsSuccess` before treating a send as delivered.
 
 ### Tenant isolation guard
 
 Every provider checks `ISchoolBranchContext.TryGetSchoolId()` before resolving credentials.
-If the context is missing it returns `HttpStatusCode.Unauthorized` immediately, before
-any HTTP call is made.
+A missing context returns `HttpStatusCode.Unauthorized` immediately, before any HTTP call.
 
 If credentials exist in `tenant-configs.json` for the school but not the specific channel,
-the provider returns `HttpStatusCode.UnprocessableEntity`. Zero cross-tenant data is transmitted.
+the provider returns `HttpStatusCode.UnprocessableEntity`.
+Zero cross-tenant data is transmitted.
 
 ### Polly retry behaviour
 
@@ -522,6 +685,7 @@ the provider returns `HttpStatusCode.UnprocessableEntity`. Zero cross-tenant dat
 | 3rd retry | 8 s + jitter | same |
 
 After 3 failed retries the provider returns `ChannelMessageResult.Failure` with `InternalServerError`.
+The retry policy is initialised once per provider instance (in the constructor) — not on every call.
 
 ### Invalid channel name in dispatch request
 
