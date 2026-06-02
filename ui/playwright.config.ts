@@ -1,8 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env then .env.local (local overrides base). This makes VITE_API_BASE_URL
+// and other variables available as process.env.* inside Playwright test files,
+// since VITE_ prefixed vars are only injected by the Vite bundler at build time
+// and are NOT automatically in process.env at test runtime.
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env.local'), override: true });
 
 /**
  * Industry-grade Playwright config for SMS ERP E2E tests.
- * Targets the Vite dev server (port 8080) + sms-api backend (port 5092).
  */
 export default defineConfig({
   testDir: './e2e',
@@ -15,7 +23,7 @@ export default defineConfig({
     ['list'],
   ],
   use: {
-    baseURL: 'http://localhost:8080',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -50,7 +58,7 @@ export default defineConfig({
   // Start the Vite dev server before tests if not already running
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:8080',
+    url: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
     reuseExistingServer: true,
     timeout: 60_000,
     cwd: '.',

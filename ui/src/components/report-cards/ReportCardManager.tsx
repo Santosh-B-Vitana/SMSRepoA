@@ -22,7 +22,7 @@ import { ReportCardGenerator } from './ReportCardGenerator';
 import { ReportCardEditor } from './ReportCardEditor';
 import { DownloadDialog } from './DownloadDialog';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:5092/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export function ReportCardManager() {
   const { t } = useLanguage();

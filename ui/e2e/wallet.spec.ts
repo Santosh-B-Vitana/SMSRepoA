@@ -30,8 +30,8 @@ const __dirname  = dirname(__filename);
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
 const AUTH_FILE = path.join(__dirname, ".auth", "admin.json");
-const API_BASE = "http://localhost:5092/api";
-const UI_BASE  = "http://localhost:8080";
+const API_BASE = process.env.VITE_API_BASE_URL ?? "";
+const UI_BASE  = "";
 
 function getStoredAuth(): { token: string; user: unknown } {
   const raw = JSON.parse(fs.readFileSync(AUTH_FILE, "utf8"));

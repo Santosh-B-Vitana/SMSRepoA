@@ -559,7 +559,7 @@ function PostCard({
                 const rawUrl = post.mediaUrl;
                 // Resolve legacy relative /files/ paths to the API server origin
                 const resolvedUrl = rawUrl.startsWith("/")
-                  ? `${((import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:5092/api").replace(/\/api$/, "")}${rawUrl}`
+                  ? `${(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/api$/, "")}${rawUrl}`
                   : rawUrl;
                 const filename = decodeURIComponent(resolvedUrl.split("/").pop()?.split("?")[0] ?? "file");
                 const isPdf = filename.toLowerCase().endsWith(".pdf");

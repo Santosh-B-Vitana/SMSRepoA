@@ -16,8 +16,8 @@
  *
  * Requires:
  *   - global.setup.ts to have authenticated (./auth/admin.json)
- *   - Backend running on API_BASE_URL (default: http://localhost:5092/api)
- *   - Frontend running on APP_BASE_URL (default: http://localhost:8080)
+ *   - Backend running on VITE_API_BASE_URL
+ *   - Frontend running on PLAYWRIGHT_BASE_URL
  */
 
 import { test, expect, type Page, type Download } from '@playwright/test';
@@ -28,8 +28,8 @@ import { dirname } from 'path';
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:5092/api';
-const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:8080';
+const API_BASE_URL = process.env.VITE_API_BASE_URL ?? '';
+const APP_BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
 const RUN_SUFFIX   = Date.now().toString().slice(-6);
 
 const TEST_STUDENT = {
@@ -52,7 +52,7 @@ const AUTH_STATE  = path.join(__dirname, '.auth/admin.json');
 function getStoredAuthSession(): string | null {
   try {
     const state = JSON.parse(fs.readFileSync(AUTH_STATE, 'utf-8'));
-    const origin = state.origins?.find((o: any) => o.origin === 'http://localhost:8080');
+    const origin = state.origins?.find((o: any) => o.origin === (process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080'));
     return origin?.localStorage?.find((item: any) => item.name === 'pw_e2e_auth')?.value ?? null;
   } catch {
     return null;

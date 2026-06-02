@@ -58,7 +58,7 @@ const AUTH_STATE_FILE = path.join(__e2eDirname, '.auth/admin.json');
 function getStoredAuthSession(): string | null {
   try {
     const state = JSON.parse(fs.readFileSync(AUTH_STATE_FILE, 'utf-8'));
-    const origin = state.origins?.find((o: any) => o.origin === 'http://localhost:8080');
+    const origin = state.origins?.find((o: any) => o.origin === (process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080'));
     return origin?.localStorage?.find((item: any) => item.name === 'pw_e2e_auth')?.value ?? null;
   } catch {
     return null;

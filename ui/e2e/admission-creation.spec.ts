@@ -11,7 +11,7 @@
  *   6. Verifies a success toast/message is shown
  *   7. Verifies the new application appears in the list
  *
- * Runs against live backend (localhost:5092) + Vite dev server (localhost:8080).
+ * Runs against live backend (VITE_API_BASE_URL) + Vite dev server (PLAYWRIGHT_BASE_URL).
  * Requires global.setup.ts to have authenticated first.
  */
 
@@ -51,7 +51,7 @@ const TEST_APPLICANT = {
 function getStoredAuthSession(): string | null {
   try {
     const state = JSON.parse(fs.readFileSync(AUTH_STATE_FILE, 'utf-8'));
-    const origin = state.origins?.find((o: any) => o.origin === 'http://localhost:8080');
+    const origin = state.origins?.find((o: any) => o.origin === (process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080'));
     return origin?.localStorage?.find((item: any) => item.name === 'pw_e2e_auth')?.value ?? null;
   } catch {
     return null;

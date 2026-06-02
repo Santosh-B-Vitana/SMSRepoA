@@ -204,7 +204,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (!user || user.avatar) return; // already has avatar, nothing to do
     const token = localStorage.getItem('authToken');
     if (!token) return;
-    const apiBase = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:5092/api';
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
     axios.get(`${apiBase}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
         const me = res.data?.data ?? res.data;
@@ -241,7 +241,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // -----------------------------------------------------------------------
       // Real API call to backend
       // -----------------------------------------------------------------------
-      const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:5092/api';
+      const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
       let data: any;
       try {
         const response = await axios.post(`${apiBase}/auth/login`, {
@@ -381,7 +381,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const token = localStorage.getItem('authToken');
     if (!token) return;
 
-    const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:5092/api';
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
     const res = await axios.get(`${apiBase}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });

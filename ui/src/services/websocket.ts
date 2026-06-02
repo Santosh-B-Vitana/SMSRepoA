@@ -133,7 +133,7 @@ export function getWebSocketService(): WebSocketService {
   if (!wsInstance) {
     // Derive WS URL from VITE_WS_URL or from VITE_API_BASE_URL
     // e.g. http://localhost:5092/api → ws://localhost:5092/ws
-    const apiBase: string = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:5092/api';
+    const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? '';
     const defaultWsUrl = apiBase.replace(/^http/, 'ws').replace(/\/api\/?$/, '/ws');
     const wsUrl: string = (import.meta as any).env?.VITE_WS_URL ?? defaultWsUrl;
     wsInstance = new WebSocketService({ url: wsUrl });

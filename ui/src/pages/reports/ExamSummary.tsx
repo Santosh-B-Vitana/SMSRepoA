@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, RefreshCw, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 interface ExamSummary {
   examId: string;

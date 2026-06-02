@@ -101,7 +101,7 @@ export async function downloadDISECsv(academicYear: string, className?: string):
   const params = new URLSearchParams({ academicYear });
   if (className) params.set('className', className);
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092/api';
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '';
   const url = `${apiBase}/reports/dise/export/csv?${params.toString()}`;
 
   // Retrieve auth token from session/local storage (same logic as apiClient.ts)

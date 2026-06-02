@@ -133,7 +133,7 @@ export interface PublicSchoolBrandingResponse {
 function resolveLogoUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
   if (/^(https?:|data:|blob:)/i.test(url)) return url;
-  const apiOrigin = (apiClient.defaults.baseURL ?? 'http://localhost:5092/api')
+  const apiOrigin = (apiClient.defaults.baseURL ?? '')
     .replace(/\/api\/?$/, '');
   return `${apiOrigin}${url.startsWith('/') ? '' : '/'}${url}`;
 }

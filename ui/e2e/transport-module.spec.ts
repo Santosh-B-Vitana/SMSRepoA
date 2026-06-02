@@ -43,7 +43,7 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const API_BASE = 'http://localhost:5092/api';
+const API_BASE = process.env.VITE_API_BASE_URL ?? '';
 const AUTH_FILE = path.join(__dirname, '.auth/admin.json');
 const SCHOOL_ID = '550e8400-e29b-41d4-a716-446655440000';
 

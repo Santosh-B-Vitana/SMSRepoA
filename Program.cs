@@ -142,18 +142,18 @@ var app = builder.Build();
 await ApplyDatabaseMigrationsAsync(app);
 
 // ── Startup seeding: ensure school + admin user exist ──────────────────────
-await SeedEssentialDataAsync(app);
+/*await SeedEssentialDataAsync(app);*/
 
 // ── Test data seeding: students, staff, parents, fees, transport, exams ────
-await SeedTestDataAsync(app);
+/*await SeedTestDataAsync(app);*/
 
 // ── Backfill: assign system roles to existing staff logins that have none ──
-{
+/*{
     using var scope = app.Services.CreateScope();
     var staffSvc = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IStaffService>();
     var demoSchoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
     await staffSvc.BulkAutoAssignRolesAsync(demoSchoolId);
-}
+}*/
 
 // Performance monitoring (logs slow requests > 500ms, SLA breach > 2000ms)
 app.UsePerformanceMonitoring();

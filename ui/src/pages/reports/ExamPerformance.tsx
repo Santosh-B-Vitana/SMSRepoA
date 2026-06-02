@@ -7,7 +7,7 @@ import { ArrowLeft, RefreshCw, Download, Activity } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import examinationApi, { ExamBasic } from "@/services/api/examinationApi";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 interface ExamPerformanceReport {
   examName: string;
