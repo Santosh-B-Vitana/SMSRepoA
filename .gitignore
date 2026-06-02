@@ -65,3 +65,4 @@ logs/
 artifacts/buildcheck/
 
 node_modules
+publish
