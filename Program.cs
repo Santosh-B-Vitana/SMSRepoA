@@ -87,6 +87,20 @@ builder.Configuration
 var connectionString = SmsApi.Extensions.DatabaseExtensions.ResolveConnectionString(builder.Configuration);
 builder.AddDatabase(connectionString);
 
+// ── CRM database (SQL Server only) ───────────────────────────────────────────────
+var crmConnectionString = builder.Configuration.GetConnectionString("CRMConnection");
+if (!string.IsNullOrEmpty(crmConnectionString))
+{
+    builder.Services.AddDbContext<SmsApi.Data.CrmDbContext>(options =>
+        options.UseSqlServer(crmConnectionString, sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
+            sqlOptions.CommandTimeout(30);
+            sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
+            sqlOptions.MigrationsAssembly("SmsApi");
+        }));
+}
+
 // ── All business services ────────────────────────────────────────────────────────
 builder.Services.AddApplicationServices(builder.Configuration, builder.Environment);
 
@@ -264,6 +278,22 @@ static async Task ApplyDatabaseMigrationsAsync(WebApplication app)
     {
         logger.LogError(ex, "Failed to apply database migrations at startup.");
         throw;
+    }
+
+    // ── CRM database migrations ─────────────────────────────────────────────
+    var crmDb = scope.ServiceProvider.GetService<SmsApi.Data.CrmDbContext>();
+    if (crmDb != null)
+    {
+        try
+        {
+            await crmDb.Database.MigrateAsync();
+            logger.LogInformation("CRM database migrations applied successfully.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to apply CRM database migrations at startup.");
+            throw;
+        }
     }
 }
 
