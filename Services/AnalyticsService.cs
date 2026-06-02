@@ -345,9 +345,26 @@ namespace SmsApi.Services
             var totalStaff    = await _context.StaffMembers.AsNoTracking().CountAsync(s => s.SchoolId == schoolId && s.Status == "active");
             var totalClasses  = await _context.Classes.AsNoTracking().CountAsync(c => c.SchoolId == schoolId);
             var todayPresent  = await _context.AttendanceRecords.AsNoTracking().CountAsync(a => a.SchoolId == schoolId && a.Date.Date == today && a.Status == "present");
-            var pendingFees   = await _context.FeeRecords.AsNoTracking().Where(f => f.SchoolId == schoolId && f.Status == "pending").SumAsync(f => f.PendingAmount);
             var upcomingExams = await _context.Examinations.AsNoTracking().CountAsync(e => e.SchoolId == schoolId && e.ExamDate >= today && e.ExamDate <= sevenDaysFromNow);
             var recentRaw     = await _context.AnalyticsRecords.AsNoTracking().Where(a => a.SchoolId == schoolId).OrderByDescending(a => a.CreatedAt).Take(10).ToListAsync();
+
+            // Compute fee stats for the current academic year only (April–March cycle),
+            // matching the fee module's default view.
+            var now = DateTime.UtcNow;
+            var startYear = now.Month >= 4 ? now.Year : now.Year - 1;
+            var currentAcademicYear = $"{startYear}-{startYear + 1}";
+
+            var allFeeRecords = await _context.FeeRecords
+                .AsNoTracking()
+                .Where(f => f.SchoolId == schoolId && f.AcademicYear == currentAcademicYear)
+                .Select(f => new { f.TotalAmount, f.PaidAmount, f.DiscountAmount, f.LateFeeAmount, f.Status })
+                .ToListAsync();
+
+            var totalFees      = allFeeRecords.Sum(f => f.TotalAmount);
+            var totalCollected = allFeeRecords.Sum(f => f.PaidAmount);
+            var pendingFees    = allFeeRecords
+                .Where(f => f.Status != "paid")
+                .Sum(f => Math.Max(0m, f.TotalAmount + f.LateFeeAmount - f.PaidAmount - f.DiscountAmount));
 
             var todayAttPct = totalStudents > 0 ? Math.Round((decimal)todayPresent / totalStudents * 100, 2) : 0m;
 
@@ -358,6 +375,8 @@ namespace SmsApi.Services
                 TotalClasses = totalClasses,
                 TodayAttendancePercentage = todayAttPct,
                 PendingFees = pendingFees,
+                TotalCollected = totalCollected,
+                TotalFees = totalFees,
                 UpcomingExams = upcomingExams,
                 PendingAssignments = 0,
                 UnreadNotifications = 0,
@@ -653,9 +672,11 @@ namespace SmsApi.Services
             var now       = DateTime.UtcNow;
             var startDate = new DateTime(now.Year, now.Month, 1).AddMonths(-(months - 1));
 
-            var records = await _context.FeeRecords.AsNoTracking()
+            // Load raw fee amounts for the period (no FeeStructure override — use stored TotalAmount).
+            var records = await _context.FeeRecords
+                .AsNoTracking()
                 .Where(f => f.SchoolId == schoolId && f.DueDate >= startDate)
-                .Select(f => new { f.DueDate, f.TotalAmount, f.PaidAmount, f.PendingAmount, f.Status })
+                .Select(f => new { f.TotalAmount, f.PaidAmount, f.DiscountAmount, f.LateFeeAmount, f.Status, f.DueDate })
                 .ToListAsync();
 
             var monthlyData = new List<FeeMonthDataPoint>();
@@ -670,16 +691,24 @@ namespace SmsApi.Services
                     Month = monthStart.ToString("MMM"),
                     Year = monthStart.Year,
                     Collected = monthRecs.Sum(r => r.PaidAmount),
-                    Pending = monthRecs.Where(r => r.Status == "pending" || r.Status == "partial").Sum(r => r.PendingAmount),
-                    Overdue = monthRecs.Where(r => r.Status == "overdue").Sum(r => r.PendingAmount),
+                    Pending = monthRecs
+                        .Where(r => r.Status == "pending" || r.Status == "partial")
+                        .Sum(r => Math.Max(0m, r.TotalAmount + r.LateFeeAmount - r.PaidAmount - r.DiscountAmount)),
+                    Overdue = monthRecs
+                        .Where(r => r.Status == "overdue")
+                        .Sum(r => Math.Max(0m, r.TotalAmount + r.LateFeeAmount - r.PaidAmount - r.DiscountAmount)),
                     TotalRecords = monthRecs.Count
                 });
             }
 
             var totalBilled    = records.Sum(r => r.TotalAmount);
             var totalCollected = records.Sum(r => r.PaidAmount);
-            var totalPending   = records.Where(r => r.Status != "paid").Sum(r => r.PendingAmount);
-            var totalOverdue   = records.Where(r => r.Status == "overdue").Sum(r => r.PendingAmount);
+            var totalPending   = records
+                .Where(r => r.Status != "paid")
+                .Sum(r => Math.Max(0m, r.TotalAmount + r.LateFeeAmount - r.PaidAmount - r.DiscountAmount));
+            var totalOverdue   = records
+                .Where(r => r.Status == "overdue")
+                .Sum(r => Math.Max(0m, r.TotalAmount + r.LateFeeAmount - r.PaidAmount - r.DiscountAmount));
             var collRate       = totalBilled > 0 ? Math.Round(totalCollected / totalBilled * 100, 2) : 0m;
 
             return new FeeAnalyticsResponse
@@ -692,6 +721,8 @@ namespace SmsApi.Services
                 MonthlyData = monthlyData
             };
         }
+
+
 
         // Mappers
 

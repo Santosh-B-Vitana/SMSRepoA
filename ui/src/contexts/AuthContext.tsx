@@ -7,6 +7,7 @@ import {
   maskEmail 
 } from '@/utils/authValidation';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 export type UserRole = 'super_admin' | 'admin' | 'staff' | 'parent';
 
@@ -19,7 +20,7 @@ export const STAFF_DESIGNATIONS = [
   'Principal', 'Vice Principal', 'Head of Department',
   'Class Teacher', 'Teacher', 'Accountant', 'HR Manager',
   'Librarian', 'Transport Manager', 'Hostel Warden',
-  'Admissions Officer', 'Counselor', 'Staff',
+  'Admissions Officer', 'Counselor', 'Receptionist', 'Front Desk Officer', 'Staff',
 ] as const;
 
 export type StaffDesignation = typeof STAFF_DESIGNATIONS[number];
@@ -46,6 +47,9 @@ export function normalizeDesignation(rawRole: string): string {
     warden:              'Hostel Warden',
     'admissions officer':'Admissions Officer',
     counselor:           'Counselor',
+    receptionist:        'Receptionist',
+    'front desk officer':'Front Desk Officer',
+    'front desk':        'Front Desk Officer',
     parent:              'Parent',
     student:             'Student',
     staff:               'Staff',
@@ -66,6 +70,8 @@ export interface User {
   avatar?: string;
   schoolId?: string;
   requirePasswordChange?: boolean;
+  /** For staff accounts: the StaffMember.Id (used for attendance/balance lookups) */
+  linkedEntityId?: string;
   staffData?: {
     employeeId: string;
     department: string;
@@ -93,6 +99,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   sessionExpiresAt: number | null;
   refreshSession: () => void;
+  refreshCurrentUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -146,6 +153,8 @@ function clearSession(): void {
   localStorage.removeItem('authToken');
   localStorage.removeItem('schoolId');
   localStorage.removeItem('currentUser'); // Legacy cleanup
+  localStorage.removeItem('currentUserId');
+  window.dispatchEvent(new Event('vitanaUserChanged'));
 }
 
 export const useAuth = () => {
@@ -161,19 +170,12 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
-
-  // Initialize auth state from stored session
-  useEffect(() => {
-    const session = getStoredSession();
-    if (session) {
-      setUser(session.user);
-      setSessionExpiresAt(session.expiresAt);
-    }
-    setLoading(false);
-  }, []);
+  // Initialize synchronously from sessionStorage to avoid a loading flash on page load
+  const [user, setUser] = useState<User | null>(() => getStoredSession()?.user ?? null);
+  const [loading, setLoading] = useState(false);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(
+    () => getStoredSession()?.expiresAt ?? null
+  );
 
   // Session expiry warning
   useEffect(() => {
@@ -196,6 +198,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => clearInterval(interval);
   }, [sessionExpiresAt]);
 
+  // Backfill avatar: when a stored session doesn't have the photo yet (e.g. sessions
+  // created before the profilePhoto field was added), call /auth/me once to get it.
+  useEffect(() => {
+    if (!user || user.avatar) return; // already has avatar, nothing to do
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
+    axios.get(`${apiBase}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        const me = res.data?.data ?? res.data;
+        const photo: string | undefined = me?.profilePhoto || undefined;
+        if (photo) {
+          setUser(prev => {
+            if (!prev) return prev;
+            const updated = { ...prev, avatar: photo };
+            // Persist into sessionStorage so this survives page refreshes
+            const stored = getStoredSession();
+            if (stored) storeSession({ ...stored, user: updated });
+            return updated;
+          });
+        }
+      })
+      .catch(() => { /* silently ignore — avatar is cosmetic */ });
+  }, [user?.id]);
+
   const login = useCallback(async (email: string, password: string): Promise<void> => {
     setLoading(true);
     const normalizedEmail = email.toLowerCase().trim();
@@ -214,7 +241,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // -----------------------------------------------------------------------
       // Real API call to backend
       // -----------------------------------------------------------------------
-      const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:5092/api';
+      const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
       let data: any;
       try {
         const response = await axios.post(`${apiBase}/auth/login`, {
@@ -227,10 +254,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         data = response.data?.data ?? response.data;
       } catch (axiosError: any) {
         recordFailedAttempt(normalizedEmail);
-        const msg =
+        let msg =
           axiosError?.response?.data?.message ??
           axiosError?.message ??
           'Invalid email or password';
+
+        const normalized = String(msg).toLowerCase();
+        const isBillingBlocked =
+          normalized.includes('subscription') ||
+          normalized.includes('billing') ||
+          normalized.includes('suspended beyond grace period') ||
+          normalized.includes('account suspended due to') ||
+          normalized.includes('school account is inactive');
+
+        if (isBillingBlocked) {
+          msg = 'Account suspended due to billing. Please pay or renew your plan to continue.';
+          toast.error(msg, { description: 'Admin login is revoked until billing is made active.' });
+        }
+
         throw new Error(msg);
       }
 
@@ -261,8 +302,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         designation: backendUser.designation
           ? backendUser.designation
           : normalizeDesignation(rawRole),
+        avatar: backendUser.profilePhoto || undefined,
         schoolId: backendUser.schoolId ? String(backendUser.schoolId) : undefined,
         requirePasswordChange: backendUser.requirePasswordChange === true,
+        linkedEntityId: backendUser.linkedEntityId ? String(backendUser.linkedEntityId) : undefined,
       };
 
       // Create session — include token so apiClient.ts can read it
@@ -288,6 +331,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (userWithoutPassword.schoolId) {
         localStorage.setItem('schoolId', userWithoutPassword.schoolId);
       }
+      // Store userId so user-scoped preference keys work in contexts outside AuthProvider
+      localStorage.setItem('currentUserId', userWithoutPassword.id);
+      window.dispatchEvent(new Event('vitanaUserChanged'));
       setUser(userWithoutPassword);
       setSessionExpiresAt(session.expiresAt);
 
@@ -311,7 +357,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
-    clearSession();
+    clearSession(); // also removes currentUserId and dispatches vitanaUserChanged
     localStorage.removeItem('authToken');
     localStorage.removeItem('schoolId');
     setUser(null);
@@ -331,6 +377,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [user]);
 
+  const refreshCurrentUser = useCallback(async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
+    const res = await axios.get(`${apiBase}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const me = res.data?.data ?? res.data;
+
+    const roleRaw = String(me?.role ?? '').toLowerCase();
+    const mappedRole: UserRole = roleRaw === 'super_admin' || roleRaw === 'superadmin'
+      ? 'super_admin'
+      : roleRaw === 'admin' || roleRaw === 'administrator'
+        ? 'admin'
+        : roleRaw === 'parent' || roleRaw === 'guardian'
+          ? 'parent'
+          : 'staff';
+
+    setUser((prev) => {
+      const updated: User = {
+        id: String(me.id),
+        name: `${me.firstName ?? ''} ${me.lastName ?? ''}`.trim() || me.email,
+        email: me.email,
+        role: mappedRole,
+        designation: me.designation ? me.designation : normalizeDesignation(String(me.role ?? '')),
+        avatar: me.profilePhoto || undefined,
+        schoolId: me.schoolId ? String(me.schoolId) : prev?.schoolId,
+        requirePasswordChange: me.requirePasswordChange === true,
+        linkedEntityId: me.linkedEntityId ? String(me.linkedEntityId) : undefined,
+      };
+
+      const stored = getStoredSession();
+      if (stored) {
+        storeSession({ ...stored, user: updated });
+      }
+      return updated;
+    });
+  }, []);
+
   const value: AuthContextType = {
     user,
     loading,
@@ -339,6 +425,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated: !!user,
     sessionExpiresAt,
     refreshSession,
+    refreshCurrentUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

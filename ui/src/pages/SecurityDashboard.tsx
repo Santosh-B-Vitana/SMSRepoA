@@ -1,8 +1,11 @@
 import { SecurityDashboard as SecurityDashboardWidget, SecurityStatusBadge } from "@/components/common/SecurityDashboard";
 import { SEO } from "@/components/common/SEO";
 import { Shield } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function SecurityDashboardPage() {
+  const { t } = useLanguage();
+
   return (
     <>
       <SEO
@@ -13,9 +16,9 @@ export default function SecurityDashboardPage() {
         <div className="flex items-center gap-3">
           <Shield className="h-7 w-7 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Security Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('security.dashboard.title')}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              Real-time frontend security posture — authentication, RBAC, data protection, and compliance checks
+              {t('security.dashboard.subtitle')}
             </p>
           </div>
           <div className="ml-auto">

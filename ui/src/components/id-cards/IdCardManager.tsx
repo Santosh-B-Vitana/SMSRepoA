@@ -9,10 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { IdCard, Printer, Search, Download, Plus, Users, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { mockApi, Student, Staff } from "../../services/mockApi";
+import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { staffApi, StaffBasic } from "@/services/api/staffApi";
 import { IdCardTemplate } from "./IdCardTemplate";
 import { IndividualIdCardGenerator } from "./IndividualIdCardGenerator";
 import { ErrorBoundary, LoadingState, EmptyState } from "@/components/common";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface IdCardRecord {
   id: string;
@@ -27,52 +29,55 @@ interface IdCardRecord {
 }
 
 export function IdCardManager() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
+  const { t } = useLanguage();
+  const [students, setStudents] = useState<StudentBasic[]>([]);
+  const [staff, setStaff] = useState<StaffBasic[]>([]);
   const [idCards, setIdCards] = useState<IdCardRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<"all" | "student" | "staff">("all");
-  const [selectedPerson, setSelectedPerson] = useState<Student | Staff | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<StudentBasic | StaffBasic | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [studentsData, staffData] = await Promise.all([
-          mockApi.getStudents(),
-          mockApi.getStaff()
+        const [studentsResp, staffResp] = await Promise.all([
+          studentApi.list({ pageSize: 2000 }),
+          staffApi.list({ pageSize: 2000 })
         ]);
+        const studentsData = studentsResp.students;
+        const staffData = staffResp.staff;
         setStudents(studentsData);
         setStaff(staffData);
-        
-        // Generate mock ID card records
-        const mockIdCards: IdCardRecord[] = [
+
+        // Build ID card record stubs from real student/staff data
+        const realIdCards: IdCardRecord[] = [
           ...studentsData.map((student, index) => ({
             id: `IDC${String(index + 1).padStart(3, '0')}`,
             personId: student.id,
-            personName: student.name,
+            personName: student.name ?? `${student.admissionNumber}`,
             personType: 'student' as const,
-            idNumber: `STU${student.rollNo}${new Date().getFullYear()}`,
-            issueDate: '2024-01-15',
-            expiryDate: '2025-01-15',
+            idNumber: `STU${student.rollNumber}${new Date().getFullYear()}`,
+            issueDate: new Date().toISOString().split('T')[0],
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             status: 'active' as const,
             template: 'student-default'
           })),
           ...staffData.map((staffMember, index) => ({
             id: `IDC${String(studentsData.length + index + 1).padStart(3, '0')}`,
             personId: staffMember.id,
-            personName: staffMember.name,
+            personName: staffMember.name ?? `${staffMember.firstName} ${staffMember.lastName}`.trim(),
             personType: 'staff' as const,
-            idNumber: `EMP${staffMember.id.slice(-3)}${new Date().getFullYear()}`,
-            issueDate: '2024-01-15',
-            expiryDate: '2025-12-31',
+            idNumber: `EMP${staffMember.employeeId}${new Date().getFullYear()}`,
+            issueDate: new Date().toISOString().split('T')[0],
+            expiryDate: new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             status: 'active' as const,
             template: 'staff-default'
           }))
         ];
-        setIdCards(mockIdCards);
+        setIdCards(realIdCards);
       } catch (error) {
         console.error("Failed to fetch data:", error);
         toast({
@@ -95,18 +100,19 @@ export function IdCardManager() {
     return matchesSearch && matchesType;
   });
 
-  const generateIdCard = async (person: Student | Staff, type: 'student' | 'staff') => {
+  const generateIdCard = async (person: StudentBasic | StaffBasic, type: 'student' | 'staff') => {
     try {
+      const name = (person as StudentBasic).name ?? `${(person as StaffBasic).firstName ?? ''} ${(person as StaffBasic).lastName ?? ''}`.trim();
       const newIdCard: IdCardRecord = {
         id: `IDC${String(idCards.length + 1).padStart(3, '0')}`,
         personId: person.id,
-        personName: person.name,
+        personName: name,
         personType: type,
-        idNumber: type === 'student' ? 
-          `STU${(person as Student).rollNo}${new Date().getFullYear()}` :
-          `EMP${person.id.slice(-3)}${new Date().getFullYear()}`,
+        idNumber: type === 'student' ?
+          `STU${(person as StudentBasic).rollNumber}${new Date().getFullYear()}` :
+          `EMP${(person as StaffBasic).employeeId}${new Date().getFullYear()}`,
         issueDate: new Date().toISOString().split('T')[0],
-        expiryDate: type === 'student' ? 
+        expiryDate: type === 'student' ?
           new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] :
           new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         status: 'active',
@@ -115,23 +121,23 @@ export function IdCardManager() {
 
       setIdCards(prev => [...prev, newIdCard]);
       toast({
-        title: "Success",
-        description: `ID card generated for ${person.name}`
+        title: t('common.analytics'),
+        description: `${t('idCard.generateSuccess').replace('{name}', name)}`
       });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to generate ID card",
+        title: t('common.retry'),
+        description: t('idCard.generateError'),
         variant: "destructive"
       });
     }
   };
 
   const printIdCard = (card: IdCardRecord) => {
-    const person = card.personType === 'student' 
+    const person = card.personType === 'student'
       ? students.find(s => s.id === card.personId)
       : staff.find(s => s.id === card.personId);
-    
+
     if (person) {
       setSelectedPerson(person);
       setShowPreview(true);
@@ -139,7 +145,7 @@ export function IdCardManager() {
   };
 
   if (loading) {
-    return <LoadingState variant="cards" rows={3} message="Loading ID card data..." />;
+    return <LoadingState variant="cards" rows={3} message={t('idCard.loading')} />;
   }
 
   return (
@@ -147,8 +153,8 @@ export function IdCardManager() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-display">ID Card Management</h1>
-          <p className="text-muted-foreground">Generate and manage student and staff ID cards</p>
+          <h1 className="text-display">{t('idCard.title')}</h1>
+          <p className="text-muted-foreground">{t('idCard.subtitle')}</p>
         </div>
       </div>
 
@@ -158,7 +164,7 @@ export function IdCardManager() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total ID Cards</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('idCard.statTotal')}</p>
                 <p className="text-2xl font-bold">{idCards.length}</p>
               </div>
               <IdCard className="h-8 w-8 text-primary" />
@@ -170,7 +176,7 @@ export function IdCardManager() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Student Cards</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('idCard.statStudent')}</p>
                 <p className="text-2xl font-bold">{idCards.filter(c => c.personType === 'student').length}</p>
               </div>
               <Users className="h-8 w-8 text-blue-500" />
@@ -182,7 +188,7 @@ export function IdCardManager() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Staff Cards</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('idCard.statStaff')}</p>
                 <p className="text-2xl font-bold">{idCards.filter(c => c.personType === 'staff').length}</p>
               </div>
               <UserCheck className="h-8 w-8 text-green-500" />
@@ -193,13 +199,13 @@ export function IdCardManager() {
 
       <Card>
         <CardHeader>
-          <CardTitle>ID Card Records</CardTitle>
+          <CardTitle>{t('idCard.recordsTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="existing" className="space-y-4">
             <TabsList>
-              <TabsTrigger value="existing">Existing Cards</TabsTrigger>
-              <TabsTrigger value="individual">Generate New</TabsTrigger>
+              <TabsTrigger value="existing">{t('idCard.tabExisting')}</TabsTrigger>
+              <TabsTrigger value="individual">{t('idCard.tabGenerate')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="existing" className="space-y-4">
@@ -208,7 +214,7 @@ export function IdCardManager() {
                   <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search by name or ID number..."
+                      placeholder={t('idCard.searchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-8"
@@ -217,12 +223,12 @@ export function IdCardManager() {
                 </div>
                 <Select value={filterType} onValueChange={(value: any) => setFilterType(value)}>
                   <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filter by type" />
+                    <SelectValue placeholder={t('idCard.filterPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="student">Students</SelectItem>
-                    <SelectItem value="staff">Staff</SelectItem>
+                    <SelectItem value="all">{t('idCard.allTypes')}</SelectItem>
+                    <SelectItem value="student">{t('idCard.filterStudents')}</SelectItem>
+                    <SelectItem value="staff">{t('idCard.filterStaff')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -230,11 +236,11 @@ export function IdCardManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>ID Number</TableHead>
-                    <TableHead>Issue Date</TableHead>
-                    <TableHead>Expiry Date</TableHead>
+                    <TableHead>{t('idCard.colName')}</TableHead>
+                    <TableHead>{t('idCard.colType')}</TableHead>
+                    <TableHead>{t('idCard.colIdNumber')}</TableHead>
+                    <TableHead>{t('idCard.colIssueDate')}</TableHead>
+                    <TableHead>{t('idCard.colExpiryDate')}</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -277,9 +283,9 @@ export function IdCardManager() {
             </TabsContent>
 
             <TabsContent value="individual" className="space-y-4">
-              <IndividualIdCardGenerator 
-                students={students}
-                staff={staff}
+              <IndividualIdCardGenerator
+                students={students as any}
+                staff={staff as any}
               />
             </TabsContent>
           </Tabs>
@@ -290,12 +296,12 @@ export function IdCardManager() {
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>ID Card Preview</DialogTitle>
+            <DialogTitle>{t('idCard.previewTitle')}</DialogTitle>
           </DialogHeader>
           {selectedPerson && (
-            <IdCardTemplate 
-              person={selectedPerson}
-              type={'name' in selectedPerson && 'rollNo' in selectedPerson ? 'student' : 'staff'}
+            <IdCardTemplate
+              person={selectedPerson as any}
+              type={'rollNumber' in selectedPerson ? 'student' : 'staff'}
             />
           )}
           <div className="flex justify-end gap-2 mt-4">

@@ -32,6 +32,12 @@ namespace SmsApi.Services
         bool TryGetUserId(out Guid userId);
 
         /// <summary>
+        /// The linked Staff/Student entity ID from the JWT claim (set at account provisioning).
+        /// For staff accounts this is the StaffMember.Id. Null for accounts without a linked entity.
+        /// </summary>
+        Guid? LinkedEntityId { get; }
+
+        /// <summary>
         /// Returns the effective SchoolId for the operation.
         /// SuperAdmin: uses the explicitly requested schoolId (required).
         /// Normal role: validates requested matches JWT, returns JWT schoolId.
@@ -95,6 +101,17 @@ namespace SmsApi.Services
             userId = Guid.Empty;
             var claim = User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             return !string.IsNullOrEmpty(claim) && Guid.TryParse(claim, out userId);
+        }
+
+        public Guid? LinkedEntityId
+        {
+            get
+            {
+                var claim = User?.FindFirst("LinkedEntityId")?.Value;
+                if (!string.IsNullOrEmpty(claim) && Guid.TryParse(claim, out var id))
+                    return id;
+                return null;
+            }
         }
 
         /// <summary>

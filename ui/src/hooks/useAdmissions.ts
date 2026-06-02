@@ -70,8 +70,8 @@ export function useAdmissions(options: UseAdmissionsOptions = {}) {
   });
 
   const enrollMutation = useMutation({
-    mutationFn: ({ id, admissionNumber }: { id: string; admissionNumber: string }) =>
-      admissionService.enrollApplication(id, admissionNumber),
+    mutationFn: ({ id, admissionNumber, section }: { id: string; admissionNumber: string; section?: string }) =>
+      admissionService.enrollApplication(id, admissionNumber, section),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admissions'] });
       queryClient.invalidateQueries({ queryKey: ['admission-stats'] });

@@ -2,7 +2,7 @@
  * Super Admin API Service
  * All calls to /api/school-feature-permissions/* (super admin endpoints)
  */
-import { apiGet, apiPost, apiPut, apiPatch } from "@/lib/apiClient";
+import { apiClient, apiGet, apiPost, apiPut, apiPatch } from "@/lib/apiClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ export interface SchoolListItem {
   isActive: boolean;
   enabledModulesCount: number;
   totalModulesCount: number;
+  isOnboarded: boolean;
 }
 
 export interface SchoolDetail {
@@ -83,6 +84,16 @@ export const updateSchool = (
 ): Promise<SchoolDetail> =>
   apiPut(`/school-feature-permissions/schools/${schoolId}`, data);
 
+export const uploadSchoolLogo = (schoolId: string, file: File): Promise<{ logoUrl: string }> => {
+  const form = new FormData();
+  form.append('file', file);
+  return apiClient
+    .post<{ logoUrl: string }>(`/school-feature-permissions/schools/${schoolId}/logo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    .then((r) => r.data);
+};
+
 export const toggleSchoolStatus = (schoolId: string): Promise<{ schoolId: string; isActive: boolean }> =>
   apiPatch(`/school-feature-permissions/schools/${schoolId}/toggle-status`);
 
@@ -132,3 +143,78 @@ export const resetUserPassword = (userId: string, newPassword: string): Promise<
 
 export const getPlatformStats = (): Promise<PlatformStats> =>
   apiGet("/school-feature-permissions/stats");
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+
+export interface OnboardSchoolRequest {
+  name: string;
+  schoolCode: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  logo?: string;
+  academicYearName: string;
+  academicYearStart: string; // ISO date
+  academicYearEnd: string;   // ISO date
+  academicYearIsCurrent: boolean;
+  adminUsername: string;
+  adminEmail: string;
+  adminPassword: string;
+  moduleOverrides?: Record<string, boolean>;
+  boardConfigurationIds?: string[];
+  defaultBoardConfigurationId?: string;
+}
+
+export interface OnboardSchoolResult {
+  schoolId: string;
+  schoolName: string;
+  schoolCode: string;
+  adminUserId: string;
+  adminEmail: string;
+  academicYearId: string;
+  academicYearName: string;
+  enabledModules: string[];
+}
+
+export const onboardSchool = (data: OnboardSchoolRequest): Promise<OnboardSchoolResult> =>
+  apiPost("/school-feature-permissions/onboard", data);
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+export interface SchoolBilling {
+  schoolId: string;
+  schoolName: string;
+  billingPlan: string;        // Standard | Pro | Enterprise
+  billingStatus: string;      // Active | Inactive | Suspended | Trial
+  billingExpiryDate: string | null;
+  renewalReminderDays: number;
+  daysUntilExpiry: number | null;
+  isExpiringSoon: boolean;
+  isExpired: boolean;
+}
+
+export interface UpdateBillingRequest {
+  billingPlan?: string;
+  billingStatus?: string;
+  billingExpiryDate?: string | null;
+  renewalReminderDays?: number;
+}
+
+export interface BillingNotification {
+  hasWarning: boolean;
+  message: string;
+  severity: "info" | "warning" | "critical";
+  daysUntilExpiry: number | null;
+  billingPlan: string;
+  billingStatus: string;
+  billingExpiryDate: string | null;
+}
+
+export const getSchoolBilling = (schoolId: string): Promise<SchoolBilling> =>
+  apiGet(`/school-feature-permissions/schools/${schoolId}/billing`);
+
+export const updateSchoolBilling = (schoolId: string, data: UpdateBillingRequest): Promise<SchoolBilling> =>
+  apiPut(`/school-feature-permissions/schools/${schoolId}/billing`, data);
+
+export const getBillingNotification = (): Promise<BillingNotification> =>
+  apiGet("/school-feature-permissions/billing-notification");

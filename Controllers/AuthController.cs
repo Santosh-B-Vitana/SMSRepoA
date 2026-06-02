@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITwoFactorService _twoFactor;
     private readonly ILoginAttemptService _loginAttempts;
+    private readonly ISchoolConfigService _schoolConfigService;
 
     private const int MAX_FAILED_ATTEMPTS = 5;
     private const int LOCKOUT_MINUTES = 15;
@@ -34,7 +35,8 @@ public class AuthController : ControllerBase
         ILogger<AuthController> logger,
         AppDbContext context,
         ITwoFactorService twoFactor,
-        ILoginAttemptService loginAttempts)
+        ILoginAttemptService loginAttempts,
+        ISchoolConfigService schoolConfigService)
     {
         _configuration = configuration;
         _tokenService = tokenService;
@@ -42,6 +44,7 @@ public class AuthController : ControllerBase
         _context = context;
         _twoFactor = twoFactor;
         _loginAttempts = loginAttempts;
+        _schoolConfigService = schoolConfigService;
     }
 
     /// <summary>
@@ -119,6 +122,87 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid username or password" });
         }
 
+        // ── Parent portal guard: block login if ALL linked students are inactive ──
+        if (string.Equals(userLogin.Role, "Parent", StringComparison.OrdinalIgnoreCase))
+        {
+            // Primary path: normalized Guardian → GuardianStudent → Student
+            var linkedStatuses = await _context.Guardians
+                .Where(g => g.UserLoginId == userLogin.Id)
+                .SelectMany(g => g.StudentLinks!)
+                .Join(_context.Students.IgnoreQueryFilters(),
+                      gs => gs.StudentId,
+                      s => s.Id,
+                      (gs, s) => s.Status)
+                .ToListAsync();
+
+            // Fallback: legacy StudentGuardians (email-matched)
+            if (linkedStatuses.Count == 0)
+            {
+                var parentEmail = userLogin.Email.ToLower();
+                linkedStatuses = await _context.StudentGuardians
+                    .Where(sg => sg.Email != null && sg.Email.ToLower() == parentEmail)
+                    .Join(_context.Students.IgnoreQueryFilters(),
+                          sg => sg.StudentId,
+                          s => s.Id,
+                          (sg, s) => s.Status)
+                    .ToListAsync();
+            }
+
+            if (linkedStatuses.Count > 0 && linkedStatuses.All(s => s != "active"))
+            {
+                _logger.LogWarning("Parent login blocked — all linked students inactive for {Email}", userLogin.Email);
+                return Unauthorized(new { message = "Access denied. Your child's account has been deactivated. Please contact the school administration." });
+            }
+        }
+
+        // ── Staff / Teacher guard: block login if linked StaffMember is inactive ──
+        // Mirrors the parent guard above — queries StaffMembers directly so that
+        // deactivation takes effect immediately on the next login attempt, regardless
+        // of whether the UserLogin.Status update was applied correctly.
+        if (string.Equals(userLogin.LinkedEntityType, "staff", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "staff", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "teacher", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "principal", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userLogin.Role, "hrmanager", StringComparison.OrdinalIgnoreCase))
+        {
+            string? staffStatus = null;
+
+            // Primary: LinkedEntityId lookup (most reliable — set at provisioning)
+            if (userLogin.LinkedEntityId.HasValue)
+            {
+                staffStatus = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Id == userLogin.LinkedEntityId.Value && s.SchoolId == userLogin.SchoolId)
+                    .Select(s => (string?)s.Status)
+                    .FirstOrDefaultAsync();
+            }
+
+            // Fallback: email-based lookup
+            if (staffStatus == null && !string.IsNullOrEmpty(userLogin.Email))
+            {
+                staffStatus = await _context.StaffMembers
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Email.ToLower() == userLogin.Email.ToLower() && s.SchoolId == userLogin.SchoolId)
+                    .Select(s => (string?)s.Status)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (staffStatus == "inactive")
+            {
+                _logger.LogWarning("Staff login blocked — StaffMember inactive for {Email}", userLogin.Email);
+                return Unauthorized(new { message = "Account is inactive. Contact your administrator." });
+            }
+        }
+
+        // Billing guard for school admin accounts.
+        var (billingAllowed, billingMessage) = await EnforceAdminBillingPolicyAsync(userLogin);
+        if (!billingAllowed)
+        {
+            _logger.LogWarning("Admin login blocked by billing policy for {Email} (SchoolId: {SchoolId})",
+                userLogin.Email, userLogin.SchoolId);
+            return Unauthorized(new { message = billingMessage ?? "School subscription is not active. Contact support." });
+        }
+
         // Successful login - check 2FA first
         if (userLogin.TwoFactorEnabled && !string.IsNullOrEmpty(userLogin.TwoFactorSecret))
         {
@@ -156,7 +240,7 @@ public class AuthController : ControllerBase
         userLogin.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var designation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        var (designation, profilePhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
         var userModel = MapToUserModel(userLogin, designation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
@@ -169,7 +253,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = BuildUserInfo(userLogin, designation)
+            User = BuildUserInfo(userLogin, designation, profilePhoto)
         });
     }
 
@@ -194,12 +278,27 @@ public class AuthController : ControllerBase
             if (userLogin == null)
                 return Unauthorized(new { message = "User not found" });
 
+            if (userLogin.Status is "inactive" or "suspended")
+                return Unauthorized(new { message = $"Account is {userLogin.Status}. Contact your administrator." });
+
+            var (billingAllowed, billingMessage) = await EnforceAdminBillingPolicyAsync(userLogin);
+            if (!billingAllowed)
+                return Unauthorized(new { message = billingMessage ?? "School subscription is not active. Contact support." });
+
             if (userLogin.RefreshTokenExpiry == null || userLogin.RefreshTokenExpiry < DateTime.UtcNow)
+            {
+                // Session expired — clear the domain cache so the next login gets a fresh CRM lookup
+                _schoolConfigService.InvalidateDomainCache(HttpContext.Request.Host.Host);
                 return Unauthorized(new { message = "Refresh token has expired. Please log in again." });
+            }
 
             if (string.IsNullOrEmpty(userLogin.RefreshTokenHash) ||
                 !BCrypt.Net.BCrypt.Verify(request.RefreshToken, userLogin.RefreshTokenHash))
+            {
+                // Invalid token — clear cache to force fresh CRM state on re-login
+                _schoolConfigService.InvalidateDomainCache(HttpContext.Request.Host.Host);
                 return Unauthorized(new { message = "Invalid refresh token" });
+            }
 
             // Rotate refresh token
             var newRawRefreshToken = GenerateSecureToken();
@@ -208,7 +307,7 @@ public class AuthController : ControllerBase
             userLogin.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var refreshDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+            var (refreshDesignation, refreshPhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
             var userModel = MapToUserModel(userLogin, refreshDesignation);
             var newAccessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
             var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
@@ -218,7 +317,7 @@ public class AuthController : ControllerBase
                 Token = newAccessToken,
                 RefreshToken = newRawRefreshToken,
                 Expiration = DateTime.UtcNow.AddMinutes(expMins),
-                User = BuildUserInfo(userLogin, refreshDesignation)
+                User = BuildUserInfo(userLogin, refreshDesignation, refreshPhoto)
             });
         }
         catch (Exception ex)
@@ -248,6 +347,10 @@ public class AuthController : ControllerBase
             await _context.SaveChangesAsync();
         }
 
+        // Invalidate the domain cache so the next login performs a fresh CRM lookup.
+        // This ensures any DBServer/DBName changes take effect immediately after logout.
+        _schoolConfigService.InvalidateDomainCache(HttpContext.Request.Host.Host);
+
         return Ok(new { message = "Logged out successfully" });
     }
 
@@ -268,8 +371,8 @@ public class AuthController : ControllerBase
         if (userLogin == null)
             return NotFound(new { message = "User not found" });
 
-        var meDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
-        return Ok(BuildUserInfo(userLogin, meDesignation));
+        var (meDesignation, mePhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        return Ok(BuildUserInfo(userLogin, meDesignation, mePhoto));
     }
 
     /// <summary>
@@ -363,7 +466,7 @@ public class AuthController : ControllerBase
         userLogin.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var twoFaDesignation = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
+        var (twoFaDesignation, twoFaPhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
         var userModel = MapToUserModel(userLogin, twoFaDesignation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
@@ -375,7 +478,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = BuildUserInfo(userLogin, twoFaDesignation)
+            User = BuildUserInfo(userLogin, twoFaDesignation, twoFaPhoto)
         });
     }
 
@@ -491,16 +594,112 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Enforces school billing policy for admin accounts.
+    /// 1) Inactive/Suspended billing => block login/refresh.
+    /// 2) Expiry older than 14 days => auto-suspend and block.
+    /// </summary>
+    private async Task<(bool allowed, string? message)> EnforceAdminBillingPolicyAsync(UserLogin userLogin)
+    {
+        if (!IsSchoolAdminRole(userLogin.Role))
+            return (true, null);
+
+        if (userLogin.SchoolId == Guid.Empty)
+            return (false, "School account is not configured for this login.");
+
+        var school = await _context.Schools
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.Id == userLogin.SchoolId && !s.IsDeleted);
+
+        if (school == null)
+            return (false, "School account not found. Contact support.");
+
+        if (!school.IsActive)
+            return (false, "School account is inactive. Please contact support to reactivate access.");
+
+        var status = (school.BillingStatus ?? "Active").Trim().ToLowerInvariant();
+        var nowUtc = DateTime.UtcNow;
+
+        if (school.BillingExpiryDate.HasValue)
+        {
+            var graceCutoff = school.BillingExpiryDate.Value.Date.AddDays(14);
+            if (nowUtc.Date > graceCutoff)
+            {
+                if (status is not "inactive" and not "suspended")
+                {
+                    school.BillingStatus = "Suspended";
+                    school.UpdatedAt = nowUtc;
+                    await _context.SaveChangesAsync();
+                }
+
+                return (false, "Account suspended due to unpaid subscription. Please renew your plan to continue.");
+            }
+        }
+
+        if (status == "inactive")
+            return (false, "Account suspended due to billing status Inactive. Please contact support to reactivate.");
+
+        if (status == "suspended")
+            return (false, "Account suspended due to billing status Suspended. Please clear billing and reactivate.");
+
+        return (true, null);
+    }
+
+    private static bool IsSchoolAdminRole(string? role)
+    {
+        var normalized = role?.Trim().ToLowerInvariant();
+        return normalized is "admin" or "administrator" or "schooladmin" or "school_admin" or "school admin";
+    }
+
+    /// <summary>
     /// Looks up the Staff member with a matching email to get their actual designation
     /// (e.g. "Principal", "Mathematics Teacher"). Returns null if no staff record found.
     /// </summary>
-    private async Task<string?> ResolveDesignationAsync(string email, Guid schoolId)
+    private async Task<(string? Designation, string? ProfilePhoto)> ResolveDesignationAsync(string email, Guid schoolId)
     {
-        if (string.IsNullOrWhiteSpace(email)) return null;
-        return await _context.StaffMembers
-            .Where(s => s.SchoolId == schoolId && s.Email.ToLower() == email.ToLower() && !s.IsDeleted)
-            .Select(s => s.Designation)
+        if (string.IsNullOrWhiteSpace(email)) return (null, null);
+        var normalizedEmail = email.ToLower();
+
+        var staff = await _context.StaffMembers
+            .Where(s => s.SchoolId == schoolId && s.Email.ToLower() == normalizedEmail && !s.IsDeleted)
+            .Select(s => new { s.Designation, s.ProfilePhoto })
             .FirstOrDefaultAsync();
+
+        if (!string.IsNullOrWhiteSpace(staff?.ProfilePhoto))
+            return (staff.Designation, staff.ProfilePhoto);
+
+        var user = await _context.UserLogins
+            .IgnoreQueryFilters()
+            .Where(u => u.SchoolId == schoolId && u.Email.ToLower() == normalizedEmail && !u.IsDeleted)
+            .Select(u => new { u.Id, u.Role })
+            .FirstOrDefaultAsync();
+
+        if (user != null)
+        {
+            var customPhoto = await _context.UserSettings
+                .Where(s => s.UserId == user.Id && s.SettingKey == "profile_photo_url" && !s.IsDeleted)
+                .OrderByDescending(s => s.UpdatedAt)
+                .Select(s => s.SettingValue)
+                .FirstOrDefaultAsync();
+
+            if (!string.IsNullOrWhiteSpace(customPhoto))
+                return (staff?.Designation, customPhoto);
+
+            var role = (user.Role ?? string.Empty).ToLower();
+            var useSchoolLogo = role is "admin" or "administrator" or "super_admin";
+            if (useSchoolLogo)
+            {
+                var schoolLogo = await _context.Schools
+                    .IgnoreQueryFilters()
+                    .Where(s => s.Id == schoolId && !s.IsDeleted)
+                    .Select(s => s.Logo)
+                    .FirstOrDefaultAsync();
+
+                if (!string.IsNullOrWhiteSpace(schoolLogo))
+                    return (staff?.Designation, schoolLogo);
+            }
+        }
+
+        return (staff?.Designation, null);
     }
 
     private static User MapToUserModel(UserLogin userLogin, string? designation = null) => new()
@@ -511,9 +710,10 @@ public class AuthController : ControllerBase
         LastName = userLogin.LastName,
         Role = userLogin.Role,
         Designation = designation,
+        LinkedEntityId = userLogin.LinkedEntityId,
     };
 
-    private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null) => new()
+    private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null, string? profilePhoto = null) => new()
     {
         Id = userLogin.Id,
         Email = userLogin.Email,
@@ -523,5 +723,7 @@ public class AuthController : ControllerBase
         Designation = designation,
         SchoolId = userLogin.SchoolId,
         RequirePasswordChange = userLogin.RequirePasswordChange,
+        LinkedEntityId = userLogin.LinkedEntityId,
+        ProfilePhoto = profilePhoto,
     };
 }

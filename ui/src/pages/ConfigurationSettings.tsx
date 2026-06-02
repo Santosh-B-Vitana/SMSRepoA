@@ -13,7 +13,24 @@ import { AnimatedWrapper } from "@/components/common/AnimatedWrapper";
 import { ModernCard } from "@/components/common/ModernCard";
 import { BoardConfigurationManager } from "@/components/board/BoardConfigurationManager";
 import { useToast } from '@/hooks/use-toast';
-import { mockRoleApi, Role, Permission } from '@/services/mockRoleApi';
+import roleApi from '@/services/api/roleApi';
+
+// Local types used by this component's permissions UI
+interface Permission {
+  name: string;
+  canView: boolean;
+  canAdd: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+interface Role {
+  id: string;
+  name: string;
+  description?: string;
+  active: boolean;
+  permissions: Permission[];
+}
 
 // Module categories matching the feature permissions
 const MODULE_CATEGORIES = {
@@ -86,12 +103,42 @@ export default function ConfigurationSettings() {
   const loadRoles = async () => {
     setLoading(true);
     try {
-      const data = await mockRoleApi.getRoles();
-      setRoles(data);
+      const data = await roleApi.getRoles();
+      const list = data.roles ?? data.items ?? [];
+      setRoles(list.map(r => ({
+        id: r.id,
+        name: r.displayName ?? r.name,
+        description: r.description,
+        active: r.isActive,
+        permissions: []
+      })));
     } catch (error) {
       console.error('Error loading roles:', error);
     }
     setLoading(false);
+  };
+
+  /** Fetch real permissions for a role and map to internal Permission[] format */
+  const fetchRolePermissions = async (roleId: string): Promise<Permission[]> => {
+    const [grouped, rolePermIds] = await Promise.all([
+      roleApi.getPermissionsGrouped(),
+      roleApi.getRolePermissionIds(roleId)
+    ]);
+    const permIdSet = new Set(rolePermIds);
+    return grouped.map(group => {
+      const modulePerms = group.permissions;
+      const viewPerm = modulePerms.find(p => p.action === 'View');
+      const createPerm = modulePerms.find(p => p.action === 'Create');
+      const editPerm = modulePerms.find(p => p.action === 'Edit');
+      const deletePerm = modulePerms.find(p => p.action === 'Delete');
+      return {
+        name: group.module,
+        canView: viewPerm ? permIdSet.has(viewPerm.id) : false,
+        canAdd: createPerm ? permIdSet.has(createPerm.id) : false,
+        canEdit: editPerm ? permIdSet.has(editPerm.id) : false,
+        canDelete: deletePerm ? permIdSet.has(deletePerm.id) : false
+      };
+    });
   };
 
   // Convert old permission format to new format
@@ -109,32 +156,34 @@ export default function ConfigurationSettings() {
     return result;
   };
 
-  const handleViewPermissions = (role: Role) => {
-    setSelectedRole(role);
+  const handleViewPermissions = async (role: Role) => {
+    const permissions = await fetchRolePermissions(role.id);
+    setSelectedRole({ ...role, permissions });
     setIsEditing(false);
     setAddDialogOpen(false);
     setFormData({
       name: role.name,
       description: role.description || '',
-      permissions: convertPermissionsToLevels(role.permissions)
+      permissions: convertPermissionsToLevels(permissions)
     });
   };
 
-  const handleEditPermissions = (role: Role) => {
-    setSelectedRole(role);
+  const handleEditPermissions = async (role: Role) => {
+    const permissions = await fetchRolePermissions(role.id);
+    setSelectedRole({ ...role, permissions });
     setIsEditing(true);
     setAddDialogOpen(false);
     setFormData({
       name: role.name,
       description: role.description || '',
-      permissions: convertPermissionsToLevels(role.permissions)
+      permissions: convertPermissionsToLevels(permissions)
     });
   };
 
   const handleDelete = async (roleId: string) => {
     if (confirm('Are you sure you want to delete this role?')) {
       try {
-        await mockRoleApi.deleteRole(roleId);
+        await roleApi.deleteRole(roleId);
         loadRoles();
         toast({
           title: "Success",
@@ -163,43 +212,24 @@ export default function ConfigurationSettings() {
   const handleSave = async () => {
     try {
       if (addDialogOpen) {
-        // Adding or editing role name/description only
         if (selectedRole) {
           // Update existing role name/description
-          await mockRoleApi.updateRole(selectedRole.id, {
-            ...selectedRole,
-            name: formData.name,
+          await roleApi.updateRole(selectedRole.id, {
+            displayName: formData.name,
             description: formData.description
           });
-          toast({
-            title: "Success",
-            description: "Role updated successfully",
-          });
+          toast({ title: "Success", description: "Role updated successfully" });
         } else {
           // Create new role
-          const allModules = Object.values(MODULE_CATEGORIES).flatMap(cat => cat.modules);
-          const permissions: Permission[] = allModules.map(name => ({
-            name,
-            canView: name === 'Dashboard',
-            canAdd: false,
-            canEdit: false,
-            canDelete: false
-          }));
-
-          await mockRoleApi.addRole({
-            id: Date.now().toString(),
+          await roleApi.createRole({
             name: formData.name,
-            description: formData.description,
-            permissions,
-            active: true
+            displayName: formData.name,
+            description: formData.description
           });
-          toast({
-            title: "Success",
-            description: "Role created successfully",
-          });
+          toast({ title: "Success", description: "Role created successfully" });
         }
       } else {
-        // Saving permissions changes
+        // Save permissions changes
         const permissions: Permission[] = Object.entries(formData.permissions).map(([name, level]) => ({
           name,
           canView: level === 'view' || level === 'edit',
@@ -208,14 +238,23 @@ export default function ConfigurationSettings() {
           canDelete: level === 'edit'
         }));
 
-        await mockRoleApi.updateRole(selectedRole!.id, {
-          ...selectedRole!,
-          permissions
+        // Map internal permissions to real permission IDs
+        const grouped = await roleApi.getPermissionsGrouped();
+        const nameToId: Record<string, string> = {};
+        grouped.forEach(g => g.permissions.forEach(p => {
+          nameToId[`${g.module}.${p.action}`] = p.id;
+        }));
+
+        const selectedIds: string[] = [];
+        permissions.forEach(perm => {
+          if (perm.canView && nameToId[`${perm.name}.View`]) selectedIds.push(nameToId[`${perm.name}.View`]);
+          if (perm.canAdd && nameToId[`${perm.name}.Create`]) selectedIds.push(nameToId[`${perm.name}.Create`]);
+          if (perm.canEdit && nameToId[`${perm.name}.Edit`]) selectedIds.push(nameToId[`${perm.name}.Edit`]);
+          if (perm.canDelete && nameToId[`${perm.name}.Delete`]) selectedIds.push(nameToId[`${perm.name}.Delete`]);
         });
-        toast({
-          title: "Success",
-          description: "Permissions updated successfully",
-        });
+
+        await roleApi.setRolePermissions(selectedRole!.id, selectedIds);
+        toast({ title: "Success", description: "Permissions updated successfully" });
       }
 
       loadRoles();

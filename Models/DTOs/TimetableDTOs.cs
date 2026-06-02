@@ -3,6 +3,28 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SmsApi.Models.DTOs
 {
+    // ─── Teacher scheduling-conflict info returned in 409 responses ────────────
+    public class TeacherConflictInfo
+    {
+        public Guid ConflictingPeriodId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public string? SectionName { get; set; }
+        public string? SubjectName { get; set; }
+        public string DayOfWeek { get; set; } = string.Empty;
+        public string StartTime { get; set; } = string.Empty;
+        public string EndTime { get; set; } = string.Empty;
+    }
+
+    public class TeacherConflictException : InvalidOperationException
+    {
+        public TeacherConflictInfo ConflictInfo { get; }
+        public TeacherConflictException(TeacherConflictInfo info)
+            : base("Teacher has a scheduling conflict at this time")
+        {
+            ConflictInfo = info;
+        }
+    }
+
     // Timetable Basic DTO - Lightweight version for list views
     public class TimetableBasicDto
     {
@@ -88,6 +110,9 @@ namespace SmsApi.Models.DTOs
         public string? Room { get; set; }
 
         public string? Notes { get; set; }
+
+        /// <summary>Admin-only: skip teacher scheduling-conflict check and override anyway.</summary>
+        public bool ForceOverride { get; set; } = false;
     }
 
     public class UpdateTimetablePeriodRequest
@@ -107,6 +132,9 @@ namespace SmsApi.Models.DTOs
         public string? Room { get; set; }
 
         public string? Notes { get; set; }
+
+        /// <summary>Admin-only: skip teacher scheduling-conflict check and override anyway.</summary>
+        public bool ForceOverride { get; set; } = false;
     }
 
     public class TimetablePeriodResponse

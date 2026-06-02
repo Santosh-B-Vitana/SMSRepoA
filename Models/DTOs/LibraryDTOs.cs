@@ -148,4 +148,115 @@ namespace SmsApi.Models.DTOs
     {
         public bool Paid { get; set; } = true;
     }
+
+    // ── P1: Book Reservation DTOs ─────────────────────────────────────────────
+
+    public class CreateBookReservationRequest
+    {
+        [Required] public Guid BookId { get; set; }
+        [Required] public Guid MemberId { get; set; }
+        [Required] [MaxLength(20)] public string MemberType { get; set; } = "student";
+        [MaxLength(500)] public string? Notes { get; set; }
+    }
+
+    public class BookReservationResponse
+    {
+        public Guid Id { get; set; }
+        public Guid SchoolId { get; set; }
+        public Guid BookId { get; set; }
+        public string BookTitle { get; set; } = string.Empty;
+        public Guid MemberId { get; set; }
+        public string MemberName { get; set; } = string.Empty;
+        public string MemberType { get; set; } = "student";
+        public DateTime ReservedAt { get; set; }
+        public DateTime ExpiresAt { get; set; }
+        public string Status { get; set; } = "pending";
+        public string? Notes { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    // ── P1: Periodical DTOs ───────────────────────────────────────────────────
+
+    public class CreatePeriodicalRequest
+    {
+        [Required] [MaxLength(300)] public string Title { get; set; } = string.Empty;
+        [Required] [MaxLength(50)] public string Type { get; set; } = "magazine";
+        [MaxLength(50)] public string? Frequency { get; set; }
+        [MaxLength(255)] public string? Publisher { get; set; }
+        [MaxLength(20)] public string? ISSN { get; set; }
+        public DateTime? SubscriptionStart { get; set; }
+        public DateTime? SubscriptionEnd { get; set; }
+        public decimal? AnnualCost { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    public class PeriodicalResponse
+    {
+        public Guid Id { get; set; }
+        public Guid SchoolId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Type { get; set; } = "magazine";
+        public string? Frequency { get; set; }
+        public string? Publisher { get; set; }
+        public string? ISSN { get; set; }
+        public DateTime? SubscriptionStart { get; set; }
+        public DateTime? SubscriptionEnd { get; set; }
+        public decimal? AnnualCost { get; set; }
+        public string Status { get; set; } = "active";
+        public string? Notes { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    // ── P1: Library Member DTOs ───────────────────────────────────────────────
+
+    public class CreateLibraryMemberRequest
+    {
+        [Required] [MaxLength(20)] public string MemberType { get; set; } = "student";
+        [Required] public Guid MemberId { get; set; }
+        public DateTime? ValidFrom { get; set; }
+        public DateTime? ValidTo { get; set; }
+        public int MaxBooksAllowed { get; set; } = 3;
+        public int LoanDays { get; set; } = 14;
+    }
+
+    public class UpdateLibraryMemberRequest
+    {
+        public DateTime? ValidFrom { get; set; }
+        public DateTime? ValidTo { get; set; }
+        public int? MaxBooksAllowed { get; set; }
+        public int? LoanDays { get; set; }
+    }
+
+    public class LibraryMemberResponse
+    {
+        public Guid Id { get; set; }
+        public Guid SchoolId { get; set; }
+        public string MemberType { get; set; } = "student";
+        public Guid MemberId { get; set; }
+        public string MemberName { get; set; } = string.Empty;
+        public string CardNumber { get; set; } = string.Empty;
+        public DateTime ValidFrom { get; set; }
+        public DateTime ValidTo { get; set; }
+        public string Status { get; set; } = "active";
+        public int MaxBooksAllowed { get; set; }
+        public int LoanDays { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    // ── P1: Overdue Alert ─────────────────────────────────────────────────────
+
+    public class OverdueBookResponse
+    {
+        public Guid IssueId { get; set; }
+        public Guid BookId { get; set; }
+        public string BookTitle { get; set; } = string.Empty;
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public DateTime DueDate { get; set; }
+        public int DaysOverdue { get; set; }
+        public decimal AccruedFine { get; set; }
+    }
 }
+

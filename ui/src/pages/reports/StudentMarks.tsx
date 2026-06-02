@@ -8,7 +8,7 @@ import { ArrowLeft, RefreshCw, Download, Search, Trophy, User } from "lucide-rea
 import { useNavigate } from "react-router-dom";
 import examinationApi, { ExamBasic } from "@/services/api/examinationApi";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5092";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 interface StudentMarkDetail {
   studentId: string;
@@ -254,10 +254,6 @@ export default function StudentMarks() {
           </>
         )}
       </div>
-    </div>
-  );
-}
-
     </div>
   );
 }

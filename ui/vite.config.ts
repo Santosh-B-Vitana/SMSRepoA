@@ -8,6 +8,12 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      "/files": {
+        target: "http://localhost:5092",
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [
     react(),

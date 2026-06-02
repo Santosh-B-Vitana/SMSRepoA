@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,7 +80,7 @@ const MEET_STATUS_COLORS: Record<string, string> = {
   planned: "bg-blue-100 text-blue-700 border-blue-200",
   open: "bg-green-100 text-green-700 border-green-200",
   ongoing: "bg-yellow-100 text-yellow-700 border-yellow-200",
-  completed: "bg-gray-100 text-gray-700 border-gray-200",
+  completed: "bg-muted text-muted-foreground border-border",
   cancelled: "bg-red-100 text-red-700 border-red-200",
 };
 
@@ -162,16 +162,17 @@ function AlumniAvatar({ firstName, lastName, photoUrl, size = "md" }: {
 }
 
 function AlumniCardBadges({ alumni }: { alumni: AlumniBasic }) {
+  const { t } = useLanguage();
   return (
     <div className="flex items-center gap-1 flex-wrap">
       {alumni.isStarAlumni && (
         <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
-          <Star className="h-3 w-3 fill-amber-500 stroke-amber-700" /> Star
+          <Star className="h-3 w-3 fill-amber-500 stroke-amber-700" /> {t('alumni.starBadge')}
         </span>
       )}
       {alumni.isMentor && (
         <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-violet-100 text-violet-700 border border-violet-200">
-          <GraduationCap className="h-3 w-3" /> Mentor
+          <GraduationCap className="h-3 w-3" /> {t('alumni.mentorBadge')}
         </span>
       )}
     </div>
@@ -183,6 +184,7 @@ function Pagination({
 }: {
   page: number; totalPages: number; onPage: (p: number) => void;
 }) {
+  const { t } = useLanguage();
   if (totalPages <= 1) return null;
   return (
     <div className="flex items-center justify-center gap-2 pt-4">
@@ -190,7 +192,7 @@ function Pagination({
         <ChevronLeft className="h-4 w-4" />
       </Button>
       <span className="text-sm text-muted-foreground">
-        Page {page} of {totalPages}
+        {t('common.page')} {page} {t('common.of')} {totalPages}
       </span>
       <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>
         <ChevronRight className="h-4 w-4" />
@@ -214,6 +216,7 @@ function ProfileDialog({
   onClose: () => void;
   onEdit: (alumni: AlumniFull) => void;
 }) {
+  const { t } = useLanguage();
   const [alumni, setAlumni] = useState<AlumniFull | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -275,7 +278,7 @@ function ProfileDialog({
                   </div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => onEdit(alumni)}>
-                  <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit
+                  <Edit className="h-3.5 w-3.5 mr-1.5" /> {t('alumni.edit')}
                 </Button>
               </div>
             </DialogHeader>
@@ -285,7 +288,7 @@ function ProfileDialog({
             <div className="grid grid-cols-2 gap-6 text-sm">
               {/* Contact */}
               <div className="space-y-2">
-                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Contact</h3>
+                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.contactSection')}</h3>
                 {alumni.email && (
                   <div className="flex items-center gap-2">
                     <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -308,7 +311,7 @@ function ProfileDialog({
 
               {/* Academic */}
               <div className="space-y-2">
-                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Academic</h3>
+                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.academicSection')}</h3>
                 <div className="flex items-center gap-2">
                   <GraduationCap className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span>Class {alumni.class}{alumni.section ? `-${alumni.section}` : ""} · Batch {alumni.graduationYear}</span>
@@ -316,7 +319,7 @@ function ProfileDialog({
                 {alumni.rollNumber && (
                   <div className="flex items-center gap-2">
                     <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span>Roll No: {alumni.rollNumber}</span>
+                    <span>{t('alumni.rollNoLabel')} {alumni.rollNumber}</span>
                   </div>
                 )}
               </div>
@@ -324,7 +327,7 @@ function ProfileDialog({
               {/* Professional */}
               {alumni.company && (
                 <div className="space-y-2 col-span-2">
-                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Professional</h3>
+                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.professionalSection')}</h3>
                   <div className="flex items-center gap-2">
                     <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span>
@@ -349,16 +352,16 @@ function ProfileDialog({
 
               {/* Engagement */}
               <div className="space-y-2">
-                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Engagement</h3>
+                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.engagementSection')}</h3>
                 <div className="flex gap-3">
                   {alumni.willingToHire && (
                     <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
-                      <UserCheck className="h-3 w-3" /> Open to Hire
+                      <UserCheck className="h-3 w-3" /> {t('alumni.openToHire')}
                     </span>
                   )}
                   {alumni.willingToSpeak && (
                     <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
-                      <Mic className="h-3 w-3" /> Guest Speaker
+                      <Mic className="h-3 w-3" /> {t('alumni.guestSpeaker')}
                     </span>
                   )}
                 </div>
@@ -369,7 +372,7 @@ function ProfileDialog({
 
               {/* Social */}
               <div className="space-y-2">
-                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Social</h3>
+                <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.socialSection')}</h3>
                 <div className="flex gap-2">
                   {alumni.linkedinUrl && (
                     <a href={alumni.linkedinUrl} target="_blank" rel="noopener noreferrer"
@@ -389,7 +392,7 @@ function ProfileDialog({
               {/* Skills */}
               {alumni.skills.length > 0 && (
                 <div className="space-y-2 col-span-2">
-                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Skills</h3>
+                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.skillsSection')}</h3>
                   <div className="flex flex-wrap gap-1.5">
                     {alumni.skills.map(s => (
                       <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
@@ -401,7 +404,7 @@ function ProfileDialog({
               {/* Achievements */}
               {alumni.achievements && (
                 <div className="space-y-2 col-span-2">
-                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Achievements</h3>
+                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.achievementsSection')}</h3>
                   <p className="text-sm leading-relaxed">{alumni.achievements}</p>
                 </div>
               )}
@@ -409,7 +412,7 @@ function ProfileDialog({
               {/* Activity */}
               {(alumni.attendedMeets.length > 0 || alumni.donations.length > 0) && (
                 <div className="space-y-2 col-span-2">
-                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Engagement History</h3>
+                  <h3 className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{t('alumni.engagementHistory')}</h3>
                   <div className="flex gap-4 text-sm">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5" />
@@ -452,6 +455,7 @@ function AddEditAlumniDialog({
   editData?: AlumniFull | null;
   onSaved: () => void;
 }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<CreateAlumniDto>(BLANK_CREATE);
   const [saving, setSaving] = useState(false);
 
@@ -533,37 +537,37 @@ function AddEditAlumniDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editData ? "Edit Alumni Profile" : "Add New Alumni"}</DialogTitle>
+          <DialogTitle>{editData ? t('alumni.editTitle') : t('alumni.addTitle')}</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-4 mt-2">
           {/* Personal */}
           <div className="col-span-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Personal Information</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t('alumni.personalInfo')}</h3>
           </div>
           <div className="space-y-1">
-            <Label>First Name *</Label>
+            <Label>{t('alumni.firstNameLabel')}</Label>
             <Input value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="Rajesh" />
           </div>
           <div className="space-y-1">
-            <Label>Last Name *</Label>
+            <Label>{t('alumni.lastNameLabel')}</Label>
             <Input value={form.lastName} onChange={e => set("lastName", e.target.value)} placeholder="Kumar" />
           </div>
           <div className="space-y-1">
-            <Label>Email *</Label>
+            <Label>{t('alumni.emailLabel')}</Label>
             <Input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="rajesh@email.com" />
           </div>
           <div className="space-y-1">
-            <Label>Phone</Label>
+            <Label>{t('alumni.phoneLabel')}</Label>
             <Input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+91 98765 43210" />
           </div>
 
           {/* Academic */}
           <div className="col-span-2 pt-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Academic Details</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t('alumni.academicDetails')}</h3>
           </div>
           <div className="space-y-1">
-            <Label>Graduation Year *</Label>
+            <Label>{t('alumni.gradYear')}</Label>
             <Select value={form.graduationYear} onValueChange={v => set("graduationYear", v)}>
               <SelectTrigger><SelectValue placeholder="Select year" /></SelectTrigger>
               <SelectContent>
@@ -572,28 +576,28 @@ function AddEditAlumniDialog({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Class *</Label>
+            <Label>{t('alumni.classLabel')}</Label>
             <Input value={form.class} onChange={e => set("class", e.target.value)} placeholder="12-A" />
           </div>
           <div className="space-y-1">
-            <Label>Section</Label>
+            <Label>{t('alumni.sectionLabel')}</Label>
             <Input value={form.section} onChange={e => set("section", e.target.value)} placeholder="A" />
           </div>
 
           {/* Professional */}
           <div className="col-span-2 pt-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Professional Info</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t('alumni.professionalInfo')}</h3>
           </div>
           <div className="space-y-1">
-            <Label>Designation / Occupation</Label>
+            <Label>{t('alumni.designationOcc')}</Label>
             <Input value={form.currentOccupation} onChange={e => set("currentOccupation", e.target.value)} placeholder="Software Engineer" />
           </div>
           <div className="space-y-1">
-            <Label>Company / Organisation</Label>
+            <Label>{t('alumni.companyOrg')}</Label>
             <Input value={form.company} onChange={e => set("company", e.target.value)} placeholder="Tech Corp Ltd" />
           </div>
           <div className="space-y-1">
-            <Label>Industry</Label>
+            <Label>{t('alumni.industryLabel')}</Label>
             <Select value={form.industry || "_none_"} onValueChange={v => set("industry", v === "_none_" ? "" : v)}>
               <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
               <SelectContent>
@@ -603,30 +607,30 @@ function AddEditAlumniDialog({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>LinkedIn URL</Label>
+            <Label>{t('alumni.linkedinUrl')}</Label>
             <Input value={form.linkedinUrl} onChange={e => set("linkedinUrl", e.target.value)} placeholder="https://linkedin.com/in/..." />
           </div>
 
           {/* Location */}
           <div className="col-span-2 pt-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Location</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t('alumni.location')}</h3>
           </div>
           <div className="space-y-1">
-            <Label>City</Label>
+            <Label>{t('alumni.cityLabel')}</Label>
             <Input value={form.city} onChange={e => set("city", e.target.value)} placeholder="Mumbai" />
           </div>
           <div className="space-y-1">
-            <Label>State</Label>
+            <Label>{t('alumni.stateLabel')}</Label>
             <Input value={form.state} onChange={e => set("state", e.target.value)} placeholder="Maharashtra" />
           </div>
           <div className="space-y-1">
-            <Label>Country</Label>
+            <Label>{t('alumni.countryLabel')}</Label>
             <Input value={form.country} onChange={e => set("country", e.target.value)} placeholder="India" />
           </div>
 
           {/* Achievements */}
           <div className="col-span-2 space-y-1 pt-2">
-            <Label>Achievements & Notable Work</Label>
+            <Label>{t('alumni.achievementsWork')}</Label>
             <Textarea
               value={form.achievements}
               onChange={e => set("achievements", e.target.value)}
@@ -637,7 +641,7 @@ function AddEditAlumniDialog({
 
           {/* Engagement flags */}
           <div className="col-span-2 pt-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Engagement Flags</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t('alumni.engagementFlags')}</h3>
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
@@ -645,7 +649,7 @@ function AddEditAlumniDialog({
               checked={form.isStarAlumni}
               onCheckedChange={v => set("isStarAlumni", !!v)}
             />
-            <Label htmlFor="isStarAlumni" className="cursor-pointer">Star Alumni</Label>
+            <Label htmlFor="isStarAlumni" className="cursor-pointer">{t('alumni.isStarAlumni')}</Label>
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
@@ -653,7 +657,7 @@ function AddEditAlumniDialog({
               checked={form.isMentor}
               onCheckedChange={v => set("isMentor", !!v)}
             />
-            <Label htmlFor="isMentor" className="cursor-pointer">Available as Mentor</Label>
+            <Label htmlFor="isMentor" className="cursor-pointer">{t('alumni.isMentor')}</Label>
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
@@ -661,7 +665,7 @@ function AddEditAlumniDialog({
               checked={form.willingToHire}
               onCheckedChange={v => set("willingToHire", !!v)}
             />
-            <Label htmlFor="willingToHire" className="cursor-pointer">Open to Hiring from School</Label>
+            <Label htmlFor="willingToHire" className="cursor-pointer">{t('alumni.willingToHire')}</Label>
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
@@ -669,14 +673,14 @@ function AddEditAlumniDialog({
               checked={form.willingToSpeak}
               onCheckedChange={v => set("willingToSpeak", !!v)}
             />
-            <Label htmlFor="willingToSpeak" className="cursor-pointer">Willing to be Guest Speaker</Label>
+            <Label htmlFor="willingToSpeak" className="cursor-pointer">{t('alumni.willingToSpeak')}</Label>
           </div>
         </div>
 
         <DialogFooter className="mt-4 gap-2">
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>{t('alumni.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" /> Saving…</> : <><CheckCircle2 className="h-4 w-4 mr-2" /> {editData ? "Save Changes" : "Add Alumni"}</>}
+            {saving ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" /> {t('alumni.saving')}</> : <><CheckCircle2 className="h-4 w-4 mr-2" /> {editData ? t('alumni.saveChanges') : t('alumni.addAlumni')}</>}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -689,6 +693,7 @@ function AddEditAlumniDialog({
 // ─────────────────────────────────────────────────────────────
 
 function OverviewTab() {
+  const { t } = useLanguage();
   const [stats, setStats] = useState<AlumniStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(false);
@@ -708,7 +713,7 @@ function OverviewTab() {
     return (
       <div className="flex items-center justify-center py-24">
         <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Loading overview…</span>
+        <span className="ml-2 text-muted-foreground">{t('alumni.loading')}</span>
       </div>
     );
   }
@@ -717,9 +722,9 @@ function OverviewTab() {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
         <AlertCircle className="h-8 w-8 text-destructive" />
-        <p className="text-muted-foreground">Failed to load stats</p>
+        <p className="text-muted-foreground">{t('alumni.failedLoad')}</p>
         <Button variant="outline" size="sm" onClick={load}>
-          <RefreshCw className="h-4 w-4 mr-2" /> Retry
+          <RefreshCw className="h-4 w-4 mr-2" /> {t('alumni.retry')}
         </Button>
       </div>
     );
@@ -740,22 +745,22 @@ function OverviewTab() {
     <div className="space-y-6">
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard label="Total Alumni" value={fmt(stats.total)} icon={GraduationCap} color="bg-violet-500" />
-        <StatCard label="Star Alumni" value={fmt(stats.starAlumni)} icon={Star} color="bg-amber-500" />
-        <StatCard label="Mentors" value={fmt(stats.mentors)} icon={Award} color="bg-blue-500" />
+        <StatCard label={t('alumni.totalAlumni')} value={fmt(stats.total)} icon={GraduationCap} color="bg-violet-500" />
+        <StatCard label={t('alumni.starAlumni')} value={fmt(stats.starAlumni)} icon={Star} color="bg-amber-500" />
+        <StatCard label={t('alumni.mentors')} value={fmt(stats.mentors)} icon={Award} color="bg-blue-500" />
         <StatCard
-          label="This Batch"
+          label={t('alumni.thisBatch')}
           value={fmt(stats.thisYear)}
           icon={UserPlus}
           color="bg-emerald-500"
           sub={`Class of ${new Date().getFullYear()}`}
         />
         <StatCard
-          label="Top Companies"
+          label={t('alumni.topCompanies')}
           value={stats.topCompanies.length}
           icon={Building2}
           color="bg-rose-500"
-          sub="employers represented"
+          sub={t('alumni.employersRepresented')}
         />
       </div>
 
@@ -763,11 +768,11 @@ function OverviewTab() {
         {/* Batch Year Distribution */}
         <Card className="col-span-2 border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Alumni by Graduation Year</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('alumni.alumniByYear')}</CardTitle>
           </CardHeader>
           <CardContent>
             {batchData.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No data yet</p>
+              <p className="text-muted-foreground text-sm text-center py-8">{t('alumni.noDataYet')}</p>
             ) : (
               <div className="space-y-2">
                 {batchData.map(([year, count]) => (
@@ -790,11 +795,11 @@ function OverviewTab() {
         {/* Top Companies */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Top Employers</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('alumni.topEmployers')}</CardTitle>
           </CardHeader>
           <CardContent>
             {stats.topCompanies.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No data yet</p>
+              <p className="text-muted-foreground text-sm text-center py-8">{t('alumni.noDataYet')}</p>
             ) : (
               <ol className="space-y-2">
                 {stats.topCompanies.slice(0, 7).map((c, i) => (
@@ -818,11 +823,11 @@ function OverviewTab() {
         {/* Industries */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Industry Distribution</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('alumni.industryDistribution')}</CardTitle>
           </CardHeader>
           <CardContent>
             {topIndustries.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No data yet</p>
+              <p className="text-muted-foreground text-sm text-center py-8">{t('alumni.noDataYet')}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {topIndustries.map(([industry, count]) => (
@@ -840,11 +845,11 @@ function OverviewTab() {
         {/* Recent Additions */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Recent Alumni</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('alumni.recentAlumni')}</CardTitle>
           </CardHeader>
           <CardContent>
             {stats.recentAlumni.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No alumni added yet</p>
+              <p className="text-muted-foreground text-sm text-center py-8">{t('alumni.noAlumniAdded')}</p>
             ) : (
               <div className="space-y-3">
                 {stats.recentAlumni.map(a => (
@@ -881,6 +886,7 @@ function DirectoryTab({
   onOpenProfile: (id: string) => void;
   onAddAlumni: () => void;
 }) {
+  const { t } = useLanguage();
   const [alumni, setAlumni] = useState<AlumniBasic[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -943,7 +949,7 @@ function DirectoryTab({
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name, email, company…"
+            placeholder={t('alumni.searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9"
@@ -954,7 +960,7 @@ function DirectoryTab({
             <SelectValue placeholder="Year" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all_">All Years</SelectItem>
+            <SelectItem value="_all_">{t('alumni.allYears')}</SelectItem>
             {BATCH_YEARS.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -963,17 +969,17 @@ function DirectoryTab({
             <SelectValue placeholder="Industry" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all_">All Industries</SelectItem>
+            <SelectItem value="_all_">{t('alumni.allIndustries')}</SelectItem>
             {INDUSTRIES.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
           </SelectContent>
         </Select>
         <div className="flex items-center gap-2">
           <Checkbox id="mentorOnly" checked={mentorOnly} onCheckedChange={v => setMentorOnly(!!v)} />
-          <Label htmlFor="mentorOnly" className="cursor-pointer text-sm">Mentors</Label>
+          <Label htmlFor="mentorOnly" className="cursor-pointer text-sm">{t('alumni.filterMentors')}</Label>
         </div>
         <div className="flex items-center gap-2">
           <Checkbox id="starOnly" checked={starOnly} onCheckedChange={v => setStarOnly(!!v)} />
-          <Label htmlFor="starOnly" className="cursor-pointer text-sm">Stars</Label>
+          <Label htmlFor="starOnly" className="cursor-pointer text-sm">{t('alumni.filterStars')}</Label>
         </div>
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
@@ -982,7 +988,7 @@ function DirectoryTab({
         )}
         <div className="ml-auto">
           <Button onClick={onAddAlumni}>
-            <UserPlus className="h-4 w-4 mr-2" /> Add Alumni
+            <UserPlus className="h-4 w-4 mr-2" /> {t('alumni.addAlumni')}
           </Button>
         </div>
       </div>
@@ -990,7 +996,7 @@ function DirectoryTab({
       {/* Result count */}
       {!loading && (
         <p className="text-xs text-muted-foreground">
-          {fmt(total)} alumni {hasFilters ? "matching filters" : "total"}
+          {fmt(total)} {hasFilters ? t('alumni.matchingFilters') : t('alumni.alumniTotal')}
         </p>
       )}
 
@@ -998,7 +1004,7 @@ function DirectoryTab({
       {loading && (
         <div className="flex items-center justify-center py-20">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-muted-foreground text-sm">Loading…</span>
+          <span className="ml-2 text-muted-foreground text-sm">{t('alumni.loading')}</span>
         </div>
       )}
 
@@ -1006,8 +1012,8 @@ function DirectoryTab({
       {err && !loading && (
         <div className="flex flex-col items-center py-20 gap-3">
           <AlertCircle className="h-7 w-7 text-destructive" />
-          <p className="text-sm text-muted-foreground">Failed to load alumni</p>
-          <Button variant="outline" size="sm" onClick={() => load(page)}>Retry</Button>
+          <p className="text-sm text-muted-foreground">{t('alumni.failedLoad')}</p>
+          <Button variant="outline" size="sm" onClick={() => load(page)}>{t('alumni.retry')}</Button>
         </div>
       )}
 
@@ -1015,8 +1021,8 @@ function DirectoryTab({
       {!loading && !err && alumni.length === 0 && (
         <div className="flex flex-col items-center py-20 gap-3">
           <GraduationCap className="h-10 w-10 text-muted-foreground/30" />
-          <p className="text-muted-foreground">No alumni found</p>
-          {hasFilters && <Button variant="outline" size="sm" onClick={clearFilters}>Clear Filters</Button>}
+          <p className="text-muted-foreground">{t('alumni.noAlumniFound')}</p>
+          {hasFilters && <Button variant="outline" size="sm" onClick={clearFilters}>{t('alumni.clearFilters')}</Button>}
         </div>
       )}
 
@@ -1074,7 +1080,7 @@ function DirectoryTab({
                     className="h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={e => { e.stopPropagation(); onOpenProfile(a.id); }}
                   >
-                    <Eye className="h-3.5 w-3.5 mr-1" /> View
+                    <Eye className="h-3.5 w-3.5 mr-1" /> {t('alumni.view')}
                   </Button>
                 </div>
               </CardContent>
@@ -1099,6 +1105,7 @@ const BLANK_MEET: CreateMeetDto = {
 };
 
 function MeetsTab() {
+  const { t } = useLanguage();
   const [meets, setMeets] = useState<AlumniMeetBasic[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -1175,7 +1182,7 @@ function MeetsTab() {
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all_">All Statuses</SelectItem>
+              <SelectItem value="_all_">{t('alumni.allStatuses')}</SelectItem>
               {["planned", "open", "ongoing", "completed", "cancelled"].map(s => (
                 <SelectItem key={s} value={s} className="capitalize">{s.charAt(0).toUpperCase() + s.slice(1)}</SelectItem>
               ))}
@@ -1184,28 +1191,28 @@ function MeetsTab() {
           <p className="text-xs text-muted-foreground">{fmt(total)} meets</p>
         </div>
         <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" /> Plan a Meet
+          <Plus className="h-4 w-4 mr-2" /> {t('alumni.planAMeet')}
         </Button>
       </div>
 
       {loading && (
         <div className="flex items-center justify-center py-20">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-sm text-muted-foreground">Loading meets…</span>
+          <span className="ml-2 text-sm text-muted-foreground">{t('alumni.loadingMeets')}</span>
         </div>
       )}
       {err && !loading && (
         <div className="flex flex-col items-center py-16 gap-3">
           <AlertCircle className="h-7 w-7 text-destructive" />
-          <p className="text-sm text-muted-foreground">Failed to load meets</p>
-          <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+          <p className="text-sm text-muted-foreground">{t('alumni.failedLoadMeets')}</p>
+          <Button variant="outline" size="sm" onClick={() => load()}>{t('alumni.retry')}</Button>
         </div>
       )}
       {!loading && !err && meets.length === 0 && (
         <div className="flex flex-col items-center py-20 gap-3">
           <Calendar className="h-10 w-10 text-muted-foreground/30" />
-          <p className="text-muted-foreground">No meets planned yet</p>
-          <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Plan First Meet</Button>
+          <p className="text-muted-foreground">{t('alumni.noMeetsYet')}</p>
+          <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> {t('alumni.planFirstMeet')}</Button>
         </div>
       )}
 
@@ -1228,17 +1235,17 @@ function MeetsTab() {
                   {m.isVirtual ? (
                     <div className="flex items-center gap-2">
                       <Video className="h-3.5 w-3.5 shrink-0" />
-                      <span>Virtual Event</span>
+                      <span>{t('alumni.virtualEvent')}</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{m.venue || "Venue TBD"}</span>
+                      <span className="truncate">{m.venue || t('alumni.venueTBD')}</span>
                     </div>
                   )}
                   <div className="flex items-center gap-2">
                     <Users className="h-3.5 w-3.5 shrink-0" />
-                    <span>{m.registeredCount} registered</span>
+                    <span>{m.registeredCount} {t('alumni.registered')}</span>
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
@@ -1248,7 +1255,7 @@ function MeetsTab() {
                     className="flex-1 h-8 text-xs"
                     onClick={() => openEdit(m)}
                   >
-                    <Edit className="h-3 w-3 mr-1.5" /> Edit
+                    <Edit className="h-3 w-3 mr-1.5" /> {t('alumni.edit')}
                   </Button>
                 </div>
               </CardContent>
@@ -1263,31 +1270,31 @@ function MeetsTab() {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingMeet ? "Edit Meet" : "Plan Alumni Meet"}</DialogTitle>
+            <DialogTitle>{editingMeet ? t('alumni.editMeet') : t('alumni.planAlumniMeet')}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 mt-2">
             <div className="col-span-2 space-y-1">
-              <Label>Meet Title *</Label>
+              <Label>{t('alumni.meetTitle')}</Label>
               <Input value={meetForm.title} onChange={e => setF("title", e.target.value)} placeholder="Silver Jubilee Reunion 2026" />
             </div>
             <div className="col-span-2 space-y-1">
-              <Label>Description</Label>
+              <Label>{t('alumni.descriptionLabel')}</Label>
               <Textarea value={meetForm.description} onChange={e => setF("description", e.target.value)} rows={2} placeholder="What is this meet about?" />
             </div>
             <div className="space-y-1">
-              <Label>Date *</Label>
+              <Label>{t('alumni.dateLabel')}</Label>
               <Input type="date" value={meetForm.date} onChange={e => setF("date", e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label>Start Time</Label>
+              <Label>{t('alumni.startTime')}</Label>
               <Input type="time" value={meetForm.startTime} onChange={e => setF("startTime", e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label>End Time</Label>
+              <Label>{t('alumni.endTime')}</Label>
               <Input type="time" value={meetForm.endTime} onChange={e => setF("endTime", e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label>Expected Attendees</Label>
+              <Label>{t('alumni.expectedAttendees')}</Label>
               <Input
                 type="number"
                 min={0}
@@ -1303,41 +1310,41 @@ function MeetsTab() {
                 checked={meetForm.isVirtual}
                 onCheckedChange={v => setF("isVirtual", !!v)}
               />
-              <Label htmlFor="isVirtual" className="cursor-pointer">Virtual / Online Event</Label>
+              <Label htmlFor="isVirtual" className="cursor-pointer">{t('alumni.virtualOnline')}</Label>
             </div>
 
             {!meetForm.isVirtual && (
               <>
                 <div className="col-span-2 space-y-1">
-                  <Label>Venue</Label>
+                  <Label>{t('alumni.venueLabel')}</Label>
                   <Input value={meetForm.venue} onChange={e => setF("venue", e.target.value)} placeholder="School Auditorium" />
                 </div>
                 <div className="col-span-2 space-y-1">
-                  <Label>Venue Address</Label>
+                  <Label>{t('alumni.venueAddress')}</Label>
                   <Input value={meetForm.venueAddress} onChange={e => setF("venueAddress", e.target.value)} placeholder="Full address" />
                 </div>
               </>
             )}
             {meetForm.isVirtual && (
               <div className="col-span-2 space-y-1">
-                <Label>Meeting Link</Label>
+                <Label>{t('alumni.meetingLink')}</Label>
                 <Input value={meetForm.virtualLink} onChange={e => setF("virtualLink", e.target.value)} placeholder="https://meet.google.com/…" />
               </div>
             )}
 
             <div className="space-y-1">
-              <Label>Organizer</Label>
+              <Label>{t('alumni.organizer')}</Label>
               <Input value={meetForm.organizer} onChange={e => setF("organizer", e.target.value)} placeholder="Organizer name" />
             </div>
             <div className="space-y-1">
-              <Label>Organizer Contact</Label>
+              <Label>{t('alumni.organizerContact')}</Label>
               <Input value={meetForm.organizerContact} onChange={e => setF("organizerContact", e.target.value)} placeholder="Phone / email" />
             </div>
           </div>
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setShowCreate(false)} disabled={saving}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowCreate(false)} disabled={saving}>{t('alumni.cancel')}</Button>
             <Button onClick={handleSaveMeet} disabled={saving}>
-              {saving ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" />Saving…</> : <><CheckCircle2 className="h-4 w-4 mr-2" />{editingMeet ? "Update" : "Create Meet"}</>}
+              {saving ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" />{t('alumni.saving')}</> : <><CheckCircle2 className="h-4 w-4 mr-2" />{editingMeet ? t('alumni.update') : t('alumni.createMeet')}</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1351,6 +1358,7 @@ function MeetsTab() {
 // ─────────────────────────────────────────────────────────────
 
 function DonationsTab() {
+  const { t } = useLanguage();
   const [donations, setDonations] = useState<AlumniDonationBasic[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -1418,8 +1426,10 @@ function DonationsTab() {
         paymentMethod: "Bank Transfer", receiptNumber: "", isAnonymous: false, message: "",
       });
       load(1);
-    } catch {
-      toast.error("Failed to record donation");
+    } catch (err: unknown) {
+      const msg = (err as any)?.response?.data?.message ?? (err as any)?.message ?? "Failed to record donation";
+      console.error("Donation error:", err);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -1430,11 +1440,11 @@ function DonationsTab() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="Total Raised" value={fmtCurrency(totalAmount)} icon={DollarSign} color="bg-emerald-500" sub="all time" />
-        <StatCard label="Total Donations" value={fmt(total)} icon={Heart} color="bg-rose-500" />
+        <StatCard label={t('alumni.totalRaised')} value={fmtCurrency(totalAmount)} icon={DollarSign} color="bg-emerald-500" sub={t('alumni.allTime')} />
+        <StatCard label={t('alumni.totalDonations')} value={fmt(total)} icon={Heart} color="bg-rose-500" />
         <div className="flex items-end justify-end md:justify-start">
           <Button onClick={() => setShowRecord(true)}>
-            <Plus className="h-4 w-4 mr-2" /> Record Donation
+            <Plus className="h-4 w-4 mr-2" /> {t('alumni.recordDonation')}
           </Button>
         </div>
       </div>
@@ -1442,21 +1452,21 @@ function DonationsTab() {
       {loading && (
         <div className="flex items-center justify-center py-16">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-sm text-muted-foreground">Loading…</span>
+          <span className="ml-2 text-sm text-muted-foreground">{t('alumni.loading')}</span>
         </div>
       )}
       {err && !loading && (
         <div className="flex flex-col items-center py-16 gap-3">
           <AlertCircle className="h-7 w-7 text-destructive" />
-          <p className="text-sm text-muted-foreground">Failed to load donations</p>
-          <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+          <p className="text-sm text-muted-foreground">{t('alumni.failedLoadDonations')}</p>
+          <Button variant="outline" size="sm" onClick={() => load()}>{t('alumni.retry')}</Button>
         </div>
       )}
       {!loading && !err && donations.length === 0 && (
         <div className="flex flex-col items-center py-16 gap-3">
           <Heart className="h-10 w-10 text-muted-foreground/30" />
-          <p className="text-muted-foreground">No donations recorded yet</p>
-          <Button size="sm" onClick={() => setShowRecord(true)}><Plus className="h-4 w-4 mr-2" />Record First Donation</Button>
+          <p className="text-muted-foreground">{t('alumni.noDonationsYet')}</p>
+          <Button size="sm" onClick={() => setShowRecord(true)}><Plus className="h-4 w-4 mr-2" />{t('alumni.recordFirstDonation')}</Button>
         </div>
       )}
 
@@ -1465,18 +1475,18 @@ function DonationsTab() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Donor</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Purpose</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t('alumni.colDonor')}</TableHead>
+                <TableHead>{t('common.amount')}</TableHead>
+                <TableHead>{t('alumni.colPurpose')}</TableHead>
+                <TableHead>{t('alumni.colType')}</TableHead>
+                <TableHead>{t('common.date')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {donations.map(d => (
                 <TableRow key={d.id}>
-                  <TableCell className="font-medium">{d.alumniName || "Anonymous"}</TableCell>
+                  <TableCell className="font-medium">{d.alumniName || t('alumni.anonymous')}</TableCell>
                   <TableCell className="font-semibold text-emerald-700">{fmtCurrency(d.amount)}</TableCell>
                   <TableCell className="text-sm">{d.purpose}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{d.donationType || "—"}</TableCell>
@@ -1503,12 +1513,12 @@ function DonationsTab() {
       <Dialog open={showRecord} onOpenChange={setShowRecord}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Record Alumni Donation</DialogTitle>
+            <DialogTitle>{t('alumni.recordDonationTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             {/* Donor Selector */}
             <div className="space-y-1">
-              <Label>Donor (Alumni) *</Label>
+              <Label>{t('alumni.donorLabel')}</Label>
               {selectedDonor ? (
                 <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/30">
                   <AlumniAvatar firstName={selectedDonor.firstName} lastName={selectedDonor.lastName} size="sm" />
@@ -1556,7 +1566,7 @@ function DonationsTab() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <Label>Amount (₹) *</Label>
+                <Label>{t('alumni.amountLabel')}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -1566,11 +1576,11 @@ function DonationsTab() {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Date *</Label>
+                <Label>{t('alumni.dateLabel')}</Label>
                 <Input type="date" value={donForm.donationDate} onChange={e => setF("donationDate", e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label>Purpose *</Label>
+                <Label>{t('alumni.purposeLabel')}</Label>
                 <Select value={donForm.purpose || "_none_"} onValueChange={v => setF("purpose", v === "_none_" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="Select purpose" /></SelectTrigger>
                   <SelectContent>
@@ -1580,7 +1590,7 @@ function DonationsTab() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Payment Method</Label>
+                <Label>{t('alumni.paymentMethodLabel')}</Label>
                 <Select value={donForm.paymentMethod || "Bank Transfer"} onValueChange={v => setF("paymentMethod", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1589,11 +1599,11 @@ function DonationsTab() {
                 </Select>
               </div>
               <div className="col-span-2 space-y-1">
-                <Label>Receipt / Reference Number</Label>
+                <Label>{t('alumni.receiptNumber')}</Label>
                 <Input value={donForm.receiptNumber} onChange={e => setF("receiptNumber", e.target.value)} placeholder="REC-2026-001" />
               </div>
               <div className="col-span-2 space-y-1">
-                <Label>Message from Donor</Label>
+                <Label>{t('alumni.donorMessage')}</Label>
                 <Textarea value={donForm.message} onChange={e => setF("message", e.target.value)} rows={2} placeholder="Optional message" />
               </div>
               <div className="col-span-2 flex items-center gap-2">
@@ -1602,14 +1612,14 @@ function DonationsTab() {
                   checked={donForm.isAnonymous}
                   onCheckedChange={v => setF("isAnonymous", !!v)}
                 />
-                <Label htmlFor="isAnon" className="cursor-pointer">Record as Anonymous Donation</Label>
+                <Label htmlFor="isAnon" className="cursor-pointer">{t('alumni.isAnonymous')}</Label>
               </div>
             </div>
           </div>
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setShowRecord(false)} disabled={saving}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowRecord(false)} disabled={saving}>{t('alumni.cancel')}</Button>
             <Button onClick={handleRecord} disabled={saving}>
-              {saving ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" />Saving…</> : <><Heart className="h-4 w-4 mr-2" />Record Donation</>}
+              {saving ? <><RefreshCw className="h-4 w-4 animate-spin mr-2" />{t('alumni.saving')}</> : <><Heart className="h-4 w-4 mr-2" />{t('alumni.recordDonation')}</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1623,6 +1633,7 @@ function DonationsTab() {
 // ─────────────────────────────────────────────────────────────
 
 function OutreachTab() {
+  const { t } = useLanguage();
   const [batchFilter, setBatchFilter] = useState("_all_");
   const [channel, setChannel] = useState("email");
   const [subject, setSubject] = useState("");
@@ -1636,12 +1647,11 @@ function OutreachTab() {
             <Send className="h-5 w-5 text-violet-600" />
           </div>
           <div>
-            <h3 className="font-semibold">Reach Out to Alumni</h3>
+            <h3 className="font-semibold">{t('alumni.reachOut')}</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Send personalised messages to your alumni. Target by batch year or send to all.
-              For advanced bulk messaging with templates, use the{" "}
+              {t('alumni.reachOutDesc')}{" "}
               <a href="/communication" className="text-violet-600 hover:underline font-medium inline-flex items-center gap-1">
-                Communications Hub <ExternalLink className="h-3 w-3" />
+                {t('alumni.commsHubLink')} <ExternalLink className="h-3 w-3" />
               </a>
             </p>
           </div>
@@ -1650,22 +1660,22 @@ function OutreachTab() {
 
       <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-sm font-semibold">Quick Compose</CardTitle>
+          <CardTitle className="text-sm font-semibold">{t('alumni.quickCompose')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label>Target Audience</Label>
+              <Label>{t('alumni.targetAudience')}</Label>
               <Select value={batchFilter} onValueChange={setBatchFilter}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_all_">All Alumni</SelectItem>
-                  {BATCH_YEARS.map(y => <SelectItem key={y} value={y}>Batch {y}</SelectItem>)}
+                  <SelectItem value="_all_">{t('alumni.allAlumni')}</SelectItem>
+                  {BATCH_YEARS.map(y => <SelectItem key={y} value={y}>{t('alumni.batchLabel')} {y}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Channel</Label>
+              <Label>{t('alumni.channelLabel')}</Label>
               <Select value={channel} onValueChange={setChannel}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1678,12 +1688,12 @@ function OutreachTab() {
           </div>
           {channel === "email" && (
             <div className="space-y-1">
-              <Label>Subject</Label>
+              <Label>{t('alumni.subjectLabel')}</Label>
               <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="News from school…" />
             </div>
           )}
           <div className="space-y-1">
-            <Label>Message</Label>
+            <Label>{t('alumni.messageLabel')}</Label>
             <Textarea
               value={body}
               onChange={e => setBody(e.target.value)}
@@ -1707,7 +1717,7 @@ function OutreachTab() {
                 window.location.href = `/communication?compose=1&channel=${channel}&body=${encodeURIComponent(body)}&subject=${encodeURIComponent(subject)}&audience=alumni`;
               }}
             >
-              <Send className="h-4 w-4 mr-2" /> Send via Communications Hub
+              <Send className="h-4 w-4 mr-2" /> {t('alumni.sendViaComms')}
             </Button>
             <Button
               variant="outline"
@@ -1716,7 +1726,7 @@ function OutreachTab() {
                 toast.success(`Message drafted for ${batchFilter === "_all_" ? "all alumni" : `Batch ${batchFilter}`}. Opening Communications Hub…`);
               }}
             >
-              Save as Draft
+              {t('alumni.saveAsDraft')}
             </Button>
           </div>
         </CardContent>
@@ -1725,7 +1735,7 @@ function OutreachTab() {
       {/* Tips */}
       <Card className="border-0 shadow-sm bg-muted/30">
         <CardContent className="p-5">
-          <h3 className="text-sm font-semibold mb-3">Engagement Tips</h3>
+          <h3 className="text-sm font-semibold mb-3">{t('alumni.engagementTips')}</h3>
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li className="flex items-start gap-2">
               <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
@@ -1754,9 +1764,57 @@ function OutreachTab() {
 // MAIN HUB
 // ─────────────────────────────────────────────────────────────
 
+const TAB_META = [
+  {
+    value: "overview",
+    icon: TrendingUp,
+    labelKey: "alumni.tabOverview" as const,
+    desc: "Analytics & insights",
+    color: "text-violet-600",
+    activeBg: "bg-violet-50 border-violet-200",
+    activeText: "text-violet-700",
+  },
+  {
+    value: "directory",
+    icon: Users,
+    labelKey: "alumni.tabDirectory" as const,
+    desc: "Browse & manage profiles",
+    color: "text-blue-600",
+    activeBg: "bg-blue-50 border-blue-200",
+    activeText: "text-blue-700",
+  },
+  {
+    value: "meets",
+    icon: Calendar,
+    labelKey: "alumni.tabMeets" as const,
+    desc: "Plan & track events",
+    color: "text-emerald-600",
+    activeBg: "bg-emerald-50 border-emerald-200",
+    activeText: "text-emerald-700",
+  },
+  {
+    value: "donations",
+    icon: Heart,
+    labelKey: "alumni.tabDonations" as const,
+    desc: "Track contributions",
+    color: "text-rose-600",
+    activeBg: "bg-rose-50 border-rose-200",
+    activeText: "text-rose-700",
+  },
+  {
+    value: "outreach",
+    icon: Send,
+    labelKey: "alumni.tabOutreach" as const,
+    desc: "Engage your community",
+    color: "text-amber-600",
+    activeBg: "bg-amber-50 border-amber-200",
+    activeText: "text-amber-700",
+  },
+] as const;
+
 export default function AlumniHub() {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState("overview");
-  const visitedTabs = useRef(new Set(["overview"]));
 
   const [viewingAlumniId, setViewingAlumniId] = useState<string | null>(null);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
@@ -1766,11 +1824,6 @@ export default function AlumniHub() {
 
   // Refresher to tell Directory to reload after add/edit
   const [directoryKey, setDirectoryKey] = useState(0);
-
-  function handleTabChange(tab: string) {
-    visitedTabs.current.add(tab);
-    setActiveTab(tab);
-  }
 
   function openProfile(id: string) {
     setViewingAlumniId(id);
@@ -1788,17 +1841,19 @@ export default function AlumniHub() {
     setShowAddEdit(true);
   }, []);
 
+  const activeMeta = TAB_META.find(t => t.value === activeTab)!;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <GraduationCap className="h-7 w-7 text-violet-600" />
-            Alumni Hub
+            {t('alumni.title')}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Stay connected with your school family — track, engage and celebrate your alumni community.
+            {t('alumni.desc')}
           </p>
         </div>
       </div>
@@ -1807,57 +1862,61 @@ export default function AlumniHub() {
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
         <BadgeCheck className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
         <p className="text-xs text-blue-700 leading-relaxed">
-          <strong>Auto-registration:</strong> Students who receive a Transfer Certificate (TC) or complete Class 10 / 12 are automatically enrolled as alumni. You can also manually add alumni using the button in the Directory tab.
+          <strong>{t('alumni.autoRegTitle')}</strong> {t('alumni.autoRegNotice')}
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="h-10">
-          <TabsTrigger value="overview" className="gap-1.5 text-xs sm:text-sm">
-            <TrendingUp className="h-4 w-4" /> Overview
-          </TabsTrigger>
-          <TabsTrigger value="directory" className="gap-1.5 text-xs sm:text-sm">
-            <Users className="h-4 w-4" /> Directory
-          </TabsTrigger>
-          <TabsTrigger value="meets" className="gap-1.5 text-xs sm:text-sm">
-            <Calendar className="h-4 w-4" /> Meets & Events
-          </TabsTrigger>
-          <TabsTrigger value="donations" className="gap-1.5 text-xs sm:text-sm">
-            <Heart className="h-4 w-4" /> Donations
-          </TabsTrigger>
-          <TabsTrigger value="outreach" className="gap-1.5 text-xs sm:text-sm">
-            <Send className="h-4 w-4" /> Outreach
-          </TabsTrigger>
-        </TabsList>
+      {/* Visual Tab Navigation */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        {TAB_META.map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.value;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => setActiveTab(tab.value)}
+              className={`flex flex-col items-start gap-1 rounded-xl border px-4 py-3 text-left transition-all hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                isActive
+                  ? `${tab.activeBg} shadow-sm`
+                  : "bg-background border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? tab.activeText : "text-muted-foreground"}`} />
+                <span className={`text-sm font-semibold ${isActive ? tab.activeText : "text-foreground"}`}>
+                  {t(tab.labelKey)}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground leading-tight">{tab.desc}</span>
+              {isActive && (
+                <div className={`mt-1 h-0.5 w-8 rounded-full ${tab.activeBg.includes("violet") ? "bg-violet-500" : tab.activeBg.includes("blue") ? "bg-blue-500" : tab.activeBg.includes("emerald") ? "bg-emerald-500" : tab.activeBg.includes("rose") ? "bg-rose-500" : "bg-amber-500"}`} />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-        <div className="mt-6">
-          <TabsContent value="overview" forceMount={visitedTabs.current.has("overview") || undefined}>
-            {visitedTabs.current.has("overview") && <OverviewTab />}
-          </TabsContent>
+      {/* Section header showing active tab */}
+      <div className="flex items-center gap-2 pb-1 border-b">
+        <activeMeta.icon className={`h-4 w-4 ${activeMeta.color}`} />
+        <h2 className="text-sm font-semibold">{t(activeMeta.labelKey)}</h2>
+        <span className="text-xs text-muted-foreground">— {activeMeta.desc}</span>
+      </div>
 
-          <TabsContent value="directory" forceMount={visitedTabs.current.has("directory") || undefined}>
-            {visitedTabs.current.has("directory") && (
-              <DirectoryTab
-                key={directoryKey}
-                onOpenProfile={openProfile}
-                onAddAlumni={openAddAlumni}
-              />
-            )}
-          </TabsContent>
-
-          <TabsContent value="meets" forceMount={visitedTabs.current.has("meets") || undefined}>
-            {visitedTabs.current.has("meets") && <MeetsTab />}
-          </TabsContent>
-
-          <TabsContent value="donations" forceMount={visitedTabs.current.has("donations") || undefined}>
-            {visitedTabs.current.has("donations") && <DonationsTab />}
-          </TabsContent>
-
-          <TabsContent value="outreach" forceMount={visitedTabs.current.has("outreach") || undefined}>
-            {visitedTabs.current.has("outreach") && <OutreachTab />}
-          </TabsContent>
-        </div>
-      </Tabs>
+      {/* Tab Content — one section rendered at a time */}
+      <div>
+        {activeTab === "overview" && <OverviewTab />}
+        {activeTab === "directory" && (
+          <DirectoryTab
+            key={directoryKey}
+            onOpenProfile={openProfile}
+            onAddAlumni={openAddAlumni}
+          />
+        )}
+        {activeTab === "meets" && <MeetsTab />}
+        {activeTab === "donations" && <DonationsTab />}
+        {activeTab === "outreach" && <OutreachTab />}
+      </div>
 
       {/* Profile Dialog */}
       <ProfileDialog
@@ -1874,10 +1933,7 @@ export default function AlumniHub() {
         editData={editData}
         onSaved={() => {
           setDirectoryKey(k => k + 1);
-          if (activeTab !== "directory") {
-            visitedTabs.current.add("directory");
-            setActiveTab("directory");
-          }
+          setActiveTab("directory");
         }}
       />
     </div>

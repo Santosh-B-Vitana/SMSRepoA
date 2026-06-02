@@ -10,14 +10,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Users, Plus, Pencil, Trash2, BedDouble, Loader2, Search, DoorOpen, X } from "lucide-react";
+import { Building2, Users, Plus, Pencil, Trash2, BedDouble, Loader2, Search, DoorOpen, X, ShieldOff } from "lucide-react";
 import { hostelApiClient, HostelRoom, HostelStudent, CreateRoomDto, AssignStudentDto, UpdateHostelStudentDto } from "@/services/api/hostelApi";
+import * as hostelP1Api from "@/services/api/hostelP1Api";
+import type { HostelBlock } from "@/services/api/hostelP1Api";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── Room Form Dialog ─────────────────────────────────────────────────────────
 
 function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
+  const [blocks, setBlocks] = useState<HostelBlock[]>([]);
   const [form, setForm] = useState<CreateRoomDto>({
+    blockId: room?.blockId ?? "",
     roomNumber: room?.roomNumber ?? "",
     roomType: room?.roomType ?? "boys",
     capacity: room?.capacity ?? 4,
@@ -28,6 +35,10 @@ function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose
     facilities: room?.facilities ?? "",
   });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    hostelP1Api.getBlocks().then(setBlocks).catch(() => {});
+  }, []);
 
   function set(k: keyof CreateRoomDto, v: string | number) { setForm(p => ({ ...p, [k]: v })); }
 
@@ -52,56 +63,66 @@ function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{room ? "Edit Room" : "Add Hostel Room"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{room ? t('hostel.roomForm.titleEdit') : t('hostel.roomForm.titleAdd')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Room Number *</Label>
-            <Input value={form.roomNumber} onChange={e => set("roomNumber", e.target.value)} placeholder="101" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Room Type</Label>
-            <Select value={form.roomType} onValueChange={v => set("roomType", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+          <div className="space-y-1.5 col-span-2">
+            <Label>Block</Label>
+            <Select value={form.blockId ?? "none"} onValueChange={v => setForm(p => ({ ...p, blockId: v === "none" ? "" : v }))}>
+              <SelectTrigger><SelectValue placeholder="No block assigned" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="boys">Boys</SelectItem>
-                <SelectItem value="girls">Girls</SelectItem>
-                <SelectItem value="co-ed">Co-ed</SelectItem>
-                <SelectItem value="staff">Staff</SelectItem>
+                <SelectItem value="none">No block assigned</SelectItem>
+                {blocks.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Capacity</Label>
+            <Label>{t('hostel.roomForm.roomNumber')} *</Label>
+            <Input value={form.roomNumber} onChange={e => set("roomNumber", e.target.value)} placeholder="101" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('hostel.roomForm.roomType')}</Label>
+            <Select value={form.roomType} onValueChange={v => set("roomType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="boys">{t('hostel.roomForm.roomType.boys')}</SelectItem>
+                <SelectItem value="girls">{t('hostel.roomForm.roomType.girls')}</SelectItem>
+                <SelectItem value="co-ed">{t('hostel.roomForm.roomType.coed')}</SelectItem>
+                <SelectItem value="staff">{t('hostel.roomForm.roomType.staff')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('hostel.roomForm.capacity')}</Label>
             <Input type="number" value={form.capacity} onChange={e => set("capacity", parseInt(e.target.value) || 0)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Floor</Label>
+            <Label>{t('hostel.roomForm.floor')}</Label>
             <Input value={form.floor ?? ""} onChange={e => set("floor", e.target.value)} placeholder="Ground" />
           </div>
           <div className="space-y-1.5">
-            <Label>Rent per Bed (₹/month)</Label>
+            <Label>{t('hostel.roomForm.rentPerBed')}</Label>
             <Input type="number" value={form.rentPerBed} onChange={e => set("rentPerBed", parseFloat(e.target.value) || 0)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Status</Label>
+            <Label>{t('hostel.roomForm.status')}</Label>
             <Select value={form.status} onValueChange={v => set("status", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="full">Full</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="available">{t('hostel.roomForm.status.available')}</SelectItem>
+                <SelectItem value="full">{t('hostel.roomForm.status.full')}</SelectItem>
+                <SelectItem value="maintenance">{t('hostel.roomForm.status.maintenance')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5 col-span-2">
-            <Label>Facilities</Label>
+            <Label>{t('hostel.roomForm.facilities')}</Label>
             <Input value={form.facilities ?? ""} onChange={e => set("facilities", e.target.value)} placeholder="AC, Wi-Fi, Attached Bathroom" />
           </div>
           <DialogFooter className="col-span-2 gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('hostel.roomForm.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {room ? "Update" : "Create Room"}
+              {room ? t('hostel.roomForm.update') : t('hostel.roomForm.create')}
             </Button>
           </DialogFooter>
         </form>
@@ -113,6 +134,7 @@ function RoomFormDialog({ room, onClose, onSaved }: { room?: HostelRoom; onClose
 // ─── Assign Student Dialog ────────────────────────────────────────────────────
 
 function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [searchResults, setSearchResults] = useState<StudentBasic[]>([]);
   const [assignedStudentIds, setAssignedStudentIds] = useState<Set<string>>(new Set());
   const [loadingAssigned, setLoadingAssigned] = useState(true);
@@ -195,15 +217,15 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Assign Student to Hostel</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('hostel.assignDialog.title')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Student *</Label>
+            <Label>{t('hostel.assignDialog.student')} *</Label>
             <div ref={studentRef} className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 className="pl-9 pr-8"
-                placeholder={loadingAssigned ? "Loading..." : "Type name or admission number to search…"}
+                placeholder={loadingAssigned ? t('hostel.assignDialog.loading') : t('hostel.assignDialog.searchPlaceholder')}
                 value={selectedStudent && !studentOpen
                   ? `${selectedStudent.name} — ${selectedStudent.class} ${selectedStudent.section} (${selectedStudent.admissionNumber})`
                   : studentQuery}
@@ -225,7 +247,7 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
                   {searching ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />Searching…
+                      <Loader2 className="h-4 w-4 animate-spin" />{t('hostel.assignDialog.searching')}
                     </div>
                   ) : filteredResults.length > 0 ? (
                     filteredResults.map(s => (
@@ -237,7 +259,7 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
                       </button>
                     ))
                   ) : searchResults.length > 0 ? (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">All matching students are already assigned to hostel</div>
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">{t('hostel.assignDialog.allAssigned')}</div>
                   ) : (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">No active students found for "{studentQuery}"</div>
                   )}
@@ -246,9 +268,9 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Room *</Label>
+            <Label>{t('hostel.assignDialog.room')} *</Label>
             <Select value={form.roomId} onValueChange={v => setForm(p => ({ ...p, roomId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('hostel.assignDialog.selectRoom')} /></SelectTrigger>
               <SelectContent>
                 {availableRooms.map(r => (
                   <SelectItem key={r.id} value={r.id}>Room {r.roomNumber} — {r.roomType} ({r.occupied}/{r.capacity}) Floor: {r.floor}</SelectItem>
@@ -258,18 +280,18 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Check-in Date</Label>
+              <Label>{t('hostel.assignDialog.checkInDate')}</Label>
               <Input type="date" value={form.checkInDate} onChange={e => setForm(p => ({ ...p, checkInDate: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Monthly Fee (₹)</Label>
+              <Label>{t('hostel.assignDialog.monthlyFee')}</Label>
               <Input type="number" value={form.monthlyFee} onChange={e => setForm(p => ({ ...p, monthlyFee: parseFloat(e.target.value) || 0 }))} />
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('hostel.assignDialog.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Assign Student
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('hostel.assignDialog.assign')}
             </Button>
           </DialogFooter>
         </form>
@@ -281,6 +303,7 @@ function AssignStudentDialog({ rooms, onClose, onSaved }: { rooms: HostelRoom[];
 // ─── Edit Hostel Student Dialog ───────────────────────────────────────────────
 
 function EditHostelStudentDialog({ assignment, rooms, onClose, onSaved }: { assignment: HostelStudent; rooms: HostelRoom[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<UpdateHostelStudentDto>({
     roomId: assignment.roomId,
     checkInDate: assignment.checkInDate.split("T")[0],
@@ -314,9 +337,9 @@ function EditHostelStudentDialog({ assignment, rooms, onClose, onSaved }: { assi
         <DialogHeader><DialogTitle>Edit Hostel Assignment — {assignment.studentName}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Room *</Label>
+            <Label>{t('hostel.editDialog.room')} *</Label>
             <Select value={form.roomId} onValueChange={v => setForm(p => ({ ...p, roomId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select room" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('hostel.editDialog.selectRoom')} /></SelectTrigger>
               <SelectContent>
                 {availableRooms.map(r => (
                   <SelectItem key={r.id} value={r.id}>Room {r.roomNumber} — {r.roomType} ({r.occupied}/{r.capacity}) Floor: {r.floor}</SelectItem>
@@ -326,34 +349,34 @@ function EditHostelStudentDialog({ assignment, rooms, onClose, onSaved }: { assi
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Check-in Date</Label>
+              <Label>{t('hostel.editDialog.checkInDate')}</Label>
               <Input type="date" value={form.checkInDate} onChange={e => setForm(p => ({ ...p, checkInDate: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Check-out Date</Label>
+              <Label>{t('hostel.editDialog.checkOutDate')}</Label>
               <Input type="date" value={form.checkOutDate ?? ""} onChange={e => setForm(p => ({ ...p, checkOutDate: e.target.value }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Monthly Fee (₹)</Label>
+              <Label>{t('hostel.editDialog.monthlyFee')}</Label>
               <Input type="number" value={form.monthlyFee} onChange={e => setForm(p => ({ ...p, monthlyFee: parseFloat(e.target.value) || 0 }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>{t('hostel.editDialog.status')}</Label>
               <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="active">{t('hostel.editDialog.active')}</SelectItem>
+                  <SelectItem value="inactive">{t('hostel.editDialog.inactive')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('hostel.editDialog.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Update Assignment
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('hostel.editDialog.updateAssignment')}
             </Button>
           </DialogFooter>
         </form>
@@ -365,6 +388,7 @@ function EditHostelStudentDialog({ assignment, rooms, onClose, onSaved }: { assi
 // ─── View Room Students Dialog ────────────────────────────────────────────────
 
 function RoomStudentsDialog({ room, onClose }: { room: HostelRoom; onClose: () => void }) {
+  const { t } = useLanguage();
   const [students, setStudents] = useState<HostelStudent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -382,11 +406,11 @@ function RoomStudentsDialog({ room, onClose }: { room: HostelRoom; onClose: () =
         {loading ? (
           <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : students.length === 0 ? (
-          <p className="text-center text-muted-foreground py-8">No students in this room</p>
+          <p className="text-center text-muted-foreground py-8">{t('hostel.roomStudents.noStudents')}</p>
         ) : (
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Student</TableHead><TableHead>Class</TableHead><TableHead>Gender</TableHead><TableHead>Check-in</TableHead>
+              <TableHead>{t('hostel.roomStudents.col.student')}</TableHead><TableHead>{t('hostel.roomStudents.col.class')}</TableHead><TableHead>{t('hostel.roomStudents.col.gender')}</TableHead><TableHead>{t('hostel.roomStudents.col.checkIn')}</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {students.map(s => (
@@ -408,6 +432,14 @@ function RoomStudentsDialog({ room, onClose }: { room: HostelRoom; onClose: () =
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function HostelManager() {
+  const { t } = useLanguage();
+  const { hasUserPermission } = usePermissions();
+  const canViewHostel    = hasUserPermission('Hostel', 'View');
+  const canManageRooms   = hasUserPermission('Hostel', 'Create');
+  const canEditRooms     = hasUserPermission('Hostel', 'Edit');
+  const canDeleteRooms   = hasUserPermission('Hostel', 'Delete');
+  const accessDenied     = !canViewHostel;
+
   const [rooms, setRooms] = useState<HostelRoom[]>([]);
   const [students, setStudents] = useState<HostelStudent[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
@@ -448,7 +480,7 @@ export function HostelManager() {
   }
 
   async function handleDeleteRoom(id: string) {
-    if (!confirm("Delete this room?")) return;
+    if (!confirm(t('hostel.confirm.deleteRoom'))) return;
     try {
       await hostelApiClient.deleteRoom(id);
       toast.success("Room deleted");
@@ -459,7 +491,7 @@ export function HostelManager() {
   }
 
   async function handleRemoveStudent(id: string) {
-    if (!confirm("Check out this student from hostel?")) return;
+    if (!confirm(t('hostel.confirm.checkoutStudent'))) return;
     try {
       await hostelApiClient.removeStudentFromRoom(id);
       toast.success("Student checked out");
@@ -485,33 +517,45 @@ export function HostelManager() {
     s.studentClass.toLowerCase().includes(search.toLowerCase())
   );
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-6">
+        <ShieldOff className="h-16 w-16 text-muted-foreground opacity-40" />
+        <h2 className="text-xl font-semibold">{t('hostel.accessRestricted')}</h2>
+        <p className="text-muted-foreground max-w-sm">
+          You don't have permission to view Hostel Management. Contact your administrator to request access.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Building2 className="h-6 w-6 text-purple-600" />Hostel Management</h1>
-          <p className="text-muted-foreground">Manage hostel rooms and student accommodation</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Building2 className="h-6 w-6 text-purple-600" />{t('hostel.title')}</h1>
+          <p className="text-muted-foreground">{canManageRooms ? t('hostel.subtitle.manage') : t('hostel.subtitle.view')}</p>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Total Rooms</p>
+          <p className="text-sm text-muted-foreground">{t('hostel.stats.totalRooms')}</p>
           <p className="text-2xl font-bold">{rooms.length}</p>
-          <p className="text-xs text-green-600">{availableRooms} with vacancy</p>
+          <p className="text-xs text-green-600">{availableRooms} {t('hostel.stats.withVacancy')}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Total Beds</p>
+          <p className="text-sm text-muted-foreground">{t('hostel.stats.totalBeds')}</p>
           <p className="text-2xl font-bold">{totalBeds}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Occupancy</p>
+          <p className="text-sm text-muted-foreground">{t('hostel.stats.occupancy')}</p>
           <p className="text-2xl font-bold">{totalOccupied}</p>
           <p className="text-xs text-muted-foreground">{totalBeds > 0 ? Math.round((totalOccupied / totalBeds) * 100) : 0}% occupied</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Revenue/Month</p>
+          <p className="text-sm text-muted-foreground">{t('hostel.stats.revenuePerMonth')}</p>
           <p className="text-2xl font-bold">₹{rooms.reduce((a, r) => a + r.rentPerBed * r.occupied, 0).toLocaleString("en-IN")}</p>
         </CardContent></Card>
       </div>
@@ -519,16 +563,16 @@ export function HostelManager() {
       <Tabs value={tab} onValueChange={handleTabChange}>
         <div className="flex items-center justify-between gap-4">
           <TabsList>
-            <TabsTrigger value="rooms" className="gap-1.5"><DoorOpen className="h-4 w-4" />Rooms</TabsTrigger>
-            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />Students</TabsTrigger>
+            <TabsTrigger value="rooms" className="gap-1.5"><DoorOpen className="h-4 w-4" />{t('hostel.tabs.rooms')}</TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />{t('hostel.tabs.students')}</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9 w-64" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="pl-9 w-64" placeholder={t('hostel.search.placeholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            {tab === "rooms" && <Button onClick={() => setShowAddRoom(true)} className="gap-1"><Plus className="h-4 w-4" />Add Room</Button>}
-            {tab === "students" && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
+            {tab === "rooms" && canManageRooms && <Button onClick={() => setShowAddRoom(true)} className="gap-1"><Plus className="h-4 w-4" />{t('hostel.actions.addRoom')}</Button>}
+            {tab === "students" && canManageRooms && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />{t('hostel.actions.assignStudent')}</Button>}
           </div>
         </div>
 
@@ -539,9 +583,9 @@ export function HostelManager() {
           ) : filteredRooms.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <BedDouble className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No rooms found</p>
-              <p className="text-sm">Add your first hostel room</p>
-              <Button className="mt-4 gap-1" onClick={() => setShowAddRoom(true)}><Plus className="h-4 w-4" />Add Room</Button>
+              <p className="font-medium">{t('hostel.rooms.emptyTitle')}</p>
+              <p className="text-sm">{t('hostel.rooms.emptySubtitle')}</p>
+              {canManageRooms && <Button className="mt-4 gap-1" onClick={() => setShowAddRoom(true)}><Plus className="h-4 w-4" />{t('hostel.actions.addRoom')}</Button>}
             </CardContent></Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -566,7 +610,7 @@ export function HostelManager() {
                       {r.facilities && <p className="text-xs text-muted-foreground truncate">{r.facilities}</p>}
                       <div>
                         <div className="flex justify-between text-sm mb-1">
-                          <span>Occupancy</span>
+                          <span>{t('hostel.rooms.card.occupancy')}</span>
                           <span className="font-medium">{r.occupied}/{r.capacity}</span>
                         </div>
                         <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -574,9 +618,9 @@ export function HostelManager() {
                         </div>
                       </div>
                       <div className="flex gap-1 pt-1">
-                        <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => setViewRoom(r)}><Users className="h-3 w-3" />Students</Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setEditRoom(r)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="outline" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRoom(r.id)}><Trash2 className="h-3 w-3" /></Button>
+                        <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => setViewRoom(r)}><Users className="h-3 w-3" />{t('hostel.rooms.card.studentsButton')}</Button>
+                        {canEditRooms && <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setEditRoom(r)}><Pencil className="h-3 w-3" /></Button>}
+                        {canDeleteRooms && <Button variant="outline" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRoom(r.id)}><Trash2 className="h-3 w-3" /></Button>}
                       </div>
                     </CardContent>
                   </Card>
@@ -597,13 +641,13 @@ export function HostelManager() {
                 <>
                   <p className="font-medium">No assigned student matches "{search}"</p>
                   <p className="text-sm mt-1">This student may not be assigned to a hostel room yet.</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Hostel</Button>
+                  {canManageRooms && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />{t('hostel.actions.assignStudent')}</Button>}
                 </>
               ) : (
                 <>
-                  <p className="font-medium">No hostel students</p>
-                  <p className="text-sm">Assign students to hostel rooms</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>
+                  <p className="font-medium">{t('hostel.students.emptyTitle')}</p>
+                  <p className="text-sm">{t('hostel.students.emptySubtitle')}</p>
+                  {canManageRooms && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />{t('hostel.actions.assignStudent')}</Button>}
                 </>
               )}
             </CardContent></Card>
@@ -612,15 +656,15 @@ export function HostelManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Gender</TableHead>
-                    <TableHead>Room</TableHead>
-                    <TableHead>Floor</TableHead>
-                    <TableHead>Check-in</TableHead>
-                    <TableHead className="text-right">Fee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('hostel.students.col.student')}</TableHead>
+                    <TableHead>{t('hostel.students.col.class')}</TableHead>
+                    <TableHead>{t('hostel.students.col.gender')}</TableHead>
+                    <TableHead>{t('hostel.students.col.room')}</TableHead>
+                    <TableHead>{t('hostel.students.col.floor')}</TableHead>
+                    <TableHead>{t('hostel.students.col.checkIn')}</TableHead>
+                    <TableHead className="text-right">{t('hostel.students.col.fee')}</TableHead>
+                    <TableHead>{t('hostel.students.col.status')}</TableHead>
+                    <TableHead className="text-right">{t('hostel.students.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -639,8 +683,8 @@ export function HostelManager() {
                       <TableCell><Badge variant={s.status === "active" ? "default" : "outline"}>{s.status}</Badge></TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="outline" size="sm" className="text-amber-600 border-amber-300 hover:bg-amber-50 gap-1" onClick={() => handleRemoveStudent(s.id)}><DoorOpen className="h-4 w-4" />Checkout</Button>
+                          {canEditRooms && <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>}
+                          {canDeleteRooms && <Button variant="outline" size="sm" className="text-amber-600 border-amber-300 hover:bg-amber-50 gap-1" onClick={() => handleRemoveStudent(s.id)}><DoorOpen className="h-4 w-4" />{t('hostel.students.checkout')}</Button>}
                         </div>
                       </TableCell>
                     </TableRow>

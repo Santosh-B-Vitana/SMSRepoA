@@ -14,13 +14,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, Clock, CheckCircle, XCircle, Eye, Search, Phone, Building2,
   CalendarClock, LogOut, UserCheck, AlertCircle, RefreshCw, ClipboardList, Loader2,
-  Car, IdCard, ChevronLeft, ChevronRight, BadgeCheck, Link2
+  Car, IdCard, ChevronLeft, ChevronRight, BadgeCheck, Link2, ShieldOff
 } from "lucide-react";
 import {
   visitorApi, VisitorBasic, VisitorFull, VisitorPreRegistration, VisitorStats,
   VisitorFilters, CheckInDto, PreRegisterDto
 } from "@/services/api/visitorApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -34,7 +36,15 @@ const PURPOSES = [
   { value: "other",       label: "Other" },
 ];
 
-const ID_TYPES = ["Aadhar Card", "PAN Card", "Passport", "Driving License", "Voter ID", "Employee ID", "Student ID"];
+const ID_TYPES = [
+  { value: "Aadhar Card",     key: "visitors.idType.aadharCard" },
+  { value: "PAN Card",        key: "visitors.idType.panCard" },
+  { value: "Passport",        key: "visitors.idType.passport" },
+  { value: "Driving License", key: "visitors.idType.drivingLicense" },
+  { value: "Voter ID",        key: "visitors.idType.voterId" },
+  { value: "Employee ID",     key: "visitors.idType.employeeId" },
+  { value: "Student ID",      key: "visitors.idType.studentId" },
+];
 
 const STATUS_MAP: Record<string, { label: string; className: string; icon: React.ElementType }> = {
   checked_in:  { label: "Checked In",  className: "bg-green-100 text-green-800 border-green-200",  icon: CheckCircle },
@@ -74,11 +84,12 @@ function LiveDuration({ checkInTime }: { checkInTime: string }) {
 // ─── Status Badge ────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useLanguage();
   const info = STATUS_MAP[status] ?? { label: status, className: "bg-gray-100 text-gray-600", icon: Clock };
   const Icon = info.icon;
   return (
     <Badge variant="outline" className={`gap-1 ${info.className}`}>
-      <Icon className="h-3 w-3" />{info.label}
+      <Icon className="h-3 w-3" />{t(`visitors.status.${status}`)}
     </Badge>
   );
 }
@@ -86,6 +97,7 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Check-In Dialog ─────────────────────────────────────────────────────────
 
 function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useLanguage();
   const [students, setStudents] = useState<StudentBasic[]>([]);
   const [studentSearch, setStudentSearch] = useState("");
   const [historyPhone, setHistoryPhone] = useState("");
@@ -113,9 +125,9 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
       if (h?.length > 0) {
         const last = h[0];
         setForm(p => ({ ...p, name: visitorDisplayName(last), phone: last.phone ?? historyPhone }));
-        toast.info("Previous visit history loaded");
+        toast.info(t('visitors.toast.historyLoaded'));
       } else {
-        toast.info("No previous visits for this phone number");
+        toast.info(t('visitors.toast.noHistory'));
       }
     } catch { /* silent */ }
   }
@@ -126,19 +138,19 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name) { toast.error("Visitor name is required"); return; }
-    if (!form.phone) { toast.error("Phone number is required"); return; }
-    if (!form.purpose) { toast.error("Purpose is required"); return; }
-    if (!form.personToMeet) { toast.error("Person to meet is required"); return; }
+    if (!form.name) { toast.error(t('visitors.toast.nameRequired')); return; }
+    if (!form.phone) { toast.error(t('visitors.toast.phoneRequired')); return; }
+    if (!form.purpose) { toast.error(t('visitors.toast.purposeRequired')); return; }
+    if (!form.personToMeet) { toast.error(t('visitors.toast.personRequired')); return; }
     setSaving(true);
     try {
       const payload: CheckInDto = { ...form };
       if (!payload.studentId) delete payload.studentId;
       await visitorApi.checkIn(payload);
-      toast.success(`${form.name} checked in successfully`);
+      toast.success(t('visitors.toast.checkInSuccess'));
       onSuccess(); onClose();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Check-in failed");
+      toast.error(err instanceof Error ? err.message : t('visitors.toast.checkInFailed'));
     } finally { setSaving(false); }
   }
 
@@ -149,16 +161,16 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-green-600" />Visitor Check-In
+            <UserPlus className="h-5 w-5 text-green-600" />{t('visitors.checkin.title')}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Phone lookup */}
           <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quick Lookup — Returning Visitor?</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('visitors.checkin.lookupSection')}</p>
             <div className="flex gap-2">
-              <Input value={historyPhone} onChange={e => setHistoryPhone(e.target.value)} placeholder="Enter phone to check history..." className="flex-1" />
-              <Button type="button" variant="secondary" onClick={lookupHistory} className="shrink-0">Lookup</Button>
+              <Input value={historyPhone} onChange={e => setHistoryPhone(e.target.value)} placeholder={t('visitors.checkin.lookupPlaceholder')} className="flex-1" />
+              <Button type="button" variant="secondary" onClick={lookupHistory} className="shrink-0">{t('visitors.checkin.btnLookup')}</Button>
             </div>
             {history.length > 0 && (
               <div className="text-xs space-y-1 max-h-28 overflow-y-auto">
@@ -176,49 +188,49 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           {/* Core details */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Full Name *</Label>
+              <Label>{t('visitors.checkin.labelFullName')} *</Label>
               <Input value={form.name} onChange={e => set("name", e.target.value)} placeholder="Visitor's full name" />
             </div>
             <div className="space-y-1.5">
-              <Label>Phone *</Label>
+              <Label>{t('visitors.checkin.labelPhone')} *</Label>
               <Input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+91 9876543210" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Email</Label>
+              <Label>{t('visitors.checkin.labelEmail')}</Label>
               <Input type="email" value={form.email ?? ""} onChange={e => set("email", e.target.value)} placeholder="optional" />
             </div>
             <div className="space-y-1.5">
-              <Label>Purpose *</Label>
+              <Label>{t('visitors.checkin.labelPurpose')} *</Label>
               <Select value={form.purpose} onValueChange={v => set("purpose", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {PURPOSES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                  {PURPOSES.map(p => <SelectItem key={p.value} value={p.value}>{t(`visitors.purpose.${p.value}`)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Person to Meet *</Label>
+            <Label>{t('visitors.checkin.labelPersonToMeet')} *</Label>
             <Input value={form.personToMeet} onChange={e => set("personToMeet", e.target.value)} placeholder="Teacher / Staff / Principal name..." />
           </div>
 
           {/* ID Verification */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>ID Proof Type</Label>
+              <Label>{t('visitors.checkin.labelIdProofType')}</Label>
               <Select value={form.idProof ?? ""} onValueChange={v => set("idProof", v)}>
                 <SelectTrigger><SelectValue placeholder="Select ID type" /></SelectTrigger>
                 <SelectContent>
-                  {ID_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  {ID_TYPES.map(idType => <SelectItem key={idType.value} value={idType.value}>{t(idType.key)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>ID Number</Label>
+              <Label>{t('visitors.checkin.labelIdNumber')}</Label>
               <Input value={form.idProofNumber ?? ""} onChange={e => set("idProofNumber", e.target.value)} placeholder="ID number" />
             </div>
           </div>
@@ -226,7 +238,7 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           {/* Vehicle */}
           <div className="flex items-center gap-3">
             <input type="checkbox" id="hasVehicle" checked={form.hasVehicle} onChange={e => set("hasVehicle", e.target.checked)} className="h-4 w-4 rounded" />
-            <Label htmlFor="hasVehicle" className="cursor-pointer">Arrived with vehicle</Label>
+            <Label htmlFor="hasVehicle" className="cursor-pointer">{t('visitors.checkin.labelHasVehicle')}</Label>
             {form.hasVehicle && (
               <Input className="ml-2 flex-1" value={form.vehicleNumber ?? ""} onChange={e => set("vehicleNumber", e.target.value)} placeholder="Vehicle number (MH 01 AB 1234)" />
             )}
@@ -236,13 +248,13 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           <div className="space-y-2 p-3 border rounded-lg">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Link2 className="h-4 w-4" />
-              <span>Link to Student (Optional) — e.g. parent visiting for specific student</span>
+              <span>{t('visitors.checkin.labelStudentLink')}</span>
             </div>
             <Input value={studentSearch} onChange={e => setStudentSearch(e.target.value)} placeholder="Search student by name..." className="text-sm" />
             <Select value={form.studentId ?? "_none_"} onValueChange={v => set("studentId", v === "_none_" ? "" : v)}>
               <SelectTrigger><SelectValue placeholder="Select student..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="_none_">— None —</SelectItem>
+                <SelectItem value="_none_">{t('visitors.checkin.studentNone')}</SelectItem>
                 {filteredStudents.slice(0, 50).map(s => (
                   <SelectItem key={s.id} value={s.id}>{s.name} · {s.class} {s.section}</SelectItem>
                 ))}
@@ -251,10 +263,10 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           </div>
 
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('visitors.checkin.btnCancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2 bg-green-600 hover:bg-green-700">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Check In Visitor
+              {t('visitors.checkin.btnSubmit')}
             </Button>
           </DialogFooter>
         </form>
@@ -266,6 +278,7 @@ function CheckInDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 // ─── Pre-Register Dialog ──────────────────────────────────────────────────────
 
 function PreRegisterDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<PreRegisterDto>({
     visitorName: "", visitorPhone: "", visitorEmail: "", purpose: "meeting",
@@ -276,14 +289,14 @@ function PreRegisterDialog({ onClose, onSuccess }: { onClose: () => void; onSucc
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.visitorName || !form.visitorPhone || !form.personToMeet) {
-      toast.error("Name, phone, and person to meet are required"); return;
+      toast.error(t('visitors.toast.preregRequired')); return;
     }
     setSaving(true);
     try {
       await visitorApi.createPreRegistration(form);
-      toast.success("Visitor pre-registered successfully");
+      toast.success(t('visitors.toast.preregSuccess'));
       onSuccess(); onClose();
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : t('visitors.toast.failed')); }
     finally { setSaving(false); }
   }
 
@@ -292,51 +305,51 @@ function PreRegisterDialog({ onClose, onSuccess }: { onClose: () => void; onSucc
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="h-5 w-5 text-blue-600" />Pre-Register Visitor
+            <CalendarClock className="h-5 w-5 text-blue-600" />{t('visitors.prereg.dialog.title')}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Visitor Name *</Label>
+              <Label>{t('visitors.prereg.dialog.labelName')} *</Label>
               <Input value={form.visitorName} onChange={e => set("visitorName", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Phone *</Label>
+              <Label>{t('visitors.prereg.dialog.labelPhone')} *</Label>
               <Input value={form.visitorPhone} onChange={e => set("visitorPhone", e.target.value)} placeholder="+91 9876543210" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>{t('visitors.prereg.dialog.labelEmail')}</Label>
             <Input type="email" value={form.visitorEmail ?? ""} onChange={e => set("visitorEmail", e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Purpose *</Label>
+              <Label>{t('visitors.prereg.dialog.labelPurpose')} *</Label>
               <Select value={form.purpose} onValueChange={v => set("purpose", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{PURPOSES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
+                <SelectContent>{PURPOSES.map(p => <SelectItem key={p.value} value={p.value}>{t(`visitors.purpose.${p.value}`)}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Person to Meet *</Label>
+              <Label>{t('visitors.prereg.dialog.labelPersonToMeet')} *</Label>
               <Input value={form.personToMeet} onChange={e => set("personToMeet", e.target.value)} placeholder="Principal, Teacher..." />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Expected Date *</Label>
+              <Label>{t('visitors.prereg.dialog.labelExpectedDate')} *</Label>
               <Input type="date" value={form.expectedDate} onChange={e => set("expectedDate", e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Expected Time</Label>
+              <Label>{t('visitors.prereg.dialog.labelExpectedTime')}</Label>
               <Input type="time" value={form.expectedTime ?? ""} onChange={e => set("expectedTime", e.target.value)} />
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('visitors.prereg.dialog.btnCancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Pre-Register
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('visitors.prereg.dialog.btnSubmit')}
             </Button>
           </DialogFooter>
         </form>
@@ -350,13 +363,16 @@ function PreRegisterDialog({ onClose, onSuccess }: { onClose: () => void; onSucc
 function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
   visitId: string; onClose: () => void; onCheckOut: (id: string) => void;
 }) {
+  const { hasUserPermission } = usePermissions();
+  const { t } = useLanguage();
+  const canManageVisitors = hasUserPermission('Visitor', 'Create');
   const [visit, setVisit] = useState<VisitorFull | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     visitorApi.getById(visitId)
       .then(v => setVisit(v))
-      .catch(() => toast.error("Failed to load visit details"))
+      .catch(() => toast.error(t('visitors.toast.loadFailed')))
       .finally(() => setLoading(false));
   }, [visitId]);
 
@@ -379,7 +395,7 @@ function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
               <span>{visitorDisplayName(visit)}</span>
             </div>
             <Badge variant="outline" className={`gap-1 ${statusInfo.className}`}>
-              <statusInfo.icon className="h-3 w-3" />{statusInfo.label}
+              <statusInfo.icon className="h-3 w-3" />{t(`visitors.status.${visit.status}`)}
             </Badge>
           </DialogTitle>
         </DialogHeader>
@@ -387,16 +403,16 @@ function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />{visit.phone ?? "—"}</div>
             <div className="flex items-center gap-2"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />{visit.organization ?? "—"}</div>
-            <div><span className="text-muted-foreground">Visit #:</span> <span className="font-mono text-xs">{visit.visitNumber}</span></div>
-            <div><span className="text-muted-foreground">Pass #:</span> <span className="font-mono text-xs">{visit.passNumber ?? "—"}</span></div>
+            <div><span className="text-muted-foreground">{t('visitors.detail.label.visitNumber')}:</span> <span className="font-mono text-xs">{visit.visitNumber}</span></div>
+            <div><span className="text-muted-foreground">{t('visitors.detail.label.passNumber')}:</span> <span className="font-mono text-xs">{visit.passNumber ?? "—"}</span></div>
           </div>
           <div className="p-3 bg-muted/40 rounded-lg grid grid-cols-2 gap-3 text-sm">
-            <div><p className="text-xs text-muted-foreground">Purpose</p><p className="font-medium capitalize">{visit.purpose}</p></div>
-            <div><p className="text-xs text-muted-foreground">Meeting</p><p className="font-medium">{visit.personToMeet ?? "—"}</p></div>
-            <div><p className="text-xs text-muted-foreground">Check In</p><p className="font-medium">{new Date(visit.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</p></div>
-            <div><p className="text-xs text-muted-foreground">Check Out</p><p className="font-medium">{visit.checkOutTime ? new Date(visit.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}</p></div>
-            {visit.visitDuration != null && <div><p className="text-xs text-muted-foreground">Duration</p><p className="font-medium">{formatDuration(visit.visitDuration)}</p></div>}
-            {visit.itemsCarried && <div><p className="text-xs text-muted-foreground">Items Carried</p><p className="font-medium">{visit.itemsCarried}</p></div>}
+            <div><p className="text-xs text-muted-foreground">{t('visitors.detail.label.purpose')}</p><p className="font-medium capitalize">{visit.purpose}</p></div>
+            <div><p className="text-xs text-muted-foreground">{t('visitors.detail.label.meeting')}</p><p className="font-medium">{visit.personToMeet ?? "—"}</p></div>
+            <div><p className="text-xs text-muted-foreground">{t('visitors.detail.label.checkIn')}</p><p className="font-medium">{new Date(visit.checkInTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</p></div>
+            <div><p className="text-xs text-muted-foreground">{t('visitors.detail.label.checkOut')}</p><p className="font-medium">{visit.checkOutTime ? new Date(visit.checkOutTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}</p></div>
+            {visit.visitDuration != null && <div><p className="text-xs text-muted-foreground">{t('visitors.detail.label.duration')}</p><p className="font-medium">{formatDuration(visit.visitDuration)}</p></div>}
+            {visit.itemsCarried && <div><p className="text-xs text-muted-foreground">{t('visitors.detail.label.itemsCarried')}</p><p className="font-medium">{visit.itemsCarried}</p></div>}
           </div>
           {(visit.idType || visit.idProof) && (
             <div className="flex items-center gap-2 text-sm">
@@ -413,10 +429,10 @@ function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
           {visit.remarks && <div className="text-sm text-muted-foreground italic">"{visit.remarks}"</div>}
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>Close</Button>
-          {visit.status === "checked_in" && (
+          <Button variant="outline" onClick={onClose}>{t('visitors.detail.btnClose')}</Button>
+          {visit.status === "checked_in" && canManageVisitors && (
             <Button className="gap-1 bg-amber-600 hover:bg-amber-700" onClick={() => { onCheckOut(visit.id); onClose(); }}>
-              <LogOut className="h-4 w-4" />Check Out
+              <LogOut className="h-4 w-4" />{t('visitors.detail.btnCheckOut')}
             </Button>
           )}
         </DialogFooter>
@@ -428,6 +444,12 @@ function VisitDetailDialog({ visitId, onClose, onCheckOut }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function VisitorManagement() {
+  const { hasUserPermission } = usePermissions();
+  const { t } = useLanguage();
+  const canViewVisitors    = hasUserPermission('Visitor', 'View');
+  const canManageVisitors  = hasUserPermission('Visitor', 'Create');
+  const canDeleteVisitors  = hasUserPermission('Visitor', 'Delete');
+
   const [tab, setTab] = useState("live");
   const [stats, setStats] = useState<VisitorStats | null>(null);
   const [liveVisitors, setLiveVisitors] = useState<VisitorBasic[]>([]);
@@ -460,7 +482,7 @@ export default function VisitorManagement() {
       setLiveVisitors(live ?? []);
       setStats(s);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to load live data");
+      toast.error(err instanceof Error ? err.message : t('visitors.toast.loadFailed'));
     } finally { setLoading(false); }
   }, []);
 
@@ -513,34 +535,47 @@ export default function VisitorManagement() {
   async function handleCheckOut(id: string) {
     try {
       await visitorApi.checkOut(id);
-      toast.success("Visitor checked out");
+      toast.success(t('visitors.toast.checkOutSuccess'));
       loadLiveAndStats();
       loadToday();
       if (tab === "all") loadAll(page);
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Check-out failed"); }
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : t('visitors.toast.checkOutFailed')); }
   }
 
   async function handleCancel(id: string) {
-    if (!confirm("Cancel this visit?")) return;
+    if (!confirm(t('visitors.confirm.cancelVisit'))) return;
     try {
       await visitorApi.cancelVisit(id, "Cancelled by staff");
-      toast.success("Visit cancelled");
+      toast.success(t('visitors.toast.cancelSuccess'));
       loadLiveAndStats();
       loadToday();
       if (tab === "all") loadAll(page);
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : t('visitors.toast.cancelFailed')); }
   }
 
   async function handleApprovePreReg(id: string) {
     try {
       await visitorApi.approvePreRegistration(id);
-      toast.success("Pre-registration approved");
+      toast.success(t('visitors.toast.preregApproved'));
       loadPreRegs();
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed"); }
+    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : t('visitors.toast.failed')); }
   }
 
   function onCheckInSuccess() { loadLiveAndStats(); loadToday(); }
   function onPreRegSuccess() { loadPreRegs(); }
+
+  if (!canViewVisitors) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-4 text-muted-foreground">
+        <ShieldOff className="h-16 w-16 opacity-30" />
+        <div className="text-center">
+          <p className="text-lg font-semibold">{t('visitors.accessRestricted.title')}</p>
+          <p className="text-sm mt-1">You don't have permission to view Visitor Management.</p>
+          <p className="text-sm">Contact your administrator to request access.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -548,17 +583,21 @@ export default function VisitorManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="h-6 w-6 text-blue-600" />Visitor Management
+            <Users className="h-6 w-6 text-blue-600" />{t('visitors.title')}
           </h1>
-          <p className="text-muted-foreground">Track and manage school visitors in real time</p>
+          <p className="text-muted-foreground">{t('visitors.subtitle')}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowPreReg(true)} className="gap-1">
-            <CalendarClock className="h-4 w-4" />Pre-Register
-          </Button>
-          <Button onClick={() => setShowCheckIn(true)} className="gap-1 bg-green-600 hover:bg-green-700">
-            <UserPlus className="h-4 w-4" />Check In Visitor
-          </Button>
+          {canManageVisitors && (
+            <Button variant="outline" onClick={() => setShowPreReg(true)} className="gap-1">
+              <CalendarClock className="h-4 w-4" />{t('visitors.btn.preRegister')}
+            </Button>
+          )}
+          {canManageVisitors && (
+            <Button onClick={() => setShowCheckIn(true)} className="gap-1 bg-green-600 hover:bg-green-700">
+              <UserPlus className="h-4 w-4" />{t('visitors.btn.checkIn')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -571,7 +610,7 @@ export default function VisitorManagement() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Currently Inside</p>
+                  <p className="text-sm text-muted-foreground">{t('visitors.stats.currentlyInside')}</p>
                   <p className="text-3xl font-bold text-green-600">{stats?.currentlyInside ?? liveVisitors.length}</p>
                 </div>
                 <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -581,7 +620,7 @@ export default function VisitorManagement() {
               {(stats?.currentlyInside ?? 0) > 0 && (
                 <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
                   <span className="inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                  Live
+                  {t('visitors.stats.live')}
                 </p>
               )}
             </CardContent>
@@ -590,7 +629,7 @@ export default function VisitorManagement() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Today Total</p>
+                  <p className="text-sm text-muted-foreground">{t('visitors.stats.todayTotal')}</p>
                   <p className="text-3xl font-bold">{stats?.todayTotal ?? todayVisitors.length}</p>
                 </div>
                 <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -603,7 +642,7 @@ export default function VisitorManagement() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Completed Today</p>
+                  <p className="text-sm text-muted-foreground">{t('visitors.stats.completedToday')}</p>
                   <p className="text-3xl font-bold">{stats?.completedToday ?? 0}</p>
                 </div>
                 <div className="h-10 w-10 bg-slate-100 rounded-full flex items-center justify-center">
@@ -616,7 +655,7 @@ export default function VisitorManagement() {
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Avg Duration</p>
+                  <p className="text-sm text-muted-foreground">{t('visitors.stats.avgDuration')}</p>
                   <p className="text-3xl font-bold">
                     {stats?.averageVisitDuration ? `${stats.averageVisitDuration}m` : "—"}
                   </p>
@@ -636,16 +675,16 @@ export default function VisitorManagement() {
           <TabsList>
             <TabsTrigger value="live" className="gap-1.5">
               <span className="inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              Live Visitors
+              {t('visitors.tabs.live')}
               {liveVisitors.length > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{liveVisitors.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="today" className="gap-1.5">
-              <ClipboardList className="h-4 w-4" />Today's Log
+              <ClipboardList className="h-4 w-4" />{t('visitors.tabs.today')}
             </TabsTrigger>
             <TabsTrigger value="prereg" className="gap-1.5">
-              <CalendarClock className="h-4 w-4" />Pre-Registered
+              <CalendarClock className="h-4 w-4" />{t('visitors.tabs.prereg')}
               {preRegs.filter(p => p.status === "pending").length > 0 && (
                 <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">
                   {preRegs.filter(p => p.status === "pending").length}
@@ -653,10 +692,10 @@ export default function VisitorManagement() {
               )}
             </TabsTrigger>
             <TabsTrigger value="all" className="gap-1.5">
-              <Search className="h-4 w-4" />All Visits
+              <Search className="h-4 w-4" />{t('visitors.tabs.all')}
             </TabsTrigger>
           </TabsList>
-          <Button variant="ghost" size="icon" onClick={loadLiveAndStats} title="Refresh">
+          <Button variant="ghost" size="icon" onClick={loadLiveAndStats} title={t('visitors.btn.refresh')}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
@@ -669,11 +708,13 @@ export default function VisitorManagement() {
             <Card>
               <CardContent className="py-14 text-center text-muted-foreground">
                 <UserCheck className="h-14 w-14 mx-auto mb-3 opacity-20" />
-                <p className="font-medium text-lg">No visitors currently inside</p>
-                <p className="text-sm">All clear! Campus is visitor-free right now.</p>
-                <Button className="mt-4 gap-1 bg-green-600 hover:bg-green-700" onClick={() => setShowCheckIn(true)}>
-                  <UserPlus className="h-4 w-4" />Check In Visitor
-                </Button>
+                <p className="font-medium text-lg">{t('visitors.live.empty.title')}</p>
+                <p className="text-sm">{t('visitors.live.empty.subtitle')}</p>
+                {canManageVisitors && (
+                  <Button className="mt-4 gap-1 bg-green-600 hover:bg-green-700" onClick={() => setShowCheckIn(true)}>
+                    <UserPlus className="h-4 w-4" />{t('visitors.btn.checkIn')}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -681,14 +722,14 @@ export default function VisitorManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Visitor</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Purpose</TableHead>
-                    <TableHead>Meeting</TableHead>
-                    <TableHead>Checked In</TableHead>
-                    <TableHead className="text-center">Duration</TableHead>
-                    <TableHead>Pass #</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('visitors.table.visitor')}</TableHead>
+                    <TableHead>{t('visitors.table.phone')}</TableHead>
+                    <TableHead>{t('visitors.table.purpose')}</TableHead>
+                    <TableHead>{t('visitors.table.meeting')}</TableHead>
+                    <TableHead>{t('visitors.table.checkedIn')}</TableHead>
+                    <TableHead className="text-center">{t('visitors.table.duration')}</TableHead>
+                    <TableHead>{t('visitors.table.passNumber')}</TableHead>
+                    <TableHead className="text-right">{t('visitors.table.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -720,15 +761,19 @@ export default function VisitorManagement() {
                       <TableCell className="font-mono text-xs">{v.visitNumber?.split("-").pop() ?? "—"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => setViewVisitId(v.id)} title="View details">
+                          <Button variant="ghost" size="icon" onClick={() => setViewVisitId(v.id)} title={t('visitors.action.viewDetails')}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="text-amber-600 hover:bg-amber-50" onClick={() => handleCheckOut(v.id)} title="Check out">
-                            <LogOut className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50" onClick={() => handleCancel(v.id)} title="Cancel">
-                            <XCircle className="h-4 w-4" />
-                          </Button>
+                          {canManageVisitors && (
+                            <Button variant="ghost" size="icon" className="text-amber-600 hover:bg-amber-50" onClick={() => handleCheckOut(v.id)} title={t('visitors.action.checkOut')}>
+                              <LogOut className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canDeleteVisitors && (
+                            <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50" onClick={() => handleCancel(v.id)} title={t('visitors.action.cancel')}>
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -745,7 +790,7 @@ export default function VisitorManagement() {
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p className="font-medium">No visits recorded today</p>
+                <p className="font-medium">{t('visitors.today.empty')}</p>
               </CardContent>
             </Card>
           ) : (
@@ -753,14 +798,14 @@ export default function VisitorManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Visitor</TableHead>
-                    <TableHead>Purpose</TableHead>
-                    <TableHead>Meeting</TableHead>
-                    <TableHead>Check In</TableHead>
-                    <TableHead>Check Out</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('visitors.table.visitor')}</TableHead>
+                    <TableHead>{t('visitors.table.purpose')}</TableHead>
+                    <TableHead>{t('visitors.table.meeting')}</TableHead>
+                    <TableHead>{t('visitors.table.checkIn')}</TableHead>
+                    <TableHead>{t('visitors.table.checkOut')}</TableHead>
+                    <TableHead>{t('visitors.table.duration')}</TableHead>
+                    <TableHead>{t('visitors.table.status')}</TableHead>
+                    <TableHead className="text-right">{t('visitors.table.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -802,7 +847,7 @@ export default function VisitorManagement() {
           {stats && Object.keys(stats.purposeBreakdown ?? {}).length > 0 && (
             <Card className="mt-4">
               <CardContent className="pt-4">
-                <p className="text-sm font-medium mb-3">Today's Purpose Breakdown</p>
+                <p className="text-sm font-medium mb-3">{t('visitors.today.purposeBreakdown')}</p>
                 <div className="flex flex-wrap gap-3">
                   {Object.entries(stats.purposeBreakdown).map(([k, count]) => (
                     <div key={k} className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-full text-sm">
@@ -822,9 +867,9 @@ export default function VisitorManagement() {
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <CalendarClock className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p className="font-medium">No pre-registrations</p>
+                <p className="font-medium">{t('visitors.prereg.empty')}</p>
                 <Button className="mt-4 gap-1" variant="outline" onClick={() => setShowPreReg(true)}>
-                  <CalendarClock className="h-4 w-4" />Pre-Register a Visitor
+                  <CalendarClock className="h-4 w-4" />{t('visitors.prereg.btn.preRegisterVisitor')}
                 </Button>
               </CardContent>
             </Card>
@@ -833,13 +878,13 @@ export default function VisitorManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Visitor</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Purpose</TableHead>
-                    <TableHead>Meeting</TableHead>
-                    <TableHead>Expected</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t('visitors.table.visitor')}</TableHead>
+                    <TableHead>{t('visitors.table.phone')}</TableHead>
+                    <TableHead>{t('visitors.table.purpose')}</TableHead>
+                    <TableHead>{t('visitors.table.meeting')}</TableHead>
+                    <TableHead>{t('visitors.table.expected')}</TableHead>
+                    <TableHead>{t('visitors.table.status')}</TableHead>
+                    <TableHead className="text-right">{t('visitors.table.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -864,21 +909,21 @@ export default function VisitorManagement() {
                             {pr.scheduledTime && <p className="text-xs text-muted-foreground">{pr.scheduledTime}</p>}
                           </div>
                         </TableCell>
-                        <TableCell><Badge className={statusInfo.className}>{statusInfo.label}</Badge></TableCell>
+                        <TableCell><Badge className={statusInfo.className}>{t(`visitors.preregStatus.${pr.status}`)}</Badge></TableCell>
                         <TableCell className="text-right">
-                          {pr.status === "pending" && (
+                          {pr.status === "pending" && canManageVisitors && (
                             <div className="flex justify-end gap-1">
                               <Button size="sm" className="gap-1 h-7 text-xs" onClick={() => handleApprovePreReg(pr.id)}>
-                                <BadgeCheck className="h-3 w-3" />Approve
+                                <BadgeCheck className="h-3 w-3" />{t('visitors.prereg.btn.approve')}
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 text-xs text-green-700 border border-green-200 hover:bg-green-50" onClick={() => setShowCheckIn(true)}>
-                                Check In
+                                {t('visitors.prereg.btn.checkIn')}
                               </Button>
                             </div>
                           )}
-                          {pr.status === "approved" && (
+                          {pr.status === "approved" && canManageVisitors && (
                             <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => setShowCheckIn(true)}>
-                              Check In Now
+                              {t('visitors.prereg.btn.checkInNow')}
                             </Button>
                           )}
                         </TableCell>
@@ -896,22 +941,22 @@ export default function VisitorManagement() {
           <div className="flex flex-wrap gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search visitor, phone, org..." value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="pl-9" placeholder={t('visitors.all.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
+              <SelectTrigger className="w-40"><SelectValue placeholder={t('visitors.all.filter.allStatus')} /></SelectTrigger>
               <SelectContent>
-                {filterStatus && <button type="button" className="text-sm px-2 py-1 text-muted-foreground hover:bg-accent w-full text-left" onClick={() => setFilterStatus("")}>Clear filter</button>}
-                <SelectItem value="checked_in">Checked In</SelectItem>
-                <SelectItem value="checked_out">Checked Out</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
+                {filterStatus && <button type="button" className="text-sm px-2 py-1 text-muted-foreground hover:bg-accent w-full text-left" onClick={() => setFilterStatus("")}>{t('visitors.all.filter.clear')}</button>}
+                <SelectItem value="checked_in">{t('visitors.status.checked_in')}</SelectItem>
+                <SelectItem value="checked_out">{t('visitors.status.checked_out')}</SelectItem>
+                <SelectItem value="cancelled">{t('visitors.status.cancelled')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={filterPurpose} onValueChange={setFilterPurpose}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="All Purposes" /></SelectTrigger>
+              <SelectTrigger className="w-40"><SelectValue placeholder={t('visitors.all.filter.allPurposes')} /></SelectTrigger>
               <SelectContent>
-                {filterPurpose && <button type="button" className="text-sm px-2 py-1 text-muted-foreground hover:bg-accent w-full text-left" onClick={() => setFilterPurpose("")}>Clear filter</button>}
-                {PURPOSES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                {filterPurpose && <button type="button" className="text-sm px-2 py-1 text-muted-foreground hover:bg-accent w-full text-left" onClick={() => setFilterPurpose("")}>{t('visitors.all.filter.clear')}</button>}
+                {PURPOSES.map(p => <SelectItem key={p.value} value={p.value}>{t(`visitors.purpose.${p.value}`)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -921,7 +966,7 @@ export default function VisitorManagement() {
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p>No visits found matching your filters</p>
+                <p>{t('visitors.all.empty')}</p>
               </CardContent>
             </Card>
           ) : (
@@ -930,15 +975,15 @@ export default function VisitorManagement() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Visit #</TableHead>
-                      <TableHead>Visitor</TableHead>
-                      <TableHead>Purpose</TableHead>
-                      <TableHead>Meeting</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Check In</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>{t('visitors.table.visitNumber')}</TableHead>
+                      <TableHead>{t('visitors.table.visitor')}</TableHead>
+                      <TableHead>{t('visitors.table.purpose')}</TableHead>
+                      <TableHead>{t('visitors.table.meeting')}</TableHead>
+                      <TableHead>{t('visitors.table.date')}</TableHead>
+                      <TableHead>{t('visitors.table.checkIn')}</TableHead>
+                      <TableHead>{t('visitors.table.duration')}</TableHead>
+                      <TableHead>{t('visitors.table.status')}</TableHead>
+                      <TableHead className="text-right">{t('visitors.table.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

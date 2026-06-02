@@ -23,7 +23,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("rooms")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomListResponse>> GetRooms(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -39,7 +39,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("rooms/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomResponse>> GetRoomById(Guid id)
         {
             try
@@ -54,7 +54,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("rooms")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomResponse>> CreateRoom([FromBody] CreateHostelRoomRequest request)
         {
             try
@@ -71,7 +71,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("rooms/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelRoomResponse>> UpdateRoom(Guid id, [FromBody] CreateHostelRoomRequest request)
         {
             try
@@ -88,7 +88,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("rooms/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> DeleteRoom(Guid id)
         {
             try
@@ -103,7 +103,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("rooms/{roomId}/students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> GetStudentsByRoom(Guid roomId)
         {
             try
@@ -117,7 +117,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpGet("students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> GetAllHostelStudents()
         {
             try
@@ -131,7 +131,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("students")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelStudentResponse>> AssignStudentToRoom([FromBody] CreateHostelStudentRequest request)
         {
             try
@@ -149,7 +149,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("students/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult<HostelStudentResponse>> UpdateHostelStudent(Guid id, [FromBody] UpdateHostelStudentRequest request)
         {
             try
@@ -166,7 +166,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("students/{id}")]
-        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [Authorize(Roles = StatusConstants.RoleGroups.HostelManagement)]
         public async Task<ActionResult> RemoveStudentFromRoom(Guid id)
         {
             try
@@ -179,6 +179,161 @@ namespace SmsApi.Controllers
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        // ── P1: Hostel Blocks ────────────────────────────────────────────────────
+
+        [HttpGet("blocks")]
+        public async Task<IActionResult> GetBlocks()
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _hostelService.GetBlocksAsync(schoolId));
+        }
+
+        [HttpGet("blocks/{id:guid}")]
+        public async Task<IActionResult> GetBlock(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _hostelService.GetBlockByIdAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        [HttpPost("blocks")]
+        public async Task<IActionResult> CreateBlock([FromBody] CreateHostelBlockRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _hostelService.CreateBlockAsync(schoolId, request);
+                return CreatedAtAction(nameof(GetBlock), new { id = result.Id }, result);
+            }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("blocks/{id:guid}")]
+        public async Task<IActionResult> UpdateBlock(Guid id, [FromBody] CreateHostelBlockRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _hostelService.UpdateBlockAsync(id, schoolId, request);
+                return result == null ? NotFound() : Ok(result);
+            }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpDelete("blocks/{id:guid}")]
+        public async Task<IActionResult> DeleteBlock(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _hostelService.DeleteBlockAsync(id, schoolId);
+            return result ? NoContent() : NotFound();
+        }
+
+        // ── P1: Mess Billing ─────────────────────────────────────────────────────
+
+        [HttpGet("mess-billings")]
+        public async Task<IActionResult> GetMessBillings([FromQuery] Guid? hostelStudentId, [FromQuery] string? month)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _hostelService.GetMessBillingsAsync(schoolId, hostelStudentId, month));
+        }
+
+        [HttpPost("mess-billings")]
+        public async Task<IActionResult> CreateMessBilling([FromBody] CreateHostelMessBillingRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _hostelService.CreateMessBillingAsync(schoolId, request);
+                return StatusCode(201, result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("mess-billings/{id:guid}/pay")]
+        public async Task<IActionResult> MarkMessBillingPaid(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _hostelService.MarkMessBillingPaidAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        // ── P1: Visitor Log ──────────────────────────────────────────────────────
+
+        [HttpGet("visitor-logs")]
+        public async Task<IActionResult> GetVisitorLogs([FromQuery] Guid? hostelStudentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _hostelService.GetVisitorLogsAsync(schoolId, hostelStudentId));
+        }
+
+        [HttpPost("visitor-logs")]
+        public async Task<IActionResult> CreateVisitorLog([FromBody] CreateHostelVisitorLogRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _hostelService.CreateVisitorLogAsync(schoolId, request);
+                return StatusCode(201, result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("visitor-logs/{id:guid}/checkout")]
+        public async Task<IActionResult> CheckOutVisitor(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _hostelService.CheckOutVisitorAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        // ── P1: Hostel Leave ─────────────────────────────────────────────────────
+
+        [HttpGet("leaves")]
+        public async Task<IActionResult> GetLeaves([FromQuery] Guid? hostelStudentId, [FromQuery] string? status)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _hostelService.GetLeavesAsync(schoolId, hostelStudentId, status));
+        }
+
+        [HttpPost("leaves")]
+        public async Task<IActionResult> CreateLeave([FromBody] CreateHostelLeaveRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _hostelService.CreateLeaveAsync(schoolId, request);
+                return StatusCode(201, result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("leaves/{id:guid}/approve")]
+        public async Task<IActionResult> ApproveLeave(Guid id, [FromBody] ApproveHostelLeaveRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId = _tenant.UserId;
+                var result = await _hostelService.ApproveLeaveAsync(id, schoolId, userId, request.Status, request.Remarks);
+                return result == null ? NotFound() : Ok(result);
+            }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
     }

@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatDate } from "@/utils/dateUtils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -90,7 +91,7 @@ export function FeeDetailsDialog({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Due Date:</span>
-                <span className="font-semibold">{new Date(feeRecord.dueDate).toLocaleDateString()}</span>
+                <span className="font-semibold">{formatDate(feeRecord.dueDate)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Status:</span>
@@ -121,14 +122,14 @@ export function FeeDetailsDialog({
                       <TableRow key={inst.installmentNumber}>
                         <TableCell>#{inst.installmentNumber}</TableCell>
                         <TableCell>₹{inst.amount.toLocaleString()}</TableCell>
-                        <TableCell>{new Date(inst.dueDate).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDate(inst.dueDate)}</TableCell>
                         <TableCell>
                           <Badge variant={inst.status === 'paid' ? 'default' : 'secondary'}>
                             {inst.status}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {inst.paidDate ? new Date(inst.paidDate).toLocaleDateString() : '-'}
+                          {inst.paidDate ? formatDate(inst.paidDate) : '-'}
                         </TableCell>
                       </TableRow>
                     ))}

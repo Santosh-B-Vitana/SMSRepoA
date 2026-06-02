@@ -259,6 +259,10 @@ namespace SmsApi.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+            catch (TeacherConflictException ex)
+            {
+                return Conflict(new { message = ex.Message, conflictInfo = ex.ConflictInfo });
+            }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
@@ -295,6 +299,10 @@ namespace SmsApi.Controllers
             catch (ArgumentException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+            catch (TeacherConflictException ex)
+            {
+                return Conflict(new { message = ex.Message, conflictInfo = ex.ConflictInfo });
             }
             catch (InvalidOperationException ex)
             {

@@ -18,24 +18,24 @@ import {
   Plus,
   Settings
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { academicApi, type SectionResponse } from "@/services/api/academicApi";
+import {
+  academicApi,
+  type SectionResponse,
+  type GradeTierResponse,
+} from "@/services/api/academicApi";
 import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 import { SubjectsTab } from "@/components/academics/SubjectsTab";
-
-interface GradeTier {
-  id: string;
-  grade: string;
-  minMarks: number;
-  maxMarks: number;
-  gpa: number;
-}
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
 
 export default function ClassDetail() {
   const { classId } = useParams();
   const navigate = useNavigate();
+  const { academicYear: activeAcademicYear } = useAcademicYear();
   const [activeTab, setActiveTab] = useState("sections");
   const [className, setClassName] = useState("");
+  const [classBoardConfigurationId, setClassBoardConfigurationId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   
   // Sections state — backed by real API
@@ -48,28 +48,23 @@ export default function ClassDetail() {
     classTeacherId: ""
   });
 
-  // Grade Tiers state
-  const [gradeTiers, setGradeTiers] = useState<GradeTier[]>([
-    { id: "1", grade: "A+", minMarks: 90, maxMarks: 100, gpa: 10 },
-    { id: "2", grade: "A", minMarks: 80, maxMarks: 89, gpa: 9 },
-    { id: "3", grade: "B+", minMarks: 70, maxMarks: 79, gpa: 8 },
-    { id: "4", grade: "B", minMarks: 60, maxMarks: 69, gpa: 7 },
-    { id: "5", grade: "C", minMarks: 50, maxMarks: 59, gpa: 6 },
-    { id: "6", grade: "D", minMarks: 40, maxMarks: 49, gpa: 5 },
-    { id: "7", grade: "F", minMarks: 0, maxMarks: 39, gpa: 0 }
-  ]);
+  // Grade Tiers state — API-backed
+  const [gradeTiers, setGradeTiers] = useState<GradeTierResponse[]>([]);
+  const [gradeTiersLoading, setGradeTiersLoading] = useState(false);
   const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
-  const [editingGrade, setEditingGrade] = useState<GradeTier | null>(null);
-  const [gradeForm, setGradeForm] = useState({
-    grade: "",
-    minMarks: 0,
-    maxMarks: 0,
-    gpa: 0
-  });
+  const [editingGrade, setEditingGrade] = useState<GradeTierResponse | null>(null);
+  const [gradeForm, setGradeForm] = useState({ grade: "", minMarks: 0, maxMarks: 0, gpa: 0 });
+  const [gradeSaving, setGradeSaving] = useState(false);
 
   useEffect(() => {
     loadClassData();
   }, [classId]);
+
+  useEffect(() => {
+    if (activeTab === "settings") {
+      loadGradeTiers();
+    }
+  }, [activeTab, classId]);
 
   const loadClassData = useCallback(async () => {
     setLoading(true);
@@ -80,6 +75,8 @@ export default function ClassDetail() {
         academicApi.listSections(classId, 1, 100)
       ]);
       setClassName(classData.name || classData.standard || "");
+      const boardId = classData.boardConfigurationId;
+      setClassBoardConfigurationId(boardId);
       setTeachingStaff(staffData.staff ?? []);
       setSections(sectionsData.sections ?? []);
     } catch (error) {
@@ -138,6 +135,20 @@ export default function ClassDetail() {
     }
   };
 
+  // Grade Tier loaders
+  const loadGradeTiers = useCallback(async () => {
+    if (!classId) return;
+    setGradeTiersLoading(true);
+    try {
+      const res = await academicApi.getGradeTiers(classId);
+      setGradeTiers(res.gradeTiers ?? []);
+    } catch {
+      toast.error("Failed to load grade tiers");
+    } finally {
+      setGradeTiersLoading(false);
+    }
+  }, [classId]);
+
   // Grade Tier handlers
   const handleAddGradeTier = () => {
     setEditingGrade(null);
@@ -145,41 +156,45 @@ export default function ClassDetail() {
     setGradeDialogOpen(true);
   };
 
-  const handleEditGrade = (grade: GradeTier) => {
+  const handleEditGrade = (grade: GradeTierResponse) => {
     setEditingGrade(grade);
-    setGradeForm({
-      grade: grade.grade,
-      minMarks: grade.minMarks,
-      maxMarks: grade.maxMarks,
-      gpa: grade.gpa
-    });
+    setGradeForm({ grade: grade.grade, minMarks: grade.minMarks, maxMarks: grade.maxMarks, gpa: grade.gpa });
     setGradeDialogOpen(true);
   };
 
-  const handleSaveGrade = (e: React.FormEvent) => {
+  const handleSaveGrade = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingGrade) {
-      setGradeTiers(gradeTiers.map(g => 
-        g.id === editingGrade.id 
-          ? { ...g, ...gradeForm }
-          : g
-      ));
-      toast.success("Grade tier updated successfully");
-    } else {
-      const newGrade: GradeTier = {
-        id: Date.now().toString(),
-        ...gradeForm
-      };
-      setGradeTiers([...gradeTiers, newGrade]);
-      toast.success("Grade tier added successfully");
+    setGradeSaving(true);
+    try {
+      if (editingGrade) {
+        const updated = await academicApi.updateGradeTier(editingGrade.id, gradeForm);
+        setGradeTiers(prev => prev.map(g => g.id === editingGrade.id ? updated : g));
+        toast.success("Grade tier updated");
+      } else {
+        const created = await academicApi.createGradeTier({
+          classId: classId!,
+          ...gradeForm,
+          displayOrder: gradeTiers.length,
+        });
+        setGradeTiers(prev => [...prev, created]);
+        toast.success("Grade tier added");
+      }
+      setGradeDialogOpen(false);
+    } catch {
+      toast.error("Failed to save grade tier");
+    } finally {
+      setGradeSaving(false);
     }
-    setGradeDialogOpen(false);
   };
 
-  const handleDeleteGrade = (id: string) => {
-    if (confirm("Are you sure you want to delete this grade tier?")) {
-      setGradeTiers(gradeTiers.filter(g => g.id !== id));
-      toast.success("Grade tier deleted successfully");
+  const handleDeleteGrade = async (id: string) => {
+    if (!confirm("Delete this grade tier?")) return;
+    try {
+      await academicApi.deleteGradeTier(id);
+      setGradeTiers(prev => prev.filter(g => g.id !== id));
+      toast.success("Grade tier deleted");
+    } catch {
+      toast.error("Failed to delete grade tier");
     }
   };
 
@@ -208,7 +223,7 @@ export default function ClassDetail() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold">{className}</h1>
-          <p className="text-muted-foreground">Manage sections, subjects, and grade tiers • 2024-2025</p>
+          <p className="text-muted-foreground">Manage sections, subjects, and grade tiers • {activeAcademicYear}</p>
         </div>
       </div>
 
@@ -339,7 +354,7 @@ export default function ClassDetail() {
 
         {/* Subjects Tab */}
         <TabsContent value="subjects">
-          <SubjectsTab classId={classId!} />
+          <SubjectsTab classId={classId!} boardConfigurationId={classBoardConfigurationId} />
         </TabsContent>
 
         {/* Settings Tab */}
@@ -352,9 +367,9 @@ export default function ClassDetail() {
                   <Award className="h-5 w-5" />
                   Grade Tiers
                 </CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Configure grading scale for all sections</p>
+                <p className="text-sm text-muted-foreground mt-1">Define the grading scale for this class</p>
               </div>
-              <Button onClick={handleAddGradeTier} size="sm">
+              <Button onClick={handleAddGradeTier} size="sm" disabled={gradeTiersLoading}>
                 <Plus className="h-4 w-4 mr-2" />
                 Add Grade Tier
               </Button>
@@ -371,7 +386,13 @@ export default function ClassDetail() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {gradeTiers.map((grade) => (
+                  {gradeTiersLoading && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Loading grade tiers…</TableCell></TableRow>
+                  )}
+                  {!gradeTiersLoading && gradeTiers.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">No grade tiers configured. Add one to get started.</TableCell></TableRow>
+                  )}
+                  {!gradeTiersLoading && gradeTiers.map((grade) => (
                     <TableRow key={grade.id}>
                       <TableCell className="font-medium">{grade.grade}</TableCell>
                       <TableCell>{grade.minMarks}</TableCell>
@@ -403,102 +424,13 @@ export default function ClassDetail() {
             </CardContent>
           </Card>
 
-          {/* Class Policies Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Class Policies & Requirements</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">Set academic policies for this class</p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="passingPercentage">Passing Percentage (%)</Label>
-                  <Input 
-                    id="passingPercentage"
-                    type="number" 
-                    placeholder="e.g., 35" 
-                    defaultValue="35"
-                    min="0"
-                    max="100"
-                  />
-                  <p className="text-xs text-muted-foreground">Minimum marks percentage required to pass</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="minAttendance">Minimum Attendance (%)</Label>
-                  <Input 
-                    id="minAttendance"
-                    type="number" 
-                    placeholder="e.g., 75" 
-                    defaultValue="75"
-                    min="0"
-                    max="100"
-                  />
-                  <p className="text-xs text-muted-foreground">Minimum attendance required for promotion</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="maxStudentsPerSection">Max Students per Section</Label>
-                  <Input 
-                    id="maxStudentsPerSection"
-                    type="number" 
-                    placeholder="e.g., 40" 
-                    defaultValue="40"
-                    min="1"
-                  />
-                  <p className="text-xs text-muted-foreground">Maximum capacity for each section</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="promotionPolicy">Promotion Policy</Label>
-                  <Select defaultValue="strict">
-                    <SelectTrigger id="promotionPolicy">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="strict">Strict (Must pass all subjects)</SelectItem>
-                      <SelectItem value="lenient">Lenient (Can have 1 failed subject)</SelectItem>
-                      <SelectItem value="flexible">Flexible (Can have 2 failed subjects)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Criteria for class promotion</p>
-                </div>
-              </div>
-
-              <div className="border-t pt-4 space-y-3">
-                <Label className="flex items-center gap-2">
-                  <input type="checkbox" defaultChecked className="w-4 h-4" />
-                  <span>Enable Continuous Assessment</span>
-                </Label>
-                <p className="text-sm text-muted-foreground ml-6">Include assignments, projects, and class work in final grades</p>
-                
-                <Label className="flex items-center gap-2">
-                  <input type="checkbox" defaultChecked className="w-4 h-4" />
-                  <span>Enable Mid-term Examinations</span>
-                </Label>
-                <p className="text-sm text-muted-foreground ml-6">Conduct mid-term exams in addition to final exams</p>
-                
-                <Label className="flex items-center gap-2">
-                  <input type="checkbox" className="w-4 h-4" />
-                  <span>Enable Supplementary Exams</span>
-                </Label>
-                <p className="text-sm text-muted-foreground ml-6">Allow failed students to attempt supplementary exams</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          
-
-          {/* Save Button */}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline">Reset to Default</Button>
-            <Button onClick={() => toast.success("Class settings saved successfully")}>Save All Settings</Button>
-          </div>
-
           {/* Grade Tier Dialog */}
           <Dialog open={gradeDialogOpen} onOpenChange={setGradeDialogOpen}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editingGrade ? "Edit Grade Tier" : "Add Grade Tier"}</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSaveGrade} className="space-y-4">
+              <form onSubmit={handleSaveGrade} className="space-y-4" noValidate>
                 <div>
                   <Label htmlFor="grade">Grade</Label>
                   <Input
@@ -543,11 +475,11 @@ export default function ClassDetail() {
                   />
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setGradeDialogOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => setGradeDialogOpen(false)} disabled={gradeSaving}>
                     Cancel
                   </Button>
-                  <Button type="submit">
-                    {editingGrade ? "Update" : "Add"} Grade Tier
+                  <Button type="submit" disabled={gradeSaving}>
+                    {gradeSaving ? "Saving…" : (editingGrade ? "Update" : "Add") + " Grade Tier"}
                   </Button>
                 </div>
               </form>

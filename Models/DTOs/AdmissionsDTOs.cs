@@ -155,6 +155,9 @@ namespace SmsApi.Models.DTOs
         
         public string? AdmissionNumber { get; set; }
         
+        [MaxLength(10)]
+        public string? Section { get; set; }
+        
         public string? RollNumber { get; set; }
         public Guid? EnrolledBy { get; set; }
     }

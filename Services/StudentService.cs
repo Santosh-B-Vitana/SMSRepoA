@@ -13,7 +13,9 @@ namespace SmsApi.Services
     public interface IStudentService
     {
         Task<StudentListResponse> GetStudentsAsync(Guid schoolId, int page, int pageSize, string? search, string? classFilter, string? sectionFilter, string? status, string? academicYear = null, string? sortBy = null, string? sortOrder = null);
+        Task<StudentClassesSectionsResponse> GetDistinctClassesSectionsAsync(Guid schoolId);
         Task<StudentResponse?> GetStudentByIdAsync(Guid id, Guid schoolId);
+        Task<StudentResponse?> GetStudentByEmailAsync(string email, Guid schoolId);
         Task<StudentResponse> CreateStudentAsync(CreateStudentRequest request);
         Task<StudentResponse?> UpdateStudentAsync(Guid id, Guid schoolId, UpdateStudentRequest request);
         Task<bool> DeleteStudentAsync(Guid id, Guid schoolId);
@@ -89,6 +91,11 @@ namespace SmsApi.Services
         Task<GuardianStaffDto?> GetGuardianStaffAsync(Guid schoolId, Guid staffId);
         Task SetGuardianStaffAsync(Guid schoolId, Guid studentId, Guid? staffId);
         Task<List<StaffChildDto>> GetChildrenOfStaffAsync(Guid schoolId, Guid staffId);
+
+        // ─── Student Exit (Drop-Out / Pass-Out) ────────────────────────────────
+        Task<ExitClearanceResponse> GetExitClearanceAsync(Guid studentId, Guid schoolId);
+        Task<StudentExitResponse> ProcessDropoutAsync(Guid studentId, Guid schoolId, StudentDropoutRequest request, Guid processedBy);
+        Task<StudentExitResponse> ProcessPassoutAsync(Guid studentId, Guid schoolId, StudentPassoutRequest request, Guid processedBy);
     }
 
     public class StudentService : IStudentService
@@ -96,12 +103,14 @@ namespace SmsApi.Services
         private readonly AppDbContext _context;
         private readonly ILogger<StudentService> _logger;
         private readonly IAlumniService _alumniService;
+        private readonly IFileStorageService _fileStorage;
 
-        public StudentService(AppDbContext context, ILogger<StudentService> logger, IAlumniService alumniService)
+        public StudentService(AppDbContext context, ILogger<StudentService> logger, IAlumniService alumniService, IFileStorageService fileStorage)
         {
             _context = context;
             _logger = logger;
             _alumniService = alumniService;
+            _fileStorage = fileStorage;
         }
 
         // ── PII Masking helpers ──────────────────────────────────────────────
@@ -210,6 +219,36 @@ namespace SmsApi.Services
                 Page = page,
                 PageSize = pageSize
             };
+        }
+
+        public async Task<StudentClassesSectionsResponse> GetDistinctClassesSectionsAsync(Guid schoolId)
+        {
+            var classes = await _context.Students
+                .Where(s => s.SchoolId == schoolId && s.Class != null && s.Class != "")
+                .Select(s => s.Class!)
+                .Distinct()
+                .OrderBy(c => c)
+                .ToListAsync();
+
+            var sections = await _context.Students
+                .Where(s => s.SchoolId == schoolId && s.Section != null && s.Section != "")
+                .Select(s => s.Section!)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToListAsync();
+
+            return new StudentClassesSectionsResponse { Classes = classes, Sections = sections };
+        }
+
+        public async Task<StudentResponse?> GetStudentByEmailAsync(string email, Guid schoolId)
+        {
+            var student = await _context.Students
+                .Include(s => s.Guardians)
+                .Include(s => s.Documents)
+                .Include(s => s.Siblings!).ThenInclude(ss => ss.Sibling)
+                .Where(s => s.SchoolId == schoolId && s.Email != null && s.Email.ToLower() == email.ToLower())
+                .FirstOrDefaultAsync();
+            return student == null ? null : await GetStudentByIdAsync(student.Id, schoolId);
         }
 
         public async Task<StudentResponse?> GetStudentByIdAsync(Guid id, Guid schoolId)
@@ -333,6 +372,8 @@ namespace SmsApi.Services
                 GuardianPhone = student.GuardianPhone,
                 
                 Status = student.Status,
+                InactiveReason = student.InactiveReason,
+                InactiveDate = student.InactiveDate,
                 PhotoUrl = student.PhotoUrl,
                 
                 // Collections
@@ -556,6 +597,9 @@ namespace SmsApi.Services
                     // AUTO-CREATE LIBRARY CARD if student needs library access
                     await CreateLibraryCardAsync(student);
                     
+                    // AUTO-CREATE HEALTH RECORD so student appears in health management by default
+                    await CreateInitialHealthRecordAsync(student);
+                    
                     // AUTO-ASSIGN TRANSPORT ROUTE if student needs transport
                     if (student.TransportRequired)
                     {
@@ -622,49 +666,140 @@ namespace SmsApi.Services
             try
             {
                 var academicYear = await GetActiveAcademicYearAsync(student.SchoolId);
-                
-                var feeStructure = await _context.FeeStructures
-                    .Where(f => f.SchoolId == student.SchoolId && 
-                               f.Class == student.Class &&
-                               f.AcademicYear == academicYear)
-                    .OrderByDescending(f => f.CreatedAt)
-                    .FirstOrDefaultAsync();
-
-                if (feeStructure != null)
-                {
-                    var feeRecord = new FeeRecord
-                    {
-                        Id = Guid.NewGuid(),
-                        SchoolId = student.SchoolId,
-                        StudentId = student.Id,
-                        FeeStructureId = feeStructure.Id,
-                        AcademicYear = academicYear,
-                        TotalAmount = feeStructure.TotalAmount,
-                        PaidAmount = 0,
-                        BalanceAmount = feeStructure.TotalAmount,
-                        DueDate = DateTime.UtcNow.AddDays(30), // 30 days to pay
-                        Status = "pending",
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-
-                    _context.FeeRecords.Add(feeRecord);
-                    await _context.SaveChangesAsync();
-                    
-                    _logger.LogInformation("Fee record auto-created for student {StudentId}, Amount: {Amount}", 
-                        student.Id, feeStructure.TotalAmount);
-                }
-                else
-                {
-                    _logger.LogWarning("No fee structure found for class {Class}, academic year {Year}. Fee record not created.",
-                        student.Class, academicYear);
-                }
+                await CreateFeeRecordForStudentInternalAsync(
+                    student.SchoolId, student.Id,
+                    student.Class, academicYear,
+                    student.TransportRequired, student.HostelRequired);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create fee record for student {StudentId}", student.Id);
                 // Don't throw - fee record creation failure shouldn't block student creation
             }
+        }
+
+        /// <summary>
+        /// Looks up the best matching fee structure for the given class + academic year and
+        /// creates a fee record for the student.  The effective total is adjusted so that
+        /// transport and hostel fee components are only included when the student actually
+        /// requires those services.
+        /// Returns the created FeeRecord, or null if no matching structure was found.
+        /// </summary>
+        private async Task<FeeRecord?> CreateFeeRecordForStudentInternalAsync(
+            Guid schoolId, Guid studentId,
+            string studentClass, string academicYear,
+            bool transportRequired, bool hostelRequired)
+        {
+            // Skip if a fee record already exists for this student + year
+            var alreadyExists = await _context.FeeRecords
+                .AnyAsync(f => f.SchoolId == schoolId &&
+                               f.StudentId == studentId &&
+                               f.AcademicYear == academicYear);
+            if (alreadyExists)
+            {
+                _logger.LogInformation("Fee record already exists for student {StudentId}, year {Year}. Skipping auto-creation.",
+                    studentId, academicYear);
+                return null;
+            }
+
+            // Flexible class matching: "Class 10-A" student should match a "Class 10" fee structure.
+            // Priority: (1) exact match for year, (2) prefix match for year,
+            //           (3) exact match any year, (4) prefix match any year.
+            var structures = await _context.FeeStructures
+                .Where(f => f.SchoolId == schoolId)
+                .ToListAsync();
+
+            FeeStructure? feeStructure = structures
+                .Where(f => f.AcademicYear == academicYear &&
+                            IsClassMatch(f.Class, studentClass))
+                .OrderByDescending(f => f.CreatedAt)
+                .FirstOrDefault()
+                ?? structures
+                    .Where(f => IsClassMatch(f.Class, studentClass))
+                    .OrderByDescending(f => f.AcademicYear)
+                    .ThenByDescending(f => f.CreatedAt)
+                    .FirstOrDefault();
+
+            if (feeStructure == null)
+            {
+                _logger.LogWarning("No fee structure found for class {Class}, academic year {Year}. Fee record not created.",
+                    studentClass, academicYear);
+                return null;
+            }
+
+            // Calculate effective total from fee head components (not the stored TotalAmount,
+            // which may be stale if the structure was edited after originally being saved).
+            var effectiveTotal = feeStructure.ComputeTotalFromComponents();
+            if (!transportRequired && feeStructure.TransportFee > 0)
+                effectiveTotal -= feeStructure.TransportFee;
+            if (!hostelRequired && feeStructure.HostelFee > 0)
+                effectiveTotal -= feeStructure.HostelFee;
+            if (effectiveTotal < 0) effectiveTotal = 0;
+
+            var feeRecord = new FeeRecord
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                StudentId = studentId,
+                FeeStructureId = feeStructure.Id,
+                AcademicYear = academicYear,
+                TotalAmount = effectiveTotal,
+                PaidAmount = 0,
+                DiscountAmount = 0,
+                LateFeeAmount = 0,
+                PendingAmount = effectiveTotal,
+                BalanceAmount = effectiveTotal,
+                DueDate = DateTime.UtcNow.AddDays(30),
+                Status = "pending",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.FeeRecords.Add(feeRecord);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Fee record auto-created for student {StudentId} | Class: {Class} | Structure: {Structure} | Amount: {Amount} | Transport included: {T} | Hostel included: {H}",
+                studentId, studentClass, feeStructure.Name, effectiveTotal, transportRequired, hostelRequired);
+
+            return feeRecord;
+        }
+
+        /// <summary>
+        /// Returns true when <paramref name="structureClass"/> is a reasonable match for
+        /// <paramref name="studentClass"/>.
+        /// Handles formats like:  "10" ↔ "Class 10-A",  "Class 10" ↔ "Class 10-A",  "10" ↔ "10 A"
+        /// </summary>
+        private static bool IsClassMatch(string structureClass, string studentClass)
+        {
+            if (string.IsNullOrWhiteSpace(structureClass) || string.IsNullOrWhiteSpace(studentClass))
+                return false;
+
+            var sc = structureClass.Trim();
+            var st = studentClass.Trim();
+
+            // Exact match
+            if (string.Equals(sc, st, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Prefix match: student class starts with the structure class followed by space, dash, or end
+            // e.g., "Class 10" matches "Class 10-A" / "Class 10 A" / "Class 10A"
+            if (st.StartsWith(sc + "-", StringComparison.OrdinalIgnoreCase)) return true;
+            if (st.StartsWith(sc + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // Handle "Class " prefix difference:  "10" vs "Class 10-A"
+            // Strip "Class " prefix from both sides and compare
+            var scStripped = sc.StartsWith("Class ", StringComparison.OrdinalIgnoreCase)
+                ? sc.Substring(6).Trim() : sc;
+            var stStripped = st.StartsWith("Class ", StringComparison.OrdinalIgnoreCase)
+                ? st.Substring(6).Trim() : st;
+
+            if (string.Equals(scStripped, stStripped, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (stStripped.StartsWith(scStripped + "-", StringComparison.OrdinalIgnoreCase)) return true;
+            if (stStripped.StartsWith(scStripped + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
         }
         
         private async Task CreateLibraryCardAsync(Student student)
@@ -695,6 +830,40 @@ namespace SmsApi.Services
             {
                 _logger.LogError(ex, "Failed to initialize library card for student {StudentId}", student.Id);
                 // Don't throw - library card failure shouldn't block student creation
+            }
+        }
+
+        private async Task CreateInitialHealthRecordAsync(Student student)
+        {
+            try
+            {
+                // Only create if no health record already exists for this student
+                var exists = await _context.HealthRecords
+                    .AnyAsync(h => h.SchoolId == student.SchoolId && h.StudentId == student.Id);
+                if (exists) return;
+
+                var healthRecord = new SmsApi.Models.Entities.HealthRecord
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = student.SchoolId,
+                    StudentId = student.Id,
+                    CheckupDate = DateTime.UtcNow,
+                    BloodGroup = student.BloodGroup,
+                    Allergies = student.Allergies,
+                    ChronicConditions = student.ChronicConditions,
+                    Medications = student.Medications,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.HealthRecords.Add(healthRecord);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Health record auto-created for student {StudentId}", student.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create health record for student {StudentId}", student.Id);
+                // Don't throw - health record failure shouldn't block student creation
             }
         }
         
@@ -1002,6 +1171,8 @@ namespace SmsApi.Services
             
             var previousStatus = student.Status;
             if (request.Status != null) student.Status = request.Status;
+            if (request.InactiveReason != null) student.InactiveReason = request.InactiveReason;
+            if (request.InactiveDate.HasValue) student.InactiveDate = request.InactiveDate;
             if (request.PhotoUrl != null) student.PhotoUrl = request.PhotoUrl;
 
             student.UpdatedAt = DateTime.UtcNow;
@@ -1079,6 +1250,32 @@ namespace SmsApi.Services
                         "Cascaded inactive status for student {StudentId}: {TransportCount} transport, {HostelCount} hostel assignments deactivated.",
                         id, activeTransportAssignments.Count, activeHostelAssignments.Count);
                 }
+
+                // Revoke parent UserLogin access when student is deactivated
+                var guardianEmails = await _context.StudentGuardians
+                    .Where(g => g.StudentId == id && !string.IsNullOrEmpty(g.Email))
+                    .Select(g => g.Email!.ToLower())
+                    .ToListAsync();
+
+                if (guardianEmails.Count > 0)
+                {
+                    var parentLogins = await _context.UserLogins
+                        .Where(ul => guardianEmails.Contains(ul.Email.ToLower())
+                                     && ul.Role == "Parent"
+                                     && ul.Status == "active")
+                        .ToListAsync();
+
+                    foreach (var login in parentLogins)
+                        login.Status = "inactive";
+
+                    if (parentLogins.Count > 0)
+                    {
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation(
+                            "Revoked parent login access for student {StudentId}: {Count} parent login(s) deactivated.",
+                            id, parentLogins.Count);
+                    }
+                }
             }
 
             return await GetStudentByIdAsync(id, schoolId);
@@ -1154,15 +1351,24 @@ namespace SmsApi.Services
             if (student == null)
                 throw new InvalidOperationException("Student not found.");
 
-            // In production, upload to Azure Blob Storage, AWS S3, or local file system
-            var photoUrl = $"/uploads/students/{studentId}/photo/{fileName}";
-            
-            // TODO: Implement actual file upload logic
-            // await _fileStorageService.UploadAsync(photoUrl, fileData);
+            // Delete the previous photo from storage if one exists
+            if (!string.IsNullOrEmpty(student.PhotoUrl))
+                await _fileStorage.DeleteAsync(student.PhotoUrl);
 
+            // Structured S3 key: SMS-Test/schools/{schoolId}/students/{studentId}/photos/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/students/{studentId}/photos/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload photo to cloud storage.");
+
+            var photoUrl = _fileStorage.GetPublicUrl(key);
             student.PhotoUrl = photoUrl;
             await _context.SaveChangesAsync();
 
+            _logger.LogInformation("Student photo uploaded: studentId={StudentId}, key={Key}", studentId, key);
             return photoUrl;
         }
 
@@ -1174,10 +1380,16 @@ namespace SmsApi.Services
             if (student == null)
                 throw new InvalidOperationException("Student not found.");
 
-            var fileUrl = $"/uploads/students/{studentId}/documents/{fileName}";
-            
-            // TODO: Implement actual file upload logic
-            // await _fileStorageService.UploadAsync(fileUrl, fileData);
+            // Structured S3 key: SMS-Test/schools/{schoolId}/students/{studentId}/documents/{type}/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/students/{studentId}/documents/{documentType}/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload document to cloud storage.");
+
+            var fileUrl = _fileStorage.GetPublicUrl(key);
 
             var document = new StudentDocument
             {
@@ -1192,6 +1404,8 @@ namespace SmsApi.Services
 
             _context.StudentDocuments.Add(document);
             await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Student document uploaded: studentId={StudentId}, type={Type}, key={Key}", studentId, documentType, key);
 
             return new StudentDocumentDto
             {
@@ -1235,8 +1449,9 @@ namespace SmsApi.Services
             if (document == null)
                 return false;
 
-            // TODO: Delete actual file from storage
-            // await _fileStorageService.DeleteAsync(document.FileUrl);
+            // Delete from S3 storage (accepts full URL or key — service handles extraction)
+            if (!string.IsNullOrEmpty(document.FileUrl))
+                await _fileStorage.DeleteAsync(document.FileUrl);
 
             _context.StudentDocuments.Remove(document);
             await _context.SaveChangesAsync();
@@ -2021,32 +2236,70 @@ namespace SmsApi.Services
                             .Where(p => !string.IsNullOrWhiteSpace(p))).Trim();
 
                     if (string.IsNullOrWhiteSpace(resolvedName))
-                        rowErrors.Add("Name is required");
+                        rowErrors.Add("Name/FirstName is required — please fill in either the Name or FirstName column");
                     if (string.IsNullOrWhiteSpace(req.AdmissionNumber))
-                        rowErrors.Add("AdmissionNumber is required");
+                        rowErrors.Add("AdmissionNumber is required — provide a unique ID like 'ADM-2025-001'");
                     if (string.IsNullOrWhiteSpace(req.Class))
-                        rowErrors.Add("Class is required");
+                        rowErrors.Add("Class is required — e.g. 'Class 5' or '5th Grade'");
                     if (string.IsNullOrWhiteSpace(req.Section))
-                        rowErrors.Add("Section is required");
-                    if (req.DateOfBirth == default || req.DateOfBirth > DateTime.UtcNow)
-                        rowErrors.Add("DateOfBirth must be a valid past date");
-                    if (req.AdmissionDate == default || req.AdmissionDate > DateTime.UtcNow.AddDays(1))
-                        rowErrors.Add("AdmissionDate must not be in the future");
+                        rowErrors.Add("Section is required — e.g. 'A', 'B'");
+                    if (req.DateOfBirth == default)
+                        rowErrors.Add("DateOfBirth is required — use DD/MM/YYYY or YYYY-MM-DD format");
+                    else if (req.DateOfBirth > DateTime.UtcNow)
+                        rowErrors.Add($"DateOfBirth '{req.DateOfBirth:yyyy-MM-dd}' is in the future — please check the year");
 
-                    // Enum-like field validation
+                    // Generous: allow AdmissionDate up to 30 days ahead (advance registrations)
+                    if (req.AdmissionDate == default)
+                        req.AdmissionDate = DateTime.UtcNow;
+                    else if (req.AdmissionDate > DateTime.UtcNow.AddDays(30))
+                        rowErrors.Add($"AdmissionDate '{req.AdmissionDate:yyyy-MM-dd}' is more than 30 days in the future");
+
+                    // Enum-like field validation with helpful suggestions
                     if (!string.IsNullOrWhiteSpace(req.Gender) && !validGenders.Contains(req.Gender))
-                        rowErrors.Add($"Gender '{req.Gender}' invalid. Allowed: {string.Join(", ", validGenders)}");
+                        rowErrors.Add($"Gender '{req.Gender}' is not recognised — use: Male, Female, or Other (M/F are also accepted)");
                     if (!string.IsNullOrWhiteSpace(req.BloodGroup) && !validBloodGroups.Contains(req.BloodGroup))
-                        rowErrors.Add($"BloodGroup '{req.BloodGroup}' invalid. Allowed: {string.Join(", ", validBloodGroups)}");
+                        rowErrors.Add($"BloodGroup '{req.BloodGroup}' is not valid — accepted values: {string.Join(", ", validBloodGroups)}");
                     if (!string.IsNullOrWhiteSpace(req.Category) && !validCategories.Contains(req.Category))
-                        rowErrors.Add($"Category '{req.Category}' invalid. Allowed: {string.Join(", ", validCategories)}");
+                    {
+                        // Auto-correct common typos / variations before rejecting
+                        var catFixed = req.Category.Trim() switch
+                        {
+                            var c when c.Equals("gen", StringComparison.OrdinalIgnoreCase)   => "General",
+                            var c when c.Equals("obc-a", StringComparison.OrdinalIgnoreCase) => "OBC",
+                            var c when c.Equals("obc-b", StringComparison.OrdinalIgnoreCase) => "OBC",
+                            var c when c.Equals("sc/st", StringComparison.OrdinalIgnoreCase) => "SC",
+                            _ => null
+                        };
+                        if (catFixed != null)
+                            req.Category = catFixed;
+                        else
+                            rowErrors.Add($"Category '{req.Category}' is not valid — accepted: {string.Join(", ", validCategories)}");
+                    }
+                    // Auto-default Category if empty
+                    if (string.IsNullOrWhiteSpace(req.Category))
+                        req.Category = "General";
+
                     if (!string.IsNullOrWhiteSpace(req.Status) && !validStatuses.Contains(req.Status))
-                        rowErrors.Add($"Status '{req.Status}' invalid. Allowed: {string.Join(", ", validStatuses)}");
+                        rowErrors.Add($"Status '{req.Status}' is not valid — accepted: {string.Join(", ", validStatuses)} (leave blank to default to 'active')");
+
+                    // PAN length check with clear hint
+                    if (!string.IsNullOrWhiteSpace(req.PanNumber) && req.PanNumber.Length != 10)
+                        rowErrors.Add($"PanNumber '{req.PanNumber}' has {req.PanNumber.Length} characters — PAN must be exactly 10 (format: ABCDE1234F)");
+
+                    // Aadhar: strip dashes for length check; keep stored normalised
+                    if (!string.IsNullOrWhiteSpace(req.AadharNumber))
+                    {
+                        var aadharDigits = System.Text.RegularExpressions.Regex.Replace(req.AadharNumber, @"[^\d]", "");
+                        if (aadharDigits.Length != 12)
+                            rowErrors.Add($"AadharNumber '{req.AadharNumber}' must contain exactly 12 digits (e.g. 1234-5678-9012 or 123456789012)");
+                        else
+                            req.AadharNumber = aadharDigits; // store as 12 plain digits
+                    }
 
                     if (rowErrors.Count > 0)
                     {
                         result.FailureCount++;
-                        result.Errors.Add($"[{rowRef}] Validation: {string.Join("; ", rowErrors)}");
+                        result.Errors.Add($"[{rowRef}] {string.Join(" | ", rowErrors)}");
                         continue;
                     }
 
@@ -2054,13 +2307,13 @@ namespace SmsApi.Services
                     if (existingNumbers.Contains(req.AdmissionNumber!))
                     {
                         result.FailureCount++;
-                        result.Errors.Add($"[{rowRef}] Duplicate admission number — already exists in school");
+                        result.Errors.Add($"[{rowRef}] Already exists — a student with admission number '{req.AdmissionNumber}' is already registered in this school");
                         continue;
                     }
                     if (seenInBatch.Contains(req.AdmissionNumber!))
                     {
                         result.FailureCount++;
-                        result.Errors.Add($"[{rowRef}] Duplicate admission number — appears twice in this import");
+                        result.Errors.Add($"[{rowRef}] Duplicate in file — admission number '{req.AdmissionNumber}' appears more than once in this upload");
                         continue;
                     }
                     seenInBatch.Add(req.AdmissionNumber!);
@@ -2513,8 +2766,8 @@ namespace SmsApi.Services
 
         public async Task<List<StudentBasicResponse>> GetMyChildrenAsync(Guid schoolId, string parentEmail)
         {
-            // Find all students whose guardian email matches the parent's login email
-            var guardianLinks = await _context.StudentGuardians
+            // Step 1: Find all students whose guardian email matches the parent's login email
+            var directChildrenIds = await _context.StudentGuardians
                 .Where(sg => sg.SchoolId == schoolId
                     && sg.Email != null
                     && sg.Email.ToLower() == parentEmail.ToLower()
@@ -2523,11 +2776,21 @@ namespace SmsApi.Services
                 .Distinct()
                 .ToListAsync();
 
-            if (!guardianLinks.Any())
+            if (!directChildrenIds.Any())
                 return new List<StudentBasicResponse>();
 
+            // Step 2: Expand to include siblings of the direct children
+            var siblingIds = await _context.StudentSiblings
+                .Where(ss => ss.SchoolId == schoolId && directChildrenIds.Contains(ss.StudentId))
+                .Select(ss => ss.SiblingId)
+                .Distinct()
+                .ToListAsync();
+
+            // Merge direct children + siblings, deduplicated
+            var allStudentIds = directChildrenIds.Union(siblingIds).Distinct().ToList();
+
             var students = await _context.Students
-                .Where(s => guardianLinks.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted)
+                .Where(s => allStudentIds.Contains(s.Id) && s.SchoolId == schoolId && !s.IsDeleted && s.Status == "active")
                 .OrderBy(s => s.Name)
                 .ToListAsync();
 
@@ -3123,6 +3386,364 @@ namespace SmsApi.Services
                     PhotoUrl = s.PhotoUrl
                 })
                 .ToListAsync();
+        }
+
+        // =====================================================================
+        // STUDENT EXIT — Drop-Out & Pass-Out
+        // =====================================================================
+
+        public async Task<ExitClearanceResponse> GetExitClearanceAsync(Guid studentId, Guid schoolId)
+        {
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            // ── Pending fee records ──────────────────────────────────────────
+            var feeRecords = await _context.FeeRecords
+                .IgnoreQueryFilters()
+                .Include(f => f.FeeStructure)
+                .Where(f => f.StudentId == studentId && f.SchoolId == schoolId
+                         && f.PendingAmount > 0 && !f.IsDeleted)
+                .ToListAsync();
+
+            var pendingDtos = feeRecords.Select(f => new ExitPendingFeeDto
+            {
+                FeeRecordId   = f.Id,
+                FeeType       = f.FeeStructure?.Name ?? "Fee",
+                AcademicYear  = f.AcademicYear ?? string.Empty,
+                TotalAmount   = f.TotalAmount,
+                PaidAmount    = f.PaidAmount,
+                PendingAmount = f.PendingAmount,
+                DueDate       = (DateTime?)f.DueDate
+            }).ToList();
+
+            // ── Academic year — fall back to student's own field ────────────
+            var academicYear = (await _context.StudentEnrollments
+                .IgnoreQueryFilters()
+                .Where(e => e.StudentId == studentId && e.SchoolId == schoolId && !e.IsDeleted
+                         && e.Status == "active")
+                .Include(e => e.AcademicYear)
+                .OrderByDescending(e => e.EnrollmentDate)
+                .Select(e => e.AcademicYear != null ? e.AcademicYear.Name : null)
+                .FirstOrDefaultAsync()) ?? DateTime.UtcNow.Year.ToString();
+
+            // ── Build available documents with pre-populated fields ──────────
+            var currentYear = DateTime.UtcNow.Year;
+            var docs = new List<ExitDocumentDto>
+            {
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "transfer_certificate",
+                    Title        = "Transfer Certificate",
+                    IsMandatory  = true,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]         = student.Name,
+                        ["admissionNumber"]     = student.AdmissionNumber ?? string.Empty,
+                        ["dateOfBirth"]         = student.DateOfBirth.ToString("dd/MM/yyyy"),
+                        ["fatherName"]          = student.GuardianName ?? string.Empty,
+                        ["class"]               = student.Class ?? string.Empty,
+                        ["section"]             = student.Section ?? string.Empty,
+                        ["academicYear"]        = academicYear,
+                        ["reasonForLeaving"]    = string.Empty,
+                        ["conduct"]             = "Good",
+                        ["dateOfLeaving"]       = DateTime.UtcNow.ToString("dd/MM/yyyy"),
+                        ["lastExamResult"]      = string.Empty,
+                        ["qualifiedForHigher"]  = "Yes",
+                        ["detainedInSameClass"] = "No",
+                        ["additionalRemarks"]   = string.Empty
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "character_certificate",
+                    Title        = "Character Certificate",
+                    IsMandatory  = true,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]     = student.Name,
+                        ["admissionNumber"] = student.AdmissionNumber ?? string.Empty,
+                        ["class"]           = student.Class ?? string.Empty,
+                        ["section"]         = student.Section ?? string.Empty,
+                        ["academicYear"]    = academicYear,
+                        ["conduct"]         = "Good",
+                        ["characterRemarks"]= "The student has been found to be of good character and conduct during the period of study.",
+                        ["issueDate"]       = DateTime.UtcNow.ToString("dd/MM/yyyy")
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "bonafide_certificate",
+                    Title        = "Bonafide Certificate",
+                    IsMandatory  = false,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]     = student.Name,
+                        ["admissionNumber"] = student.AdmissionNumber ?? string.Empty,
+                        ["dateOfBirth"]     = student.DateOfBirth.ToString("dd/MM/yyyy"),
+                        ["class"]           = student.Class ?? string.Empty,
+                        ["section"]         = student.Section ?? string.Empty,
+                        ["academicYear"]    = academicYear,
+                        ["issueDate"]       = DateTime.UtcNow.ToString("dd/MM/yyyy"),
+                        ["purpose"]         = string.Empty
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "progress_report",
+                    Title        = "Progress Report / Report Card",
+                    IsMandatory  = false,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]  = student.Name,
+                        ["class"]        = student.Class ?? string.Empty,
+                        ["section"]      = student.Section ?? string.Empty,
+                        ["academicYear"] = academicYear
+                    }
+                },
+                new ExitDocumentDto
+                {
+                    DocumentKey  = "no_dues_certificate",
+                    Title        = "No Dues / Fee Clearance Certificate",
+                    IsMandatory  = false,
+                    Fields = new Dictionary<string, string>
+                    {
+                        ["studentName"]     = student.Name,
+                        ["admissionNumber"] = student.AdmissionNumber ?? string.Empty,
+                        ["class"]           = student.Class ?? string.Empty,
+                        ["academicYear"]    = academicYear,
+                        ["issueDate"]       = DateTime.UtcNow.ToString("dd/MM/yyyy")
+                    }
+                }
+            };
+
+            return new ExitClearanceResponse
+            {
+                StudentId          = student.Id,
+                StudentName        = student.Name,
+                CurrentClass       = student.Class ?? string.Empty,
+                CurrentSection     = student.Section,
+                AcademicYear       = academicYear,
+                IsFeeClear         = !pendingDtos.Any(),
+                TotalPendingAmount = pendingDtos.Sum(p => p.PendingAmount),
+                PendingFees        = pendingDtos,
+                AvailableDocuments = docs
+            };
+        }
+
+        public async Task<StudentExitResponse> ProcessDropoutAsync(
+            Guid studentId, Guid schoolId, StudentDropoutRequest request, Guid processedBy)
+        {
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            var isTransfer = string.Equals(request.DropoutType, "transfer", StringComparison.OrdinalIgnoreCase);
+
+            // ── Create Transfer Certificate record if transfer ──────────────
+            if (isTransfer)
+            {
+                var existingTc = await _context.TransferCertificates
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(tc => tc.StudentId == studentId && tc.SchoolId == schoolId && !tc.IsDeleted);
+
+                if (existingTc == null)
+                {
+                    var tcFields = request.DocumentsToGenerate
+                        .FirstOrDefault(d => d.DocumentKey == "transfer_certificate")?.Fields
+                        ?? new Dictionary<string, string>();
+
+                    _context.TransferCertificates.Add(new TransferCertificate
+                    {
+                        Id                       = Guid.NewGuid(),
+                        SchoolId                 = schoolId,
+                        StudentId                = studentId,
+                        ApplicationDate          = DateTime.UtcNow,
+                        IssuedDate               = DateTime.UtcNow,
+                        ExitAcademicYear         = tcFields.GetValueOrDefault("academicYear"),
+                        ExitClass                = student.Class,
+                        ExitSection              = student.Section,
+                        ReasonForLeaving         = request.Reason ?? tcFields.GetValueOrDefault("reasonForLeaving"),
+                        Conduct                  = request.Conduct ?? tcFields.GetValueOrDefault("conduct") ?? "Good",
+                        IsTCIssued               = true,
+                        IsFailedInLastClass      = false,
+                        LastAnnualExamResult     = tcFields.GetValueOrDefault("lastExamResult"),
+                        IsQualifiedForHigherClass = string.Equals(tcFields.GetValueOrDefault("qualifiedForHigher"), "Yes", StringComparison.OrdinalIgnoreCase),
+                        AdditionalRemarks        = request.Remarks ?? tcFields.GetValueOrDefault("additionalRemarks"),
+                        IsCharacterCertificateIssued = request.DocumentsToGenerate.Any(d => d.DocumentKey == "character_certificate"),
+                        CreatedAt                = DateTime.UtcNow,
+                        UpdatedAt                = DateTime.UtcNow
+                    });
+                }
+
+                // Mark student inactive (left school)
+                student.Status   = "inactive";
+                student.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                // Detain — student stays in same class, remains active
+                // Optionally mark in remarks only
+                student.ProgressReportRemarks = string.IsNullOrWhiteSpace(student.ProgressReportRemarks)
+                    ? $"Detained {DateTime.UtcNow:yyyy-MM-dd}: {request.Reason}"
+                    : student.ProgressReportRemarks + $" | Detained {DateTime.UtcNow:yyyy-MM-dd}";
+                student.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+
+            // ── Alumni record ─────────────────────────────────────────────────
+            Guid? alumniId = null;
+            string? alumniMessage = null;
+            if (isTransfer)
+            {
+                try
+                {
+                    await _alumniService.TryAutoRegisterFromStudentAsync(
+                        schoolId, studentId, request.Reason ?? "Transfer", DateTime.UtcNow.Year.ToString());
+                    // Fetch the created alumni record
+                    var alumni = await _context.AlumniRecords
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.StudentId == studentId);
+                    alumniId      = alumni?.Id;
+                    alumniMessage = alumni != null ? "Alumni record created." : "Alumni record could not be created.";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to auto-register alumni for dropout student {StudentId}", studentId);
+                    alumniMessage = "Alumni registration failed — please add manually.";
+                }
+            }
+
+            var generatedDocs = BuildGeneratedDocuments(request.DocumentsToGenerate, student, isTransfer ? "dropout_transfer" : "dropout_detain");
+
+            return new StudentExitResponse
+            {
+                StudentId          = studentId,
+                StudentName        = student.Name,
+                ExitType           = "dropout",
+                SubType            = isTransfer ? "transfer" : "detain",
+                NewStatus          = student.Status,
+                AlumniId           = alumniId,
+                AlumniMessage      = alumniMessage,
+                GeneratedDocuments = generatedDocs,
+                Message            = isTransfer
+                    ? $"{student.Name} has been marked as dropped-out (transfer). Alumni record registered."
+                    : $"{student.Name} has been detained in {student.Class}-{student.Section}."
+            };
+        }
+
+        public async Task<StudentExitResponse> ProcessPassoutAsync(
+            Guid studentId, Guid schoolId, StudentPassoutRequest request, Guid processedBy)
+        {
+            var student = await _context.Students
+                .Where(s => s.Id == studentId && s.SchoolId == schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("Student not found.");
+
+            // ── Create Transfer Certificate record ───────────────────────────
+            var existingTc = await _context.TransferCertificates
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(tc => tc.StudentId == studentId && tc.SchoolId == schoolId && !tc.IsDeleted);
+
+            if (existingTc == null)
+            {
+                var tcFields = request.DocumentsToGenerate
+                    .FirstOrDefault(d => d.DocumentKey == "transfer_certificate")?.Fields
+                    ?? new Dictionary<string, string>();
+
+                _context.TransferCertificates.Add(new TransferCertificate
+                {
+                    Id                        = Guid.NewGuid(),
+                    SchoolId                  = schoolId,
+                    StudentId                 = studentId,
+                    ApplicationDate           = DateTime.UtcNow,
+                    IssuedDate                = DateTime.UtcNow,
+                    ExitAcademicYear          = request.AcademicYear,
+                    ExitClass                 = student.Class,
+                    ExitSection               = student.Section,
+                    ReasonForLeaving          = request.Reason ?? "Passed Out / Completion",
+                    Conduct                   = request.Conduct ?? tcFields.GetValueOrDefault("conduct") ?? "Good",
+                    IsTCIssued                = true,
+                    IsFailedInLastClass       = false,
+                    LastAnnualExamResult      = tcFields.GetValueOrDefault("lastExamResult"),
+                    IsQualifiedForHigherClass = true,
+                    AdditionalRemarks         = request.Remarks ?? tcFields.GetValueOrDefault("additionalRemarks"),
+                    IsCharacterCertificateIssued = request.DocumentsToGenerate.Any(d => d.DocumentKey == "character_certificate"),
+                    CreatedAt                 = DateTime.UtcNow,
+                    UpdatedAt                 = DateTime.UtcNow
+                });
+            }
+
+            // Mark student inactive
+            student.Status    = "inactive";
+            student.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            // ── Alumni record ─────────────────────────────────────────────────
+            Guid? alumniId = null;
+            string? alumniMessage = null;
+            try
+            {
+                await _alumniService.TryAutoRegisterFromStudentAsync(
+                    schoolId, studentId, request.Reason ?? "Passed Out", request.AcademicYear);
+                var alumni = await _context.AlumniRecords
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.StudentId == studentId);
+                alumniId      = alumni?.Id;
+                alumniMessage = alumni != null ? "Alumni record created." : "Alumni record could not be created.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to auto-register alumni for passout student {StudentId}", studentId);
+                alumniMessage = "Alumni registration failed — please add manually.";
+            }
+
+            var generatedDocs = BuildGeneratedDocuments(request.DocumentsToGenerate, student, "passout");
+
+            return new StudentExitResponse
+            {
+                StudentId          = studentId,
+                StudentName        = student.Name,
+                ExitType           = "passout",
+                SubType            = "passout",
+                NewStatus          = student.Status,
+                AlumniId           = alumniId,
+                AlumniMessage      = alumniMessage,
+                GeneratedDocuments = generatedDocs,
+                Message            = $"{student.Name} has been marked as passed out. Alumni record registered."
+            };
+        }
+
+        /// <summary>
+        /// Builds the list of generated-document DTOs from the requested documents.
+        /// Merges any user-edited fields with student data.
+        /// </summary>
+        private static List<GeneratedDocumentDto> BuildGeneratedDocuments(
+            List<ExitDocumentRequest> requested, Student student, string context)
+        {
+            var result = new List<GeneratedDocumentDto>();
+            foreach (var doc in requested)
+            {
+                result.Add(new GeneratedDocumentDto
+                {
+                    DocumentKey = doc.DocumentKey,
+                    Title       = doc.DocumentKey switch
+                    {
+                        "transfer_certificate"  => "Transfer Certificate",
+                        "character_certificate" => "Character Certificate",
+                        "bonafide_certificate"  => "Bonafide Certificate",
+                        "progress_report"       => "Progress Report",
+                        "no_dues_certificate"   => "No Dues Certificate",
+                        _                       => doc.DocumentKey
+                    },
+                    Fields  = doc.Fields,
+                    FileUrl = null  // server-side PDF generation can be added later
+                });
+            }
+            return result;
         }
     }
 }

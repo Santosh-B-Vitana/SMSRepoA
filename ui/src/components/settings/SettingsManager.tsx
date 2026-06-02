@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Settings,
@@ -17,6 +17,7 @@ import {
   Globe,
   Clock,
   Calendar,
+  Camera,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -38,6 +39,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../contexts/AuthContext";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useSchool } from "../../contexts/SchoolContext";
 import { BoardConfigurationManager } from "@/components/board/BoardConfigurationManager";
 import settingsApi, {
   SchoolSettingResponse,
@@ -96,16 +98,20 @@ function SettingRow({
 // ─── Profile Tab ──────────────────────────────────────────────────────────────
 
 function ProfileTab({ userId }: { userId: string }) {
-  const { user } = useAuth();
+  const { user, refreshCurrentUser } = useAuth();
+  const { schoolInfo } = useSchool();
   const [settings, setSettings] = useState<UserSettingResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [bio, setBio] = useState("");
   const [jobTitle, setJobTitle] = useState("");
+  const [profilePhoto, setProfilePhoto] = useState("");
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -117,35 +123,77 @@ function ProfileTab({ userId }: { userId: string }) {
       setPhone(getSetting(s, "profile_phone", ""));
       setBio(getSetting(s, "profile_bio", ""));
       setJobTitle(getSetting(s, "profile_job_title", ""));
+
+      const customPhoto = getSetting(s, "profile_photo_url", "");
+      const role = String(user?.role ?? "").toLowerCase();
+      const adminDefaultPhoto = role === "admin" || role === "super_admin"
+        ? (schoolInfo?.logoUrl ?? "")
+        : "";
+      setProfilePhoto(customPhoto || user?.avatar || adminDefaultPhoto || "");
     } catch {
       // pre-populate from auth context on load failure
       setFirstName(user?.name?.split(" ")[0] ?? "");
       setLastName(user?.name?.split(" ").slice(1).join(" ") ?? "");
+      const role = String(user?.role ?? "").toLowerCase();
+      const adminDefaultPhoto = role === "admin" || role === "super_admin"
+        ? (schoolInfo?.logoUrl ?? "")
+        : "";
+      setProfilePhoto(user?.avatar || adminDefaultPhoto || "");
     } finally {
       setLoading(false);
     }
-  }, [userId, user]);
+  }, [userId, user, schoolInfo?.logoUrl]);
 
   useEffect(() => { load(); }, [load]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn) {
+      toast.error("First name is required");
+      return;
+    }
     setSaving(true);
     try {
+      // 1. Update the actual UserLogin record so the display name changes everywhere
+      await settingsApi.updateMyProfile({ firstName: fn, lastName: ln });
+
+      // 2. Persist extra profile fields (phone, bio, jobTitle) to KV settings
       await settingsApi.bulkUpdate({
         userSettings: [
-          buildUserSetting("profile_first_name", firstName, "profile"),
-          buildUserSetting("profile_last_name", lastName, "profile"),
+          buildUserSetting("profile_first_name", fn, "profile"),
+          buildUserSetting("profile_last_name", ln, "profile"),
           buildUserSetting("profile_phone", phone, "profile"),
           buildUserSetting("profile_bio", bio, "profile"),
           buildUserSetting("profile_job_title", jobTitle, "profile"),
         ],
       });
+
+      await refreshCurrentUser();
       toast.success("Profile updated successfully");
-    } catch {
-      toast.error("Failed to save profile");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to save profile";
+      toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePhotoChange(file?: File) {
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const res = await settingsApi.uploadMyProfilePhoto(file);
+      setProfilePhoto(res.photoUrl);
+      await refreshCurrentUser();
+      toast.success("Profile photo updated");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to upload profile photo";
+      toast.error(msg);
+    } finally {
+      setUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
 
@@ -171,13 +219,47 @@ function ProfileTab({ userId }: { userId: string }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
-            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
-              {(firstName[0] ?? user?.name?.[0] ?? "?").toUpperCase()}
+            <div className="relative">
+              <div className="h-16 w-16 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
+                {profilePhoto ? (
+                  <img
+                    src={profilePhoto}
+                    alt="Profile"
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  (firstName[0] ?? user?.name?.[0] ?? "?").toUpperCase()
+                )}
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full"
+                disabled={uploadingPhoto}
+                onClick={() => photoInputRef.current?.click()}
+                title="Change profile photo"
+              >
+                {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              </Button>
             </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              className="hidden"
+              onChange={(e) => handlePhotoChange(e.target.files?.[0])}
+            />
             <div>
               <p className="font-semibold">{firstName} {lastName}</p>
               <p className="text-sm text-muted-foreground">{user?.email}</p>
               <Badge variant="secondary" className="mt-1 capitalize">{user?.role}</Badge>
+              <p className="text-xs text-muted-foreground mt-1">
+                For admins, school logo is used as the default profile photo.
+              </p>
             </div>
           </div>
 
@@ -261,6 +343,7 @@ function ProfileTab({ userId }: { userId: string }) {
 
 function SchoolTab({ schoolId, role }: { schoolId: string; role: string }) {
   const isSuperAdmin = role === "super_admin";
+  const { refreshSchoolInfo } = useSchool();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
@@ -307,27 +390,28 @@ function SchoolTab({ schoolId, role }: { schoolId: string; role: string }) {
     e.preventDefault();
     setSaving(true);
     try {
-      // Update School entity contact fields (phone, email, address) + website/tagline KV
+      // Update School entity fields (phone, email, address; name + logo for super admin)
       await settingsApi.updateSchoolContact(schoolId, {
         phone,
         email,
         address,
         website,
         tagline: isSuperAdmin ? tagline : undefined,
+        name:    isSuperAdmin ? name    : undefined,
+        logo:    isSuperAdmin ? logoUrl : undefined,
       });
 
-      // Super admin also updates identity KV fields
+      // Super admin also persists extra KV fields not on the entity
       if (isSuperAdmin) {
         await settingsApi.bulkUpdate({
           schoolSettings: [
-            buildSchoolSetting("school_name", name, "school_profile"),
-            buildSchoolSetting("school_logo_url", logoUrl, "school_profile"),
             buildSchoolSetting("school_established_year", establishedYear, "school_profile"),
             buildSchoolSetting("school_type", schoolType, "school_profile"),
           ],
         });
       }
 
+      await refreshSchoolInfo();
       toast.success("School settings saved");
     } catch {
       toast.error("Failed to save school settings");
@@ -695,7 +779,7 @@ function AppearanceTab({ userId }: { userId: string }) {
   const { setTheme: applyTheme, theme: currentTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [timezone, setTimezone] = useState("UTC");
+  const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
   const [timeFormat, setTimeFormat] = useState("12h");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
@@ -704,9 +788,16 @@ function AppearanceTab({ userId }: { userId: string }) {
     try {
       const res = await settingsApi.getUserSettings(userId);
       const s = res.userSettings ?? [];
-      setTimezone(getSetting(s, "pref_timezone", "UTC"));
-      setDateFormat(getSetting(s, "pref_date_format", "DD/MM/YYYY"));
-      setTimeFormat(getSetting(s, "pref_time_format", "12h"));
+      const tz  = getSetting(s, "pref_timezone",    "Asia/Kolkata");
+      const df  = getSetting(s, "pref_date_format",  "DD/MM/YYYY");
+      const tf  = getSetting(s, "pref_time_format",  "12h");
+      setTimezone(tz);
+      setDateFormat(df);
+      setTimeFormat(tf);
+      // Persist to localStorage so all formatDate/formatTime calls use the correct zone
+      localStorage.setItem("app_tz",        tz);
+      localStorage.setItem("app_date_fmt",  df);
+      localStorage.setItem("app_time_fmt",  tf);
       const savedTheme = getSetting(s, "pref_theme", currentTheme) as "light" | "dark" | "system";
       setTheme(savedTheme);
       applyTheme(savedTheme);
@@ -727,6 +818,9 @@ function AppearanceTab({ userId }: { userId: string }) {
     // Apply immediately so top-nav preference and settings page stay in sync.
     applyTheme(theme);
     localStorage.setItem("school-ui-theme", theme);
+    localStorage.setItem("app_tz",       timezone);
+    localStorage.setItem("app_date_fmt", dateFormat);
+    localStorage.setItem("app_time_fmt", timeFormat);
 
     try {
       await Promise.all([

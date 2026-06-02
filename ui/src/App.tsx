@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -19,7 +19,6 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 // ── Eagerly load auth pages (always needed on first paint) ────────────────────
 import Login from "@/pages/Login";
-import SuperAdminLogin from "@/pages/SuperAdminLogin";
 import NotFound from "@/pages/NotFound";
 
 // ── Lazily load all other pages (downloaded only when the user navigates there) ─
@@ -41,12 +40,15 @@ const MyClasses            = lazy(() => import("@/pages/MyClasses"));
 const Assignments          = lazy(() => import("@/pages/Assignments"));
 const Examinations         = lazy(() => import("@/pages/Examinations"));
 const Reports              = lazy(() => import("@/pages/Reports"));
+const ReportCards          = lazy(() => import("@/pages/ReportCards"));
 const Timetable            = lazy(() => import("@/pages/Timetable"));
 const Transport            = lazy(() => import("@/pages/Transport"));
+const Syllabus             = lazy(() => import("@/pages/Syllabus"));
 const Library              = lazy(() => import("@/pages/Library"));
 const Hostel               = lazy(() => import("@/pages/Hostel"));
 const Health               = lazy(() => import("@/pages/Health"));
 const Fees                 = lazy(() => import("@/pages/Fees"));
+const StudentFeePaymentPage = lazy(() => import("@/pages/fees/StudentFeePaymentPage"));
 const Communication        = lazy(() => import("@/pages/Communication"));
 const Announcements        = lazy(() => import("@/pages/Announcements"));
 const Documents            = lazy(() => import("@/pages/Documents"));
@@ -59,21 +61,22 @@ const ClassManager         = lazy(() => import("@/pages/academics/ClassManager")
 const ClassDetail          = lazy(() => import("@/pages/academics/ClassDetail"));
 const SectionDetail        = lazy(() => import("@/pages/academics/SectionDetail"));
 const ClassProfile         = lazy(() => import("@/pages/ClassProfile"));
-const StaffClassProfile    = lazy(() => import("@/pages/StaffClassProfile"));
 const StaffMyClassDetail   = lazy(() => import("@/pages/StaffMyClassDetail"));
 const StudentFeeDetails    = lazy(() => import("./pages/StudentFeeDetails"));
 const MyClassDetail        = lazy(() => import("./pages/MyClassDetail"));
 const ParentFees           = lazy(() => import("./pages/ParentFees"));
 const ParentChildFeeDetails = lazy(() => import("./pages/ParentChildFeeDetails"));
 const ParentChildFeePayment = lazy(() => import("./pages/ParentChildFeePayment"));
+const ParentFeePaymentPage  = lazy(() => import("./pages/fees/ParentFeePaymentPage"));
 const ParentNotifications  = lazy(() => import("./pages/ParentNotifications"));
+const ParentAnnouncements  = lazy(() => import("./pages/ParentAnnouncements"));
 const StudentAttendance    = lazy(() => import("./pages/StudentAttendance"));
 const Alumni               = lazy(() => import("./pages/Alumni"));
 const StaffAttendanceTeacher = lazy(() => import("./pages/StaffAttendanceTeacher"));
 const Wallet               = lazy(() => import("./pages/Wallet"));
 const SchoolConnect        = lazy(() => import("./pages/SchoolConnect"));
 const Store                = lazy(() => import("./pages/Store"));
-const CCEManagement        = lazy(() => import("./pages/CCEManagement"));
+
 const FeeConcession        = lazy(() => import("./pages/FeeConcession"));
 const PaymentGateway       = lazy(() => import("./pages/PaymentGateway"));
 const PFESIManagement      = lazy(() => import("./pages/PFESIManagement"));
@@ -81,14 +84,19 @@ const OfflineAttendance    = lazy(() => import("./pages/OfflineAttendance"));
 const ChildProfile         = lazy(() => import("./pages/ChildProfile"));
 const VisitorManagement    = lazy(() => import("./pages/VisitorManagement"));
 const StaffParentCommunication = lazy(() => import("./pages/StaffParentCommunication"));
+const StaffDiary           = lazy(() => import("./pages/StaffDiary"));
+const StaffMyAttendance    = lazy(() => import("./pages/StaffMyAttendance"));
+const ParentDiaryView      = lazy(() => import("./pages/ParentDiaryView"));
 const SchoolManagement     = lazy(() => import("@/pages/superadmin/SchoolManagement"));
 const UserManagement       = lazy(() => import("@/pages/superadmin/UserManagement"));
+const SchoolOnboardingWizard = lazy(() => import("@/pages/superadmin/SchoolOnboardingWizard"));
 const ExamSummary          = lazy(() => import("@/pages/reports/ExamSummary"));
 const ExamPerformance      = lazy(() => import("@/pages/reports/ExamPerformance"));
 const StudentMarks         = lazy(() => import("@/pages/reports/StudentMarks"));
 const ClassAnalysis        = lazy(() => import("@/pages/reports/ClassAnalysis"));
 const GradeDistribution    = lazy(() => import("@/pages/reports/GradeDistribution"));
 const SubjectPerformance   = lazy(() => import("@/pages/reports/SubjectPerformance"));
+const DISEReport           = lazy(() => import("@/pages/reports/DISEReport"));
 const SecurityDashboardPage = lazy(() => import("@/pages/SecurityDashboard"));
 const AdvancedAnalytics    = lazy(() => import("@/pages/AdvancedAnalytics"));
 const Admissions           = lazy(() => import("@/pages/Admissions"));
@@ -138,7 +146,7 @@ function App() {
                   {/* ── Public routes (no auth required) ──────────────────── */}
                   <Route path="/" element={<Login />} />
                   <Route path="/login" element={<Login />} />
-                  <Route path="/super-admin-login" element={<SuperAdminLogin />} />
+                  <Route path="/super-admin-login" element={<Login />} />
 
                   {/* ── Protected: admin / super_admin ────────────────────── */}
                   <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Dashboard /></Layout></ProtectedRoute>} />
@@ -146,6 +154,7 @@ function App() {
                   <Route path="/super-admin-dashboard" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SuperAdminDashboard /></Layout></ProtectedRoute>} />
                   <Route path="/superadmin/schools" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SchoolManagement /></Layout></ProtectedRoute>} />
                   <Route path="/superadmin/users" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><UserManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/onboard" element={<ProtectedRoute allowedRoles={['super_admin']}><SchoolOnboardingWizard /></ProtectedRoute>} />
 
                   {/* ── Protected: staff / admin (teacher-facing) ─────────── */}
                   <Route path="/staff-dashboard" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDashboard /></Layout></ProtectedRoute>} />
@@ -155,23 +164,27 @@ function App() {
                   <Route path="/my-class-detail/:classId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><MyClassDetail /></Layout></ProtectedRoute>} />
                   <Route path="/staff-class/:assignmentId" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffMyClassDetail /></Layout></ProtectedRoute>} />
                   <Route path="/staff-parent-communication" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffParentCommunication /></Layout></ProtectedRoute>} />
-                  <Route path="/attendance" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffAttendanceTeacher /></Layout></ProtectedRoute>} />
+                  <Route path="/staff-diary" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDiary /></Layout></ProtectedRoute>} />
+                  <Route path="/my-attendance" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffMyAttendance /></Layout></ProtectedRoute>} />
+                  <Route path="/attendance" element={<ProtectedRoute allowedRoles={['staff','admin']} requiredPermission={{ module: 'Attendance', action: 'View' }}><Layout><StaffAttendanceTeacher /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: parent-facing ──────────────────────────── */}
                   <Route path="/parent-dashboard" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDashboard /></Layout></ProtectedRoute>} />
                   <Route path="/child-profile" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ChildProfile /></Layout></ProtectedRoute>} />
                   <Route path="/parent-fees" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentFees /></Layout></ProtectedRoute>} />
                   <Route path="/parent-fees/:childId" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeeDetails /></Layout></ProtectedRoute>} />
-                  <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentChildFeePayment /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-fees/:childId/pay" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentFeePaymentPage /></Layout></ProtectedRoute>} />
                   <Route path="/parent-notifications" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentNotifications /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-diary" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentDiaryView /></Layout></ProtectedRoute>} />
+                  <Route path="/parent-announcements" element={<ProtectedRoute allowedRoles={['parent']}><Layout><ParentAnnouncements /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: admin + staff shared ──────────────────── */}
-                  <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Admissions /></Layout></ProtectedRoute>} />
-                  <Route path="/students" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><Students /></Layout></ProtectedRoute>} />
+                  <Route path="/admissions" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Admissions', action: 'View' }}><Layout><ModuleGuard module="admissions"><Admissions /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/students" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']} requiredPermission={{ module: 'Students', action: 'View' }}><Layout><Students /></Layout></ProtectedRoute>} />
                   <Route path="/students/:id" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><StudentProfile /></Layout></ProtectedRoute>} />
                   <Route path="/students/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StudentEdit /></Layout></ProtectedRoute>} />
-                  <Route path="/staff" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Staff /></Layout></ProtectedRoute>} />
-                  <Route path="/staff/:id" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffProfile /></Layout></ProtectedRoute>} />
+                   <Route path="/staff" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Staff', action: 'View' }}><Layout><Staff /></Layout></ProtectedRoute>} />
+                   <Route path="/staff/:id" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Staff', action: 'View' }}><Layout><StaffProfile /></Layout></ProtectedRoute>} />
                   <Route path="/staff/:id/edit" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffEdit /></Layout></ProtectedRoute>} />
                   <Route path="/staff-attendance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><StaffAttendance /></Layout></ProtectedRoute>} />
                   <Route path="/student-attendance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><StudentAttendance /></Layout></ProtectedRoute>} />
@@ -180,40 +193,46 @@ function App() {
                   <Route path="/academics/classes/:classId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassDetail /></Layout></ProtectedRoute>} />
                   <Route path="/academics/classes/:classId/sections/:sectionId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><SectionDetail /></Layout></ProtectedRoute>} />
                   <Route path="/class/:classId" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassProfile /></Layout></ProtectedRoute>} />
-                  <Route path="/grades" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Grades /></Layout></ProtectedRoute>} />
-                  <Route path="/assignments" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Assignments /></Layout></ProtectedRoute>} />
-                  <Route path="/examinations" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Examinations /></Layout></ProtectedRoute>} />
-                  <Route path="/cce-management" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><CCEManagement /></Layout></ProtectedRoute>} />
-                  <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><Timetable /></Layout></ProtectedRoute>} />
+                  <Route path="/grades" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Grades', action: 'View' }}><Layout><Grades /></Layout></ProtectedRoute>} />
+                  <Route path="/assignments" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Assignments', action: 'View' }}><Layout><Assignments /></Layout></ProtectedRoute>} />
+                  <Route path="/examinations" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Examinations', action: 'View' }}><Layout><ModuleGuard module="examinations"><Examinations /></ModuleGuard></Layout></ProtectedRoute>} />
+
+                  <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Timetable', action: 'View' }}><Layout><ModuleGuard module="timetable"><Timetable /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/alumni" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Alumni /></Layout></ProtectedRoute>} />
-                  <Route path="/announcements" element={<ProtectedRoute><Layout><Announcements /></Layout></ProtectedRoute>} />
+                  <Route path="/announcements" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/communication" element={<ProtectedRoute><Layout><ModuleGuard module="communication"><Communication /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/documents" element={<ProtectedRoute><Layout><Documents /></Layout></ProtectedRoute>} />
-                  <Route path="/notifications" element={<ProtectedRoute><Layout><Announcements /></Layout></ProtectedRoute>} />
+                  <Route path="/documents" element={<ProtectedRoute><Layout><ModuleGuard module="documents"><Documents /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/notifications" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: admin-only finance ────────────────────── */}
                   <Route path="/finance" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Finance /></Layout></ProtectedRoute>} />
-                  <Route path="/fees" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Fees /></Layout></ProtectedRoute>} />
+                  <Route path="/fees" element={<Navigate to="/fees/collect" replace />} />
+                  <Route path="/fees/collect" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Fees', action: 'View' }}><Layout><ModuleGuard module="fees"><Fees section="collect" /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/fees/collect/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Fees', action: 'View' }}><Layout><ModuleGuard module="fees"><StudentFeePaymentPage /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/fees/setup" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><Fees section="setup" /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/student-fee-details/:studentId" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><StudentFeeDetails /></ProtectedRoute>} />
-                  <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><FeeConcession /></Layout></ProtectedRoute>} />
-                  <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PaymentGateway /></Layout></ProtectedRoute>} />
+                  <Route path="/fee-concession" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><FeeConcession /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/payment-gateway" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="fees"><PaymentGateway /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/pf-esi" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><PFESIManagement /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: reports ────────────────────────────────── */}
-                  <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Reports /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/exam-summary" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ExamSummary /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/exam-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ExamPerformance /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/student-marks" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><StudentMarks /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ClassAnalysis /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><GradeDistribution /></Layout></ProtectedRoute>} />
-                  <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><SubjectPerformance /></Layout></ProtectedRoute>} />
-                  <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Analytics /></Layout></ProtectedRoute>} />
+                  <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="reports"><Reports /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/exam-summary" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ExamSummary /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/exam-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ExamPerformance /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/student-marks" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><StudentMarks /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/class-analysis" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><ClassAnalysis /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/grade-distribution" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><GradeDistribution /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/subject-performance" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="reports"><SubjectPerformance /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/reports/dise" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="reports"><DISEReport /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/report-cards" element={<ProtectedRoute allowedRoles={['admin','staff','super_admin']}><Layout><ModuleGuard module="reports"><ReportCards /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="analytics"><Analytics /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: optional modules ───────────────────────── */}
-                  <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/library" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
-                  <Route path="/health" element={<ProtectedRoute allowedRoles={['admin','staff']}><Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout></ProtectedRoute>} />
+                   <Route path="/transport" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Transport', action: 'View' }}><Layout><ModuleGuard module="transport"><Transport /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/syllabus" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Syllabus /></Layout></ProtectedRoute>} />
+                  <Route path="/library" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Library', action: 'View' }}><Layout><ModuleGuard module="library"><Library /></ModuleGuard></Layout></ProtectedRoute>} />
+                   <Route path="/hostel" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Hostel', action: 'View' }}><Layout><ModuleGuard module="hostel"><Hostel /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/health" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Health', action: 'View' }}><Layout><ModuleGuard module="health"><Health /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/wallet" element={<ProtectedRoute><Layout><ModuleGuard module="wallet"><Wallet /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/store" element={<ProtectedRoute><Layout><ModuleGuard module="store"><Store /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/school-connect" element={<ProtectedRoute><Layout><SchoolConnect /></Layout></ProtectedRoute>} />
@@ -223,7 +242,7 @@ function App() {
                   <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
                   <Route path="/configuration-settings" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ConfigurationSettings /></Layout></ProtectedRoute>} />
                   <Route path="/role-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><RoleManagement /></Layout></ProtectedRoute>} />
-                  <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
+                  <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Visitor', action: 'View' }}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
                   <Route path="/id-cards" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><IdCards /></Layout></ProtectedRoute>} />
                   <Route path="/security" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><SecurityDashboardPage /></Layout></ProtectedRoute>} />
                   <Route path="/advanced-analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdvancedAnalytics /></Layout></ProtectedRoute>} />

@@ -1,19 +1,25 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Bell, Loader2, AlertCircle, CheckCircle, Calendar, Award,
+  Bell, Loader2, Calendar, Award,
   BadgeIndianRupee, MessageSquare, Check, CheckCheck, Filter,
-  ChevronDown
+  BookOpen, ExternalLink, GraduationCap, Users
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notificationApi, type NotificationItem } from "@/services/api/notificationApi";
+import { studentApi, type StudentBasic } from "@/services/api/studentApi";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 
-const TYPES = ["All", "Fee", "Exam", "Attendance", "Announcement", "Message", "Payment"];
+const TYPES = ["All", "Diary", "Fee", "Exam", "Attendance", "Announcement", "Assignment", "Message", "Payment"];
 
 export default function ParentNotifications() {
+  const navigate = useNavigate();
+  const [children, setChildren] = useState<StudentBasic[]>([]);
+  const [selectedChild, setSelectedChild] = useState<string>("all");
+  const [childrenLoading, setChildrenLoading] = useState(true);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -22,16 +28,24 @@ export default function ParentNotifications() {
   const [selectedType, setSelectedType] = useState("All");
   const [marking, setMarking] = useState<Set<string>>(new Set());
 
+  // Load children on mount
   useEffect(() => {
-    loadNotifications();
-  }, [page, selectedType]);
+    studentApi.getMyChildren()
+      .then(kids => {
+        setChildren(kids);
+        // Default to "all" if only one child or none — no need to filter
+      })
+      .catch(() => {})
+      .finally(() => setChildrenLoading(false));
+  }, []);
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { page, pageSize: 20 };
+      const params: Record<string, unknown> = { page, pageSize: 20 };
       if (selectedType !== "All") params.type = selectedType;
-      const res = await notificationApi.getMyNotifications(params);
+      if (selectedChild !== "all") params.studentId = selectedChild;
+      const res = await notificationApi.getMyNotifications(params as any);
       setNotifications(res.notifications);
       setUnreadCount(res.unreadCount);
       setTotal(res.total);
@@ -40,6 +54,21 @@ export default function ParentNotifications() {
     } finally {
       setLoading(false);
     }
+  }, [page, selectedType, selectedChild]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  // Reset to page 1 when child or type changes
+  const handleChildSelect = (childId: string) => {
+    setSelectedChild(childId);
+    setPage(1);
+  };
+
+  const handleTypeSelect = (type: string) => {
+    setSelectedType(type);
+    setPage(1);
   };
 
   const handleMarkRead = async (id: string) => {
@@ -67,7 +96,7 @@ export default function ParentNotifications() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Notifications</h1>
@@ -83,6 +112,48 @@ export default function ParentNotifications() {
         )}
       </div>
 
+      {/* Child selector — only shown when parent has 2+ children */}
+      {!childrenLoading && children.length > 1 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" /> Filter by child
+          </p>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <button
+              onClick={() => handleChildSelect("all")}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all shrink-0 ${
+                selectedChild === "all"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background border-border hover:border-primary/50 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <GraduationCap className="h-3.5 w-3.5" />
+              All children
+            </button>
+            {children.map(child => (
+              <button
+                key={child.id}
+                onClick={() => handleChildSelect(child.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all shrink-0 ${
+                  selectedChild === child.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border hover:border-primary/50 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Avatar className="h-5 w-5">
+                  <AvatarImage src={child.photoUrl} />
+                  <AvatarFallback className="text-[9px]">
+                    {child.firstName?.[0]}{child.lastName?.[0]}
+                  </AvatarFallback>
+                </Avatar>
+                {child.firstName} {child.lastName}
+                {child.class && <span className="opacity-70 text-xs">· {child.class}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Type Filters */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {TYPES.map(type => (
@@ -90,7 +161,7 @@ export default function ParentNotifications() {
             key={type}
             variant={selectedType === type ? "default" : "outline"}
             size="sm"
-            onClick={() => { setSelectedType(type); setPage(1); }}
+            onClick={() => handleTypeSelect(type)}
             className="shrink-0"
           >
             <TypeIcon type={type} />
@@ -114,7 +185,9 @@ export default function ParentNotifications() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {notifications.map(notif => (
+          {notifications.map(notif => {
+            const childForNotif = notif.studentId ? children.find(c => c.id === notif.studentId) : null;
+            return (
             <Card
               key={notif.id}
               className={`transition-all hover:shadow-sm ${!notif.isRead ? "border-primary/30 bg-primary/[0.02]" : ""}`}
@@ -129,16 +202,23 @@ export default function ParentNotifications() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-0.5">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                           <p className={`text-sm ${!notif.isRead ? "font-semibold" : "font-medium"}`}>
                             {notif.title}
                           </p>
                           {!notif.isRead && (
                             <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                           )}
+                          {/* Show child chip when viewing all children and notification is child-specific */}
+                          {selectedChild === "all" && childForNotif && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                              <GraduationCap className="h-3 w-3" />
+                              {childForNotif.firstName} {childForNotif.lastName}
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground leading-relaxed">{notif.content}</p>
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0">{notif.type}</Badge>
                           {notif.priority !== "Normal" && (
                             <Badge
@@ -149,6 +229,14 @@ export default function ParentNotifications() {
                             </Badge>
                           )}
                           <span className="text-[10px] text-muted-foreground">{formatDateTime(notif.createdAt)}</span>
+                          {notif.actionUrl && (
+                            <button
+                              onClick={() => navigate(notif.actionUrl!)}
+                              className="text-xs text-primary flex items-center gap-1 hover:underline ml-auto"
+                            >
+                              <ExternalLink className="h-3 w-3" /> View
+                            </button>
+                          )}
                         </div>
                       </div>
                       {!notif.isRead && (
@@ -167,7 +255,8 @@ export default function ParentNotifications() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
 
           {/* Pagination */}
           {total > 20 && (
@@ -201,6 +290,7 @@ export default function ParentNotifications() {
 
 function TypeIcon({ type }: { type: string }) {
   const t = type.toLowerCase();
+  if (t === "diary") return <BookOpen className="h-4 w-4" />;
   if (t.includes("fee") || t.includes("payment")) return <BadgeIndianRupee className="h-4 w-4" />;
   if (t.includes("exam") || t.includes("result")) return <Award className="h-4 w-4" />;
   if (t.includes("attendance")) return <Calendar className="h-4 w-4" />;
@@ -212,6 +302,7 @@ function TypeIcon({ type }: { type: string }) {
 
 function getTypeColor(type: string): string {
   const t = type.toLowerCase();
+  if (t === "diary") return "bg-violet-100 text-violet-600";
   if (t.includes("fee") || t.includes("payment")) return "bg-amber-100 text-amber-600";
   if (t.includes("exam") || t.includes("result")) return "bg-blue-100 text-blue-600";
   if (t.includes("attendance")) return "bg-green-100 text-green-600";

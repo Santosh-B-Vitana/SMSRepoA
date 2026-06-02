@@ -20,9 +20,6 @@ using SmsApi.Extensions;
 using SmsApi.Infrastructure.Performance;
 using SmsApi.Infrastructure.Resilience;
 
-// Allow DateTime with Kind=Unspecified for PostgreSQL compatibility
-AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
 // ── Serilog bootstrap logger (captures startup/config errors) ──────────
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -79,6 +76,12 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
     serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(120);
 });
+
+// ── Data Protection: configure for IIS/production environments ──────────────
+// On IIS, the app pool typically lacks access to HKLM registry and user profile.
+// Use file-based key storage in a shared folder instead.
+builder.Services.ConfigureDataProtection(builder.Environment, builder.Configuration);
+
 // Configure configuration sources - IMPORTANT: Load from environment variables for production secrets
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
@@ -90,15 +93,31 @@ builder.Configuration
 var connectionString = SmsApi.Extensions.DatabaseExtensions.ResolveConnectionString(builder.Configuration);
 builder.AddDatabase(connectionString);
 
+// ── CRM database (SQL Server only) ───────────────────────────────────────────────
+var crmConnectionString = builder.Configuration.GetConnectionString("CRMConnection");
+if (!string.IsNullOrEmpty(crmConnectionString))
+{
+    builder.Services.AddDbContext<SmsApi.Data.CrmDbContext>(options =>
+        options.UseSqlServer(crmConnectionString, sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
+            sqlOptions.CommandTimeout(30);
+            sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
+            sqlOptions.MigrationsAssembly("SmsApi");
+        }));
+}
+
 // ── All business services ────────────────────────────────────────────────────────
 builder.Services.AddApplicationServices(builder.Configuration, builder.Environment);
 
 
 // ── Caching (Redis in prod, in-memory in dev) ─────────────────────────────────────
 builder.Services.AddCachingInfrastructure(builder.Configuration);
+// In-process memory cache (used by RBAC permission enforcement for short-TTL profile caching)
+builder.Services.AddMemoryCache();
 
 // ── Health checks (provider-agnostic EF Core CanConnectAsync + Redis) ────────────
-builder.Services.AddHealthCheckInfrastructure(builder.Configuration);
+builder.Services.AddHealthCheckInfrastructure(builder.Configuration, builder.Environment);
 
 // ── OpenTelemetry distributed tracing + metrics ───────────────────────────────────
 builder.Services.AddObservability(builder.Configuration, builder.Environment);
@@ -125,11 +144,27 @@ builder.Services.AddAuthorizationPolicies();
 
 var app = builder.Build();
 
-// ── Ensure DB schema is up to date before seeding ─────────────────────────
-await ApplyDatabaseMigrationsAsync(app);
+if(app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
 
-// ── Startup seeding: ensure school + admin user exist ──────────────────────
-await SeedEssentialDataAsync(app);
+    // ── Ensure DB schema is up to date before seeding ─────────────────────────
+    await ApplyDatabaseMigrationsAsync(app);
+
+    // ── Startup seeding: ensure school + admin user exist ──────────────────────
+    await SeedEssentialDataAsync(app);
+
+    // ── Test data seeding: students, staff, parents, fees, transport, exams ────
+    await SeedTestDataAsync(app);
+
+    // ── Backfill: assign system roles to existing staff logins that have none ──
+    {
+        using var scope = app.Services.CreateScope();
+        var staffSvc = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IStaffService>();
+        var demoSchoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+        await staffSvc.BulkAutoAssignRolesAsync(demoSchoolId);
+    }
+}
 
 // Performance monitoring (logs slow requests > 500ms, SLA breach > 2000ms)
 app.UsePerformanceMonitoring();
@@ -157,6 +192,10 @@ app.UseSerilogRequestLogging(options =>
 // Extract academic year from request headers for use throughout pipeline
 app.UseAcademicYearContext();
 
+// Resolve SchoolConfig from CRM by request domain; populates HttpContext.Items["SchoolConfig"]
+// so AppDbContext is dynamically configured with the correct per-tenant DBServer/DBName.
+app.UseSchoolDbContext();
+
 // Response compression (before any content is written)
 app.UseResponseCompression();
 
@@ -170,12 +209,24 @@ if (app.Environment.IsDevelopment())
 // Use CORS - must be early in pipeline
 app.UseCors(app.Environment.IsDevelopment() ? "AllowAll" : "AllowSpecificOrigins");
 
+// Serve uploaded files at /files/* (path-traversal-safe: served only from configured uploads dir)
+var uploadsPath = Path.GetFullPath(
+    app.Configuration["FileStorage:BasePath"]
+    ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads"));
+if (!Directory.Exists(uploadsPath))
+    Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
+    RequestPath = "/files"
+});
+
 // HSTS: tell browsers to always use HTTPS (production only — skip in dev/test)
-if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+/*if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
 {
     app.UseHttpsRedirection();
     app.UseHsts();
-}
+}*/
 
 // Rate limiting
 app.UseRateLimiter();
@@ -184,8 +235,15 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Immediately block any deactivated/suspended user even with a valid JWT
+app.UseMiddleware<SmsApi.Middleware.UserStatusCheckMiddleware>();
+
 // Use School Feature Access Middleware (after authentication)
 app.UseMiddleware<SmsApi.Middleware.SchoolFeatureAccessMiddleware>();
+
+// Fine-grained Role-Management permission enforcement (custom roles).
+// Gates write operations for users that hold a custom role; everyone else passes through.
+app.UseMiddleware<SmsApi.Middleware.RolePermissionEnforcementMiddleware>();
 
 // Audit logging: records POST/PUT/PATCH/DELETE to AuditLogs table (after auth, before response wrapper)
 app.UseMiddleware<SmsApi.Middleware.AuditLoggingMiddleware>();
@@ -235,6 +293,22 @@ static async Task ApplyDatabaseMigrationsAsync(WebApplication app)
     {
         logger.LogError(ex, "Failed to apply database migrations at startup.");
         throw;
+    }
+
+    // ── CRM database migrations ─────────────────────────────────────────────
+    var crmDb = scope.ServiceProvider.GetService<SmsApi.Data.CrmDbContext>();
+    if (crmDb != null)
+    {
+        try
+        {
+            await crmDb.Database.MigrateAsync();
+            logger.LogInformation("CRM database migrations applied successfully.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to apply CRM database migrations at startup.");
+            throw;
+        }
     }
 }
 
@@ -331,6 +405,7 @@ static async Task SeedEssentialDataAsync(WebApplication app)
             await db.SaveChangesAsync();
         }
 
+        var superAdminPassword = config["SUPERADMIN_PASSWORD"] ?? (environment.IsDevelopment() ? "SuperAdmin@123" : throw new InvalidOperationException("SUPERADMIN_PASSWORD is required in non-development environments."));
         var superAdmin = await db.UserLogins.FirstOrDefaultAsync(u =>
             u.Username == "superadmin" && !u.IsDeleted);
 
@@ -346,9 +421,7 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 Role = "SuperAdmin",
                 Status = "active",
                 SchoolId = platformSchoolId,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(
-                    config["SUPERADMIN_PASSWORD"] ?? (environment.IsDevelopment() ? "superadmin-dev-change-me" : throw new InvalidOperationException("SUPERADMIN_PASSWORD is required in non-development environments.")),
-                    workFactor: 12),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(superAdminPassword, workFactor: 12),
                 PasswordChangedAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -357,11 +430,27 @@ static async Task SeedEssentialDataAsync(WebApplication app)
             await db.SaveChangesAsync();
             logger.LogInformation("Seeded superadmin user");
         }
+        else
+        {
+            // Always sync password from config and ensure account is unlocked
+            superAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(superAdminPassword, workFactor: 12);
+            superAdmin.Status = "active";
+            superAdmin.LockedUntil = null;
+            superAdmin.FailedLoginAttempts = 0;
+            superAdmin.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Superadmin password synced from configuration");
+        }
 
         // 3b. Seed demo staff & parent users for the main school
         var staffEmail = "suresh.n@demo.edu";
-        if (!await db.UserLogins.AnyAsync(u => u.Email == staffEmail && !u.IsDeleted))
+        var principalUserLogin = await db.UserLogins.FirstOrDefaultAsync(u => u.Email == staffEmail && !u.IsDeleted);
+        if (principalUserLogin == null)
         {
+            // Find the staff member to link via LinkedEntityId
+            var principalStaffMember = await db.StaffMembers
+                .FirstOrDefaultAsync(s => s.Email == staffEmail && s.SchoolId == schoolId);
+            
             db.UserLogins.Add(new SmsApi.Models.Entities.UserLogin
             {
                 Id = Guid.NewGuid(),
@@ -369,9 +458,10 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 Email = staffEmail,
                 FirstName = "Suresh",
                 LastName = "Nair",
-                Role = "Staff",
+                Role = "Principal",
                 Status = "active",
                 SchoolId = schoolId,
+                LinkedEntityId = principalStaffMember?.Id,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(
                     config["DEMO_STAFF_PASSWORD"] ?? (environment.IsDevelopment() ? "staff-dev-change-me" : throw new InvalidOperationException("DEMO_STAFF_PASSWORD is required in non-development environments.")),
                     workFactor: 12),
@@ -381,32 +471,68 @@ static async Task SeedEssentialDataAsync(WebApplication app)
                 IsDeleted = false
             });
             await db.SaveChangesAsync();
-            logger.LogInformation("Seeded demo staff user '{Email}'", staffEmail);
+            logger.LogInformation("Seeded demo principal user '{Email}' with role Principal", staffEmail);
+        }
+        else if (principalUserLogin.Role != "Principal")
+        {
+            // Update existing principal to ensure role is set correctly
+            principalUserLogin.Role = "Principal";
+            // Also ensure LinkedEntityId is set if not already
+            if (!principalUserLogin.LinkedEntityId.HasValue)
+            {
+                var principalStaffMember = await db.StaffMembers
+                    .FirstOrDefaultAsync(s => s.Email == staffEmail && s.SchoolId == schoolId);
+                if (principalStaffMember != null)
+                    principalUserLogin.LinkedEntityId = principalStaffMember.Id;
+            }
+            principalUserLogin.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Updated principal user '{Email}' role to Principal and linked staff record", staffEmail);
         }
 
-        var parentEmail = "parent@demo.edu";
-        if (!await db.UserLogins.AnyAsync(u => u.Email == parentEmail && !u.IsDeleted))
+        var parentEmail = "aj@gmail.com";
+        var parentPassword = config["DEMO_PARENT_PASSWORD"] ?? (environment.IsDevelopment() ? "Veda#834Nh7J" : throw new InvalidOperationException("DEMO_PARENT_PASSWORD is required in non-development environments."));
+        var parentPasswordHash = BCrypt.Net.BCrypt.HashPassword(parentPassword, workFactor: 12);
+        var now = DateTime.UtcNow;
+
+        // Soft-delete the legacy parent@demo.edu row if it still exists (we keep aj@gmail.com instead).
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE [dbo].[UserLogins] SET [IsDeleted] = 1, [UpdatedAt] = {now} WHERE [Email] = N'parent@demo.edu' AND [SchoolId] = {schoolId}");
+
+        // Update the aj@gmail.com row in-place (bypasses EF soft-delete filter); INSERT only if absent.
+        var rowsUpdated = await db.Database.ExecuteSqlInterpolatedAsync(
+            $@"UPDATE [dbo].[UserLogins]
+               SET [PasswordHash] = {parentPasswordHash},
+                   [Status] = N'active',
+                   [IsDeleted] = 0,
+                   [LockedUntil] = NULL,
+                   [FailedLoginAttempts] = 0,
+                   [UpdatedAt] = {now}
+               WHERE [Email] = {parentEmail} AND [SchoolId] = {schoolId}");
+        if (rowsUpdated == 0)
         {
             db.UserLogins.Add(new SmsApi.Models.Entities.UserLogin
             {
                 Id = Guid.NewGuid(),
-                Username = "arjun.sharma",
+                Username = "aj.parent",
                 Email = parentEmail,
-                FirstName = "Arjun",
-                LastName = "Sharma",
+                FirstName = "Ajith",
+                LastName = "Hasthi",
                 Role = "Parent",
                 Status = "active",
                 SchoolId = schoolId,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(
-                    config["DEMO_PARENT_PASSWORD"] ?? (environment.IsDevelopment() ? "parent-dev-change-me" : throw new InvalidOperationException("DEMO_PARENT_PASSWORD is required in non-development environments.")),
-                    workFactor: 12),
-                PasswordChangedAt = DateTime.UtcNow,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
+                PasswordHash = parentPasswordHash,
+                PasswordChangedAt = now,
+                CreatedAt = now,
+                UpdatedAt = now,
                 IsDeleted = false
             });
             await db.SaveChangesAsync();
             logger.LogInformation("Seeded demo parent user '{Email}'", parentEmail);
+        }
+        else
+        {
+            logger.LogInformation("Demo parent credentials synced to '{Email}'", parentEmail);
         }
 
         // 4. Seed default school settings (idempotent: only adds missing keys)
@@ -531,6 +657,40 @@ static async Task SeedEssentialDataAsync(WebApplication app)
             await db.SaveChangesAsync();
             logger.LogInformation("Seeded student leave types for Demo School");
         }
+
+        // 9. Backfill health records for existing students that don't have one
+        var studentsWithoutHealth = await db.Students
+            .Where(s => s.SchoolId == schoolId && !s.IsDeleted &&
+                        !db.HealthRecords.Any(h => h.SchoolId == schoolId && h.StudentId == s.Id))
+            .ToListAsync();
+
+        if (studentsWithoutHealth.Count > 0)
+        {
+            var healthRecords = studentsWithoutHealth.Select(s => new SmsApi.Models.Entities.HealthRecord
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = s.SchoolId,
+                StudentId = s.Id,
+                CheckupDate = DateTime.UtcNow,
+                BloodGroup = s.BloodGroup,
+                Allergies = s.Allergies,
+                ChronicConditions = s.ChronicConditions,
+                Medications = s.Medications,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            }).ToList();
+
+            db.HealthRecords.AddRange(healthRecords);
+            await db.SaveChangesAsync();
+            logger.LogInformation("Backfilled {Count} health records for existing students", healthRecords.Count);
+        }
+
+        // 10. Sync system role permissions to match current code definition on every startup.
+        //     This adds missing permissions (e.g. Assignments added to Teacher role) and
+        //     removes revoked ones (e.g. Attendance.Create/Edit removed from Teacher role).
+        var permService = scope.ServiceProvider.GetRequiredService<SmsApi.Services.IPermissionsService>();
+        await permService.EnsureSystemRolesAsync(schoolId);
+        logger.LogInformation("Synced system role permissions for school {SchoolId}", schoolId);
     }
     catch (Exception ex)
     {
@@ -1131,6 +1291,25 @@ static async Task SeedOperationalDataAsync(
         await db.SaveChangesAsync();
         logger.LogInformation("Seeded {Count} exams and {Results} results", exams.Count, results.Count);
     }
+}
+
+// ── Test data seeder wrapper (delegates to the rich SeedOperationalData+Academics already in place) ──
+static async Task SeedTestDataAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var db     = scope.ServiceProvider.GetRequiredService<SmsApi.Data.AppDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Program>>();
+    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+    if (config.GetValue<bool>("SkipMigrations", false)) return; // skip in test mode
+
+    var schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+    logger.LogInformation("[TestDataSeeder] Starting comprehensive test data seeding for school {SchoolId}", schoolId);
+
+    await SeedAcademicsAndStudentsAsync(db, schoolId, logger);
+    await SeedOperationalDataAsync(db, schoolId, logger);
+
+    logger.LogInformation("[TestDataSeeder] Test data seeding complete.");
 }
 
 /// <summary>Exposed as a partial class so WebApplicationFactory&lt;Program&gt; can reference it in integration tests.</summary>

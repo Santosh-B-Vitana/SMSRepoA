@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmsApi.Models.DTOs;
+using SmsApi.Models.Constants;
 using SmsApi.Services;
 using SmsApi.Services.Migration;
 using System;
@@ -17,18 +18,20 @@ namespace SmsApi.Controllers
     {
         private readonly IStudentService _studentService;
         private readonly ITenantContext _tenant;
+        private readonly IParentAuthorizationService _parentAuth;
 
-        public StudentsController(IStudentService studentService, ITenantContext tenant)
+        public StudentsController(IStudentService studentService, ITenantContext tenant, IParentAuthorizationService parentAuth)
         {
             _studentService = studentService;
             _tenant = tenant;
+            _parentAuth = parentAuth;
         }
 
         /// <summary>
         /// Get all students for the authenticated user's school. Respects X-Academic-Year header for year-scoped filtering.
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<StudentListResponse>> GetStudents(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -61,10 +64,52 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Returns the distinct classes and sections that exist across all students.
+        /// Used to populate filter dropdowns without loading the full student roster.
+        /// </summary>
+        [HttpGet("classes-sections")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<StudentClassesSectionsResponse>> GetClassesSections()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _studentService.GetDistinctClassesSectionsAsync(schoolId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch classes and sections.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get the logged-in student's own profile (resolved by JWT email). Student role only.
+        /// </summary>
+        [HttpGet("me")]
+        [Authorize(Roles = "Student")]
+        public async Task<ActionResult<StudentResponse>> GetMyProfile()
+        {
+            try
+            {
+                var callerEmail = _tenant.UserEmail;
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var student = await _studentService.GetStudentByEmailAsync(callerEmail, schoolId);
+                if (student == null)
+                    return NotFound(new { message = "Student profile not found." });
+                return Ok(student);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while fetching your profile.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get a specific student by ID
         /// </summary>
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,Parent,Student")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<StudentResponse>> GetStudent(Guid id)
         {
             try
@@ -277,7 +322,7 @@ namespace SmsApi.Controllers
         /// Get student documents (Staff and above)
         /// </summary>
         [HttpGet("{id}/documents")]
-        [Authorize(Roles = "Admin,Principal,Staff,Student,Parent")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<List<StudentDocumentDto>>> GetDocuments(Guid id)
         {
             try
@@ -396,7 +441,7 @@ namespace SmsApi.Controllers
         /// Get all guardians for a student
         /// </summary>
         [HttpGet("{id}/guardians")]
-        [Authorize(Roles = "Admin,Principal,Staff")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<List<GuardianDto>>> GetGuardians(Guid id)
         {
             try
@@ -537,7 +582,7 @@ namespace SmsApi.Controllers
         /// Get siblings of a student (legacy JSON-based lookup)
         /// </summary>
         [HttpGet("{id}/siblings-legacy")]
-        [Authorize(Roles = "Admin,Principal,Staff,Teacher")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<List<StudentBasicResponse>>> GetSiblingsLegacy(Guid id)
         {
             try
@@ -577,20 +622,20 @@ namespace SmsApi.Controllers
         /// (fees, attendance, exams, transport, hostel, health, visitor history)
         /// </summary>
         [HttpGet("{id}/profile-summary")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,Parent,Student")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<StudentProfileSummary>> GetProfileSummary(Guid id)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
 
-                // Parent role: verify the student is their linked child via StudentGuardians
+                // Parent role: verify the student is their linked child (direct guardian or sibling)
                 var role = _tenant.Role ?? string.Empty;
                 if (role.Equals("Parent", StringComparison.OrdinalIgnoreCase))
                 {
-                    var parentEmail = _tenant.UserEmail;
-                    var guardians = await _studentService.GetGuardiansAsync(id, schoolId);
-                    if (!guardians.Any(g => string.Equals(g.Email, parentEmail, StringComparison.OrdinalIgnoreCase)))
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, id);
+                    if (!canAccess)
                         return StatusCode(403, new { message = "Parents can only access their own child's profile." });
                 }
                 var summary = await _studentService.GetStudentProfileSummaryAsync(id, schoolId);
@@ -713,7 +758,8 @@ namespace SmsApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred during CSV import.", error = ex.Message });
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                return StatusCode(500, new { message = "An error occurred during CSV import.", error = ex.Message, detail });
             }
         }
 
@@ -800,6 +846,95 @@ namespace SmsApi.Controllers
             }
         }
 
+        // ── Generous CSV import helpers ──────────────────────────────────────
+        // Strips spaces, underscores, hyphens and lowercases so that
+        // "First Name", "first_name" and "FirstName" all map to "firstname".
+        private static string CanonCol(string raw) =>
+            System.Text.RegularExpressions.Regex.Replace(raw.Trim().ToLowerInvariant(), @"[\s_\-]", "");
+
+        // Column aliases: canonical name → list of accepted alternatives.
+        // GetCol will try the primary name first, then each alias in order.
+        private static readonly Dictionary<string, string[]> ColAliases = new()
+        {
+            ["admissionnumber"] = new[] { "admno", "admissionno", "regno", "registrationno", "rollno" },
+            ["firstname"]       = new[] { "fname", "givenname" },
+            ["lastname"]        = new[] { "lname", "surname", "familyname" },
+            ["dateofbirth"]     = new[] { "dob", "birthdate", "bdate" },
+            ["admissiondate"]   = new[] { "joiningdate", "dateofjoining", "enrollmentdate" },
+            ["primaryphone"]    = new[] { "phone", "mobile", "mobileno", "contact", "phoneno" },
+            ["guardianname"]    = new[] { "parentname", "fathername", "mothername" },
+            ["guardianphone"]   = new[] { "parentphone", "fatherphone", "motherphone" },
+            ["guardianrelation"]= new[] { "relation", "parentrelation" },
+            ["bloodgroup"]      = new[] { "blood", "bgroup" },
+            ["aadharnumber"]    = new[] { "aadhar", "aadhaar", "aadhaarno", "uid", "uidno" },
+            ["pannumber"]       = new[] { "pan", "panno" },
+            ["emergencycontact"]= new[] { "emergencyname", "emcontact" },
+            ["emergencyphone"]  = new[] { "emphone", "emergencyno" },
+            ["transportrequired"]= new[] { "transport", "busfacility", "busrequired" },
+            ["hostelrequired"]  = new[] { "hostel", "boarding", "boardingrequired" },
+            ["previousschool"]  = new[] { "lastschool", "prevschool" },
+            ["previousclass"]   = new[] { "lastclass", "prevclass", "previousgrade" },
+        };
+
+        // Accept dates in any of the common formats used in Indian schools.
+        private static DateTime? ParseFlexDate(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            raw = raw.Trim();
+            string[] fmts = {
+                "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "MM-dd-yyyy",
+                "d/M/yyyy",   "M/d/yyyy",   "d-M-yyyy",   "M-d-yyyy",
+                "yyyy/MM/dd", "dd MMM yyyy","d MMM yyyy", "dd-MMM-yyyy",
+                "d MMM yy",   "dd MMM yy",  "d/M/yy",     "dd/MM/yy"
+            };
+            if (DateTime.TryParseExact(raw, fmts, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var d)) return d;
+            if (DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out d)) return d;
+            return null;
+        }
+
+        // Accept true/yes/y/1 as true; everything else (including blank) as false.
+        private static bool ParseFlexBool(string? raw) =>
+            raw?.Trim().ToLower() switch { "true" or "yes" or "y" or "1" => true, _ => false };
+
+        // Normalise gender to the enum expected by the service.
+        private static string? NormalizeGender(string? raw) =>
+            raw?.Trim().ToLower() switch
+            {
+                "m" or "male" or "boy" or "gents"         => "male",
+                "f" or "female" or "girl" or "ladies"     => "female",
+                "other" or "others" or "third gender"     => "other",
+                "prefer_not_to_say" or "prefer not to say"
+                    or "na" or "n/a" or "not specified"   => "prefer_not_to_say",
+                _ => raw?.Trim()
+            };
+
+        // Normalise student status.
+        private static string NormalizeStudentStatus(string? raw) =>
+            raw?.Trim().ToLower() switch
+            {
+                "active" or "enabled" or "enrolled" or "studying" or "current" => "active",
+                "inactive" or "disabled"                                         => "inactive",
+                "transferred" or "transfer"                                      => "transferred",
+                "graduated" or "passed" or "completed"                          => "graduated",
+                "left" or "dropout" or "dropped_out" or "drop out"              => "dropped_out",
+                "on_leave" or "on leave" or "leave"                              => "on_leave",
+                _ => "active"          // safe default
+            };
+
+        // Auto-clean Aadhar: strip spaces, keep digits + optional dashes.
+        private static string? CleanAadhar(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var digits = System.Text.RegularExpressions.Regex.Replace(raw.Trim(), @"[^\d]", "");
+            return digits.Length == 12 ? digits : raw.Trim();   // return normalised or original
+        }
+
+        // Auto-clean PAN: trim + uppercase.
+        private static string? CleanPan(string? raw) =>
+            string.IsNullOrWhiteSpace(raw) ? null : raw.Trim().ToUpperInvariant();
+
         private static List<CreateStudentRequest> ParseStudentCsv(System.IO.StreamReader reader)
         {
             var requests = new List<CreateStudentRequest>();
@@ -807,16 +942,29 @@ namespace SmsApi.Controllers
             if (string.IsNullOrWhiteSpace(headerLine))
                 return requests;
 
+            // Build canonical header→index map
             var headers = SplitCsvLine(headerLine)
-                .Select((h, i) => (h.Trim().ToLowerInvariant(), i))
-                .ToDictionary(x => x.Item1, x => x.i);
+                .Select((h, i) => (canon: CanonCol(h), idx: i))
+                .GroupBy(x => x.canon)
+                .ToDictionary(g => g.Key, g => g.First().idx);
 
-            int GetIdx(string name) => headers.TryGetValue(name.ToLowerInvariant(), out var i) ? i : -1;
+            // Resolve column index by name or any of its aliases.
+            int GetIdx(string name)
+            {
+                var canon = CanonCol(name);
+                if (headers.TryGetValue(canon, out var i)) return i;
+                if (ColAliases.TryGetValue(canon, out var aliases))
+                    foreach (var a in aliases)
+                        if (headers.TryGetValue(CanonCol(a), out i)) return i;
+                return -1;
+            }
 
             string? GetCol(string[] cols, string name)
             {
                 var idx = GetIdx(name);
-                return idx >= 0 && idx < cols.Length ? cols[idx].Trim() : null;
+                if (idx < 0 || idx >= cols.Length) return null;
+                var v = cols[idx].Trim();
+                return v.Length == 0 ? null : v;
             }
 
             string? line;
@@ -824,41 +972,42 @@ namespace SmsApi.Controllers
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 var cols = SplitCsvLine(line);
+                if (cols.All(c => string.IsNullOrWhiteSpace(c))) continue; // blank data row
 
-                DateTime ParseDate(string? v, string field)
-                {
-                    if (string.IsNullOrWhiteSpace(v)) return default;
-                    if (DateTime.TryParse(v, out var d)) return d;
-                    throw new FormatException($"Cannot parse date '{v}' in column '{field}'. Use yyyy-MM-dd format.");
-                }
+                // Resolve name: full Name column OR compose from parts
+                var fullName = GetCol(cols, "name");
+                if (string.IsNullOrWhiteSpace(fullName))
+                    fullName = string.Join(" ", new[] {
+                        GetCol(cols, "firstname"), GetCol(cols, "middlename"), GetCol(cols, "lastname")
+                    }.Where(p => !string.IsNullOrWhiteSpace(p)));
 
                 var req = new CreateStudentRequest
                 {
                     AdmissionNumber   = GetCol(cols, "admissionnumber") ?? string.Empty,
-                    Name              = GetCol(cols, "name") ?? string.Empty,
+                    Name              = fullName ?? string.Empty,
                     FirstName         = GetCol(cols, "firstname"),
                     MiddleName        = GetCol(cols, "middlename"),
                     LastName          = GetCol(cols, "lastname"),
                     Class             = GetCol(cols, "class") ?? string.Empty,
                     Section           = GetCol(cols, "section") ?? string.Empty,
                     RollNumber        = GetCol(cols, "rollnumber"),
-                    DateOfBirth       = ParseDate(GetCol(cols, "dateofbirth"), "DateOfBirth"),
-                    Gender            = GetCol(cols, "gender"),
+                    DateOfBirth       = ParseFlexDate(GetCol(cols, "dateofbirth")) ?? default,
+                    Gender            = NormalizeGender(GetCol(cols, "gender")),
                     Nationality       = GetCol(cols, "nationality"),
                     Religion          = GetCol(cols, "religion"),
                     Caste             = GetCol(cols, "caste"),
                     Category          = GetCol(cols, "category") ?? "General",
                     MotherTongue      = GetCol(cols, "mothertongue"),
-                    AdmissionDate     = ParseDate(GetCol(cols, "admissiondate"), "AdmissionDate") is DateTime ad && ad != default ? ad : DateTime.UtcNow,
-                    Status            = GetCol(cols, "status") ?? "active",
+                    AdmissionDate     = ParseFlexDate(GetCol(cols, "admissiondate")) ?? DateTime.UtcNow,
+                    Status            = NormalizeStudentStatus(GetCol(cols, "status")),
                     Email             = GetCol(cols, "email"),
                     PrimaryPhone      = GetCol(cols, "primaryphone"),
                     SecondaryPhone    = GetCol(cols, "secondaryphone"),
                     Address           = GetCol(cols, "address") ?? string.Empty,
                     PermanentAddress  = GetCol(cols, "permanentaddress"),
                     BloodGroup        = GetCol(cols, "bloodgroup"),
-                    AadharNumber      = GetCol(cols, "aadharnumber"),
-                    PanNumber         = GetCol(cols, "pannumber"),
+                    AadharNumber      = CleanAadhar(GetCol(cols, "aadharnumber")),
+                    PanNumber         = CleanPan(GetCol(cols, "pannumber")),
                     PassportNumber    = GetCol(cols, "passportnumber"),
                     GuardianName      = GetCol(cols, "guardianname") ?? string.Empty,
                     GuardianPhone     = GetCol(cols, "guardianphone") ?? string.Empty,
@@ -870,8 +1019,8 @@ namespace SmsApi.Controllers
                     ChronicConditions = GetCol(cols, "chronicconditions"),
                     Medications       = GetCol(cols, "medications"),
                     SpecialNeeds      = GetCol(cols, "specialneeds"),
-                    TransportRequired = string.Equals(GetCol(cols, "transportrequired"), "true", StringComparison.OrdinalIgnoreCase),
-                    HostelRequired    = string.Equals(GetCol(cols, "hostelrequired"), "true", StringComparison.OrdinalIgnoreCase),
+                    TransportRequired = ParseFlexBool(GetCol(cols, "transportrequired")),
+                    HostelRequired    = ParseFlexBool(GetCol(cols, "hostelrequired")),
                     PreviousSchool    = GetCol(cols, "previousschool"),
                     PreviousClass     = GetCol(cols, "previousclass"),
                     PhotoUrl          = GetCol(cols, "photourl"),
@@ -1185,6 +1334,73 @@ namespace SmsApi.Controllers
         {
             var userIdClaim = User.FindFirst("UserId")?.Value ?? User.FindFirst("sub")?.Value;
             return Guid.TryParse(userIdClaim, out var id) ? id : Guid.Empty;
+        }
+
+        // =================================================================
+        // STUDENT EXIT — Exit Clearance, Drop-Out, Pass-Out
+        // =================================================================
+
+        /// <summary>
+        /// Returns pending fee dues and pre-populated exit document data
+        /// for a student.  Called before showing the dropout/passout dialog.
+        /// </summary>
+        [HttpGet("{id}/exit-clearance")]
+        [Authorize(Roles = "Admin,Principal,Staff")]
+        public async Task<ActionResult<ExitClearanceResponse>> GetExitClearance(Guid id)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _studentService.GetExitClearanceAsync(id, schoolId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error fetching exit clearance.", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Processes a student drop-out.
+        /// - "transfer"  → marks student inactive, creates TC + alumni record.
+        /// - "detain"    → records detention remark; student stays active.
+        /// </summary>
+        [HttpPost("{id}/dropout")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult<StudentExitResponse>> DropoutStudent(
+            Guid id, [FromBody] StudentDropoutRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId    = _tenant.GetEffectiveSchoolId();
+                var processedBy = GetCurrentUserId();
+                var result = await _studentService.ProcessDropoutAsync(id, schoolId, request, processedBy);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error processing dropout.", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Processes a student pass-out (successful completion / leaving after passing).
+        /// Marks student inactive, creates TC + alumni record.
+        /// </summary>
+        [HttpPost("{id}/passout")]
+        [Authorize(Roles = "Admin,Principal")]
+        public async Task<ActionResult<StudentExitResponse>> PassoutStudent(
+            Guid id, [FromBody] StudentPassoutRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId    = _tenant.GetEffectiveSchoolId();
+                var processedBy = GetCurrentUserId();
+                var result = await _studentService.ProcessPassoutAsync(id, schoolId, request, processedBy);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Error processing pass-out.", error = ex.Message }); }
         }
     }
 }

@@ -22,17 +22,33 @@ const initialState: ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
+/** Returns a user-scoped localStorage key so each account has its own theme. */
+function getScopedThemeKey(base: string): string {
+  const userId = localStorage.getItem('currentUserId');
+  return userId ? `${base}_${userId}` : base;
+}
+
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
   storageKey = 'ui-theme',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+  const [theme, setThemeState] = useState<Theme>(
+    () => (localStorage.getItem(getScopedThemeKey(storageKey)) as Theme) || defaultTheme
   );
 
   const [actualTheme, setActualTheme] = useState<'dark' | 'light'>('light');
+
+  // Re-load the theme whenever a different user logs in or out
+  useEffect(() => {
+    const handleUserChange = () => {
+      const stored = localStorage.getItem(getScopedThemeKey(storageKey)) as Theme | null;
+      setThemeState(stored || defaultTheme);
+    };
+    window.addEventListener('vitanaUserChanged', handleUserChange);
+    return () => window.removeEventListener('vitanaUserChanged', handleUserChange);
+  }, [storageKey, defaultTheme]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -73,9 +89,9 @@ export function ThemeProvider({
 
   const value = {
     theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme);
-      setTheme(theme);
+    setTheme: (newTheme: Theme) => {
+      localStorage.setItem(getScopedThemeKey(storageKey), newTheme);
+      setThemeState(newTheme);
     },
     actualTheme,
   };

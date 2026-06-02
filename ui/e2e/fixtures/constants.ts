@@ -2,8 +2,8 @@
  * Shared constants used across all E2E tests and setup files.
  */
 
-export const API_BASE_URL = 'http://localhost:5092/api';
-export const APP_BASE_URL = 'http://localhost:8080';
+export const API_BASE_URL = process.env.VITE_API_BASE_URL ?? '';
+export const APP_BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080';
 
 export const ADMIN_CREDENTIALS = {
   email: 'admin@vitanaschools.edu',

@@ -3,11 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { FileText, GraduationCap, CalendarDays, Upload, Loader2 } from "lucide-react";
+import { FileText, GraduationCap, CalendarDays, Upload, Loader2, Ticket, BookOpen } from "lucide-react";
 import ResultsManager from "@/pages/academics/ResultsManager";
 import ExamTimetableCreator from "@/components/examinations/ExamTimetableCreator";
 import StudentResultPortal from "@/pages/StudentResultPortal";
 import { BulkMarksImportDialog } from "@/components/examinations/BulkMarksImportDialog";
+import { HallTicketManager } from "@/components/examinations/HallTicketManager";
+import { CoScholasticGrading } from "@/components/examinations/CoScholasticGrading";
 import examinationApi, { ExamBasic } from "@/services/api/examinationApi";
 import { academicApi, ClassResponse } from "@/services/api/academicApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
@@ -49,7 +51,7 @@ export default function ExaminationManager() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="timetable" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="timetable">
                 <CalendarDays className="h-4 w-4 mr-2" />
                 Exam Schedule
@@ -65,6 +67,14 @@ export default function ExaminationManager() {
               <TabsTrigger value="portal">
                 <GraduationCap className="h-4 w-4 mr-2" />
                 Student Portal
+              </TabsTrigger>
+              <TabsTrigger value="halltickets">
+                <Ticket className="h-4 w-4 mr-2" />
+                Hall Tickets
+              </TabsTrigger>
+              <TabsTrigger value="coscholastic">
+                <BookOpen className="h-4 w-4 mr-2" />
+                Co-Scholastic
               </TabsTrigger>
             </TabsList>
             <TabsContent value="timetable">
@@ -127,6 +137,12 @@ export default function ExaminationManager() {
             </TabsContent>
             <TabsContent value="portal">
               <StudentResultPortal />
+            </TabsContent>
+            <TabsContent value="halltickets">
+              <HallTicketManager />
+            </TabsContent>
+            <TabsContent value="coscholastic">
+              <CoScholasticGrading />
             </TabsContent>
           </Tabs>
         </CardContent>

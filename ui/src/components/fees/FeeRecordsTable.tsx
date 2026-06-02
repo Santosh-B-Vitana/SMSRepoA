@@ -1,4 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatDate } from "@/utils/dateUtils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -117,7 +118,7 @@ export function FeeRecordsTable({
                   <TableCell>₹{record.totalAmount.toLocaleString()}</TableCell>
                   <TableCell className="text-success">₹{record.paidAmount.toLocaleString()}</TableCell>
                   <TableCell className="text-destructive">₹{record.pendingAmount.toLocaleString()}</TableCell>
-                  <TableCell>{new Date(record.dueDate).toLocaleDateString()}</TableCell>
+                  <TableCell>{formatDate(record.dueDate)}</TableCell>
                   <TableCell>
                     <Badge className={getStatusColor(record.status)}>
                       {record.status}

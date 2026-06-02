@@ -19,8 +19,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const _RUN_SUFFIX = Date.now().toString().slice(-6);
-const API_BASE = 'http://localhost:5092/api';
-const UI_BASE = 'http://localhost:8081';
+const API_BASE = process.env.VITE_API_BASE_URL ?? '';
+const UI_BASE = '';
 const AUTH_FILE = path.join(__dirname, '.auth/admin.json');
 
 // Test staff data

@@ -1,17 +1,27 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { Home, Users, Calendar, FileText, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { ParentMobileBottomNav } from "./ParentMobileBottomNav";
+import { StaffMobileBottomNav } from "./StaffMobileBottomNav";
 
 export function MobileBottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
+  // Role-specific native nav bars
+  if (user?.role === "parent") return <ParentMobileBottomNav />;
+  if (user?.role === "staff")  return <StaffMobileBottomNav />;
+  if (user?.role === "super_admin") return null; // Super admin uses sidebar only
+
+  // Admin / principal fallback — keep original simple nav
   const navItems = [
-    { icon: Home, label: "Home", path: "/admin-dashboard" },
-    { icon: Users, label: "Students", path: "/students" },
-    { icon: Calendar, label: "Attendance", path: "/attendance" },
-    { icon: FileText, label: "Fees", path: "/fees" },
-    { icon: Settings, label: "More", path: "/settings" }
+    { icon: Home,     label: "Home",       path: "/admin-dashboard" },
+    { icon: Users,    label: "Students",   path: "/students"        },
+    { icon: Calendar, label: "Attendance", path: "/attendance"      },
+    { icon: FileText, label: "Fees",       path: "/fees"            },
+    { icon: Settings, label: "Settings",   path: "/settings"        },
   ];
 
   return (
@@ -20,16 +30,13 @@ export function MobileBottomNav() {
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
-          
           return (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
               className={cn(
                 "flex flex-col items-center justify-center flex-1 h-full gap-1 transition-colors",
-                isActive 
-                  ? "text-primary" 
-                  : "text-muted-foreground hover:text-foreground"
+                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Icon className="h-5 w-5" />

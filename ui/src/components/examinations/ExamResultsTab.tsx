@@ -1,0 +1,673 @@
+/**
+ * ExamResultsTab
+ * Results management tab — marks entry + results view.
+ *
+ * Layout:
+ *  - Left panel: list of exam setups, filtered by status
+ *  - Right panel: for selected exam —
+ *    - Subject selector tabs
+ *    - MarksEntryGrid per subject
+ *    - Finalize button (marks_entry status, all subjects locked)
+ *    - Publish button (finalized)
+ *    - Results table (published)
+ */
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
+import { usePermissions } from '@/contexts/PermissionsContext';
+import {
+  PenLine, CheckCircle2, Send, Loader2, BookOpen, Trophy,
+  TrendingUp, Users, Award, RotateCcw, Search, Calendar,
+} from 'lucide-react';
+import { MarksEntryGrid } from './MarksEntryGrid';
+import {
+  getExamSetups, getExamSetupById, finalizeExamSetup,
+  publishExamSetupResults, getExamSetupResults, reopenExamForEditing,
+  type ExamSetupBasicDto, type ExamSetupDetailDto,
+  type StudentExamResultSummaryDto,
+} from '@/services/api/examSetupApi';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const STATUS_CFG: Record<string, { label: string; color: string }> = {
+  draft:       { label: 'Draft',       color: 'text-gray-600 bg-gray-100 border-gray-200' },
+  scheduled:   { label: 'Scheduled',   color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  marks_entry: { label: 'Marks Entry', color: 'text-purple-600 bg-purple-50 border-purple-200' },
+  finalized:   { label: 'Finalized',   color: 'text-green-600 bg-green-50 border-green-200' },
+  published:   { label: 'Published',   color: 'text-primary bg-primary/10 border-primary/20' },
+};
+
+// ─── Results View ─────────────────────────────────────────────────────────────
+
+function ResultsView({ setupId }: { setupId: string }) {
+  const { toast } = useToast();
+  const [results, setResults] = useState<StudentExamResultSummaryDto[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getExamSetupResults(setupId)
+      .then(r => setResults(r ?? []))
+      .catch(() => toast({ title: 'Error', description: 'Failed to load results.', variant: 'destructive' }))
+      .finally(() => setLoading(false));
+  }, [setupId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>;
+
+  if (results.length === 0) {
+    return (
+      <div className="flex flex-col items-center py-10 text-muted-foreground gap-2">
+        <Trophy className="h-8 w-8 opacity-30" />
+        <p className="text-sm">No results published yet.</p>
+      </div>
+    );
+  }
+
+  // Summary stats
+  const passed = results.filter(r => r.isPass).length;
+  const avgPct = results.length ? (results.reduce((s, r) => s + r.percentage, 0) / results.length).toFixed(1) : '0';
+  const top = results.reduce((a, b) => b.percentage > a.percentage ? b : a, results[0]);
+
+  return (
+    <div className="space-y-4">
+      {/* Stats tiles */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="p-3 flex items-center gap-3">
+            <Users className="h-8 w-8 text-blue-500 shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Students</p>
+              <p className="text-xl font-bold">{results.length}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 flex items-center gap-3">
+            <TrendingUp className="h-8 w-8 text-green-500 shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Pass Rate</p>
+              <p className="text-xl font-bold">{Math.round(passed / results.length * 100)}%</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 flex items-center gap-3">
+            <Award className="h-8 w-8 text-amber-500 shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Avg Score</p>
+              <p className="text-xl font-bold">{avgPct}%</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {top && (
+        <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          🏆 Topper: <span className="font-semibold text-amber-800">{top.studentName}</span> — {top.percentage.toFixed(1)}% ({top.overallGrade})
+        </div>
+      )}
+
+      {/* Results table */}
+      <div className="border rounded-md overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40">
+              <TableHead className="w-10">Rank</TableHead>
+              <TableHead>Student</TableHead>
+              <TableHead className="text-right">Marks</TableHead>
+              <TableHead className="text-right">%</TableHead>
+              <TableHead>Grade</TableHead>
+              <TableHead>CGPA</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {results
+              .slice()
+              .sort((a, b) => b.percentage - a.percentage)
+              .map((r, i) => (
+                <TableRow key={r.studentId}>
+                  <TableCell className="text-center font-medium text-muted-foreground text-sm">
+                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium text-sm">{r.studentName}</div>
+                    {r.rollNumber && <div className="text-xs text-muted-foreground">Roll: {r.rollNumber}</div>}
+                  </TableCell>
+                  <TableCell className="text-right text-sm">{r.totalObtained} / {r.totalMax}</TableCell>
+                  <TableCell className="text-right text-sm font-medium">{r.percentage.toFixed(1)}%</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">{r.overallGrade}</Badge>
+                  </TableCell>
+                  <TableCell className="text-sm">{r.cgpa.toFixed(2)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`text-xs ${
+                      r.isPass ? 'text-green-700 bg-green-50 border-green-200' : 'text-red-600 bg-red-50 border-red-200'
+                    }`}>
+                      {r.isPass ? 'Pass' : 'Fail'}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Board-aware grade legend */}
+      {(() => {
+        const legend = results[0]?.gradingScaleLegend;
+        const boardName = results[0]?.boardName;
+        const gradingSystem = results[0]?.gradingSystem;
+        if (!legend?.length) return null;
+        return (
+          <div className="border rounded-md bg-muted/20 px-4 py-3 text-xs space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-muted-foreground">Grade Scale</span>
+              {boardName && (
+                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">{boardName}</span>
+              )}
+              {gradingSystem && (
+                <span className="text-muted-foreground">({gradingSystem.replace(/_/g, ' ')})</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {legend.map(entry => (
+                <span key={entry.grade} className="flex items-center gap-1">
+                  <span className={`font-bold px-1.5 py-0.5 rounded ${entry.isPassing ? 'text-emerald-700 bg-emerald-100' : 'text-red-700 bg-red-100'}`}>
+                    {entry.grade}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {entry.minPercentage}–{entry.maxPercentage}%
+                    {entry.gradePoint > 0 && ` · ${entry.gradePoint}pt`}
+                    {entry.description && ` · ${entry.description}`}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ─── Right Panel ──────────────────────────────────────────────────────────────
+
+function ExamPanel({ setupId, onRefreshList }: { setupId: string; onRefreshList: () => void }) {
+  const { toast } = useToast();
+  const { hasUserPermission } = usePermissions();
+  const canEditExams = hasUserPermission('Examinations', 'Edit');
+  const canApproveExams = hasUserPermission('Examinations', 'Approve');
+  const [setup, setSetup] = useState<ExamSetupDetailDto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeSubject, setActiveSubject] = useState<string>('');
+  const [finalizing, setFinalizing] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  const [confirmFinalize, setConfirmFinalize] = useState(false);
+  const [confirmPublish, setConfirmPublish] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
+
+  const loadSetup = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await getExamSetupById(setupId);
+      setSetup(d);
+      if (!activeSubject && d.subjects?.length) {
+        setActiveSubject(d.subjects[0].id);
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to load exam.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [setupId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setActiveSubject('');
+    loadSetup();
+  }, [setupId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFinalize = async () => {
+    setFinalizing(true);
+    try {
+      await finalizeExamSetup(setup!.id);
+      toast({ title: 'Finalized', description: 'Grades calculated successfully.' });
+      await loadSetup();
+      onRefreshList();
+    } catch (e: unknown) {
+      toast({ title: 'Error', description: (e as Error).message ?? 'Failed to finalize.', variant: 'destructive' });
+    } finally {
+      setFinalizing(false);
+      setConfirmFinalize(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      const res = await publishExamSetupResults(setup!.id);
+      toast({ title: 'Published!', description: res.message ?? `Results published. ${res.studentsNotified} students notified.` });
+      await loadSetup();
+      onRefreshList();
+    } catch (e: unknown) {
+      toast({ title: 'Error', description: (e as Error).message ?? 'Failed to publish.', variant: 'destructive' });
+    } finally {
+      setPublishing(false);
+      setConfirmPublish(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    setReopening(true);
+    try {
+      await reopenExamForEditing(setup!.id);
+      toast({ title: 'Reopened for Editing', description: 'Marks can now be corrected. Re-calculate grades and re-publish when done.' });
+      await loadSetup();
+      onRefreshList();
+    } catch (e: unknown) {
+      toast({ title: 'Error', description: (e as Error).message ?? 'Failed to reopen.', variant: 'destructive' });
+    } finally {
+      setReopening(false);
+      setConfirmReopen(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-3 p-4">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (!setup) return null;
+
+  const subjects = setup.subjects ?? [];
+  // Subjects with marks entered are in 'marks_entry' or already 'locked' (re-check after unlock).
+  // Subjects become 'locked' only after finalization — so require marks_entry, not locked.
+  const allHaveMarks = subjects.length > 0 && subjects.every(s => s.status === 'marks_entry' || s.status === 'locked');
+  const canFinalize = (setup.status === 'marks_entry' || setup.status === 'draft') && allHaveMarks;
+  const canPublish = setup.status === 'finalized';
+  const isPublished = setup.status === 'published';
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-base">{setup.name}</h2>
+          <p className="text-xs text-muted-foreground">
+            {setup.className}{setup.sectionName ? ` · ${setup.sectionName}` : ''} · {setup.academicYear}
+            {setup.term ? ` · Term ${setup.term}` : ''}
+            {setup.boardName ? ` · ${setup.boardName}` : ''}
+          </p>
+          {setup.effectiveGradingScale?.length > 0 && (
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+              {setup.effectiveGradingScale.map(entry => (
+                <span key={entry.grade} className="text-xs">
+                  <span className={`font-bold ${entry.isPassing ? 'text-emerald-700' : 'text-red-600'}`}>{entry.grade}</span>
+                  <span className="text-muted-foreground"> {entry.minPercentage}–{entry.maxPercentage}%</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_CFG[setup.status]?.color ?? ''}`}>
+          {STATUS_CFG[setup.status]?.label ?? setup.status}
+        </Badge>
+      </div>
+
+      {/* Actions */}
+      {isPublished && canEditExams && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 text-amber-700 border-amber-300 hover:bg-amber-50"
+            onClick={() => setConfirmReopen(true)}
+            disabled={reopening}
+          >
+            {reopening ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+            Edit Results
+          </Button>
+          <span className="text-xs text-muted-foreground">Results are published. Click Edit to correct marks.</span>
+        </div>
+      )}
+      {!isPublished && (
+        <div className="flex gap-2 flex-wrap">
+          {canFinalize && canEditExams && (
+            <Button size="sm" className="gap-1" onClick={() => setConfirmFinalize(true)} disabled={finalizing}>
+              {finalizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+              Calculate Grades
+            </Button>
+          )}
+          {canPublish && (canEditExams || canApproveExams) && (
+            <Button size="sm" variant="default" className="gap-1 bg-green-600 hover:bg-green-700" onClick={() => setConfirmPublish(true)} disabled={publishing}>
+              {publishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              Publish Results
+            </Button>
+          )}
+          {!canFinalize && !canPublish && setup.status !== 'draft' && (
+            <p className="text-xs text-muted-foreground self-center">
+              {subjects.length === 0 ? 'No subjects configured.' :
+               `Enter marks for all subjects then calculate grades (${subjects.filter(s => s.status !== 'marks_entry' && s.status !== 'locked').length} subject${subjects.filter(s => s.status !== 'marks_entry' && s.status !== 'locked').length !== 1 ? 's' : ''} remaining).`}
+            </p>
+          )}
+          {setup.status === 'draft' && !canFinalize && (
+            <p className="text-xs text-muted-foreground self-center">
+              Select a subject tab below to begin entering marks.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Published → show results */}
+      {isPublished ? (
+        <ResultsView setupId={setup.id} />
+      ) : (
+        /* Marks entry by subject */
+        subjects.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No subjects configured for this exam.</p>
+        ) : (
+          <Tabs value={activeSubject} onValueChange={setActiveSubject}>
+            <ScrollArea className="w-full" style={{ maxWidth: '100%' }}>
+              <TabsList className="flex gap-1 h-auto flex-wrap">
+                {subjects.map(s => (
+                  <TabsTrigger key={s.id} value={s.id} className="text-xs py-1 px-2 gap-1">
+                    {s.status === 'locked'
+                      ? <CheckCircle2 className="h-3 w-3 text-green-600" />
+                      : <PenLine className="h-3 w-3" />}
+                    {s.subjectName}
+                    {s.isElective && <span className="text-amber-500 text-xs">(E)</span>}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </ScrollArea>
+
+            {subjects.map(s => (
+              <TabsContent key={s.id} value={s.id} className="mt-3">
+                <MarksEntryGrid
+                  examSetupId={setup.id}
+                  examSetupSubjectId={s.id}
+                  readOnly={s.status === 'locked'}
+                  isAdmin={true}
+                  onSaved={loadSetup}
+                  onUnlocked={loadSetup}
+                />
+              </TabsContent>
+            ))}
+          </Tabs>
+        )
+      )}
+
+      {/* Reopen confirm */}
+      <AlertDialog open={confirmReopen} onOpenChange={setConfirmReopen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit Published Results?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reopen the exam for editing. All subjects will be unlocked and marks can be corrected.
+              After editing, you must recalculate grades and re-publish to update the parent portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReopen} className="bg-amber-600 hover:bg-amber-700">
+              Yes, Reopen for Editing
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm dialogs */}
+      <AlertDialog open={confirmFinalize} onOpenChange={setConfirmFinalize}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Calculate Grades?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will lock all marks and calculate grades for every student. Marks cannot be edited after finalization.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFinalize} disabled={finalizing}>
+              {finalizing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null} Calculate Grades
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmPublish} onOpenChange={setConfirmPublish}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish Results?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will publish results to parents and generate report cards. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePublish} disabled={publishing} className="bg-green-600 hover:bg-green-700">
+              {publishing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null} Publish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+interface ExamResultsTabProps {
+  initialSetupId?: string;
+}
+
+export function ExamResultsTab({ initialSetupId }: ExamResultsTabProps) {
+  const [setups, setSetups] = useState<ExamSetupBasicDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string>(initialSetupId ?? '');
+  const [search, setSearch] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
+  const [sectionFilter, setSectionFilter] = useState('all');
+
+  const loadSetups = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getExamSetups({ pageSize: 200 });
+      const items = (res.items ?? []).slice().sort((a, b) => {
+        // Sort most recent first: by startDate desc, then createdAt desc
+        const da = a.startDate ?? a.createdAt ?? '';
+        const db = b.startDate ?? b.createdAt ?? '';
+        return db.localeCompare(da);
+      });
+      setSetups(items);
+      if (!selectedId && items.length > 0) {
+        const priority = items.find(s => s.status === 'marks_entry' || s.status === 'finalized') ?? items[0];
+        setSelectedId(priority.id);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadSetups(); }, [loadSetups]);
+
+  useEffect(() => {
+    if (initialSetupId) setSelectedId(initialSetupId);
+  }, [initialSetupId]);
+
+  const filteredSetups = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return setups.filter(s => {
+      const matchSearch = !q ||
+        s.name.toLowerCase().includes(q) ||
+        s.className.toLowerCase().includes(q) ||
+        (s.sectionName ?? '').toLowerCase().includes(q) ||
+        (s.academicYear ?? '').includes(q);
+      const matchClass   = classFilter   === 'all' || s.className              === classFilter;
+      const matchSection = sectionFilter === 'all' || (s.sectionName ?? '') === sectionFilter;
+      return matchSearch && matchClass && matchSection;
+    });
+  }, [setups, search, classFilter, sectionFilter]);
+
+  // Derived filter options
+  const availableClasses = useMemo(
+    () => [...new Set(setups.map(s => s.className))].sort(),
+    [setups],
+  );
+  const availableSections = useMemo(() => {
+    const base = classFilter === 'all' ? setups : setups.filter(s => s.className === classFilter);
+    return [...new Set(base.map(s => s.sectionName ?? '').filter(Boolean))].sort();
+  }, [setups, classFilter]);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-[280px,1fr] gap-4">
+        <div className="space-y-2">{[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 rounded-lg" />)}</div>
+        <Skeleton className="h-80 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (setups.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+        <BookOpen className="h-10 w-10 opacity-30" />
+        <p className="text-sm">No exam setups found. Create an exam first from the All Exams tab.</p>
+      </div>
+    );
+  }
+
+  const publishedCount = setups.filter(s => s.status === 'published').length;
+  const pendingCount = setups.filter(s => s.status === 'marks_entry' || s.status === 'finalized').length;
+
+  return (
+    <div className="flex gap-4 min-h-[500px]">
+      {/* Left: exam list */}
+      <div className="w-72 shrink-0 flex flex-col gap-2">
+        {/* Stats bar */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground px-0.5">
+          <span className="font-medium text-foreground">{setups.length} exams</span>
+          {publishedCount > 0 && <span className="text-green-600">· {publishedCount} published</span>}
+          {pendingCount > 0 && <span className="text-amber-600">· {pendingCount} pending</span>}
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            className="pl-8 h-8 text-xs"
+            placeholder="Search exam or class…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Class filter */}
+        <Select
+          value={classFilter}
+          onValueChange={v => { setClassFilter(v); setSectionFilter('all'); }}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="All Classes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Classes</SelectItem>
+            {availableClasses.map(c => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Section filter */}
+        <Select
+          value={sectionFilter}
+          onValueChange={setSectionFilter}
+          disabled={availableSections.length === 0}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="All Sections" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sections</SelectItem>
+            {availableSections.map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* List */}
+        <ScrollArea className="flex-1" style={{ height: 'calc(100vh - 340px)', minHeight: '400px' }}>
+          <div className="space-y-1.5 pr-1">
+            {filteredSetups.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-6">No exams match your filters.</p>
+            ) : filteredSetups.map(s => {
+              const sc = STATUS_CFG[s.status] ?? STATUS_CFG.draft;
+              const dateStr = s.startDate
+                ? s.startDate === s.endDate || !s.endDate
+                  ? new Date(s.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                  : `${new Date(s.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(s.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : null;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedId(s.id)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors text-sm ${
+                    selectedId === s.id
+                      ? 'bg-primary/5 border-primary/40 shadow-sm'
+                      : 'hover:bg-muted/60 border-transparent hover:border-border'
+                  }`}
+                >
+                  <div className="font-medium leading-tight truncate mb-1">{s.name}</div>
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <span className="text-xs text-muted-foreground truncate">{s.className}{s.sectionName ? ` · ${s.sectionName}` : ''}</span>
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 shrink-0 ${sc.color}`}>{sc.label}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{s.marksEnteredCount}/{s.subjectCount} subjects locked</span>
+                    {dateStr && (
+                      <span className="flex items-center gap-1 shrink-0 ml-1">
+                        <Calendar className="h-3 w-3" />{dateStr}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Right: panel */}
+      <div className="flex-1 border rounded-xl p-4 overflow-auto">
+        {selectedId ? (
+          <ExamPanel key={selectedId} setupId={selectedId} onRefreshList={loadSetups} />
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            Select an exam from the list.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

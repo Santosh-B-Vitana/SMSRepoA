@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Edit, Trash2, CheckCircle, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface Concession {
   id: string;
@@ -29,6 +30,7 @@ interface Concession {
 }
 
 export default function FeeConcessionManager() {
+  const { t } = useLanguage();
   const [concessions, setConcessions] = useState<Concession[]>([
     {
       id: "CON001",
@@ -60,11 +62,11 @@ export default function FeeConcessionManager() {
   });
 
   const concessionTypes = [
-    { value: "merit", label: "Merit Based", color: "bg-green-500" },
-    { value: "financial", label: "Financial Aid", color: "bg-blue-500" },
-    { value: "sibling", label: "Sibling Discount", color: "bg-purple-500" },
-    { value: "staff-ward", label: "Staff Ward", color: "bg-orange-500" },
-    { value: "special", label: "Special Category", color: "bg-pink-500" }
+    { value: "merit", label: t('feeConcession.typeMerit'), color: "bg-green-500" },
+    { value: "financial", label: t('feeConcession.typeFinancial'), color: "bg-blue-500" },
+    { value: "sibling", label: t('feeConcession.typeSibling'), color: "bg-purple-500" },
+    { value: "staff-ward", label: t('feeConcession.typeStaffWard'), color: "bg-orange-500" },
+    { value: "special", label: t('feeConcession.typeSpecial'), color: "bg-pink-500" }
   ];
 
   const academicYears = ["2023-24", "2024-25", "2025-26"];
@@ -77,7 +79,7 @@ export default function FeeConcessionManager() {
 
   const handleSubmit = () => {
     if (!formData.studentName || !formData.class || !formData.percentage) {
-      toast.error("Please fill all required fields");
+      toast.error(t('feeConcession.validationError'));
       return;
     }
 
@@ -85,7 +87,7 @@ export default function FeeConcessionManager() {
       setConcessions(prev => prev.map(con => 
         con.id === selectedConcession.id ? { ...con, ...formData } as Concession : con
       ));
-      toast.success("Concession updated successfully");
+      toast.success(t('feeConcession.updateSuccess'));
     } else {
       const newConcession: Concession = {
         id: `CON${Date.now()}`,
@@ -104,7 +106,7 @@ export default function FeeConcessionManager() {
         approvedAt: new Date().toISOString()
       };
       setConcessions(prev => [...prev, newConcession]);
-      toast.success("Concession added successfully");
+      toast.success(t('feeConcession.addSuccess'));
     }
 
     resetForm();
@@ -118,9 +120,9 @@ export default function FeeConcessionManager() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this concession?")) {
+    if (confirm(t('feeConcession.deleteConfirm'))) {
       setConcessions(prev => prev.filter(con => con.id !== id));
-      toast.success("Concession deleted successfully");
+      toast.success(t('feeConcession.deleteSuccess'));
     }
   };
 
@@ -128,7 +130,7 @@ export default function FeeConcessionManager() {
     setConcessions(prev => prev.map(con => 
       con.id === id ? { ...con, status: "cancelled" } : con
     ));
-    toast.success("Concession cancelled");
+    toast.success(t('feeConcession.cancelSuccess'));
   };
 
   const resetForm = () => {
@@ -143,17 +145,17 @@ export default function FeeConcessionManager() {
   };
 
   const getConcessionTypeColor = (type: string) => {
-    return concessionTypes.find(t => t.value === type)?.color || "bg-gray-500";
+    return concessionTypes.find(t => t.value === type)?.color || "bg-muted text-muted-foreground";
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <Badge className="bg-green-600">Active</Badge>;
+        return <Badge className="bg-green-600">{t('feeConcession.statusActive')}</Badge>;
       case "expired":
-        return <Badge variant="outline">Expired</Badge>;
+        return <Badge variant="outline">{t('feeConcession.statusExpired')}</Badge>;
       case "cancelled":
-        return <Badge variant="destructive">Cancelled</Badge>;
+        return <Badge variant="destructive">{t('feeConcession.statusCancelled')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -163,9 +165,9 @@ export default function FeeConcessionManager() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Fee Concession Management</h3>
+          <h3 className="text-lg font-semibold">{t('feeConcession.title')}</h3>
           <p className="text-sm text-muted-foreground">
-            Manage merit, financial aid, and other fee concessions
+            {t('feeConcession.subtitle')}
           </p>
         </div>
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -178,36 +180,36 @@ export default function FeeConcessionManager() {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>
-                {editMode ? "Edit Concession" : "Add New Concession"}
+                {editMode ? t('feeConcession.editTitle') : t('feeConcession.addTitle')}
               </DialogTitle>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Student Name *</Label>
+                <Label>{t('feeConcession.studentNameLabel')}</Label>
                 <Input
                   value={formData.studentName || ""}
                   onChange={(e) => setFormData(prev => ({ ...prev, studentName: e.target.value }))}
-                  placeholder="Enter student name"
+                  placeholder={t('feeConcession.studentNamePlaceholder')}
                 />
               </div>
 
               <div>
-                <Label>Student ID</Label>
+                <Label>{t('feeConcession.studentIdLabel')}</Label>
                 <Input
                   value={formData.studentId || ""}
                   onChange={(e) => setFormData(prev => ({ ...prev, studentId: e.target.value }))}
-                  placeholder="Enter student ID"
+                  placeholder={t('feeConcession.studentIdPlaceholder')}
                 />
               </div>
 
               <div>
-                <Label>Class *</Label>
+                <Label>{t('common.class')}</Label>
                 <Select 
                   value={formData.class} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, class: value }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select class" />
+                    <SelectValue placeholder={t('feeConcession.selectClassPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
                     {classes.map(cls => (
@@ -218,7 +220,7 @@ export default function FeeConcessionManager() {
               </div>
 
               <div>
-                <Label>Academic Year *</Label>
+                <Label>{t('feeConcession.academicYearLabel')}</Label>
                 <Select 
                   value={formData.academicYear} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, academicYear: value }))}
@@ -235,7 +237,7 @@ export default function FeeConcessionManager() {
               </div>
 
               <div>
-                <Label>Concession Type *</Label>
+                <Label>{t('feeConcession.typeLabel')}</Label>
                 <Select 
                   value={formData.concessionType} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, concessionType: value as any }))}
@@ -254,7 +256,7 @@ export default function FeeConcessionManager() {
               </div>
 
               <div>
-                <Label>Concession Percentage *</Label>
+                <Label>{t('feeConcession.percentageLabel')}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -266,17 +268,17 @@ export default function FeeConcessionManager() {
               </div>
 
               <div>
-                <Label>Fixed Amount (Optional)</Label>
+                <Label>{t('feeConcession.fixedAmountLabel')}</Label>
                 <Input
                   type="number"
                   value={formData.amount || ""}
                   onChange={(e) => setFormData(prev => ({ ...prev, amount: parseFloat(e.target.value) }))}
-                  placeholder="Enter fixed amount"
+                  placeholder={t('feeConcession.amountPlaceholder')}
                 />
               </div>
 
               <div>
-                <Label>Valid From</Label>
+                <Label>{t('feeConcession.validFromLabel')}</Label>
                 <Input
                   type="date"
                   value={formData.validFrom || ""}
@@ -285,7 +287,7 @@ export default function FeeConcessionManager() {
               </div>
 
               <div>
-                <Label>Valid Until</Label>
+                <Label>{t('feeConcession.validUntilLabel')}</Label>
                 <Input
                   type="date"
                   value={formData.validUntil || ""}
@@ -294,11 +296,11 @@ export default function FeeConcessionManager() {
               </div>
 
               <div className="col-span-2">
-                <Label>Reason / Notes *</Label>
+                <Label>{t('feeConcession.reasonLabel')}</Label>
                 <Textarea
                   value={formData.reason || ""}
                   onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
-                  placeholder="Reason for concession"
+                  placeholder={t('feeConcession.reasonPlaceholder')}
                   rows={3}
                 />
               </div>
@@ -306,10 +308,10 @@ export default function FeeConcessionManager() {
 
             <div className="flex justify-end gap-2 mt-4">
               <Button variant="outline" onClick={resetForm}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button onClick={handleSubmit}>
-                {editMode ? "Update" : "Add"} Concession
+                {editMode ? t('feeConcession.updateBtn') : t('feeConcession.submitBtn')}
               </Button>
             </div>
           </DialogContent>
@@ -319,11 +321,11 @@ export default function FeeConcessionManager() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Active Concessions</CardTitle>
+            <CardTitle>{t('feeConcession.activeTitle')}</CardTitle>
             <div className="flex items-center gap-2">
               <Search className="h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search students..."
+                placeholder={t('feeConcession.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-64"
@@ -335,14 +337,14 @@ export default function FeeConcessionManager() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Student</TableHead>
-                <TableHead>Class</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Discount</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Valid Period</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>{t('feeConcession.colStudent')}</TableHead>
+                <TableHead>{t('common.class')}</TableHead>
+                <TableHead>{t('common.type')}</TableHead>
+                <TableHead>{t('feeConcession.colDiscount')}</TableHead>
+                <TableHead>{t('common.amount')}</TableHead>
+                <TableHead>{t('feeConcession.colValidPeriod')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -401,7 +403,7 @@ export default function FeeConcessionManager() {
 
           {filteredConcessions.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
-              No concessions found
+              {t('feeConcession.empty')}
             </div>
           )}
         </CardContent>

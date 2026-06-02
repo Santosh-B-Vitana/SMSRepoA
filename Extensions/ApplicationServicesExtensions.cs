@@ -22,6 +22,9 @@ public static class ApplicationServicesExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ITenantContext, TenantContextAccessor>();
 
+        // ── CRM: school config lookup with 6-hour cache ────────────────────
+        services.AddScoped<ISchoolConfigService, SchoolConfigService>();
+
         // ── Core auth / token services ─────────────────────────────────────
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IReceiptService, ReceiptService>();
@@ -29,6 +32,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<ITwoFactorService, TwoFactorService>();
         services.AddScoped<IResourceAuthorizationService, ResourceAuthorizationService>();
+        services.AddScoped<IParentAuthorizationService, ParentAuthorizationService>();
 
         // ── Resilience (Polly) ─────────────────────────────────────────────
         services.AddResiliencePatterns();
@@ -40,6 +44,8 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<IExaminationService, ExaminationService>();
         services.AddScoped<IExaminationReportService, ExaminationReportService>();
+        services.AddScoped<IExamSetupService, ExamSetupService>();
+        services.AddScoped<IHallTicketService, HallTicketService>();
         services.AddScoped<IAcademicsService, AcademicsService>();
         services.AddScoped<IAcademicYearContextService, AcademicYearContextService>();
         services.AddScoped<IBoardConfigurationService, BoardConfigurationService>();
@@ -60,9 +66,14 @@ public static class ApplicationServicesExtensions
         // ── Campus modules ─────────────────────────────────────────────────
         services.AddScoped<ILibraryService, LibraryService>();
         services.AddScoped<ITransportService, TransportService>();
+        services.AddScoped<IVehicleService, VehicleService>();
+        services.AddScoped<IDISEReportService, DISEReportService>();
+        services.AddScoped<ISyllabusService, SyllabusService>();
         services.AddScoped<IHostelService, HostelService>();
         services.AddScoped<IHealthService, HealthService>();
         services.AddScoped<IPayrollService, PayrollService>();
+        services.AddScoped<IOnlineExamService, OnlineExamService>();
+        services.AddScoped<IStaffTaxService, StaffTaxService>();
 
         // ── Communication & notifications ──────────────────────────────────
         services.AddScoped<INotificationService, NotificationService>();
@@ -85,6 +96,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<ICertificateService, CertificateService>();
+        services.AddScoped<IReportCardDocumentService, ReportCardDocumentService>();
 
         // ── Extended features ──────────────────────────────────────────────
         services.AddScoped<IStoreService, StoreService>();
@@ -93,6 +105,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IVisitorManagementService, VisitorManagementService>();
         services.AddScoped<IVisitorService, VisitorService>();
         services.AddScoped<IAlumniService, AlumniService>();
+        services.AddScoped<IDisciplineService, DisciplineService>();
 
         // ── Settings & compliance ──────────────────────────────────────────
         services.AddScoped<ISettingsService, SettingsService>();
@@ -103,6 +116,7 @@ public static class ApplicationServicesExtensions
         services.AddHttpClient("Cashfree");
         services.AddScoped<ICashfreeClient, CashfreeClient>();
         services.AddScoped<IPaymentGatewayService, PaymentGatewayService>();
+
 
         // ── India-specific compliance ──────────────────────────────────────
         services.AddScoped<IPFESIManagementService, PFESIManagementService>();

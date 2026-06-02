@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Student, studentApi } from "@/services/api/studentApi";
 import { academicApi, ClassResponse, AcademicYearResponse } from "@/services/api/academicApi";
+import { boardApi, SchoolBoardConfigResponse } from "@/services/api/boardApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { toast } from "sonner";
 import { DOCUMENT_TYPES } from "./StudentDocumentUpload";
 import {
   Upload, Trash2, FileText, X, ChevronLeft, ChevronRight,
-  User, GraduationCap, Users, CreditCard, BookOpen, Heart, CheckCircle2, Camera,
+  User, GraduationCap, Users, CreditCard, BookOpen, Heart, CheckCircle2, Camera, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -183,6 +184,13 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   const [academicYears, setAcademicYears] = useState<AcademicYearResponse[]>([]);
   // Default to current academic year name; populated once global context loads
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(globalCurrentYear?.name ?? "");
+  // Board filter for the Enrollment step
+  const [selectedBoard, setSelectedBoard] = useState("");
+  const [availableBoards, setAvailableBoards] = useState<SchoolBoardConfigResponse[]>([]);
+  // Sibling search
+  const [siblingSearch, setSiblingSearch] = useState("");
+  const [siblingDropdownOpen, setSiblingDropdownOpen] = useState(false);
+  const siblingSearchRef = useRef<HTMLDivElement>(null);
 
   interface PendingDoc { docType: string; file: File; }
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
@@ -195,7 +203,13 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
       const all = r.students || [];
       setAllStudents((student ? all.filter(s => s.id !== student.id) : all) as Student[]);
     }).catch(() => {});
-    academicApi.listClasses(1, 500).then(r => setAllClasses(r.classes || [])).catch(() => {});
+    academicApi.listClasses(1, 500).then(r => {
+      setAllClasses(r.classes || []);
+    }).catch(() => {});
+    // Always load school-configured boards from the board API
+    boardApi.getSchoolBoards().then(res => {
+      setAvailableBoards(res.boards || []);
+    }).catch(() => {});
     academicApi.listAcademicYears(1, 50).then(r => {
       const years = r.academicYears || [];
       setAcademicYears(years);
@@ -215,9 +229,18 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
     }
   }, [globalCurrentYear]);
 
-  // Classes are school-wide (not year-specific in DB) — always show all.
-  // The academic year selector here records which year the student is enrolling in.
-  const filteredClasses = allClasses;
+  // Derive unique board options from allClasses (boards that have explicit boardConfigurationId)
+  // NOTE: availableBoards is now populated in the useEffect above
+
+  // Classes are school-wide (not year-specific in DB) — filter by selected board.
+  // "School Default" (selectedBoard = "") shows classes without a specific board assigned;
+  // if none exist without a board, falls back to all classes.
+  // Classes filtered by selected board:
+  // - "" (School Default) → classes with no boardConfigurationId
+  // - specific board → only classes assigned to that board
+  const filteredClasses = !selectedBoard
+    ? allClasses.filter(c => !c.boardConfigurationId)
+    : allClasses.filter(c => c.boardConfigurationId === selectedBoard);
 
   // Use standard (grade number like "10") falling back to name; filter out blanks
   const getStandard = (c: ClassResponse) => (c.standard || c.name || "").trim();
@@ -322,6 +345,9 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
           await Promise.allSettled(
             formData.siblings.map(sibId => studentApi.addSibling(created.id, sibId))
           );
+        }
+        if (created?.id && photoFile) {
+          try { await studentApi.uploadPhoto(created.id, photoFile); } catch { /* non-fatal */ }
         }
         if (created?.id && pendingDocs.length > 0) {
           for (const pd of pendingDocs) {
@@ -432,6 +458,27 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Admission Number"><Input value={formData.admissionNumber} onChange={e => set({ admissionNumber: e.target.value })} placeholder="e.g. ADM-2024-001" /></Field>
             <Field label="Admission Date" required><Input type="date" value={formData.admissionDate} onChange={e => set({ admissionDate: e.target.value })} /></Field>
+            {availableBoards.length > 0 && (
+              <Field label="Board" className="md:col-span-2">
+                <Select
+                  value={selectedBoard || "school_default"}
+                  onValueChange={v => {
+                    setSelectedBoard(v === "school_default" ? "" : v);
+                    set({ class: "", section: "" });
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="school_default">School Default</SelectItem>
+                    {availableBoards.map(b => (
+                      <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
+                        {b.boardName}{b.isDefault ? " (Default)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             <Field label="Enrollment Year" required>
               <Select value={selectedAcademicYear} onValueChange={setSelectedAcademicYear}>
                 <SelectTrigger><SelectValue placeholder={globalCurrentYear?.name ?? "Select year"} /></SelectTrigger>
@@ -533,14 +580,49 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
           </div>
           <div className="border-t pt-5 space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Siblings in School</p>
-            <Select value="" onValueChange={v => { if (v && !formData.siblings.includes(v)) set({ siblings: [...formData.siblings, v] }); }}>
-              <SelectTrigger><SelectValue placeholder="Link a sibling studying here" /></SelectTrigger>
-              <SelectContent>
-                {(allStudents as any[]).filter((s: any) => !formData.siblings.includes(s.id)).map((s: any) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name} — Class {s.class}-{s.section}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Searchable sibling picker */}
+            <div className="relative" ref={siblingSearchRef}>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search student by name or class…"
+                  value={siblingSearch}
+                  onChange={e => { setSiblingSearch(e.target.value); setSiblingDropdownOpen(true); }}
+                  onFocus={() => setSiblingDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setSiblingDropdownOpen(false), 150)}
+                />
+              </div>
+              {siblingDropdownOpen && siblingSearch.trim().length >= 1 && (() => {
+                const q = siblingSearch.toLowerCase();
+                const matched = (allStudents as any[]).filter((s: any) =>
+                  !formData.siblings.includes(s.id) &&
+                  (s.name?.toLowerCase().includes(q) ||
+                   `${s.class}-${s.section}`.toLowerCase().includes(q) ||
+                   s.admissionNumber?.toLowerCase().includes(q))
+                ).slice(0, 10);
+                if (matched.length === 0) return null;
+                return (
+                  <div className="absolute z-20 top-full mt-1 left-0 right-0 border rounded-lg bg-background shadow-lg max-h-56 overflow-y-auto">
+                    {matched.map((s: any) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2.5 hover:bg-muted text-sm flex items-center justify-between gap-2"
+                        onMouseDown={() => {
+                          set({ siblings: [...formData.siblings, s.id] });
+                          setSiblingSearch("");
+                          setSiblingDropdownOpen(false);
+                        }}
+                      >
+                        <span className="font-medium">{s.name}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">Class {s.class}-{s.section}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
             {formData.siblings.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {formData.siblings.map(sid => {
@@ -718,7 +800,6 @@ export function StudentForm({ student, onClose, onSuccess }: StudentFormProps) {
   return (
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto py-4 px-2"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]"

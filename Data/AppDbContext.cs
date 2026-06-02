@@ -14,6 +14,13 @@ namespace SmsApi.Data
         private readonly bool _isSuperAdmin;
 
         /// <summary>
+        /// Exposed so HasQueryFilter lambdas on non-BaseEntity types (e.g. FeeAuditLog) can
+        /// reference it at query-execution time per context instance.
+        /// </summary>
+        public Guid? CurrentSchoolId => _currentSchoolId;
+        public bool IsSuperAdminContext => _isSuperAdmin;
+
+        /// <summary>
         /// Design-time / migrations constructor — no tenant filtering.
         /// </summary>
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
@@ -77,6 +84,13 @@ namespace SmsApi.Data
         public DbSet<PaymentGatewayLog> PaymentGatewayLogs { get; set; }
         public DbSet<Refund> Refunds { get; set; }
         public DbSet<FeeAuditLog> FeeAuditLogs { get; set; }
+        // Fee module v2
+        public DbSet<FeeHead> FeeHeads { get; set; }
+        public DbSet<FeeStructureComponent> FeeStructureComponents { get; set; }
+        public DbSet<FeeTerm> FeeTerms { get; set; }
+        public DbSet<ClassFeeStructure> ClassFeeStructures { get; set; }
+        public DbSet<StudentFeeItem> StudentFeeItems { get; set; }
+        public DbSet<ReceiptTemplate> ReceiptTemplates { get; set; }
 
         // Examinations
         public DbSet<Exam> Examinations { get; set; }
@@ -85,6 +99,13 @@ namespace SmsApi.Data
         public DbSet<Result> Results { get; set; }
         public DbSet<GradeConfiguration> GradeConfigurations { get; set; }
         public DbSet<ReportCard> ReportCards { get; set; }
+        // Structured multi-subject exam setup (new system)
+        public DbSet<ExamSetup> ExamSetups { get; set; }
+        public DbSet<ExamSetupSubject> ExamSetupSubjects { get; set; }
+        public DbSet<ExamMarksEntry> ExamMarksEntries { get; set; }
+        // Co-Scholastic (CBSE mandated activity assessments)
+        public DbSet<CoScholasticArea> CoScholasticAreas { get; set; }
+        public DbSet<CoScholasticAssessment> CoScholasticAssessments { get; set; }
 
         // Admissions
         public DbSet<Admission> Admissions { get; set; }
@@ -95,14 +116,28 @@ namespace SmsApi.Data
         // Library
         public DbSet<Book> Books { get; set; }
         public DbSet<BookIssue> BookIssues { get; set; }
+        public DbSet<BookReservation> BookReservations { get; set; }
+        public DbSet<Periodical> Periodicals { get; set; }
+        public DbSet<LibraryMember> LibraryMembers { get; set; }
+
+        // Syllabus & Lesson Plans
+        public DbSet<SyllabusUnit> SyllabusUnits { get; set; }
+        public DbSet<SyllabusTopic> SyllabusTopics { get; set; }
+        public DbSet<LessonPlan> LessonPlans { get; set; }
 
         // Transport
+        public DbSet<Vehicle> Vehicles { get; set; }
         public DbSet<TransportRoute> TransportRoutes { get; set; }
+        public DbSet<TransportStop> TransportStops { get; set; }
         public DbSet<TransportStudent> TransportStudents { get; set; }
 
         // Hostel
+        public DbSet<HostelBlock> HostelBlocks { get; set; }
         public DbSet<HostelRoom> HostelRooms { get; set; }
         public DbSet<HostelStudent> HostelStudents { get; set; }
+        public DbSet<HostelMessBilling> HostelMessBillings { get; set; }
+        public DbSet<HostelVisitorLog> HostelVisitorLogs { get; set; }
+        public DbSet<HostelLeave> HostelLeaves { get; set; }
 
         // Health
         public DbSet<HealthRecord> HealthRecords { get; set; }
@@ -114,6 +149,14 @@ namespace SmsApi.Data
         public DbSet<PayrollAllowance> PayrollAllowances { get; set; }
         public DbSet<PayrollDeduction> PayrollDeductions { get; set; }
         public DbSet<SalaryStructure> SalaryStructures { get; set; }
+        public DbSet<StaffTaxDeclaration> StaffTaxDeclarations { get; set; }
+
+        // Online Examination Portal
+        public DbSet<QuestionBank> QuestionBanks { get; set; }
+        public DbSet<OnlineExam> OnlineExams { get; set; }
+        public DbSet<OnlineExamQuestion> OnlineExamQuestions { get; set; }
+        public DbSet<StudentExamSession> StudentExamSessions { get; set; }
+        public DbSet<StudentExamResponse> StudentExamResponses { get; set; }
 
         // Board Configuration (curriculum boards)
         public DbSet<BoardConfiguration> BoardConfigurations { get; set; }
@@ -152,6 +195,9 @@ namespace SmsApi.Data
         // Announcements
         public DbSet<Announcement> Announcements { get; set; }
         public DbSet<AnnouncementRecipient> AnnouncementRecipients { get; set; }
+
+        // Diary
+        public DbSet<StudentDiary> StudentDiaries { get; set; }
 
         // Communication
         public DbSet<Message> Messages { get; set; }
@@ -207,6 +253,9 @@ namespace SmsApi.Data
         public DbSet<SchoolConnectPostReport> SchoolConnectPostReports { get; set; }
         public DbSet<SchoolConnectPostShare> SchoolConnectPostShares { get; set; }
 
+        // Discipline Tracking
+        public DbSet<DisciplineRecord> DisciplineRecords { get; set; }
+
         // Priority 5 - Settings & Compliance
         public DbSet<SchoolSettings> SchoolSettings { get; set; }
         public DbSet<UserSettings> UserSettings { get; set; }
@@ -228,6 +277,8 @@ namespace SmsApi.Data
         public DbSet<OfflineAttendanceRecord> OfflineAttendanceRecords { get; set; }
         public DbSet<OfflineDevice> OfflineDevices { get; set; }
         public DbSet<SyncConflict> SyncConflicts { get; set; }
+
+
 
         /// <summary>
         /// Automatically populates audit fields (CreatedAt, UpdatedAt, CreatedBy, UpdatedBy)
@@ -316,8 +367,11 @@ namespace SmsApi.Data
             ConfigureExaminations(modelBuilder);
             ConfigureAdmissions(modelBuilder);
             ConfigureLibrary(modelBuilder);
+            ConfigureSyllabus(modelBuilder);
             ConfigureTransport(modelBuilder);
             ConfigureHostel(modelBuilder);
+            ConfigureOnlineExam(modelBuilder);
+            ConfigureStaffTax(modelBuilder);
             ConfigureHealth(modelBuilder);
             ConfigurePayroll(modelBuilder);
             ConfigureAcademics(modelBuilder);
@@ -343,6 +397,7 @@ namespace SmsApi.Data
             ConfigurePaymentGateway(modelBuilder);
             ConfigurePFESIManagement(modelBuilder);
             ConfigureOfflineAttendance(modelBuilder);
+            ConfigureDiscipline(modelBuilder);
 
             // Apply IsDeleted = false soft-delete filter to ALL entities derived from BaseEntity.
             // This prevents soft-deleted records from ever appearing in queries unless the caller
@@ -468,6 +523,12 @@ namespace SmsApi.Data
                 e.Property(x => x.ObtainedMarks).HasColumnType("decimal(8,2)");
                 e.Property(x => x.Percentage).HasColumnType("decimal(5,2)");
                 e.Property(x => x.CGPA).HasColumnType("decimal(4,2)");
+                // ExamId is optional — null for ExamSetup-based results
+                e.HasOne(r => r.Exam)
+                 .WithMany()
+                 .HasForeignKey(r => r.ExamId)
+                 .IsRequired(false)
+                 .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<AdmissionTest>(e =>
@@ -611,14 +672,14 @@ namespace SmsApi.Data
                     .WithOne(s => s.Person)
                     .HasForeignKey<Student>(s => s.PersonId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // One Person → at most one Staff profile (nullable FK on Staff side)
                 entity.HasOne(p => p.StaffProfile)
                     .WithOne(s => s.Person)
                     .HasForeignKey<Staff>(s => s.PersonId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // Performance indexes
                 entity.HasIndex(e => new { e.SchoolId, e.Email });
@@ -867,6 +928,11 @@ namespace SmsApi.Data
                     .HasForeignKey(a => a.StaffId)
                     .OnDelete(DeleteBehavior.Restrict);
 
+                entity.HasOne(a => a.LeaveType)
+                    .WithMany()
+                    .HasForeignKey(a => a.LeaveTypeId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
                 entity.HasIndex(e => new { e.SchoolId, e.StaffId, e.Date }).IsUnique();
             });
         }
@@ -907,7 +973,7 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(f => f.StudentEnrollmentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // Lookup by enrollment makes year-based fee queries fast
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.StudentEnrollmentId });
@@ -958,6 +1024,137 @@ namespace SmsApi.Data
                     ? "jsonb" : "nvarchar(max)";
                 entity.Property(a => a.OldValues).HasColumnType(jsonType);
                 entity.Property(a => a.NewValues).HasColumnType(jsonType);
+            });
+
+            // FeeAuditLog does not inherit BaseEntity so the dynamic loop skips it.
+            // Apply school-scoping explicitly. SuperAdmin sees all schools.
+            modelBuilder.Entity<FeeAuditLog>().HasQueryFilter(e =>
+                IsSuperAdminContext || CurrentSchoolId == null || e.SchoolId == CurrentSchoolId);
+
+            // ── FeeHead ────────────────────────────────────────────────────────
+            modelBuilder.Entity<FeeHead>(entity =>
+            {
+                entity.HasOne(f => f.School)
+                    .WithMany()
+                    .HasForeignKey(f => f.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+            });
+
+            // ── FeeStructureComponent ──────────────────────────────────────────
+            modelBuilder.Entity<FeeStructureComponent>(entity =>
+            {
+                entity.HasOne(f => f.School)
+                    .WithMany()
+                    .HasForeignKey(f => f.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(f => f.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(f => f.FeeHead)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeHeadId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // Optional FK to FeeTerm — no cascade (deleting a term should not wipe components)
+                entity.HasOne(f => f.FeeTerm)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeTermId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
+
+                // Optional FK to ConcessionType
+                entity.HasOne(f => f.ConcessionType)
+                    .WithMany()
+                    .HasForeignKey(f => f.ConcessionTypeId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
+
+                // Index for efficient lookups — not unique since same head may appear in multiple rows
+                entity.HasIndex(e => new { e.FeeStructureId, e.FeeHeadId, e.FeeTermId });
+            });
+
+            // ── ClassFeeStructure ──────────────────────────────────────────────
+            modelBuilder.Entity<ClassFeeStructure>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(c => c.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // A class can only be linked to one fee structure per academic year
+                entity.HasIndex(e => new { e.SchoolId, e.ClassName, e.AcademicYear }).IsUnique();
+                entity.HasIndex(e => e.FeeStructureId);
+            });
+
+            // ── StudentFeeItem ─────────────────────────────────────────────────
+            modelBuilder.Entity<StudentFeeItem>(entity =>
+            {
+                entity.HasOne(s => s.School)
+                    .WithMany()
+                    .HasForeignKey(s => s.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.Student)
+                    .WithMany()
+                    .HasForeignKey(s => s.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(s => s.FeeStructureId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.FeeStructureComponent)
+                    .WithMany()
+                    .HasForeignKey(s => s.FeeStructureComponentId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
+
+                entity.Property(s => s.DiscountPercentage).HasColumnType("decimal(5,2)");
+                entity.Property(s => s.FlatAmount).HasColumnType("decimal(12,2)");
+
+                entity.HasIndex(e => new { e.StudentId, e.FeeStructureId, e.FeeStructureComponentId, e.AcademicYear });
+            });
+
+            // ── FeeTerm ────────────────────────────────────────────────────────
+            modelBuilder.Entity<FeeTerm>(entity =>
+            {
+                entity.HasOne(f => f.School)
+                    .WithMany()
+                    .HasForeignKey(f => f.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(f => f.FeeStructure)
+                    .WithMany()
+                    .HasForeignKey(f => f.FeeStructureId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.FeeStructureId, e.TermNumber });
+                entity.Property(e => e.Amount).HasColumnType("decimal(12,2)");
+            });
+
+            // ── ReceiptTemplate ────────────────────────────────────────────────
+            modelBuilder.Entity<ReceiptTemplate>(entity =>
+            {
+                entity.HasOne(r => r.School)
+                    .WithMany()
+                    .HasForeignKey(r => r.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                var jsonType = Database.ProviderName?.Contains("Npgsql") == true
+                    ? "jsonb" : "nvarchar(max)";
+                entity.Property(r => r.ColumnConfigJson).HasColumnType(jsonType);
             });
         }
 
@@ -1010,6 +1207,44 @@ namespace SmsApi.Data
 
                 entity.HasIndex(e => new { e.SchoolId, e.ExamId, e.StudentId, e.Subject }).IsUnique();
             });
+
+            // ── CoScholasticArea ───────────────────────────────────────────────
+            modelBuilder.Entity<CoScholasticArea>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+            });
+
+            // ── CoScholasticAssessment ─────────────────────────────────────────
+            modelBuilder.Entity<CoScholasticAssessment>(entity =>
+            {
+                entity.HasOne(c => c.School)
+                    .WithMany()
+                    .HasForeignKey(c => c.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.Student)
+                    .WithMany()
+                    .HasForeignKey(c => c.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.CoScholasticArea)
+                    .WithMany()
+                    .HasForeignKey(c => c.CoScholasticAreaId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(c => c.Exam)
+                    .WithMany()
+                    .HasForeignKey(c => c.ExamId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.CoScholasticAreaId, e.AcademicYear, e.Term });
+            });
         }
 
         private void ConfigureAdmissions(ModelBuilder modelBuilder)
@@ -1042,7 +1277,9 @@ namespace SmsApi.Data
                     .HasForeignKey(b => b.SchoolId)
                     .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasIndex(e => new { e.SchoolId, e.ISBN }).IsUnique();
+                entity.HasIndex(e => new { e.SchoolId, e.ISBN })
+                    .IsUnique()
+                    .HasFilter("\"ISBN\" IS NOT NULL");
             });
 
             modelBuilder.Entity<BookIssue>(entity =>
@@ -1062,10 +1299,146 @@ namespace SmsApi.Data
                     .HasForeignKey(i => i.StudentId)
                     .OnDelete(DeleteBehavior.Restrict);
             });
+
+            modelBuilder.Entity<BookReservation>(entity =>
+            {
+                entity.HasOne(r => r.School)
+                    .WithMany()
+                    .HasForeignKey(r => r.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(r => r.Book)
+                    .WithMany(b => b.Reservations)
+                    .HasForeignKey(r => r.BookId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<Periodical>(entity =>
+            {
+                entity.HasOne(p => p.School)
+                    .WithMany()
+                    .HasForeignKey(p => p.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<LibraryMember>(entity =>
+            {
+                entity.HasOne(m => m.School)
+                    .WithMany()
+                    .HasForeignKey(m => m.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.CardNumber }).IsUnique();
+            });
+        }
+
+        private void ConfigureSyllabus(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<SyllabusUnit>(entity =>
+            {
+                entity.HasOne(u => u.School)
+                    .WithMany()
+                    .HasForeignKey(u => u.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(u => u.ClassRef)
+                    .WithMany()
+                    .HasForeignKey(u => u.ClassId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(u => u.SubjectRef)
+                    .WithMany()
+                    .HasForeignKey(u => u.SubjectId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // Unique unit number per class/subject/year
+                entity.HasIndex(e => new { e.SchoolId, e.ClassId, e.SubjectId, e.AcademicYear, e.UnitNumber }).IsUnique();
+            });
+
+            modelBuilder.Entity<SyllabusTopic>(entity =>
+            {
+                entity.HasOne(t => t.School)
+                    .WithMany()
+                    .HasForeignKey(t => t.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(t => t.Unit)
+                    .WithMany(u => u.Topics)
+                    .HasForeignKey(t => t.UnitId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(t => t.CompletedByStaff)
+                    .WithMany()
+                    .HasForeignKey(t => t.CompletedByStaffId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.UnitId, e.TopicNumber }).IsUnique();
+            });
+
+            modelBuilder.Entity<LessonPlan>(entity =>
+            {
+                entity.HasOne(p => p.School)
+                    .WithMany()
+                    .HasForeignKey(p => p.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.Staff)
+                    .WithMany()
+                    .HasForeignKey(p => p.StaffId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.ClassRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.ClassId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.SectionRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.SectionId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.SubjectRef)
+                    .WithMany()
+                    .HasForeignKey(p => p.SubjectId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.Topic)
+                    .WithMany()
+                    .HasForeignKey(p => p.TopicId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(p => p.ApprovedByStaff)
+                    .WithMany()
+                    .HasForeignKey(p => p.ApprovedByStaffId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StaffId, e.Date });
+                entity.HasIndex(e => new { e.SchoolId, e.ClassId, e.Date });
+            });
         }
 
         private void ConfigureTransport(ModelBuilder modelBuilder)
         {
+            modelBuilder.Entity<Vehicle>(entity =>
+            {
+                entity.HasOne(v => v.School)
+                    .WithMany()
+                    .HasForeignKey(v => v.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(v => v.DriverStaff)
+                    .WithMany()
+                    .HasForeignKey(v => v.DriverStaffId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.RegistrationNumber }).IsUnique();
+            });
+
             modelBuilder.Entity<TransportRoute>(entity =>
             {
                 entity.HasOne(r => r.School)
@@ -1073,7 +1446,28 @@ namespace SmsApi.Data
                     .HasForeignKey(r => r.SchoolId)
                     .OnDelete(DeleteBehavior.Restrict);
 
+                entity.HasOne(r => r.Vehicle)
+                    .WithMany(v => v.Routes)
+                    .HasForeignKey(r => r.VehicleId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
                 entity.HasIndex(e => new { e.SchoolId, e.RouteNumber }).IsUnique();
+            });
+
+            modelBuilder.Entity<TransportStop>(entity =>
+            {
+                entity.HasOne(s => s.School)
+                    .WithMany()
+                    .HasForeignKey(s => s.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.Route)
+                    .WithMany(r => r.Stops)
+                    .HasForeignKey(s => s.RouteId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.RouteId, e.StopOrder }).IsUnique();
             });
 
             modelBuilder.Entity<TransportStudent>(entity =>
@@ -1092,17 +1486,51 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(t => t.RouteId)
                     .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(t => t.PickupStop)
+                    .WithMany()
+                    .HasForeignKey(t => t.PickupStopId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(t => t.DropStop)
+                    .WithMany()
+                    .HasForeignKey(t => t.DropStopId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
 
         private void ConfigureHostel(ModelBuilder modelBuilder)
         {
+            modelBuilder.Entity<HostelBlock>(entity =>
+            {
+                entity.HasOne(b => b.School)
+                    .WithMany()
+                    .HasForeignKey(b => b.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(b => b.WardenStaff)
+                    .WithMany()
+                    .HasForeignKey(b => b.WardenStaffId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+            });
+
             modelBuilder.Entity<HostelRoom>(entity =>
             {
                 entity.HasOne(r => r.School)
                     .WithMany()
                     .HasForeignKey(r => r.SchoolId)
                     .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(r => r.Block)
+                    .WithMany(b => b.Rooms)
+                    .HasForeignKey(r => r.BlockId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
 
                 entity.HasIndex(e => new { e.SchoolId, e.RoomNumber }).IsUnique();
             });
@@ -1123,6 +1551,151 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(h => h.RoomId)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<HostelMessBilling>(entity =>
+            {
+                entity.HasOne(m => m.School)
+                    .WithMany()
+                    .HasForeignKey(m => m.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(m => m.HostelStudent)
+                    .WithMany(s => s.MessBillings)
+                    .HasForeignKey(m => m.HostelStudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.SchoolId, e.HostelStudentId, e.Month }).IsUnique();
+            });
+
+            modelBuilder.Entity<HostelVisitorLog>(entity =>
+            {
+                entity.HasOne(v => v.School)
+                    .WithMany()
+                    .HasForeignKey(v => v.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(v => v.HostelStudent)
+                    .WithMany(s => s.VisitorLogs)
+                    .HasForeignKey(v => v.HostelStudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<HostelLeave>(entity =>
+            {
+                entity.HasOne(l => l.School)
+                    .WithMany()
+                    .HasForeignKey(l => l.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(l => l.HostelStudent)
+                    .WithMany(s => s.Leaves)
+                    .HasForeignKey(l => l.HostelStudentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+        }
+
+        private void ConfigureOnlineExam(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<QuestionBank>(entity =>
+            {
+                entity.HasOne(q => q.School)
+                    .WithMany()
+                    .HasForeignKey(q => q.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(q => q.Subject)
+                    .WithMany()
+                    .HasForeignKey(q => q.SubjectId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<OnlineExam>(entity =>
+            {
+                entity.HasOne(e => e.School)
+                    .WithMany()
+                    .HasForeignKey(e => e.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Subject)
+                    .WithMany()
+                    .HasForeignKey(e => e.SubjectId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.Class)
+                    .WithMany()
+                    .HasForeignKey(e => e.ClassId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<OnlineExamQuestion>(entity =>
+            {
+                entity.HasOne(q => q.Exam)
+                    .WithMany(e => e.Questions)
+                    .HasForeignKey(q => q.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(q => q.Question)
+                    .WithMany()
+                    .HasForeignKey(q => q.QuestionId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.ExamId, e.QuestionId }).IsUnique();
+            });
+
+            modelBuilder.Entity<StudentExamSession>(entity =>
+            {
+                entity.HasOne(s => s.School)
+                    .WithMany()
+                    .HasForeignKey(s => s.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.Exam)
+                    .WithMany(e => e.Sessions)
+                    .HasForeignKey(s => s.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(s => s.Student)
+                    .WithMany()
+                    .HasForeignKey(s => s.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.ExamId, e.StudentId }).IsUnique();
+            });
+
+            modelBuilder.Entity<StudentExamResponse>(entity =>
+            {
+                entity.HasOne(r => r.Session)
+                    .WithMany(s => s.Responses)
+                    .HasForeignKey(r => r.SessionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(r => r.Question)
+                    .WithMany()
+                    .HasForeignKey(r => r.QuestionId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SessionId, e.QuestionId }).IsUnique();
+            });
+        }
+
+        private void ConfigureStaffTax(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<StaffTaxDeclaration>(entity =>
+            {
+                entity.HasOne(t => t.School)
+                    .WithMany()
+                    .HasForeignKey(t => t.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(t => t.Staff)
+                    .WithMany()
+                    .HasForeignKey(t => t.StaffId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StaffId, e.FinancialYear }).IsUnique();
             });
         }
 
@@ -1188,10 +1761,15 @@ namespace SmsApi.Data
                 entity.HasOne(c => c.BoardConfig)
                     .WithMany()
                     .HasForeignKey(c => c.BoardConfigurationId)
-                    .OnDelete(DeleteBehavior.SetNull)
+                    .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired(false);
 
-                entity.HasIndex(e => new { e.SchoolId, e.Name }).IsUnique();
+                // Unique per school + board combination (allows same name across different boards)
+                // Filtered to exclude soft-deleted rows so deleted classes can be recreated
+                entity.HasIndex(e => new { e.SchoolId, e.Name, e.BoardConfigurationId })
+                    .IsUnique()
+                    .HasFilter("[IsDeleted] = 0")
+                    .HasDatabaseName("IX_Classes_SchoolId_Name_Board");
             });
 
             modelBuilder.Entity<Section>(entity =>
@@ -1215,6 +1793,12 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(s => s.SchoolId)
                     .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.BoardConfig)
+                    .WithMany()
+                    .HasForeignKey(s => s.BoardConfigurationId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .IsRequired(false);
 
                 entity.HasIndex(e => new { e.SchoolId, e.Code }).IsUnique();
             });
@@ -1259,12 +1843,12 @@ namespace SmsApi.Data
                 entity.HasOne(ta => ta.Section)
                     .WithMany()
                     .HasForeignKey(ta => ta.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(ta => ta.Subject)
                     .WithMany()
                     .HasForeignKey(ta => ta.SubjectId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // StudentEnrollment — FK-based class/section/year tracking (Theme 2).
@@ -1310,13 +1894,13 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(ss => ss.AcademicYearId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(ss => ss.StudentEnrollment)
                     .WithMany()
                     .HasForeignKey(ss => ss.StudentEnrollmentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 // Fast lookup by student + year
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.AcademicYearId });
@@ -1330,37 +1914,37 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(p => p.PreviousClassId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.PreviousSectionRef)
                     .WithMany()
                     .HasForeignKey(p => p.PreviousSectionId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.NewClassRef)
                     .WithMany()
                     .HasForeignKey(p => p.NewClassId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.NewSectionRef)
                     .WithMany()
                     .HasForeignKey(p => p.NewSectionId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.AcademicYearRef)
                     .WithMany()
                     .HasForeignKey(p => p.AcademicYearId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(p => p.ResultingEnrollment)
                     .WithMany()
                     .HasForeignKey(p => p.ResultingEnrollmentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.PromotionDate });
             });
@@ -1776,7 +2360,7 @@ namespace SmsApi.Data
                 entity.HasOne(t => t.Section)
                     .WithMany()
                     .HasForeignKey(t => t.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.ClassId, e.SectionId, e.AcademicYear }).IsUnique();
             });
@@ -1791,12 +2375,12 @@ namespace SmsApi.Data
                 entity.HasOne(tp => tp.Subject)
                     .WithMany()
                     .HasForeignKey(tp => tp.SubjectId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(tp => tp.Teacher)
                     .WithMany()
                     .HasForeignKey(tp => tp.TeacherId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.TimetableId, e.DayOfWeek, e.PeriodNumber }).IsUnique();
             });
@@ -1819,7 +2403,7 @@ namespace SmsApi.Data
                 entity.HasOne(a => a.Section)
                     .WithMany()
                     .HasForeignKey(a => a.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(a => a.Subject)
                     .WithMany()
@@ -1847,7 +2431,7 @@ namespace SmsApi.Data
                 entity.HasOne(asub => asub.GradedBy)
                     .WithMany()
                     .HasForeignKey(asub => asub.GradedById)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.AssignmentId, e.StudentId }).IsUnique();
             });
@@ -1880,7 +2464,7 @@ namespace SmsApi.Data
                 entity.HasOne(gi => gi.Section)
                     .WithMany()
                     .HasForeignKey(gi => gi.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(gi => gi.Subject)
                     .WithMany()
@@ -1908,7 +2492,7 @@ namespace SmsApi.Data
                 entity.HasOne(sg => sg.EnteredBy)
                     .WithMany()
                     .HasForeignKey(sg => sg.EnteredById)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.GradeItemId, e.StudentId }).IsUnique();
             });
@@ -1933,12 +2517,12 @@ namespace SmsApi.Data
                 entity.HasOne(cce => cce.Section)
                     .WithMany()
                     .HasForeignKey(cce => cce.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(cce => cce.AssessedBy)
                     .WithMany()
                     .HasForeignKey(cce => cce.AssessedById)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
             });
         }
 
@@ -1959,12 +2543,12 @@ namespace SmsApi.Data
                 entity.HasOne(a => a.TargetClass)
                     .WithMany()
                     .HasForeignKey(a => a.TargetClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(a => a.TargetSection)
                     .WithMany()
                     .HasForeignKey(a => a.TargetSectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.PublishedDate });
                 entity.HasIndex(e => new { e.SchoolId, e.IsActive });
@@ -2056,22 +2640,22 @@ namespace SmsApi.Data
                 entity.HasOne(d => d.RelatedClass)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(d => d.RelatedSection)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedSectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(d => d.RelatedStudent)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedStudentId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(d => d.RelatedStaff)
                     .WithMany()
                     .HasForeignKey(d => d.RelatedStaffId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.CategoryId });
                 entity.HasIndex(e => new { e.SchoolId, e.IsActive });
@@ -2111,12 +2695,12 @@ namespace SmsApi.Data
                 entity.HasOne(r => r.Class)
                     .WithMany()
                     .HasForeignKey(r => r.ClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(r => r.Section)
                     .WithMany()
                     .HasForeignKey(r => r.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.ReportType, e.GeneratedAt });
                 entity.HasIndex(e => new { e.SchoolId, e.Status });
@@ -2146,12 +2730,12 @@ namespace SmsApi.Data
                 entity.HasOne(a => a.Class)
                     .WithMany()
                     .HasForeignKey(a => a.ClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(a => a.Section)
                     .WithMany()
                     .HasForeignKey(a => a.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.SchoolId, e.MetricType, e.PeriodStart });
                 entity.HasIndex(e => new { e.SchoolId, e.Period });
@@ -2186,12 +2770,12 @@ namespace SmsApi.Data
                 entity.HasOne(c => c.Class)
                     .WithMany()
                     .HasForeignKey(c => c.ClassId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(c => c.Section)
                     .WithMany()
                     .HasForeignKey(c => c.SectionId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(c => c.Template)
                     .WithMany()
@@ -2336,7 +2920,7 @@ namespace SmsApi.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasOne(soi => soi.Order)
-                    .WithMany()
+                    .WithMany(o => o.OrderItems)
                     .HasForeignKey(soi => soi.OrderId)
                     .OnDelete(DeleteBehavior.Restrict);
 
@@ -2439,7 +3023,7 @@ namespace SmsApi.Data
                     .WithMany()
                     .HasForeignKey(vl => vl.StudentId)
                     .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => e.VisitNumber).IsUnique();
                 entity.HasIndex(e => new { e.SchoolId, e.CheckInTime, e.Status });
@@ -2795,6 +3379,33 @@ namespace SmsApi.Data
                 entity.HasIndex(e => new { e.SchoolId, e.Status });
             });
         }
+
+        private void ConfigureDiscipline(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<DisciplineRecord>(entity =>
+            {
+                entity.HasOne(d => d.School)
+                    .WithMany()
+                    .HasForeignKey(d => d.SchoolId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(d => d.Student)
+                    .WithMany()
+                    .HasForeignKey(d => d.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(d => d.ReportedByStaff)
+                    .WithMany()
+                    .HasForeignKey(d => d.ReportedByStaffId)
+                    .IsRequired(false)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.IncidentDate });
+                entity.HasIndex(e => new { e.SchoolId, e.Status });
+                entity.HasIndex(e => new { e.SchoolId, e.Severity });
+            });
+        }
+
     }
 }
 

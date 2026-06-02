@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
-import { Shield, BarChart3, Building2, Users, GraduationCap, UserCheck, RefreshCw, ToggleLeft, ToggleRight, ChevronRight } from "lucide-react";
+import { Shield, BarChart3, Building2, Users, GraduationCap, UserCheck, RefreshCw, ToggleLeft, ToggleRight, ChevronRight, Rocket, CreditCard, AlertTriangle, Save, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import * as superAdminApi from "@/services/api/superAdminApi";
-import type { PlatformStats, SchoolPermissionsResponse } from "@/services/api/superAdminApi";
+import type { PlatformStats, SchoolPermissionsResponse, SchoolBilling, UpdateBillingRequest } from "@/services/api/superAdminApi";
 import { useSuperAdminSchool } from "@/contexts/SuperAdminSchoolContext";
+
+import { useNavigate } from "react-router-dom";
 
 const MODULE_LABELS: Record<string, string> = {
   students: "Students",
@@ -36,7 +40,6 @@ const MODULE_LABELS: Record<string, string> = {
 };
 
 export default function SuperAdminDashboard() {
-  const { toast } = useToast();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -47,6 +50,15 @@ export default function SuperAdminDashboard() {
   const [permissions, setPermissions] = useState<SchoolPermissionsResponse | null>(null);
   const [togglingModule, setTogglingModule] = useState<string | null>(null);
   const [permLoading, setPermLoading] = useState(false);
+
+  // Billing tab state
+  const [billingData, setBillingData] = useState<SchoolBilling | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingSaving, setBillingSaving] = useState(false);
+  const [billingPlan, setBillingPlan] = useState("Standard");
+  const [billingStatus, setBillingStatus] = useState("Active");
+  const [billingExpiry, setBillingExpiry] = useState("");
+  const [billingReminder, setBillingReminder] = useState(30);
 
   useEffect(() => {
     fetchStats();
@@ -59,8 +71,25 @@ export default function SuperAdminDashboard() {
     setPermLoading(true);
     superAdminApi.getSchoolPermissions(selectedSchoolId)
       .then(setPermissions)
-      .catch(() => toast({ title: "Error", description: "Failed to load school permissions", variant: "destructive" }))
+      .catch(() => toast.error("Failed to load school permissions"))
       .finally(() => setPermLoading(false));
+  }, [selectedSchoolId]);
+
+  // Reload billing whenever selected school changes
+  useEffect(() => {
+    if (!selectedSchoolId) { setBillingData(null); return; }
+    setBillingData(null);
+    setBillingLoading(true);
+    superAdminApi.getSchoolBilling(selectedSchoolId)
+      .then((b) => {
+        setBillingData(b);
+        setBillingPlan(b.billingPlan);
+        setBillingStatus(b.billingStatus);
+        setBillingExpiry(b.billingExpiryDate ? b.billingExpiryDate.split("T")[0] : "");
+        setBillingReminder(b.renewalReminderDays);
+      })
+      .catch(() => {})
+      .finally(() => setBillingLoading(false));
   }, [selectedSchoolId]);
 
   const fetchStats = async () => {
@@ -83,9 +112,9 @@ export default function SuperAdminDashboard() {
       // Re-fetch from server to ensure UI reflects true DB state
       const fresh = await superAdminApi.getSchoolPermissions(selectedSchoolId);
       setPermissions(fresh);
-      toast({ title: `${!currentEnabled ? "Enabled" : "Disabled"} ${moduleName}`, description: `Feature updated for ${permissions.schoolName}` });
+      toast.success(`${!currentEnabled ? "Enabled" : "Disabled"} ${MODULE_LABELS[moduleName] ?? moduleName}`, { description: `Feature updated for ${permissions.schoolName}` });
     } catch {
-      toast({ title: "Error", description: `Failed to toggle ${moduleName}`, variant: "destructive" });
+      toast.error(`Failed to toggle ${MODULE_LABELS[moduleName] ?? moduleName}`);
     } finally {
       setTogglingModule(null);
     }
@@ -93,6 +122,26 @@ export default function SuperAdminDashboard() {
 
   const enabledCount = permissions ? Object.values(permissions.modules).filter(m => m.enabled).length : 0;
   const totalCount = permissions ? Object.keys(permissions.modules).length : 0;
+
+  const handleSaveBilling = async () => {
+    if (!selectedSchoolId) return;
+    setBillingSaving(true);
+    try {
+      const req: UpdateBillingRequest = {
+        billingPlan: billingPlan,
+        billingStatus: billingStatus,
+        billingExpiryDate: billingExpiry || null,
+        renewalReminderDays: billingReminder,
+      };
+      const updated = await superAdminApi.updateSchoolBilling(selectedSchoolId, req);
+      setBillingData(updated);
+      toast.success("Billing updated", { description: `Saved for ${updated.schoolName}` });
+    } catch {
+      toast.error("Failed to save billing settings");
+    } finally {
+      setBillingSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in px-4 sm:px-0">
@@ -106,7 +155,7 @@ export default function SuperAdminDashboard() {
             <h1 className="text-xl sm:text-2xl font-bold">Super Admin Portal</h1>
             <p className="text-sm text-muted-foreground">Vitana platform management & school feature control</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => { fetchStats(); fetchSchools(); }} className="ml-auto">
+          <Button variant="ghost" size="sm" onClick={() => { fetchStats(); }} className="ml-auto">
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
@@ -116,6 +165,7 @@ export default function SuperAdminDashboard() {
         <TabsList className="flex flex-wrap gap-1 h-auto p-1">
           <TabsTrigger value="overview"><BarChart3 className="w-4 h-4 mr-1" />Dashboard</TabsTrigger>
           <TabsTrigger value="features"><Shield className="w-4 h-4 mr-1" />Feature Toggles</TabsTrigger>
+          <TabsTrigger value="billing"><CreditCard className="w-4 h-4 mr-1" />Billing</TabsTrigger>
           <TabsTrigger value="quicklinks"><ChevronRight className="w-4 h-4 mr-1" />Quick Links</TabsTrigger>
         </TabsList>
 
@@ -143,6 +193,25 @@ export default function SuperAdminDashboard() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+
+          {/* Onboard CTA */}
+          <div
+            className="rounded-xl border-2 border-dashed border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 p-5 flex items-center justify-between gap-4 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all"
+            onClick={() => navigate("/superadmin/onboard")}
+          >
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+                <Rocket className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-indigo-900">Onboard a New School</p>
+                <p className="text-sm text-indigo-600">Step-by-step wizard — profile, year, admin &amp; modules in one go</p>
+              </div>
+            </div>
+            <Button className="bg-indigo-600 hover:bg-indigo-700 shrink-0" onClick={() => navigate("/superadmin/onboard")}>
+              Start Wizard <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
           </div>
 
           {/* Schools summary */}
@@ -245,10 +314,169 @@ export default function SuperAdminDashboard() {
           </Card>
         </TabsContent>
 
-        {/* â”€â”€ Quick Links Tab â”€â”€ */}
+        {/* ── Billing Tab ── */}
+        <TabsContent value="billing" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-blue-500" />
+                School Billing Management
+              </CardTitle>
+              <CardDescription>Set subscription plan, status, expiry, and renewal reminders per school.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* School selector */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <Select value={selectedSchoolId} onValueChange={(id) => { setSelectedSchoolId(id); setBillingData(null); }}>
+                  <SelectTrigger className="max-w-xs">
+                    <SelectValue placeholder="Select a school to manage…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {schools.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {billingData && (
+                  <div className="flex items-center gap-2">
+                    <Badge className={
+                      billingData.billingPlan === "Enterprise" ? "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300" :
+                      billingData.billingPlan === "Pro" ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" :
+                      "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                    }>{billingData.billingPlan}</Badge>
+                    <Badge className={
+                      billingData.billingStatus === "Active" ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" :
+                      billingData.billingStatus === "Suspended" ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300" :
+                      "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                    }>{billingData.billingStatus}</Badge>
+                  </div>
+                )}
+              </div>
+
+              {billingLoading && (
+                <p className="text-muted-foreground text-sm flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading billing…
+                </p>
+              )}
+
+              {billingData && !billingLoading && (
+                <div className="space-y-4">
+                  {billingData.isExpired && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription><strong>Expired</strong> — this school's subscription has lapsed.</AlertDescription>
+                    </Alert>
+                  )}
+                  {!billingData.isExpired && billingData.isExpiringSoon && billingData.daysUntilExpiry !== null && (
+                    <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      <AlertDescription className="text-amber-900 dark:text-amber-200">
+                        Subscription expires in <strong>{billingData.daysUntilExpiry} day{billingData.daysUntilExpiry === 1 ? "" : "s"}</strong>.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* All schools clickable list */}
+                  <div>
+                    <p className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wider">All Schools</p>
+                    <div className="space-y-2">
+                      {schools.map(s => (
+                        <div
+                          key={s.id}
+                          className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${s.id === selectedSchoolId ? "bg-primary/5 border-primary/40" : "bg-muted/30 hover:bg-muted/50"}`}
+                          onClick={() => setSelectedSchoolId(s.id)}
+                        >
+                          <div>
+                            <span className="font-medium text-sm">{s.name}</span>
+                            <span className="ml-2 font-mono text-xs text-muted-foreground">{s.schoolCode}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{s.enabledModulesCount}/{s.totalModulesCount} modules</span>
+                            {s.id === selectedSchoolId && billingData && (
+                              <>
+                                <Badge variant="outline" className="text-xs">{billingData.billingPlan}</Badge>
+                                {billingData.isExpired && <AlertTriangle className="h-3.5 w-3.5 text-red-500" />}
+                                {!billingData.isExpired && billingData.isExpiringSoon && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Edit form */}
+                  <div className="rounded-xl border p-4 space-y-4 bg-muted/20">
+                    <p className="text-sm font-semibold">Edit — {billingData.schoolName}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Plan</Label>
+                        <Select value={billingPlan} onValueChange={setBillingPlan}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Standard">Standard</SelectItem>
+                            <SelectItem value="Pro">Pro</SelectItem>
+                            <SelectItem value="Enterprise">Enterprise</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Status</Label>
+                        <Select value={billingStatus} onValueChange={setBillingStatus}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Active">Active</SelectItem>
+                            <SelectItem value="Trial">Trial</SelectItem>
+                            <SelectItem value="Inactive">Inactive</SelectItem>
+                            <SelectItem value="Suspended">Suspended</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Expiry Date</Label>
+                        <input
+                          type="date"
+                          value={billingExpiry}
+                          onChange={(e) => setBillingExpiry(e.target.value)}
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Reminder (days before)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={billingReminder}
+                          onChange={(e) => setBillingReminder(Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={handleSaveBilling} disabled={billingSaving} className="w-full sm:w-auto">
+                      {billingSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                      Save Billing Settings
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!selectedSchoolId && !billingLoading && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <CreditCard className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p>Select a school above to manage its billing</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Quick Links Tab ── */}
         <TabsContent value="quicklinks" className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
+              { title: "Onboard New School", desc: "Wizard: profile, year, admin & modules", path: "/superadmin/onboard", icon: Rocket, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" },
               { title: "School Management", desc: "Add, edit, and manage schools", path: "/superadmin/schools", icon: Building2, color: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
               { title: "User Management", desc: "Manage platform users across schools", path: "/superadmin/users", icon: Users, color: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" },
               { title: "Feature Toggles", desc: "Enable or disable modules per school", path: "#", icon: Shield, color: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300", tab: "features" },

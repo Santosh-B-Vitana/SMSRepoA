@@ -2,16 +2,16 @@
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Loader2, CreditCard, BadgeIndianRupee, CheckCircle2,
-  Shield, Smartphone, Building2, Wallet, ChevronDown, ChevronUp,
+  Shield, ChevronDown, ChevronUp,
   GraduationCap, FileText, BookOpen, FlaskConical, Trophy, Bus,
-  Home, Shirt, BookMarked, Wrench, HelpCircle
+  Home, Shirt, BookMarked, Wrench, HelpCircle, ExternalLink, Copy
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
-import { getFeeRecords, getFeeStructureById, initiatePayment, type FeeRecord, type FeeStructure, type PaymentGatewayResponse } from "@/services/api/feeApi";
+import { getFeeRecords, getFeeStructureById, initiatePayment, type FeeRecord, type FeeStructure, type PaymentGatewayResponse, type TermSchedule } from "@/services/api/feeApi";
 import { toast } from "sonner";
 
 const FEE_HEAD_ICONS: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -29,14 +29,11 @@ const FEE_HEAD_ICONS: Record<string, { label: string; icon: React.ReactNode }> =
   miscellaneous:  { label: "Miscellaneous",        icon: <HelpCircle className="h-3 w-3" /> },
 };
 
-type Gateway = "razorpay" | "payu" | "paytm" | "phonepe" | "googlepay";
+type Gateway = "cashfree";
 
+// Cashfree is the only configured gateway
 const gateways: { id: Gateway; name: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "razorpay", name: "Razorpay", icon: <CreditCard className="h-5 w-5" />, desc: "Cards, UPI, Netbanking, Wallets" },
-  { id: "payu", name: "PayU", icon: <Building2 className="h-5 w-5" />, desc: "All payment methods" },
-  { id: "paytm", name: "Paytm", icon: <Wallet className="h-5 w-5" />, desc: "UPI, Wallet, Cards" },
-  { id: "phonepe", name: "PhonePe", icon: <Smartphone className="h-5 w-5" />, desc: "UPI payments" },
-  { id: "googlepay", name: "Google Pay", icon: <Smartphone className="h-5 w-5" />, desc: "UPI payments" },
+  { id: "cashfree", name: "Cashfree", icon: <CreditCard className="h-5 w-5" />, desc: "UPI · Net Banking · Credit/Debit Cards · Wallets" },
 ];
 
 export default function ParentChildFeePayment() {
@@ -65,6 +62,7 @@ export default function ParentChildFeePayment() {
       ]);
       const found = childrenData.find((c: StudentBasic) => c.id === childId);
       setChild(found || null);
+      // Include ALL pending records (including carry-forwards from previous years)
       const records = (feeData.feeRecords || feeData.items || []).filter((r: FeeRecord) => r.pendingAmount > 0);
       setFeeRecords(records);
       // Auto-select all pending records
@@ -95,7 +93,12 @@ export default function ParentChildFeePayment() {
 
   const selectedTotal = feeRecords
     .filter(r => selectedRecords.has(r.id))
-    .reduce((s, r) => s + r.pendingAmount, 0);
+    .reduce((s, r) => {
+      const structure = r.feeStructureId ? feeStructures[r.feeStructureId] : null;
+      const terms = parseTermSchedule(structure);
+      const due = getCurrentTermDue(terms, r.totalAmount, r.discountAmount || 0, r.paidAmount);
+      return s + (due >= 0 ? due : r.pendingAmount);
+    }, 0);
 
   const handlePayment = async () => {
     if (selectedRecords.size === 0) {
@@ -105,20 +108,26 @@ export default function ParentChildFeePayment() {
 
     setProcessing(true);
     try {
-      // Process each selected fee record
+      // Use the first selected record to create a Cashfree order for the full selected total
       const selectedFees = feeRecords.filter(r => selectedRecords.has(r.id));
+      const firstRecord   = selectedFees[0];
 
-      for (const record of selectedFees) {
-        const response = await initiatePayment(record.id, {
-          amount: record.pendingAmount,
-          gateway: selectedGateway,
-          currency: "INR",
-        });
-        setGatewayResponse(response);
-      }
+      const response = await initiatePayment(firstRecord.id, {
+        amount: selectedTotal,
+        gateway: "cashfree",
+        currency: "INR",
+      });
 
+      setGatewayResponse(response);
       setShowSuccess(true);
-      toast.success("Payment initiated successfully!");
+
+      if (response.checkoutUrl) {
+        // Redirect parent to Cashfree hosted checkout
+        window.open(response.checkoutUrl, "_blank", "width=960,height=720");
+        toast.success("Payment window opened — complete payment on the Cashfree page.");
+      } else {
+        toast.info("Payment order created. Contact school staff if you do not receive a payment link.");
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "Payment initiation failed. Please try again.");
     } finally {
@@ -179,13 +188,24 @@ export default function ParentChildFeePayment() {
                 const heads = structure
                   ? Object.entries(FEE_HEAD_ICONS).filter(([key]) => (structure as any)[key] > 0)
                   : [];
+                const terms = parseTermSchedule(structure);
+                const termDue = getCurrentTermDue(terms, record.totalAmount, record.discountAmount || 0, record.paidAmount);
+                const amountToPay = termDue >= 0 ? termDue : record.pendingAmount;
+                const currentTermLabel = getCurrentTermName(terms, record.paidAmount);
+                const isCarryFwd = isCarryForward(record);
 
                 return (
                 <div key={record.id}>
+                  {isCarryFwd && (
+                    <div className="flex items-center gap-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5 mb-1.5">
+                      <span className="font-semibold">Carry-forward from {record.academicYear}</span>
+                      <span className="text-orange-500">— previous year outstanding balance</span>
+                    </div>
+                  )}
                   <label
                     className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${
                       selectedRecords.has(record.id)
-                        ? "border-primary bg-primary/5"
+                        ? isCarryFwd ? "border-orange-400 bg-orange-50/60" : "border-primary bg-primary/5"
                         : "border-border hover:border-primary/30"
                     }`}
                   >
@@ -199,7 +219,11 @@ export default function ParentChildFeePayment() {
                       <div>
                         <p className="font-medium text-sm">{record.feeStructureName || "Fee"}</p>
                         <p className="text-xs text-muted-foreground">
-                          Due: {new Date(record.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          {currentTermLabel ? (
+                            <><span className="font-medium text-foreground">{currentTermLabel}</span> · Due: {new Date(record.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</>
+                          ) : (
+                            <>Due: {new Date(record.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</>
+                          )}
                         </p>
                         {/* Compact fee component summary */}
                         {heads.length > 0 && (
@@ -211,9 +235,12 @@ export default function ParentChildFeePayment() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold">{"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")}</p>
-                      <Badge variant={record.status === "Overdue" ? "destructive" : "secondary"} className="text-xs mt-0.5">
-                        {record.status}
+                      <p className="font-bold">{"\u20B9"}{amountToPay.toLocaleString("en-IN")}</p>
+                      {termDue >= 0 && record.pendingAmount > termDue && (
+                        <p className="text-[10px] text-muted-foreground">of {"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")} total outstanding</p>
+                      )}
+                      <Badge variant={isCarryFwd ? "outline" : record.status === "Overdue" ? "destructive" : "secondary"} className={`text-xs mt-0.5 ${isCarryFwd ? "border-orange-400 text-orange-700" : ""}`}>
+                        {isCarryFwd ? "Carry-forward" : record.status}
                       </Badge>
                     </div>
                   </label>
@@ -270,9 +297,21 @@ export default function ParentChildFeePayment() {
                 <div className="p-3 rounded-lg bg-blue-50/60 border border-blue-200 text-xs text-blue-800 mt-4">
                   <p className="font-semibold mb-1">You are paying for:</p>
                   <ul className="list-disc list-inside space-y-0.5">
-                    {feeRecords.filter(r => selectedRecords.has(r.id)).map(r => (
-                      <li key={r.id}>{r.feeStructureName || "Fee"} — {"\u20B9"}{r.pendingAmount.toLocaleString("en-IN")}</li>
-                    ))}
+                    {feeRecords.filter(r => selectedRecords.has(r.id)).map(r => {
+                      const structure = r.feeStructureId ? feeStructures[r.feeStructureId] : null;
+                      const terms = parseTermSchedule(structure);
+                      const due = getCurrentTermDue(terms, r.totalAmount, r.discountAmount || 0, r.paidAmount);
+                      const amtToPay = due >= 0 ? due : r.pendingAmount;
+                      const termLabel = getCurrentTermName(terms, r.paidAmount);
+                      return (
+                        <li key={r.id}>
+                          {r.feeStructureName || "Fee"}
+                          {termLabel ? ` · ${termLabel}` : ""}
+                          {isCarryForward(r) ? " (carry-forward)" : ""}
+                          {" — "}{"\u20B9"}{amtToPay.toLocaleString("en-IN")}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -352,10 +391,13 @@ export default function ParentChildFeePayment() {
           <DialogHeader>
             <DialogTitle className="flex flex-col items-center gap-3">
               <CheckCircle2 className="h-16 w-16 text-green-500" />
-              Payment Initiated
+              Payment Order Created
             </DialogTitle>
             <DialogDescription>
-              Your payment of {"\u20B9"}{selectedTotal.toLocaleString("en-IN")} has been initiated via {gateways.find(g => g.id === selectedGateway)?.name}.
+              Your payment order for {"\u20B9"}{selectedTotal.toLocaleString("en-IN")} has been created via Cashfree.
+              {gatewayResponse?.checkoutUrl
+                ? " Complete the payment in the window that opened, or click the button below."
+                : " Please contact the school to complete payment."}
             </DialogDescription>
           </DialogHeader>
           {gatewayResponse && (
@@ -366,7 +408,7 @@ export default function ParentChildFeePayment() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Gateway</span>
-                <span className="capitalize">{gatewayResponse.gateway}</span>
+                <span className="capitalize">Cashfree</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Amount</span>
@@ -374,16 +416,114 @@ export default function ParentChildFeePayment() {
               </div>
             </div>
           )}
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-2 flex-col">
+            {gatewayResponse?.checkoutUrl && (
+              <Button
+                className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700"
+                onClick={() => window.open(gatewayResponse!.checkoutUrl, "_blank", "width=960,height=720")}
+              >
+                <ExternalLink className="h-4 w-4" /> Complete Payment on Cashfree
+              </Button>
+            )}
+            <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => { setShowSuccess(false); navigate("/parent-fees"); }}>
-              Back to Fees
-            </Button>
-            <Button className="flex-1" onClick={() => { setShowSuccess(false); navigate(`/parent-fees/${childId}`); }}>
-              View Details
-            </Button>
+                Back to Fees
+              </Button>
+              <Button className="flex-1" onClick={() => { setShowSuccess(false); navigate(`/parent-fees/${childId}`); }}>
+                View Details
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function getCurrentAcademicYear(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  return (now.getMonth() + 1) >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+}
+
+function isCarryForward(record: FeeRecord): boolean {
+  return !!record.academicYear && record.academicYear < getCurrentAcademicYear();
+}
+
+function parseTermSchedule(structure: FeeStructure | null | undefined): TermSchedule[] {
+  if (!structure?.installmentDueDates) return [];
+  try {
+    const parsed = JSON.parse(structure.installmentDueDates);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object") {
+      return parsed as TermSchedule[];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+/**
+ * Scale installment term amounts to reflect an applied concession.
+ * Paid terms keep their gross amount (receipts were already issued).
+ * Only remaining/upcoming terms are scaled proportionally.
+ */
+function scaleTermSchedule(
+  terms: TermSchedule[],
+  totalAmount: number,
+  discountAmount: number,
+  paidAmount: number,
+): TermSchedule[] {
+  if (!discountAmount || !terms.length) return terms;
+  const netTotal = Math.max(0, totalAmount - discountAmount);
+  const netRemaining = Math.max(0, netTotal - paidAmount);
+  let cumulativeGross = 0;
+  const grossInfo = terms.map(term => {
+    const prev = cumulativeGross;
+    cumulativeGross += term.amount;
+    const grossPaid = Math.max(0, Math.min(term.amount, paidAmount - prev));
+    const grossRemaining = term.amount - grossPaid;
+    return { grossPaid, grossRemaining, isPaid: grossRemaining <= 0 };
+  });
+  const grossRemainingTotal = grossInfo.reduce((s, g) => s + g.grossRemaining, 0);
+  if (grossRemainingTotal <= 0) return terms;
+  const scaleFactor = netRemaining / grossRemainingTotal;
+  return terms.map((term, i) => {
+    const g = grossInfo[i];
+    if (g.isPaid) return term;
+    return { ...term, amount: g.grossPaid + Math.round(g.grossRemaining * scaleFactor) };
+  });
+}
+
+/** Amount the parent should pay NOW for this fee record.
+ *  Scales term amounts by discount before computing the current term due.
+ *  Returns -1 if no term schedule exists (caller should fall back to pendingAmount). */
+function getCurrentTermDue(
+  terms: TermSchedule[],
+  totalAmount: number,
+  discountAmount: number,
+  paidAmount: number,
+): number {
+  if (terms.length === 0) return -1;
+  const scaled = scaleTermSchedule(terms, totalAmount, discountAmount, paidAmount);
+  let cumulative = 0;
+  for (const term of scaled) {
+    cumulative += term.amount;
+    if (paidAmount < cumulative) {
+      return cumulative - paidAmount;
+    }
+  }
+  return 0; // all terms paid
+}
+
+function getCurrentTermName(terms: TermSchedule[], paidAmount: number): string | null {
+  if (terms.length === 0) return null;
+  let cumulative = 0;
+  for (const term of terms) {
+    cumulative += term.amount;
+    if (paidAmount < cumulative) {
+      return term.name || `Term ${term.termNumber}`;
+    }
+  }
+  return null;
 }

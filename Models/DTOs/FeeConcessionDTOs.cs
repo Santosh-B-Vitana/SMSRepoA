@@ -93,6 +93,12 @@ namespace SmsApi.Models.DTOs
         public Guid RejectedByStaffId { get; set; }
     }
 
+    public class RevokeFeeConcessionRequest
+    {
+        public string Reason { get; set; } = string.Empty;
+        public Guid RevokedBy { get; set; }
+    }
+
     public class FeeConcessionResponse
     {
         public Guid Id { get; set; }

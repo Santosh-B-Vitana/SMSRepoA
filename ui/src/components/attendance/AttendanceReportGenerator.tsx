@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -6,16 +6,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DateRangePicker } from "@/components/common/DateRangePicker";
 import { DateRange } from "react-day-picker";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, Download, Calendar } from "lucide-react";
+import { FileText, Download, Loader2 } from "lucide-react";
 import { exportToPDF } from "@/utils/exportUtils";
+import { attendanceApi, AttendanceRecordBasic } from "@/services/api/attendanceApi";
+import { academicApi, ClassResponse } from "@/services/api/academicApi";
 
 export function AttendanceReportGenerator() {
   const [reportType, setReportType] = useState("daily");
   const [selectedClass, setSelectedClass] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [classes, setClasses] = useState<ClassResponse[]>([]);
   const { toast } = useToast();
 
-  const generateReport = () => {
+  useEffect(() => {
+    academicApi.listClasses(1, 200).then(r => {
+      setClasses(r.classes ?? []);
+    }).catch(() => {});
+  }, []);
+
+  const generateReport = async () => {
     if (!dateRange?.from || !dateRange?.to || !selectedClass) {
       toast({
         title: "Error",
@@ -25,28 +35,71 @@ export function AttendanceReportGenerator() {
       return;
     }
 
-    const reportData = [
-      { studentName: "Aarav Gupta", rollNo: "101", present: 18, absent: 2, percentage: "90%" },
-      { studentName: "Ananya Sharma", rollNo: "102", present: 20, absent: 0, percentage: "100%" },
-      { studentName: "Rohan Patel", rollNo: "103", present: 17, absent: 3, percentage: "85%" },
-    ];
+    setIsGenerating(true);
+    try {
+      const dateFrom = dateRange.from.toISOString().split('T')[0];
+      const dateTo = dateRange.to.toISOString().split('T')[0];
 
-    exportToPDF(reportData, {
-      filename: `attendance_report_${selectedClass}_${dateRange.from.toISOString().split('T')[0]}`,
-      columns: [
-        { key: 'studentName', label: 'Student Name' },
-        { key: 'rollNo', label: 'Roll No' },
-        { key: 'present', label: 'Present Days' },
-        { key: 'absent', label: 'Absent Days' },
-        { key: 'percentage', label: 'Attendance %' }
-      ],
-      title: `Attendance Report - Class ${selectedClass}`
-    });
+      const response = await attendanceApi.listRecords({ dateFrom, dateTo, pageSize: 2000 });
 
-    toast({
-      title: "Success",
-      description: "Attendance report generated successfully"
-    });
+      const classRecords = response.items.filter(
+        (r: AttendanceRecordBasic) => r.class === selectedClass
+      );
+
+      if (classRecords.length === 0) {
+        toast({
+          title: "No Data",
+          description: "No attendance records found for the selected class and date range.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const studentMap = new Map<string, { studentName: string; present: number; absent: number; total: number }>();
+      for (const record of classRecords) {
+        if (!studentMap.has(record.studentId)) {
+          studentMap.set(record.studentId, { studentName: record.studentName, present: 0, absent: 0, total: 0 });
+        }
+        const s = studentMap.get(record.studentId)!;
+        s.total++;
+        if (record.status === 'present' || record.status === 'late' || record.status === 'half_day') {
+          s.present++;
+        } else {
+          s.absent++;
+        }
+      }
+
+      const reportData = Array.from(studentMap.values()).map(s => ({
+        studentName: s.studentName,
+        present: s.present,
+        absent: s.absent,
+        percentage: s.total > 0 ? `${Math.round((s.present / s.total) * 100)}%` : 'N/A',
+      }));
+
+      exportToPDF(reportData, {
+        filename: `attendance_report_${selectedClass.replace(/\s+/g, '_')}_${dateFrom}`,
+        columns: [
+          { key: 'studentName', label: 'Student Name' },
+          { key: 'present', label: 'Present Days' },
+          { key: 'absent', label: 'Absent Days' },
+          { key: 'percentage', label: 'Attendance %' }
+        ],
+        title: `Attendance Report - ${selectedClass} (${dateFrom} to ${dateTo})`
+      });
+
+      toast({
+        title: "Success",
+        description: "Attendance report generated successfully"
+      });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to fetch attendance data. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -81,10 +134,9 @@ export function AttendanceReportGenerator() {
                 <SelectValue placeholder="Select class" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="10-A">Class 10-A</SelectItem>
-                <SelectItem value="10-B">Class 10-B</SelectItem>
-                <SelectItem value="9-A">Class 9-A</SelectItem>
-                <SelectItem value="9-B">Class 9-B</SelectItem>
+                {classes.map(c => (
+                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -99,11 +151,11 @@ export function AttendanceReportGenerator() {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <Button onClick={generateReport} className="w-full">
-            <Download className="h-4 w-4 mr-2" />
+          <Button onClick={generateReport} disabled={isGenerating} className="w-full">
+            {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
             Generate PDF
           </Button>
-          <Button variant="outline" onClick={generateReport} className="w-full">
+          <Button variant="outline" onClick={generateReport} disabled={isGenerating} className="w-full">
             <FileText className="h-4 w-4 mr-2" />
             Generate Excel
           </Button>

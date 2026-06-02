@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import * as superAdminApi from "@/services/api/superAdminApi";
 import type { PlatformUser, SchoolListItem } from "@/services/api/superAdminApi";
 
@@ -21,7 +21,6 @@ const roleBadgeVariant = (role: string): "default" | "secondary" | "outline" => 
 };
 
 export default function UserManagement() {
-  const { toast } = useToast();
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [schools, setSchools] = useState<SchoolListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +46,7 @@ export default function UserManagement() {
       const data = await superAdminApi.getAllUsers(params);
       setUsers(data);
     } catch {
-      toast({ title: "Error", description: "Failed to load users", variant: "destructive" });
+      toast.error("Failed to load users");
     } finally {
       setLoading(false);
     }
@@ -69,12 +68,12 @@ export default function UserManagement() {
         role: addForm.role,
         schoolId: addForm.schoolId,
       });
-      toast({ title: "User created successfully" });
+      toast.success("User created successfully");
       setAddDialog(false);
       setAddForm({ username: "", email: "", password: "", role: "Admin", schoolId: "" });
       await fetchUsers(roleFilter);
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.message ?? "Failed to create user", variant: "destructive" });
+      toast.error(err?.response?.data?.message ?? "Failed to create user");
     } finally {
       setSubmitting(false);
     }
@@ -83,10 +82,10 @@ export default function UserManagement() {
   const handleToggleStatus = async (user: PlatformUser) => {
     try {
       await superAdminApi.toggleUserStatus(user.id);
-      toast({ title: user.status === "active" ? "User suspended" : "User reactivated" });
+      toast.success(user.status === "active" ? "User suspended" : "User reactivated");
       await fetchUsers(roleFilter);
     } catch {
-      toast({ title: "Error", description: "Failed to update user status", variant: "destructive" });
+      toast.error("Failed to update user status");
     }
   };
 
@@ -95,11 +94,11 @@ export default function UserManagement() {
     try {
       setSubmitting(true);
       await superAdminApi.resetUserPassword(resetDialog.id, newPassword);
-      toast({ title: "Password reset successfully" });
+      toast.success("Password reset successfully");
       setResetDialog(null);
       setNewPassword("");
     } catch {
-      toast({ title: "Error", description: "Failed to reset password", variant: "destructive" });
+      toast.error("Failed to reset password");
     } finally {
       setSubmitting(false);
     }

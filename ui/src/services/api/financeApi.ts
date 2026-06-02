@@ -18,6 +18,11 @@ export interface CreateFinanceAccountDto {
   description?: string;
 }
 
+export interface UpdateFinanceAccountDto {
+  name?: string;
+  description?: string;
+}
+
 export interface FinanceTransactionDto {
   id: string;
   accountId: string;
@@ -90,6 +95,13 @@ export interface UpdateFinanceCategoryDto {
   budget?: number;
 }
 
+export interface PayrollSyncResultDto {
+  synced: number;
+  skipped: number;
+  total: number;
+  message: string;
+}
+
 export interface PettyCashEntryDto {
   id: string;
   date: string;
@@ -109,6 +121,7 @@ export interface CreatePettyCashEntryDto {
   amount: number;
   purpose: string;
   receiptUrl?: string;
+  staffId?: string; // optional: link to a specific staff member
 }
 
 export interface ApprovePettyCashDto {
@@ -239,6 +252,10 @@ export const financeApi = {
     apiClient.get<FinanceAccountDto[]>(`${BASE}/accounts`).then(r => r.data),
   createAccount: (dto: CreateFinanceAccountDto) =>
     apiClient.post<FinanceAccountDto>(`${BASE}/accounts`, dto).then(r => r.data),
+  updateAccount: (id: string, dto: UpdateFinanceAccountDto) =>
+    apiClient.put<FinanceAccountDto>(`${BASE}/accounts/${id}`, dto).then(r => r.data),
+  deleteAccount: (id: string) =>
+    apiClient.delete(`${BASE}/accounts/${id}`).then(r => r.data),
 
   // Transactions
   getTransactions: (filters: TransactionFiltersDto, page = 1, pageSize = 20) =>
@@ -266,6 +283,20 @@ export const financeApi = {
     apiClient.post<FinanceCategoryDto>(`${BASE}/categories`, dto).then(r => r.data),
   updateCategory: (id: string, dto: UpdateFinanceCategoryDto) =>
     apiClient.put<FinanceCategoryDto>(`${BASE}/categories/${id}`, dto).then(r => r.data),
+  deleteCategory: (id: string) =>
+    apiClient.delete(`${BASE}/categories/${id}`).then(() => undefined),
+
+  // Payroll sync
+  syncPayroll: (month?: number, year?: number) =>
+    apiClient
+      .post<PayrollSyncResultDto>(`${BASE}/sync-payroll`, null, { params: { month, year } })
+      .then(r => r.data),
+
+  // Store orders sync
+  syncStoreOrders: () =>
+    apiClient
+      .post<PayrollSyncResultDto>(`${BASE}/sync-store`, null)
+      .then(r => r.data),
 
   // Petty Cash
   getPettyCash: (page = 1, pageSize = 20) =>

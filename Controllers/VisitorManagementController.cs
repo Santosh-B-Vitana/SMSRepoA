@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace SmsApi.Controllers
 {
-    [Authorize]
+    [Authorize(Roles = StatusConstants.RoleGroups.FrontDeskAccess)]
     [ApiController]
     [Route("api/[controller]")]
     public class VisitorManagementController : ControllerBase

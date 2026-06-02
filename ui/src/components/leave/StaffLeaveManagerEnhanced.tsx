@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import leaveManagementApi, { LeaveRequest, LeaveType } from "../../services/api/leaveManagementApi";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface StaffLeaveBalance {
   leaveTypeId: string;
@@ -75,6 +76,8 @@ export function StaffLeaveManagerEnhanced() {
   const selectedType = leaveTypes.find(t => t.id === form.leaveTypeId);
   const selectedBalance = leaveBalances.find(b => b.leaveTypeId === form.leaveTypeId);
 
+  const { user } = useAuth();
+
   // Fetch Data
   useEffect(() => {
     const fetchData = async () => {
@@ -87,24 +90,65 @@ export function StaffLeaveManagerEnhanced() {
         setLeaveTypes(types);
         setLeaves(response.items);
 
-        // Calculate leave balances
-        const balances: StaffLeaveBalance[] = types.map(type => {
+        // Fetch DB balance records (includes attendance-based deductions).
+        // Use my-balance endpoint (resolves staff entity by email server-side, works even when linkedEntityId is absent from JWT).
+        // Fall back to the direct balance endpoint if linkedEntityId is available.
+        const staffMemberId = user?.linkedEntityId;
+        let dbBalanceList: Array<{ leaveTypeId: string; leaveTypeName: string; used: number; available: number; totalAllowed: number }> = [];
+        try {
+          const balanceData = staffMemberId
+            ? await leaveManagementApi.getLeaveBalance(staffMemberId, "Staff")
+            : await leaveManagementApi.getMyLeaveBalance();
+          dbBalanceList = balanceData.map(b => ({
+            leaveTypeId: b.leaveTypeId,
+            leaveTypeName: b.leaveTypeName ?? "",
+            used: b.used,
+            available: b.available,
+            totalAllowed: b.totalAllowed,
+          }));
+        } catch {
+          // fall back to leave-request based calculation below
+        }
+
+        // Build a set of DB balance type IDs for quick lookup
+        const dbBalanceById: Record<string, typeof dbBalanceList[number]> = {};
+        for (const db of dbBalanceList) dbBalanceById[db.leaveTypeId] = db;
+
+        // Step 1: add an entry for every DB balance (these include attendance deductions)
+        const seenTypeIds = new Set<string>();
+        const balances: StaffLeaveBalance[] = [];
+        for (const db of dbBalanceList) {
+          seenTypeIds.add(db.leaveTypeId);
+          const typeLeaves = response.items.filter(l => l.leaveTypeId === db.leaveTypeId);
+          const pendingDays = typeLeaves.filter(l => l.status === "Pending").reduce((sum, l) => sum + l.totalDays, 0);
+          balances.push({
+            leaveTypeId: db.leaveTypeId,
+            leaveTypeName: db.leaveTypeName || types.find(t => t.id === db.leaveTypeId)?.name || "Leave",
+            allocatedDays: db.totalAllowed,
+            usedDays: db.used,
+            pendingDays,
+            remainingDays: Math.max(0, db.available - pendingDays),
+            carryForwardDays: 0,
+          });
+        }
+
+        // Step 2: for leave types not yet covered by a DB balance, compute from requests
+        for (const type of types) {
+          if (seenTypeIds.has(type.id)) continue;
           const typeLeaves = response.items.filter(l => l.leaveTypeId === type.id);
-          const usedDays = typeLeaves.filter(l => l.status === "Approved").reduce((sum, l) => sum + l.totalDays, 0);
+          const usedFromRequests = typeLeaves.filter(l => l.status === "Approved").reduce((sum, l) => sum + l.totalDays, 0);
           const pendingDays = typeLeaves.filter(l => l.status === "Pending").reduce((sum, l) => sum + l.totalDays, 0);
           const allocated = type.maxDaysPerYear;
-          const remaining = Math.max(0, allocated - usedDays - pendingDays);
-
-          return {
+          balances.push({
             leaveTypeId: type.id,
             leaveTypeName: type.name,
             allocatedDays: allocated,
-            usedDays,
+            usedDays: usedFromRequests,
             pendingDays,
-            remainingDays: remaining,
-            carryForwardDays: 0, // implement if needed
-          };
-        });
+            remainingDays: Math.max(0, allocated - usedFromRequests - pendingDays),
+            carryForwardDays: 0,
+          });
+        }
         setLeaveBalances(balances);
       } catch (error) {
         console.error("Failed to fetch:", error);
@@ -115,7 +159,7 @@ export function StaffLeaveManagerEnhanced() {
     };
 
     fetchData();
-  }, [toast]);
+  }, [user?.linkedEntityId]);
 
   // Submit Leave Request
   const handleSubmit = async () => {

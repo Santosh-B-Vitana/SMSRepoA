@@ -5,6 +5,7 @@ using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -52,6 +53,15 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = GetSchoolId();
+                // Respect the globally-selected academic year (X-Academic-Year header) unless the
+                // caller explicitly overrides it via the query filter. Keeps the admissions list in
+                // sync with the header year selector like Students/Fees.
+                if (string.IsNullOrWhiteSpace(filters.AcademicYear)
+                    && HttpContext.Items["AcademicYearHeaderValue"] is string headerYear
+                    && !string.IsNullOrWhiteSpace(headerYear))
+                {
+                    filters.AcademicYear = headerYear;
+                }
                 var result = await _service.GetApplicationsAsync(schoolId, filters, page, pageSize);
                 return Ok(result);
             }
@@ -268,7 +278,7 @@ namespace SmsApi.Controllers
             {
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
-                await _service.EnrollStudentAsync(schoolId, id, dto.AdmissionNumber ?? string.Empty, userId);
+                await _service.EnrollStudentAsync(schoolId, id, dto.AdmissionNumber ?? string.Empty, userId, dto.Section);
                 return NoContent();
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
@@ -343,6 +353,41 @@ namespace SmsApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error uploading document for application {Id}", id);
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        [HttpPost("applications/{id}/photo")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<ActionResult> UploadApplicationPhoto(
+            Guid id, IFormFile file,
+            [FromServices] IFileValidationService fileValidationService)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                if (file == null || file.Length == 0)
+                    return BadRequest(new { message = "No file uploaded." });
+
+                var (isValid, error) = await fileValidationService.ValidateAsync(file);
+                if (!isValid)
+                    return BadRequest(new { message = error });
+
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms);
+                var fileData = ms.ToArray();
+
+                var photoUrl = await _service.UploadPhotoAsync(schoolId, id, file.FileName, fileData);
+                return Ok(new { photoUrl });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading photo for application {Id}", id);
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
         }

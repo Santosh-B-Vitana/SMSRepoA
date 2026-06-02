@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,6 +137,7 @@ function DetailDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useLanguage();
   if (!announcement) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -151,10 +153,10 @@ function DetailDialog({
             <PriorityBadge priority={announcement.priority} />
             <AudienceBadge audience={announcement.targetAudience} />
             {!announcement.isActive && (
-              <Badge variant="outline" className="bg-gray-100 text-gray-500">Inactive</Badge>
+              <Badge variant="outline" className="bg-gray-100 text-gray-500">{t('common.inactive')}</Badge>
             )}
             {announcement.isExpired && (
-              <Badge variant="outline" className="bg-yellow-100 text-yellow-700">Expired</Badge>
+              <Badge variant="outline" className="bg-yellow-100 text-yellow-700">{t('announcements.expired')}</Badge>
             )}
           </div>
           <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
@@ -173,12 +175,12 @@ function DetailDialog({
               rel="noopener noreferrer"
               className="text-sm text-primary underline"
             >
-              View Attachment
+              {t('announcements.viewAttachment')}
             </a>
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.close')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -194,10 +196,10 @@ interface FormDialogProps {
   editing: AnnouncementBasic | null;
   onClose: () => void;
   onSaved: () => void;
-  staffId: string;
 }
 
-function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProps) {
+function FormDialog({ open, editing, onClose, onSaved }: FormDialogProps) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<FormState>(emptyForm);
 
   // Reset when dialog opens
@@ -249,7 +251,6 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
       const dto: CreateAnnouncementDto = {
         title:           form.title.trim(),
         content:         form.content.trim(),
-        createdByStaffId: staffId,
         priority:        form.priority,
         targetAudience:  form.targetAudience,
         isPinned:        form.isPinned,
@@ -264,11 +265,11 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit Announcement" : "New Announcement"}</DialogTitle>
+          <DialogTitle>{editing ? t('announcements.editAnnouncement') : t('announcements.newAnnouncement')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1">
-            <Label>Title <span className="text-red-500">*</span></Label>
+            <Label>{t('announcements.announcementTitle')} <span className="text-red-500">*</span></Label>
             <Input
               value={form.title}
               onChange={e => set("title", e.target.value)}
@@ -277,7 +278,7 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
             />
           </div>
           <div className="space-y-1">
-            <Label>Content <span className="text-red-500">*</span></Label>
+            <Label>{t('announcements.content')} <span className="text-red-500">*</span></Label>
             <Textarea
               value={form.content}
               onChange={e => set("content", e.target.value)}
@@ -289,7 +290,7 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label>Priority</Label>
+              <Label>{t('announcements.priority')}</Label>
               <Select value={form.priority} onValueChange={v => set("priority", v as AnnouncementPriority)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -300,7 +301,7 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Target Audience</Label>
+              <Label>{t('announcements.targetAudience')}</Label>
               <Select value={form.targetAudience} onValueChange={v => set("targetAudience", v as AnnouncementAudience)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -313,7 +314,7 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label>Expiry Date (optional)</Label>
+              <Label>{t('announcements.expiryDate')}</Label>
               <Input
                 type="datetime-local"
                 value={form.expiryDate}
@@ -321,7 +322,7 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
               />
             </div>
             <div className="space-y-1">
-              <Label>Attachment URL (optional)</Label>
+              <Label>{t('announcements.attachmentUrl')}</Label>
               <Input
                 value={form.attachmentUrl}
                 onChange={e => set("attachmentUrl", e.target.value)}
@@ -337,7 +338,7 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
                 checked={form.isPinned}
                 onCheckedChange={v => set("isPinned", v)}
               />
-              <Label htmlFor="pinned">Pinned</Label>
+              <Label htmlFor="pinned">{t('announcements.pinned')}</Label>
             </div>
             {editing && (
               <div className="flex items-center gap-2">
@@ -346,16 +347,16 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
                   checked={form.isActive}
                   onCheckedChange={v => set("isActive", v)}
                 />
-                <Label htmlFor="active">Active</Label>
+                <Label htmlFor="active">{t('common.active')}</Label>
               </div>
             )}
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isBusy}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={isBusy}>{t('common.cancel')}</Button>
           <Button onClick={handleSubmit} disabled={isBusy}>
             {isBusy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {editing ? "Save Changes" : "Create Announcement"}
+            {editing ? t('announcements.saveChanges') : t('announcements.createAnnouncement')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -367,11 +368,9 @@ function FormDialog({ open, editing, onClose, onSaved, staffId }: FormDialogProp
 // Main component
 // ═══════════════════════════════════════════════════════════════════════════
 
-// TODO: replace with real auth/tenant context value when integrated
-const PLACEHOLDER_STAFF_ID = "00000000-0000-0000-0000-000000000001";
-
 export function AnnouncementManager() {
   const qc = useQueryClient();
+  const { t } = useLanguage();
 
   // Filters & pagination
   const [search, setSearch]               = useState("");
@@ -438,12 +437,12 @@ export function AnnouncementManager() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Announcements</h1>
-          <p className="text-muted-foreground text-sm">Manage school-wide announcements</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('announcements.title')}</h1>
+          <p className="text-muted-foreground text-sm">{t('announcements.manageDesc')}</p>
         </div>
         <Button onClick={() => { setEditing(null); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-2" />
-          New Announcement
+          {t('announcements.newAnnouncement')}
         </Button>
       </div>
 
@@ -453,7 +452,7 @@ export function AnnouncementManager() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('common.total')}</p>
                 <p className="text-3xl font-bold mt-1">{stats?.totalAnnouncements ?? "—"}</p>
               </div>
               <Megaphone className="h-8 w-8 text-primary opacity-80" />
@@ -464,7 +463,7 @@ export function AnnouncementManager() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Active</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('common.active')}</p>
                 <p className="text-3xl font-bold mt-1 text-green-600">{stats?.activeAnnouncements ?? "—"}</p>
               </div>
               <Megaphone className="h-8 w-8 text-green-500 opacity-80" />
@@ -475,7 +474,7 @@ export function AnnouncementManager() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Pinned</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('announcements.pinned')}</p>
                 <p className="text-3xl font-bold mt-1 text-orange-600">{stats?.pinnedAnnouncements ?? "—"}</p>
               </div>
               <Pin className="h-8 w-8 text-orange-500 opacity-80" />
@@ -486,7 +485,7 @@ export function AnnouncementManager() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Urgent</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('announcements.urgent')}</p>
                 <p className="text-3xl font-bold mt-1 text-red-600">{stats?.urgentAnnouncements ?? "—"}</p>
               </div>
               <AlertCircle className="h-8 w-8 text-red-500 opacity-80" />
@@ -500,11 +499,11 @@ export function AnnouncementManager() {
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-[200px] space-y-1">
-              <Label className="text-xs">Search</Label>
+              <Label className="text-xs">{t('common.search')}</Label>
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search title or content..."
+                  placeholder={t('announcements.searchPlaceholder')}
                   className="pl-8"
                   value={search}
                   onChange={e => { setSearch(e.target.value); setPage(1); }}
@@ -512,11 +511,11 @@ export function AnnouncementManager() {
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Priority</Label>
+              <Label className="text-xs">{t('announcements.priority')}</Label>
               <Select value={filterPriority} onValueChange={v => { setFilterPriority(v); setPage(1); }}>
                 <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">{t('announcements.all')}</SelectItem>
                   {PRIORITIES.map(p => (
                     <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                   ))}
@@ -524,11 +523,11 @@ export function AnnouncementManager() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Audience</Label>
+              <Label className="text-xs">{t('announcements.audience')}</Label>
               <Select value={filterAudience} onValueChange={v => { setFilterAudience(v); setPage(1); }}>
                 <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">{t('announcements.all')}</SelectItem>
                   {AUDIENCES.map(a => (
                     <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
                   ))}
@@ -536,13 +535,13 @@ export function AnnouncementManager() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Status</Label>
+              <Label className="text-xs">{t('common.status')}</Label>
               <Select value={filterActive} onValueChange={v => { setFilterActive(v); setPage(1); }}>
                 <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="all">{t('announcements.all')}</SelectItem>
+                  <SelectItem value="active">{t('announcements.active')}</SelectItem>
+                  <SelectItem value="inactive">{t('common.inactive')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -555,7 +554,7 @@ export function AnnouncementManager() {
                   setFilterAudience("all"); setFilterActive("all"); setPage(1);
                 }}
               >
-                Clear
+                {t('announcements.clear')}
               </Button>
             )}
           </div>
@@ -578,30 +577,30 @@ export function AnnouncementManager() {
           {announcementsQ.isLoading ? (
             <div className="flex items-center justify-center h-40 gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
-              Loading…
+              {t('common.loading')}
             </div>
           ) : announcementsQ.isError ? (
             <div className="flex items-center justify-center h-40 text-red-500 gap-2">
               <AlertCircle className="h-5 w-5" />
-              Failed to load announcements
+              {t('announcements.loadError')}
             </div>
           ) : !paginatedData?.items.length ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
               <Megaphone className="h-8 w-8 opacity-30" />
-              <p className="text-sm">No announcements found</p>
+              <p className="text-sm">{t('announcements.noAnnouncements')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-8" />
-                  <TableHead>Title</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Audience</TableHead>
-                  <TableHead>Published</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t('announcements.titleCol')}</TableHead>
+                  <TableHead>{t('announcements.priority')}</TableHead>
+                  <TableHead>{t('announcements.audience')}</TableHead>
+                  <TableHead>{t('announcements.publishedCol')}</TableHead>
+                  <TableHead>{t('announcements.expiresCol')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
+                  <TableHead className="text-right">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -627,11 +626,11 @@ export function AnnouncementManager() {
                     <TableCell className="text-sm">{fmtDate(a.expiryDate)}</TableCell>
                     <TableCell>
                       {a.isExpired ? (
-                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">Expired</Badge>
+                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">{t('announcements.expired')}</Badge>
                       ) : a.isActive ? (
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{t('announcements.active')}</Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">Inactive</Badge>
+                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">{t('common.inactive')}</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -698,7 +697,6 @@ export function AnnouncementManager() {
         editing={editing}
         onClose={() => { setShowForm(false); setEditing(null); }}
         onSaved={handleSaved}
-        staffId={PLACEHOLDER_STAFF_ID}
       />
 
       {/* Detail View Dialog */}
@@ -712,21 +710,20 @@ export function AnnouncementManager() {
       <AlertDialog open={deleteTarget !== null} onOpenChange={o => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Announcement?</AlertDialogTitle>
+            <AlertDialogTitle>{t('announcements.deleteConfirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              "{deleteTarget?.title}" will be soft-deleted and hidden from all recipients.
-              This action cannot be undone.
+              "{deleteTarget?.title}" {t('announcements.deleteConfirmDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
               disabled={deleteMut.isPending}
             >
               {deleteMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Delete
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

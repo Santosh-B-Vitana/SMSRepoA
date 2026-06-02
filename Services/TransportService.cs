@@ -18,10 +18,21 @@ namespace SmsApi.Services
         Task<TransportRouteResponse?> UpdateRouteAsync(Guid id, Guid schoolId, CreateTransportRouteRequest request);
         Task<bool> DeleteRouteAsync(Guid id, Guid schoolId);
         Task<List<TransportStudentResponse>> GetStudentsByRouteAsync(Guid routeId, Guid schoolId);
-        Task<List<TransportStudentDetailResponse>> GetAllTransportStudentsAsync(Guid schoolId);
+        Task<TransportStudentListResponse> GetAllTransportStudentsAsync(Guid schoolId, int page = 1, int pageSize = 20, string? search = null);
         Task<TransportStudentResponse> AssignStudentToRouteAsync(CreateTransportStudentRequest request);
         Task<TransportStudentResponse?> UpdateTransportStudentAsync(Guid id, Guid schoolId, UpdateTransportStudentRequest request);
         Task<bool> RemoveStudentFromRouteAsync(Guid id, Guid schoolId);
+
+        // ── Stop management ──────────────────────────────────────────────
+        Task<List<TransportStopResponse>> GetStopsAsync(Guid routeId, Guid schoolId);
+        Task<TransportStopResponse?> GetStopByIdAsync(Guid id, Guid schoolId);
+        Task<TransportStopResponse> CreateStopAsync(Guid routeId, Guid schoolId, CreateTransportStopRequest request);
+        Task<TransportStopResponse?> UpdateStopAsync(Guid id, Guid schoolId, UpdateTransportStopRequest request);
+        Task<bool> DeleteStopAsync(Guid id, Guid schoolId);
+        Task ReorderStopsAsync(Guid routeId, Guid schoolId, ReorderStopsRequest request);
+
+        // ── Vehicle assignment to route ───────────────────────────────────
+        Task<TransportRouteResponse?> AssignVehicleToRouteAsync(Guid routeId, Guid schoolId, Guid? vehicleId);
     }
 
     public class TransportService : ITransportService
@@ -212,30 +223,59 @@ namespace SmsApi.Services
             return students.Select(MapToStudentResponse).ToList();
         }
 
-        public async Task<List<TransportStudentDetailResponse>> GetAllTransportStudentsAsync(Guid schoolId)
+        public async Task<TransportStudentListResponse> GetAllTransportStudentsAsync(Guid schoolId, int page = 1, int pageSize = 20, string? search = null)
         {
-            var transportStudents = await _context.TransportStudents
+            pageSize = Math.Clamp(pageSize, 1, 500);
+            page = Math.Max(1, page);
+
+            var query = _context.TransportStudents
                 .Include(ts => ts.Student)
                 .Include(ts => ts.Route)
-                .Where(ts => ts.SchoolId == schoolId && ts.Status == "active")
+                .Where(ts => ts.SchoolId == schoolId && ts.Status == "active");
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var lower = search.ToLower();
+                query = query.Where(ts =>
+                    (ts.Student != null && ts.Student.FirstName.ToLower().Contains(lower)) ||
+                    (ts.Student != null && ts.Student.LastName.ToLower().Contains(lower)) ||
+                    (ts.Route != null && ts.Route.RouteName.ToLower().Contains(lower)) ||
+                    (ts.PickupPoint != null && ts.PickupPoint.ToLower().Contains(lower)));
+            }
+
+            var total = await query.CountAsync();
+            var items = await query
+                .OrderBy(ts => ts.Student!.FirstName).ThenBy(ts => ts.Student!.LastName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return transportStudents.Select(ts => new TransportStudentDetailResponse
+            return new TransportStudentListResponse
             {
-                Id = ts.Id,
-                StudentId = ts.StudentId,
-                StudentName = ts.Student != null ? $"{ts.Student.FirstName} {ts.Student.LastName}" : "Unknown",
-                StudentClass = ts.Student?.Class ?? "N/A",
-                StudentSection = ts.Student?.Section ?? "N/A",
-                RouteId = ts.RouteId,
-                RouteName = ts.Route?.RouteName ?? "Unknown",
-                RouteNumber = ts.Route?.RouteNumber ?? "N/A",
-                PickupPoint = ts.PickupPoint,
-                DropPoint = ts.DropPoint,
-                MonthlyFee = ts.MonthlyFee,
-                Status = ts.Status,
-                CreatedAt = ts.CreatedAt
-            }).ToList();
+                Students = items.Select(ts => new TransportStudentDetailResponse
+                {
+                    Id = ts.Id,
+                    StudentId = ts.StudentId,
+                    StudentName = ts.Student != null
+                        ? (!string.IsNullOrWhiteSpace(ts.Student.FirstName)
+                            ? $"{ts.Student.FirstName} {ts.Student.LastName}".Trim()
+                            : ts.Student.Name)
+                        : "Unknown",
+                    StudentClass = ts.Student?.Class ?? "N/A",
+                    StudentSection = ts.Student?.Section ?? "N/A",
+                    RouteId = ts.RouteId,
+                    RouteName = ts.Route?.RouteName ?? "Unknown",
+                    RouteNumber = ts.Route?.RouteNumber ?? "N/A",
+                    PickupPoint = ts.PickupPoint,
+                    DropPoint = ts.DropPoint,
+                    MonthlyFee = ts.MonthlyFee,
+                    Status = ts.Status,
+                    CreatedAt = ts.CreatedAt
+                }).ToList(),
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            };
         }
 
         public async Task<TransportStudentResponse> AssignStudentToRouteAsync(CreateTransportStudentRequest request)
@@ -409,6 +449,39 @@ namespace SmsApi.Services
         }
 
         /// <summary>
+        /// Adds or accumulates <paramref name="addedAmount"/> into the named key of
+        /// <see cref="FeeRecord.FeeHeadOverrides"/>. When the fee structure has 0 for that head,
+        /// the stale-fix loop treats a positive override as a negative reduction (0 - X = -X,
+        /// correctTotal -= -X → correctTotal += X), preserving the per-student charge across GETs.
+        /// </summary>
+        private static void ApplyModuleFeeOverride(FeeRecord record, string key, decimal addedAmount)
+        {
+            var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(record.FeeHeadOverrides))
+                try { overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(record.FeeHeadOverrides) ?? overrides; } catch { }
+            overrides[key] = (overrides.TryGetValue(key, out var existing) ? existing : 0m) + addedAmount;
+            record.FeeHeadOverrides = System.Text.Json.JsonSerializer.Serialize(overrides);
+        }
+
+        /// <summary>
+        /// Adjusts (adds or subtracts) <paramref name="delta"/> on the named key in
+        /// <see cref="FeeRecord.FeeHeadOverrides"/>. Removes the key when the result reaches 0.
+        /// </summary>
+        private static void AdjustModuleFeeOverride(FeeRecord record, string key, decimal delta)
+        {
+            if (delta == 0) return;
+            var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(record.FeeHeadOverrides))
+                try { overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(record.FeeHeadOverrides) ?? overrides; } catch { }
+            var current = overrides.TryGetValue(key, out var ex) ? ex : 0m;
+            var updated = Math.Max(0, current + delta);
+            if (updated > 0) overrides[key] = updated;
+            else overrides.Remove(key);
+            record.FeeHeadOverrides = overrides.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(overrides) : null;
+        }
+
+        /// <summary>
         /// Adds the pro-rated transport fee (from today to academic-year end) plus any pending
         /// library fines to the student's existing pending FeeRecord. Creates one if none exists.
         /// Library fines are marked FinePaid=true to prevent double-counting.
@@ -452,6 +525,11 @@ namespace SmsApi.Services
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.UpdatedAt = now;
+
+                    // Track pro-rata transport fee in FeeHeadOverrides so the stale-fix loop
+                    // (which resets TotalAmount from the fee structure) preserves this per-student charge.
+                    if (prorataFee > 0)
+                        ApplyModuleFeeOverride(feeRecord, "transportFee", prorataFee);
 
                     _logger.LogInformation(
                         "Added ₹{Amount} (pro-rata transport ₹{Transport} [{Days}d] + library fines ₹{Fines}) to fee record {RecordId} for student {StudentId}",
@@ -524,6 +602,10 @@ namespace SmsApi.Services
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.UpdatedAt = now;
+
+                    // Keep the FeeHeadOverrides in sync so the stale-fix loop preserves the correct value.
+                    AdjustModuleFeeOverride(feeRecord, "transportFee", prorataDiff);
+
                     await _context.SaveChangesAsync();
 
                     _logger.LogInformation(
@@ -725,6 +807,196 @@ namespace SmsApi.Services
                 UpdatedAt = student.UpdatedAt
             };
         }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // STOP MANAGEMENT
+        // ═══════════════════════════════════════════════════════════════════
+
+        public async Task<List<TransportStopResponse>> GetStopsAsync(Guid routeId, Guid schoolId)
+        {
+            var stops = await _context.TransportStops
+                .Where(s => s.RouteId == routeId && s.SchoolId == schoolId)
+                .OrderBy(s => s.StopOrder)
+                .ToListAsync();
+
+            var pickupCounts = await _context.TransportStudents
+                .Where(ts => ts.PickupStopId != null && stops.Select(s => s.Id).Contains(ts.PickupStopId!.Value))
+                .GroupBy(ts => ts.PickupStopId!.Value)
+                .Select(g => new { StopId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.StopId, x => x.Count);
+
+            var dropCounts = await _context.TransportStudents
+                .Where(ts => ts.DropStopId != null && stops.Select(s => s.Id).Contains(ts.DropStopId!.Value))
+                .GroupBy(ts => ts.DropStopId!.Value)
+                .Select(g => new { StopId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.StopId, x => x.Count);
+
+            return stops.Select(s => MapToStopResponse(s, pickupCounts, dropCounts)).ToList();
+        }
+
+        public async Task<TransportStopResponse?> GetStopByIdAsync(Guid id, Guid schoolId)
+        {
+            var stop = await _context.TransportStops
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+
+            if (stop == null) return null;
+
+            var pickupCount = await _context.TransportStudents.CountAsync(ts => ts.PickupStopId == id);
+            var dropCount = await _context.TransportStudents.CountAsync(ts => ts.DropStopId == id);
+
+            return MapToStopResponse(stop,
+                new Dictionary<Guid, int> { [id] = pickupCount },
+                new Dictionary<Guid, int> { [id] = dropCount });
+        }
+
+        public async Task<TransportStopResponse> CreateStopAsync(Guid routeId, Guid schoolId, CreateTransportStopRequest request)
+        {
+            var routeExists = await _context.TransportRoutes
+                .AnyAsync(r => r.Id == routeId && r.SchoolId == schoolId);
+            if (!routeExists)
+                throw new KeyNotFoundException("Transport route not found.");
+
+            // Ensure stop order is unique per route
+            var orderUsed = await _context.TransportStops
+                .AnyAsync(s => s.RouteId == routeId && s.StopOrder == request.StopOrder);
+            if (orderUsed)
+                throw new InvalidOperationException($"Stop order {request.StopOrder} is already used on this route.");
+
+            var stop = new TransportStop
+            {
+                SchoolId = schoolId,
+                RouteId = routeId,
+                StopName = request.StopName,
+                StopOrder = request.StopOrder,
+                Landmark = request.Landmark,
+                Latitude = request.Latitude,
+                Longitude = request.Longitude,
+                MorningArrivalTime = request.MorningArrivalTime,
+                EveningDepartureTime = request.EveningDepartureTime,
+                DistanceKm = request.DistanceKm,
+                Status = "active"
+            };
+
+            _context.TransportStops.Add(stop);
+            await _context.SaveChangesAsync();
+
+            return MapToStopResponse(stop, new Dictionary<Guid, int>(), new Dictionary<Guid, int>());
+        }
+
+        public async Task<TransportStopResponse?> UpdateStopAsync(Guid id, Guid schoolId, UpdateTransportStopRequest request)
+        {
+            var stop = await _context.TransportStops
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+            if (stop == null) return null;
+
+            // Check new order doesn't conflict with another stop
+            if (request.StopOrder.HasValue && request.StopOrder.Value != stop.StopOrder)
+            {
+                var orderUsed = await _context.TransportStops
+                    .AnyAsync(s => s.RouteId == stop.RouteId && s.Id != id && s.StopOrder == request.StopOrder.Value);
+                if (orderUsed)
+                    throw new InvalidOperationException($"Stop order {request.StopOrder} is already used on this route.");
+                stop.StopOrder = request.StopOrder.Value;
+            }
+
+            if (request.StopName != null) stop.StopName = request.StopName;
+            if (request.Landmark != null) stop.Landmark = request.Landmark;
+            if (request.Latitude.HasValue) stop.Latitude = request.Latitude;
+            if (request.Longitude.HasValue) stop.Longitude = request.Longitude;
+            if (request.MorningArrivalTime.HasValue) stop.MorningArrivalTime = request.MorningArrivalTime;
+            if (request.EveningDepartureTime.HasValue) stop.EveningDepartureTime = request.EveningDepartureTime;
+            if (request.DistanceKm.HasValue) stop.DistanceKm = request.DistanceKm;
+            if (request.Status != null) stop.Status = request.Status;
+
+            await _context.SaveChangesAsync();
+            return await GetStopByIdAsync(id, schoolId);
+        }
+
+        public async Task<bool> DeleteStopAsync(Guid id, Guid schoolId)
+        {
+            var stop = await _context.TransportStops
+                .FirstOrDefaultAsync(s => s.Id == id && s.SchoolId == schoolId);
+            if (stop == null) return false;
+
+            // Unlink students from this stop
+            var linked = await _context.TransportStudents
+                .Where(ts => ts.PickupStopId == id || ts.DropStopId == id)
+                .ToListAsync();
+            foreach (var ts in linked)
+            {
+                if (ts.PickupStopId == id) ts.PickupStopId = null;
+                if (ts.DropStopId == id) ts.DropStopId = null;
+            }
+
+            _context.TransportStops.Remove(stop);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task ReorderStopsAsync(Guid routeId, Guid schoolId, ReorderStopsRequest request)
+        {
+            var stops = await _context.TransportStops
+                .Where(s => s.RouteId == routeId && s.SchoolId == schoolId)
+                .ToListAsync();
+
+            for (int i = 0; i < request.OrderedStopIds.Count; i++)
+            {
+                var stop = stops.FirstOrDefault(s => s.Id == request.OrderedStopIds[i]);
+                if (stop != null) stop.StopOrder = i + 1;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<TransportRouteResponse?> AssignVehicleToRouteAsync(Guid routeId, Guid schoolId, Guid? vehicleId)
+        {
+            var route = await _context.TransportRoutes
+                .FirstOrDefaultAsync(r => r.Id == routeId && r.SchoolId == schoolId);
+            if (route == null) return null;
+
+            if (vehicleId.HasValue)
+            {
+                var vehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v => v.Id == vehicleId.Value && v.SchoolId == schoolId);
+                if (vehicle == null)
+                    throw new KeyNotFoundException("Vehicle not found.");
+
+                route.VehicleId = vehicleId;
+                // Sync capacity and vehicle number for backward compat
+                route.Capacity = vehicle.SeatingCapacity;
+                route.VehicleNumber = vehicle.RegistrationNumber;
+            }
+            else
+            {
+                route.VehicleId = null;
+            }
+
+            await _context.SaveChangesAsync();
+            return MapToResponse(route);
+        }
+
+        private static TransportStopResponse MapToStopResponse(
+            TransportStop s,
+            Dictionary<Guid, int> pickupCounts,
+            Dictionary<Guid, int> dropCounts) => new()
+        {
+            Id = s.Id,
+            SchoolId = s.SchoolId,
+            RouteId = s.RouteId,
+            StopName = s.StopName,
+            StopOrder = s.StopOrder,
+            Landmark = s.Landmark,
+            Latitude = s.Latitude,
+            Longitude = s.Longitude,
+            MorningArrivalTime = s.MorningArrivalTime,
+            EveningDepartureTime = s.EveningDepartureTime,
+            DistanceKm = s.DistanceKm,
+            Status = s.Status,
+            StudentsPickupCount = pickupCounts.GetValueOrDefault(s.Id),
+            StudentsDropCount = dropCounts.GetValueOrDefault(s.Id),
+            CreatedAt = s.CreatedAt,
+            UpdatedAt = s.UpdatedAt
+        };
     }
 }
 

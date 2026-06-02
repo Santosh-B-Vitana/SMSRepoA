@@ -10,8 +10,7 @@ import type { AxiosInstance, AxiosResponse } from "axios";
 // Configuration
 // ---------------------------------------------------------------------------
 
-const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:5092/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const SESSION_AUTH_KEY = "auth_session";
 const TOKEN_KEY = "authToken"; // legacy key used by reference SPA

@@ -72,7 +72,7 @@ import { toast } from "sonner";
 
 // Services
 import { academicApi, type MyClassAssignment, type ClassSubjectResponse } from "@/services/api/academicApi";
-import { timetableApi, type TimetablePeriod } from "@/services/api/timetableApi";
+import { timetableApi, type TimetableRecord, type TimetablePeriod } from "@/services/api/timetableApi";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
 import { attendanceApi, type AttendanceRecordBasic, type MarkAttendanceDto } from "@/services/api/attendanceApi";
 import assignmentApi, {
@@ -86,6 +86,7 @@ import assignmentApi, {
   type GradeCategoryResponse,
 } from "@/services/api/assignmentApi";
 import { useAuth } from "@/contexts/AuthContext";
+import { StaffExamMarksTab } from "@/components/examinations/StaffExamMarksTab";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -187,7 +188,7 @@ function StudentsTab({ students, loading }: { students: StudentBasic[]; loading:
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-sm">{student.admissionNumber}</TableCell>
-                  <TableCell>{student.rollNumber}</TableCell>
+                  <TableCell className="font-medium text-sm">{student.rollNumber}</TableCell>
                   <TableCell>
                     <Badge
                       variant={student.status === "active" ? "default" : "secondary"}
@@ -213,10 +214,11 @@ function StudentsTab({ students, loading }: { students: StudentBasic[]; loading:
 interface AssignmentsTabProps {
   assignment: MyClassAssignment;
   subjects: ClassSubjectResponse[];
+  students: StudentBasic[];
   userId: string;
 }
 
-function AssignmentsTab({ assignment, subjects, userId }: AssignmentsTabProps) {
+function AssignmentsTab({ assignment, subjects, students, userId }: AssignmentsTabProps) {
   const [assignments, setAssignments] = useState<AssignmentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -240,7 +242,7 @@ function AssignmentsTab({ assignment, subjects, userId }: AssignmentsTabProps) {
   const loadAssignments = useCallback(() => {
     setLoading(true);
     assignmentApi
-      .getAssignments(assignment.classId, undefined, 1, 100)
+      .getAssignments(assignment.classId, undefined, undefined, 1, 100)
       .then((res) => setAssignments(res.assignments ?? []))
       .catch(() => toast.error("Failed to load assignments"))
       .finally(() => setLoading(false));
@@ -364,39 +366,70 @@ function AssignmentsTab({ assignment, subjects, userId }: AssignmentsTabProps) {
           <CardContent>
             {submissionsLoading ? (
               <LoadingSpinner text="Loading submissions…" />
-            ) : submissions.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No submissions yet</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student ID</TableHead>
-                    <TableHead>Submitted</TableHead>
-                    <TableHead>Marks</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Feedback</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {submissions.map((sub) => (
-                    <TableRow key={sub.id}>
-                      <TableCell className="font-mono text-xs">{sub.studentId.slice(0, 8)}…</TableCell>
-                      <TableCell>{new Date(sub.submissionDate).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        {sub.marksObtained != null
-                          ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}`
-                          : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="capitalize text-xs">{sub.status}</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {sub.feedback ?? "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <>
+                {submissions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No submissions yet</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Roll No.</TableHead>
+                        <TableHead>Submitted</TableHead>
+                        <TableHead>Marks</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Feedback</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {submissions.map((sub) => (
+                        <TableRow key={sub.id}>
+                          <TableCell className="font-medium">{sub.studentName || "—"}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{sub.studentRollNo ?? "—"}</TableCell>
+                          <TableCell>{new Date(sub.submissionDate).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            {sub.marksObtained != null
+                              ? `${sub.marksObtained} / ${selectedAssignment.maxMarks}`
+                              : "—"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="capitalize text-xs">{sub.status}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {sub.feedback ?? "—"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+
+                {/* Not yet submitted */}
+                {(() => {
+                  const submittedIds = new Set(submissions.map(s => s.studentId));
+                  const pending = students.filter(s => !submittedIds.has(s.id));
+                  if (pending.length === 0) return null;
+                  return (
+                    <div className="mt-4 pt-4 border-t">
+                      <p className="text-sm font-medium text-amber-700 mb-2">
+                        Not yet submitted ({pending.length})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {pending.map(s => (
+                          <span
+                            key={s.id}
+                            className="inline-flex items-center gap-1 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-full px-2.5 py-0.5"
+                          >
+                            {s.name}
+                            {s.rollNumber && <span className="text-amber-500">#{s.rollNumber}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
             )}
           </CardContent>
         </Card>
@@ -943,7 +976,7 @@ function StaffTimetableTab({
   className?: string;
   sectionName?: string;
 }) {
-  if (loading) return <LoadingSpinner text="Loading timetable…" />;
+  if (loading) return <LoadingSpinner text="Loading timetable..." />;
 
   if (periods.length === 0) {
     return (
@@ -962,55 +995,56 @@ function StaffTimetableTab({
 
   const fmt = (t: string) => t.substring(0, 5);
 
+  // Determine visible period numbers from actual data
+  const maxPeriod = Math.max(...periods.map(p => p.periodNumber), 0);
+  const visiblePeriods = Array.from({ length: maxPeriod }, (_, i) => i + 1);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Clock className="h-4 w-4" />
           Weekly Timetable
-          {cls && <Badge variant="outline">{cls}{sectionName ? ` – ${sectionName}` : ""}</Badge>}
+          {cls && <Badge variant="outline">{cls}{sectionName ? ` - ${sectionName}` : ""}</Badge>}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0 overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
+        <table className="w-full text-base border-collapse">
           <thead>
             <tr className="bg-muted/50">
-              <th className="border px-3 py-2 text-left text-xs font-medium text-muted-foreground w-24">Period</th>
+              <th className="border px-3 py-2 text-left text-sm font-semibold text-muted-foreground w-24">Period</th>
               {STAFF_DAYS.map(d => (
-                <th key={d} className="border px-3 py-2 text-center text-xs font-medium min-w-[110px]">{d}</th>
+                <th key={d} className="border px-3 py-2 text-center text-sm font-semibold min-w-[110px]">{d}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {STAFF_PERIODS.map(periodNum => {
+            {visiblePeriods.map(periodNum => {
               const anyP = periods.find(p => p.periodNumber === periodNum);
-              const timeLabel = anyP
-                ? `${fmt(anyP.startTime)}–${fmt(anyP.endTime)}`
+              const timeLabel = anyP?.startTime && anyP?.endTime
+                ? `${fmt(anyP.startTime)}-${fmt(anyP.endTime)}`
                 : (PERIOD_DEFAULTS[periodNum] ?? "");
               return (
                 <tr key={periodNum} className="hover:bg-muted/20">
                   <td className="border px-3 py-2 bg-muted/30">
-                    <div className="font-medium text-xs">P{periodNum}</div>
-                    <div className="text-xs text-muted-foreground">{timeLabel}</div>
+                    <div className="font-semibold text-sm">P{periodNum}</div>
+                    <div className="text-sm text-muted-foreground font-medium">{timeLabel}</div>
                   </td>
                   {STAFF_DAYS.map(day => {
                     const p = getPeriod(day, periodNum);
                     return (
-                      <td key={`${day}-${periodNum}`} className="border px-2 py-1.5 text-center align-middle">
+                      <td key={`${day}-${periodNum}`} className="border px-2 py-2 text-center align-middle">
                         {p ? (
                           <div className="bg-primary/10 rounded px-1.5 py-1 text-left">
-                            <div className="font-medium text-xs leading-tight">
-                              {p.subjectName ?? "—"}
+                            <div className="font-semibold text-sm leading-tight">
+                              {p.subjectName ?? "-"}
                             </div>
                             {p.teacherName && (
-                              <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
-                            )}
-                            {p.room && (
-                              <div className="text-xs text-muted-foreground/60 mt-0.5">{p.room}</div>
+                              <div className="text-sm text-muted-foreground mt-0.5 leading-tight">{p.teacherName}</div>
                             )}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground/30 text-xs">—</span>
+                          <span className="text-muted-foreground/30 text-xs">-</span>
                         )}
                       </td>
                     );
@@ -1065,17 +1099,13 @@ export default function StaffMyClassDetail() {
     setLoadingStudents(true);
 
     const studentsPromise = studentApi
-      .list({ classFilter: assignment.className, pageSize: 300 })
-      .then((res) => {
-        let list = res.students ?? [];
-        if (assignment.sectionName) {
-          list = list.filter(
-            (s) =>
-              s.section?.toLowerCase() === assignment.sectionName?.toLowerCase()
-          );
-        }
-        setStudents(list);
+      .list({
+        classFilter: assignment.className,
+        sectionFilter: assignment.sectionName ?? undefined,
+        status: 'active',
+        pageSize: 500,
       })
+      .then((res) => setStudents(res.students ?? []))
       .catch(() => toast.error("Failed to load students"))
       .finally(() => setLoadingStudents(false));
 
@@ -1089,19 +1119,39 @@ export default function StaffMyClassDetail() {
       .then((res) => setCategories(res.categories ?? []))
       .catch(() => {/* silently skip — categories may not exist */});
 
-    // Load timetable for this section
-    setTimetableLoading(true);
-    const timetablePromise = timetableApi
-      .list(assignment.classId, 1, 5, assignment.sectionId ?? undefined)
-      .then(async (res) => {
-        const active = res.timetables.find(t => t.status === "active") ?? res.timetables[0];
-        if (active) {
-          const detail = await timetableApi.getDetail(active.id);
-          setTimetablePeriods(detail.periods ?? []);
+    // Load timetable from the Timetable Module (same source as admin TimetableManager)
+    const timetablePromise = (async () => {
+      setTimetableLoading(true);
+      try {
+        if (assignment.classId) {
+          const yearsRes = await academicApi.listAcademicYears(1, 5);
+          const currentYear = yearsRes.academicYears?.find((y) => y.isCurrent)?.name
+            ?? yearsRes.academicYears?.[0]?.name;
+          const normalizeYear = (y: string) => y.replace(/\//g, '-').trim();
+          const findTarget = (list: TimetableRecord[]) => {
+            if (!currentYear) return list.find(t => t.status === 'active') ?? list[0] ?? null;
+            const byYear = list.filter(t => normalizeYear(t.academicYear) === normalizeYear(currentYear));
+            return byYear.find(t => t.status === 'active') ?? byYear[0]
+              ?? list.find(t => t.status === 'active') ?? list[0] ?? null;
+          };
+          // Try section-specific timetable first, fall back to class-level
+          const secRes = await timetableApi.list(assignment.classId, 1, 50, assignment.sectionId ?? undefined, currentYear);
+          let target = findTarget(secRes.timetables ?? []);
+          if (!target && assignment.sectionId) {
+            const classRes = await timetableApi.list(assignment.classId, 1, 50, undefined, currentYear);
+            target = findTarget(classRes.timetables ?? []);
+          }
+          if (target) {
+            const detail = await timetableApi.getDetail(target.id);
+            setTimetablePeriods(detail.periods ?? []);
+          }
         }
-      })
-      .catch(() => {/* silently skip */})
-      .finally(() => setTimetableLoading(false));
+      } catch {
+        // silently degrade — timetable is optional
+      } finally {
+        setTimetableLoading(false);
+      }
+    })();
 
     return () => { void studentsPromise; void subjectsPromise; void categoriesPromise; void timetablePromise; };
   }, [assignment]);
@@ -1141,7 +1191,7 @@ export default function StaffMyClassDetail() {
     { id: "students",    label: "Students",    icon: <Users className="h-4 w-4" /> },
     { id: "timetable",   label: "Timetable",   icon: <Clock className="h-4 w-4" /> },
     { id: "assignments", label: "Assignments", icon: <FileText className="h-4 w-4" /> },
-    { id: "marks",       label: "Marks",       icon: <GraduationCap className="h-4 w-4" /> },
+    { id: "exam-marks",  label: "Exam Marks",  icon: <Award className="h-4 w-4" /> },
   ];
 
   return (
@@ -1181,18 +1231,20 @@ export default function StaffMyClassDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="flex-wrap h-auto gap-1 p-1">
-          {tabs.map((tab) => (
-            <TabsTrigger
-              key={tab.id}
-              value={tab.id}
-              className="flex items-center gap-1.5 data-[state=active]:bg-background"
-            >
-              {tab.icon}
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 pb-1">
+          <TabsList className="flex h-auto w-max min-w-full gap-1 p-1 rounded-xl">
+            {tabs.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="flex items-center gap-1.5 text-xs whitespace-nowrap data-[state=active]:bg-background"
+              >
+                {tab.icon}
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         <TabsContent value="students">
           <StudentsTab students={students} loading={loadingStudents} />
@@ -1211,6 +1263,7 @@ export default function StaffMyClassDetail() {
           <AssignmentsTab
             assignment={assignment}
             subjects={subjects}
+            students={students}
             userId={user?.id ?? ""}
           />
         </TabsContent>
@@ -1222,6 +1275,14 @@ export default function StaffMyClassDetail() {
             subjects={subjects}
             categories={categories}
             userId={user?.id ?? ""}
+          />
+        </TabsContent>
+
+        <TabsContent value="exam-marks">
+          <StaffExamMarksTab
+            classId={assignment.classId}
+            sectionId={assignment.sectionId}
+            academicYear={assignment.academicYear}
           />
         </TabsContent>
       </Tabs>

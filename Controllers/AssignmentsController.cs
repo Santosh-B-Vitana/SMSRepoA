@@ -19,12 +19,16 @@ namespace SmsApi.Controllers
         private readonly IAssignmentService _assignmentService;
         private readonly ITenantContext _tenant;
         private readonly AppDbContext _context;
+        private readonly IParentAuthorizationService _parentAuth;
+        private readonly IStudentService _studentService;
 
-        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant, AppDbContext context)
+        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant, AppDbContext context, IParentAuthorizationService parentAuth, IStudentService studentService)
         {
             _assignmentService = assignmentService;
             _tenant = tenant;
             _context = context;
+            _parentAuth = parentAuth;
+            _studentService = studentService;
         }
 
         // Assignment Endpoints
@@ -32,10 +36,11 @@ namespace SmsApi.Controllers
         [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         public async Task<ActionResult<AssignmentListResponse>> GetAssignments(
             [FromQuery] Guid? classId = null,
+            [FromQuery] Guid? sectionId = null,
             [FromQuery] Guid? subjectId = null,
             [FromQuery] Guid? assignedById = null,
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 10)
+            [FromQuery] int pageSize = 50)
         {
             try
             {
@@ -48,10 +53,16 @@ namespace SmsApi.Controllers
                     ?? User.Claims.FirstOrDefault(c => c.Type == "role")?.Value?.ToLower();
                 if (userRole is "staff" or "teacher")
                 {
-                    effectiveAssignedById = _tenant.UserId;
+                    // Must resolve StaffMember.Id (not UserLogin.Id) to match what CreateAssignment stores
+                    var userEmail = _tenant.UserEmail;
+                    var staffMember = await _context.StaffMembers
+                        .FirstOrDefaultAsync(s => s.SchoolId == schoolId
+                                               && s.Email != null
+                                               && s.Email.ToLower() == userEmail.ToLower());
+                    effectiveAssignedById = staffMember?.Id ?? _tenant.UserId;
                 }
 
-                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, subjectId, effectiveAssignedById, page, pageSize);
+                var result = await _assignmentService.GetAssignmentsAsync(schoolId, classId, sectionId, subjectId, effectiveAssignedById, page, pageSize);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -122,13 +133,27 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "Admin,Principal,Teacher")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
         public async Task<ActionResult<AssignmentResponse>> UpdateAssignment(Guid id, [FromBody] UpdateAssignmentRequest request)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                var assignment = await _assignmentService.UpdateAssignmentAsync(id, schoolId, request);
+                var userEmail = _tenant.UserEmail;
+                var userRole = User.FindFirstValue(ClaimTypes.Role)?.ToLower() ?? User.Claims.FirstOrDefault(c => c.Type == "role")?.Value?.ToLower();
+                
+                // For teachers/staff: get their StaffMember ID for authorization check
+                Guid? staffMemberId = null;
+                if (userRole is "staff" or "teacher")
+                {
+                    var staffMember = await _context.StaffMembers
+                        .FirstOrDefaultAsync(s => s.SchoolId == schoolId 
+                                               && s.Email != null 
+                                               && s.Email.ToLower() == userEmail.ToLower());
+                    staffMemberId = staffMember?.Id;
+                }
+                
+                var assignment = await _assignmentService.UpdateAssignmentAsync(id, schoolId, request, userRole, staffMemberId);
                 if (assignment == null)
                 {
                     return NotFound(new { error = "Assignment not found" });
@@ -158,16 +183,41 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin,Principal,Teacher")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
         public async Task<ActionResult> DeleteAssignment(Guid id)
         {
-            var schoolId = _tenant.GetEffectiveSchoolId();
-            var result = await _assignmentService.DeleteAssignmentAsync(id, schoolId);
-            if (!result)
+            try
             {
-                return NotFound();
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userEmail = _tenant.UserEmail;
+                var userRole = User.FindFirstValue(ClaimTypes.Role)?.ToLower() ?? User.Claims.FirstOrDefault(c => c.Type == "role")?.Value?.ToLower();
+                
+                // For teachers/staff: get their StaffMember ID for authorization check
+                Guid? staffMemberId = null;
+                if (userRole is "staff" or "teacher")
+                {
+                    var staffMember = await _context.StaffMembers
+                        .FirstOrDefaultAsync(s => s.SchoolId == schoolId 
+                                               && s.Email != null 
+                                               && s.Email.ToLower() == userEmail.ToLower());
+                    staffMemberId = staffMember?.Id;
+                }
+                
+                var result = await _assignmentService.DeleteAssignmentAsync(id, schoolId, userRole, staffMemberId);
+                if (!result)
+                {
+                    return NotFound(new { error = "Assignment not found or you don't have permission to delete it" });
+                }
+                return NoContent();
             }
-            return NoContent();
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
 
         // Submission Endpoints
@@ -193,6 +243,106 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
+        /// Get all assignments for a child's enrolled class/section with submission status.
+        /// Parents can only access their own linked child. Staff can access any student.
+        /// Returns every active assignment (not just submitted ones) so the parent can see
+        /// what is pending, submitted, graded or overdue.
+        /// </summary>
+        [HttpGet("for-child")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
+        public async Task<ActionResult<ChildAssignmentListResponse>> GetAssignmentsForChild(
+            [FromQuery] Guid studentId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+
+                if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(parentEmail))
+                        return StatusCode(403, new { error = "Parent email not found in token." });
+                    // Use the same child-resolution logic as my-children endpoint for consistency
+                    var accessibleChildren = await _studentService.GetMyChildrenAsync(schoolId, parentEmail);
+                    var canAccess = accessibleChildren.Any(c => c.Id == studentId);
+                    if (!canAccess)
+                        return StatusCode(403, new { error = "Parents can only access their own child's data." });
+                }
+
+                // Resolve the student's active enrollment
+                var enrollment = await _context.StudentEnrollments
+                    .Where(e => e.StudentId == studentId && e.SchoolId == schoolId && e.Status == "active")
+                    .OrderByDescending(e => e.EnrollmentDate)
+                    .FirstOrDefaultAsync();
+
+                if (enrollment == null)
+                    return Ok(new ChildAssignmentListResponse());
+
+                var skip = (page < 1 ? 0 : page - 1) * (pageSize < 1 ? 50 : pageSize > 100 ? 100 : pageSize);
+                var take = pageSize < 1 ? 50 : pageSize > 100 ? 100 : pageSize;
+
+                // All active assignments for the student's class (optionally section-filtered)
+                var query = _context.Assignments
+                    .Where(a => a.SchoolId == schoolId
+                             && a.ClassId == enrollment.ClassId
+                             && (a.SectionId == null || a.SectionId == enrollment.SectionId)
+                             && a.Status == "active");
+
+                var total = await query.CountAsync();
+
+                var assignments = await query
+                    .Include(a => a.Subject)
+                    .OrderByDescending(a => a.DueDate)
+                    .Skip(skip)
+                    .Take(take)
+                    .ToListAsync();
+
+                var assignmentIds = assignments.Select(a => a.Id).ToList();
+
+                var submissionMap = await _context.AssignmentSubmissions
+                    .Where(s => s.StudentId == studentId && assignmentIds.Contains(s.AssignmentId))
+                    .ToDictionaryAsync(s => s.AssignmentId);
+
+                var now = DateTime.UtcNow;
+                var data = assignments.Select(a =>
+                {
+                    submissionMap.TryGetValue(a.Id, out var sub);
+                    return new ChildAssignmentView
+                    {
+                        Id             = a.Id,
+                        Title          = a.Title,
+                        Description    = a.Description,
+                        SubjectName    = a.Subject?.Name ?? string.Empty,
+                        AssignedDate   = a.AssignedDate,
+                        DueDate        = a.DueDate,
+                        MaxMarks       = a.MaxMarks,
+                        AssignmentStatus = a.Status,
+                        AttachmentUrl  = a.AttachmentUrl,
+                        IsOverdue      = a.DueDate < now && sub == null,
+                        Submission     = sub == null ? null : new ChildSubmissionSnapshot
+                        {
+                            Id              = sub.Id,
+                            SubmissionDate  = sub.SubmissionDate,
+                            MarksObtained   = sub.MarksObtained,
+                            Status          = sub.Status,
+                            Feedback        = sub.Feedback,
+                            GradedDate      = sub.GradedDate,
+                        }
+                    };
+                }).ToList();
+
+                return Ok(new ChildAssignmentListResponse { Data = data, Total = total, Page = page, PageSize = pageSize });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get all submissions for a specific student.
         /// Admin/Staff can access any student. Parents can only access their linked child.
         /// </summary>
@@ -210,14 +360,9 @@ namespace SmsApi.Controllers
                 // Parent role: verify this student is their linked child
                 if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
                 {
-                    var parentEmail = _tenant.UserEmail;
-                    var isLinked = await _context.StudentGuardians
-                        .AnyAsync(g => g.StudentId == studentId
-                                   && g.SchoolId == schoolId
-                                   && !g.IsDeleted
-                                   && g.Email != null
-                                   && g.Email.ToLower() == parentEmail.ToLower());
-                    if (!isLinked)
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId);
+                    if (!canAccess)
                         return StatusCode(403, new { error = "Parents can only access their own child's submissions." });
                 }
 
@@ -312,6 +457,65 @@ namespace SmsApi.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 return Unauthorized(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        // ── Staff Grading Roster ──────────────────────────────────────────────
+
+        /// <summary>Returns all enrolled students for an assignment with their submission status.</summary>
+        [HttpGet("{assignmentId}/roster")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentRosterResponse>> GetAssignmentRoster(Guid assignmentId)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var roster = await _assignmentService.GetAssignmentRosterAsync(assignmentId, schoolId);
+                if (roster == null)
+                    return NotFound(new { error = "Assignment not found" });
+                return Ok(roster);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
+
+        /// <summary>Staff marks a student as submitted/not-submitted and optionally awards marks.</summary>
+        [HttpPost("{assignmentId}/roster/mark")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<AssignmentRosterEntry>> StaffMarkSubmission(Guid assignmentId, [FromBody] StaffMarkRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Resolve StaffMember.Id from JWT email so it matches what's stored on submissions
+                var userEmail = _tenant.UserEmail;
+                var staffMember = await _context.StaffMembers
+                    .FirstOrDefaultAsync(s => s.SchoolId == schoolId
+                                           && s.Email != null
+                                           && s.Email.ToLower() == userEmail.ToLower());
+                var staffId = staffMember?.Id ?? _tenant.UserId;
+
+                var entry = await _assignmentService.StaffMarkSubmissionAsync(assignmentId, request, staffId);
+                return Ok(entry);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
             }
             catch (Exception ex)
             {

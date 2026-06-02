@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, RefreshCw, Download, School, Trophy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5092";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 interface ClassMetric {
   classId: string;

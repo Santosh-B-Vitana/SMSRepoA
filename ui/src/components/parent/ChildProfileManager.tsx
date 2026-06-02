@@ -2,7 +2,7 @@
 import {
   User, Calendar, Award, BookOpen, Loader2, AlertCircle,
   CheckCircle, XCircle, Timer, GraduationCap, TrendingUp,
-  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home
+  ChevronDown, ChevronUp, CalendarDays, BarChart2, Bus, Home, Trophy,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +14,9 @@ import { studentApi, type StudentBasic, type StudentProfileSummary } from "@/ser
 import { attendanceApi } from "@/services/api/attendanceApi";
 import { getResults, type ResultBasic } from "@/services/api/examinationApi";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
-import { assignmentApi, type SubmissionResponse } from "@/services/api/assignmentApi";
+import { assignmentApi, type ChildAssignmentView } from "@/services/api/assignmentApi";
 import { ParentLeaveTab } from "@/components/leave-management/ParentLeaveTab";
+import { ParentExamResultsTab } from "./ParentExamResultsTab";
 import { toast } from "sonner";
 
 interface AttendanceRecord {
@@ -64,9 +65,9 @@ export function ChildProfileManager() {
   const [gradeRecords, setGradeRecords] = useState<StudentGradeResponse[]>([]);
   const [gradesLoading, setGradesLoading] = useState(false);
 
-  // Assignment submissions state
-  const [submissions, setSubmissions] = useState<SubmissionResponse[]>([]);
-  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  // Assignment state (all assignments for child's class with submission status)
+  const [assignments, setAssignments] = useState<ChildAssignmentView[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
 
   useEffect(() => {
     studentApi.getMyChildren()
@@ -178,17 +179,17 @@ export function ChildProfileManager() {
     }
   };
 
-  const loadSubmissions = async () => {
+  const loadAssignments = async () => {
     if (!selectedChildId) return;
-    setSubmissionsLoading(true);
+    setAssignmentsLoading(true);
     try {
-      const res = await assignmentApi.getStudentSubmissions(selectedChildId);
-      setSubmissions(res.data ?? []);
+      const res = await assignmentApi.getAssignmentsForChild(selectedChildId);
+      setAssignments(res.data ?? []);
     } catch {
-      toast.error("Failed to load assignment submissions");
-      setSubmissions([]);
+      toast.error("Failed to load assignments");
+      setAssignments([]);
     } finally {
-      setSubmissionsLoading(false);
+      setAssignmentsLoading(false);
     }
   };
 
@@ -236,7 +237,7 @@ export function ChildProfileManager() {
   )).sort().reverse();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       <h1 className="text-2xl font-bold">Child Profile</h1>
 
       {/* Child Selector */}
@@ -303,37 +304,40 @@ export function ChildProfileManager() {
       )}
 
       {currentChild && (
-        <Tabs defaultValue="attendance" className="space-y-4" onValueChange={(val) => {
+        <Tabs defaultValue="overview" className="space-y-4" onValueChange={(val) => {
           if (val === "attendance" && attendanceRecords.length === 0) loadAttendance();
-          if (val === "academics" && examResults.length === 0) loadAcademics();
-          if (val === "grades" && gradeRecords.length === 0) loadGrades();
+          if (val === "academics" && examResults.length === 0) { loadAcademics(); if (gradeRecords.length === 0) loadGrades(); }
+          if (val === "assignments" && assignments.length === 0) loadAssignments();
         }}>
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="attendance" onClick={() => { if (attendanceRecords.length === 0) loadAttendance(); }}>
-              <Calendar className="h-4 w-4 mr-1.5" />
-              Attendance
-            </TabsTrigger>
-            <TabsTrigger value="academics" onClick={() => { if (examResults.length === 0) loadAcademics(); }}>
-              <Award className="h-4 w-4 mr-1.5" />
-              Academic Performance
-            </TabsTrigger>
-            <TabsTrigger value="grades" onClick={() => { if (gradeRecords.length === 0) loadGrades(); }}>
-              <BarChart2 className="h-4 w-4 mr-1.5" />
-              Grades
-            </TabsTrigger>
-            <TabsTrigger value="assignments" onClick={() => { if (submissions.length === 0) loadSubmissions(); }}>
-              <BookOpen className="h-4 w-4 mr-1.5" />
-              Assignments
-            </TabsTrigger>
-            <TabsTrigger value="leave">
-              <CalendarDays className="h-4 w-4 mr-1.5" />
-              Leave
-            </TabsTrigger>
-            <TabsTrigger value="overview">
-              <User className="h-4 w-4 mr-1.5" />
-              Overview
-            </TabsTrigger>
-          </TabsList>
+          {/* Scrollable tab strip — no cramping on mobile */}
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 pb-1">
+            <TabsList className="flex h-auto w-max min-w-full gap-1 p-1 rounded-xl bg-muted">
+              <TabsTrigger value="overview" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                <span>Overview</span>
+              </TabsTrigger>
+              <TabsTrigger value="attendance" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
+                <span>Attendance</span>
+              </TabsTrigger>
+              <TabsTrigger value="exam-results" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <Trophy className="h-3.5 w-3.5 shrink-0" />
+                <span>Exam Results</span>
+              </TabsTrigger>
+              <TabsTrigger value="academics" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <Award className="h-3.5 w-3.5 shrink-0" />
+                <span>Academics</span>
+              </TabsTrigger>
+              <TabsTrigger value="assignments" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span>Assignments</span>
+              </TabsTrigger>
+              <TabsTrigger value="leave" className="flex items-center gap-1.5 px-3 py-1.5 text-xs whitespace-nowrap rounded-lg">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                <span>Leave</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* ── Attendance Tab (READ-ONLY) ── */}
           <TabsContent value="attendance">
@@ -464,53 +468,61 @@ export function ChildProfileManager() {
 
           {/* ── Academics Tab ── */}
           <TabsContent value="academics">
-            {academicLoading ? (
+            {/* Exam Results History (moved from the old dedicated tab) */}
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Previous Exam Results</p>
+              <ParentExamResultsTab studentId={selectedChildId} mode="previous" />
+            </div>
+
+            {(academicLoading || gradesLoading) ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-                  <p className="text-muted-foreground">Loading academic results...</p>
+                  <p className="text-muted-foreground">Loading academic performance...</p>
                 </CardContent>
               </Card>
-            ) : examGroups.length === 0 ? (
+            ) : examGroups.length === 0 && gradeRecords.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <Award className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">No exam results available yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">Results will appear here once exams are conducted and graded</p>
+                  <p className="text-muted-foreground">No academic data available yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Results and grades will appear here once exams are conducted and graded</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-4">
-                {/* Overall Summary */}
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-primary">{examGroups.length}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Exams</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-blue-600">{examResults.length}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Subjects Graded</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-green-600">
-                          {examResults.length > 0 ? (examResults.reduce((s, r) => s + (r.percentage ?? (r.marksObtained / r.maxMarks * 100)), 0) / examResults.length).toFixed(1) : 0}%
+                {/* Overall Summary — only when exam data exists */}
+                {examGroups.length > 0 && (
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-primary">{examGroups.length}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Exams</div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1">Average</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-purple-600">
-                          {examResults.length > 0 ? examResults.reduce((best, r) => {
-                            const p = r.percentage ?? (r.marksObtained / r.maxMarks * 100);
-                            return p > best ? p : best;
-                          }, 0).toFixed(0) : 0}%
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-blue-600">{examResults.length}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Subjects Graded</div>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1">Best Score</div>
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-green-600">
+                            {examResults.length > 0 ? (examResults.reduce((s, r) => s + (r.percentage ?? (r.marksObtained / r.maxMarks * 100)), 0) / examResults.length).toFixed(1) : 0}%
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Average</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-purple-600">
+                            {examResults.length > 0 ? examResults.reduce((best, r) => {
+                              const p = r.percentage ?? (r.marksObtained / r.maxMarks * 100);
+                              return p > best ? p : best;
+                            }, 0).toFixed(0) : 0}%
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">Best Score</div>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Exam-wise Results */}
                 {examGroups.map(group => (
@@ -582,9 +594,59 @@ export function ChildProfileManager() {
                     )}
                   </Card>
                 ))}
+
+                {/* Teacher-entered formative grades section */}
+                {gradeRecords.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <BarChart2 className="h-4 w-4 text-purple-500" />
+                        Teacher Grades &amp; Assessments ({gradeRecords.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Subject / Grade Item</TableHead>
+                            <TableHead className="text-center">Marks</TableHead>
+                            <TableHead className="text-center">Max</TableHead>
+                            <TableHead className="text-center">Grade</TableHead>
+                            <TableHead>Remarks</TableHead>
+                            <TableHead>Date</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {gradeRecords.map(g => {
+                            const pct = g.maxMarks && g.maxMarks > 0 ? Math.round((g.marksObtained / g.maxMarks) * 100) : null;
+                            return (
+                              <TableRow key={g.id}>
+                                <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
+                                <TableCell className="text-center font-bold">{g.marksObtained}</TableCell>
+                                <TableCell className="text-center text-muted-foreground">{g.maxMarks ?? "—"}</TableCell>
+                                <TableCell className="text-center">
+                                  {g.grade ? (
+                                    <Badge variant={g.grade >= "C" ? "default" : "destructive"}>{g.grade}</Badge>
+                                  ) : pct !== null ? (
+                                    <span className={pct >= 50 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>{pct}%</span>
+                                  ) : "—"}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-sm">{g.remarks ?? "—"}</TableCell>
+                                <TableCell className="text-muted-foreground text-sm">
+                                  {new Date(g.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
           </TabsContent>
+
 
           {/* ── Overview Tab ── */}
           <TabsContent value="overview">
@@ -677,151 +739,124 @@ export function ChildProfileManager() {
             </div>
           </TabsContent>
 
-          {/* ── Grades Tab ── */}
-          <TabsContent value="grades">
-            {gradesLoading ? (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-                  <p className="text-muted-foreground">Loading grades...</p>
-                </CardContent>
-              </Card>
-            ) : gradeRecords.length === 0 ? (
-              <Card>
-                <CardContent className="p-10 text-center">
-                  <BarChart2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="font-medium text-muted-foreground">No grades recorded yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Grades will appear here once teachers enter marks for your child.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart2 className="h-4 w-4" />
-                    Grades ({gradeRecords.length} entries)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Subject / Grade Item</TableHead>
-                        <TableHead className="text-center">Marks</TableHead>
-                        <TableHead className="text-center">Max</TableHead>
-                        <TableHead className="text-center">Grade</TableHead>
-                        <TableHead>Remarks</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {gradeRecords.map(g => {
-                        const pct = g.maxMarks && g.maxMarks > 0 ? Math.round((g.marksObtained / g.maxMarks) * 100) : null;
-                        return (
-                          <TableRow key={g.id}>
-                            <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
-                            <TableCell className="text-center font-bold">{g.marksObtained}</TableCell>
-                            <TableCell className="text-center text-muted-foreground">{g.maxMarks ?? "—"}</TableCell>
-                            <TableCell className="text-center">
-                              {g.grade ? (
-                                <Badge variant={g.grade >= "C" ? "default" : "destructive"}>{g.grade}</Badge>
-                              ) : pct !== null ? (
-                                <span className={pct >= 50 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>{pct}%</span>
-                              ) : "—"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">{g.remarks ?? "—"}</TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {new Date(g.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
           {/* ── Assignments Tab ── */}
           <TabsContent value="assignments">
-            {submissionsLoading ? (
+            {assignmentsLoading ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
                   <p className="text-muted-foreground">Loading assignments...</p>
                 </CardContent>
               </Card>
-            ) : submissions.length === 0 ? (
+            ) : assignments.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="font-medium text-muted-foreground">No assignment submissions yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">Graded assignments will appear here.</p>
+                  <p className="font-medium text-muted-foreground">No assignments found</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Assignments posted by teachers will appear here.
+                  </p>
                 </CardContent>
               </Card>
             ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BookOpen className="h-4 w-4" />
-                    Assignment Submissions ({submissions.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Assignment</TableHead>
-                        <TableHead className="text-center">Marks</TableHead>
-                        <TableHead className="text-center">Max</TableHead>
-                        <TableHead className="text-center">Status</TableHead>
-                        <TableHead>Feedback</TableHead>
-                        <TableHead>Submitted</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {submissions.map(s => {
-                        const pct = s.assignmentMaxMarks && s.assignmentMaxMarks > 0 && s.marksObtained != null
-                          ? Math.round((s.marksObtained / s.assignmentMaxMarks) * 100) : null;
-                        return (
-                          <TableRow key={s.id}>
-                            <TableCell className="font-medium">{s.assignmentTitle ?? "—"}</TableCell>
-                            <TableCell className="text-center font-bold">
-                              {s.marksObtained != null ? s.marksObtained : "—"}
-                            </TableCell>
-                            <TableCell className="text-center text-muted-foreground">
-                              {s.assignmentMaxMarks ?? "—"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Badge variant={
-                                s.status === "graded" ? "default" :
-                                s.status === "submitted" ? "secondary" : "outline"
-                              }>
-                                {s.status}
-                              </Badge>
-                              {pct !== null && (
-                                <span className={`ml-1 text-xs font-semibold ${pct >= 50 ? "text-green-600" : "text-red-600"}`}>
-                                  ({pct}%)
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                              {s.feedback ?? "—"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {new Date(s.submissionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+              <div className="space-y-3">
+                {/* Summary bar */}
+                <div className="flex flex-wrap gap-3">
+                  <Badge variant="outline" className="text-xs py-1 px-3">
+                    Total: {assignments.length}
+                  </Badge>
+                  <Badge variant="default" className="text-xs py-1 px-3 bg-green-100 text-green-800 border-green-200">
+                    Graded: {assignments.filter(a => a.submission?.status === "graded").length}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs py-1 px-3">
+                    Submitted: {assignments.filter(a => a.submission?.status === "submitted").length}
+                  </Badge>
+                  <Badge variant="destructive" className="text-xs py-1 px-3 opacity-80">
+                    Overdue: {assignments.filter(a => a.isOverdue).length}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs py-1 px-3 text-amber-700 border-amber-300">
+                    Pending: {assignments.filter(a => !a.submission && !a.isOverdue).length}
+                  </Badge>
+                </div>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-primary" />
+                      Assignments ({assignments.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Assignment</TableHead>
+                          <TableHead>Subject</TableHead>
+                          <TableHead className="text-center">Due Date</TableHead>
+                          <TableHead className="text-center">Max Marks</TableHead>
+                          <TableHead className="text-center">Status</TableHead>
+                          <TableHead className="text-center">Score</TableHead>
+                          <TableHead>Feedback</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {assignments.map(a => {
+                          const sub = a.submission;
+                          const pct = sub?.marksObtained != null && a.maxMarks > 0
+                            ? Math.round((sub.marksObtained / a.maxMarks) * 100) : null;
+                          const dueDate = new Date(a.dueDate);
+                          const dueDateStr = dueDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+                          let statusBadge: React.ReactNode;
+                          if (sub?.status === "graded") {
+                            statusBadge = <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">Graded</Badge>;
+                          } else if (sub?.status === "submitted") {
+                            statusBadge = <Badge variant="secondary">Submitted</Badge>;
+                          } else if (a.isOverdue) {
+                            statusBadge = <Badge variant="destructive">Overdue</Badge>;
+                          } else {
+                            statusBadge = <Badge variant="outline" className="text-amber-700 border-amber-300">Pending</Badge>;
+                          }
+
+                          return (
+                            <TableRow key={a.id} className={a.isOverdue && !sub ? "bg-red-50/40" : ""}>
+                              <TableCell className="font-medium max-w-[200px]">
+                                <div className="truncate" title={a.title}>{a.title}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  Assigned: {new Date(a.assignedDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm">{a.subjectName || "—"}</TableCell>
+                              <TableCell className={`text-center text-sm font-medium ${a.isOverdue && !sub ? "text-red-600" : "text-muted-foreground"}`}>
+                                {dueDateStr}
+                              </TableCell>
+                              <TableCell className="text-center text-muted-foreground">{a.maxMarks}</TableCell>
+                              <TableCell className="text-center">{statusBadge}</TableCell>
+                              <TableCell className="text-center font-bold">
+                                {sub?.marksObtained != null ? (
+                                  <span className={pct != null && pct >= 50 ? "text-green-700" : "text-red-600"}>
+                                    {sub.marksObtained}/{a.maxMarks}
+                                    {pct != null && <span className="text-xs ml-1">({pct}%)</span>}
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm max-w-[180px] truncate">
+                                {sub?.feedback ?? "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
             )}
+          </TabsContent>
+
+          {/* ── Exam Results Tab (latest only) ── */}
+          <TabsContent value="exam-results">
+            <ParentExamResultsTab studentId={selectedChildId} mode="latest" />
           </TabsContent>
 
           {/* ── Leave Tab ── */}

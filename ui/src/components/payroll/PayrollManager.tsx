@@ -8,18 +8,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, DollarSign, Calculator, FileText } from 'lucide-react';
-import { mockApi } from '@/services/mockApi';
-import type { PayrollEntry, Staff } from '@/services/mockApi';
+import { payrollApi, type PayrollRecordBasic, type CreatePayrollInput, type UpdatePayrollInput } from '@/services/api/payrollApi';
+import { staffApi, type StaffBasic } from '@/services/api/staffApi';
 
 interface PayrollManagerProps {
   staffId?: string;
 }
 
 export function PayrollManager({ staffId }: PayrollManagerProps) {
-  const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
+  const [payrollEntries, setPayrollEntries] = useState<PayrollRecordBasic[]>([]);
+  const [staffList, setStaffList] = useState<StaffBasic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [payrollDialog, setPayrollDialog] = useState({ open: false, entry: null as PayrollEntry | null });
+  const [payrollDialog, setPayrollDialog] = useState({ open: false, entry: null as PayrollRecordBasic | null });
 
   useEffect(() => {
     loadData();
@@ -28,35 +28,31 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [payrollData, staffData] = await Promise.all([
-        mockApi.getPayrollEntries(staffId),
-        mockApi.getStaff()
-      ]);
-      setPayrollEntries(payrollData);
-      setStaff(staffData);
+      const payrollResp = await payrollApi.getRecords({ staffId }, 1, 100);
+      setPayrollEntries(payrollResp.items);
+      // Only fetch staff list when not scoped to a specific staff member (for the add dialog)
+      if (!staffId) {
+        const staffResp = await staffApi.list({ pageSize: 500 });
+        setStaffList(staffResp.staff);
+      }
     } catch (error) {
       console.error('Error loading payroll data:', error);
     }
     setLoading(false);
   };
 
-  const handleSavePayroll = async (payrollData: Partial<PayrollEntry>) => {
+  const handleSavePayroll = async (data: CreatePayrollInput | UpdatePayrollInput) => {
     try {
       if (payrollDialog.entry) {
-        await mockApi.updatePayrollEntry(payrollDialog.entry.id, payrollData);
+        await payrollApi.update(payrollDialog.entry.id, data as UpdatePayrollInput);
       } else {
-        await mockApi.addPayrollEntry(payrollData as Omit<PayrollEntry, 'id'>);
+        await payrollApi.create(data as CreatePayrollInput);
       }
       loadData();
       setPayrollDialog({ open: false, entry: null });
     } catch (error) {
       console.error('Error saving payroll:', error);
     }
-  };
-
-  const getStaffName = (staffId: string) => {
-    const staffMember = staff.find(s => s.id === staffId);
-    return staffMember?.name || 'Unknown Staff';
   };
 
   const getStatusColor = (status: string) => {
@@ -131,8 +127,8 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
               <TableRow>
                 {!staffId && <TableHead>Staff</TableHead>}
                 <TableHead>Month/Year</TableHead>
-                <TableHead>Basic Salary</TableHead>
                 <TableHead>Gross Salary</TableHead>
+                <TableHead>Deductions</TableHead>
                 <TableHead>Net Salary</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-24">Actions</TableHead>
@@ -143,13 +139,13 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
                 <TableRow key={entry.id}>
                   {!staffId && (
                     <TableCell className="font-medium">
-                      {getStaffName(entry.staffId)}
+                      {entry.staffName}
                     </TableCell>
                   )}
                   <TableCell>{entry.month} {entry.year}</TableCell>
-                  <TableCell>₹{entry.basicSalary.toLocaleString()}</TableCell>
-                  <TableCell>₹{entry.grossSalary.toLocaleString()}</TableCell>
-                  <TableCell>₹{entry.netSalary.toLocaleString()}</TableCell>
+                  <TableCell>₹{(entry.grossSalary ?? 0).toLocaleString()}</TableCell>
+                  <TableCell>₹{(entry.totalDeductions ?? 0).toLocaleString()}</TableCell>
+                  <TableCell>₹{(entry.netSalary ?? 0).toLocaleString()}</TableCell>
                   <TableCell>
                     <Badge variant={getStatusColor(entry.status)}>
                       {entry.status}
@@ -174,7 +170,7 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
       <PayrollDialog
         open={payrollDialog.open}
         entry={payrollDialog.entry}
-        staff={staff}
+        staffList={staffList}
         defaultStaffId={staffId}
         onClose={() => setPayrollDialog({ open: false, entry: null })}
         onSave={handleSavePayroll}
@@ -186,17 +182,17 @@ export function PayrollManager({ staffId }: PayrollManagerProps) {
 function PayrollDialog({
   open,
   entry,
-  staff,
+  staffList,
   defaultStaffId,
   onClose,
   onSave
 }: {
   open: boolean;
-  entry: PayrollEntry | null;
-  staff: Staff[];
+  entry: PayrollRecordBasic | null;
+  staffList: StaffBasic[];
   defaultStaffId?: string;
   onClose: () => void;
-  onSave: (data: Partial<PayrollEntry>) => void;
+  onSave: (data: CreatePayrollInput | UpdatePayrollInput) => void;
 }) {
   const [formData, setFormData] = useState({
     staffId: defaultStaffId || '',
@@ -212,22 +208,38 @@ function PayrollDialog({
     deductions: {
       pf: 0,
       esi: 0,
-      tax: 0,
+      incomeTax: 0,
       other: 0
     },
-    status: 'pending' as 'pending' | 'processed' | 'paid'
+    status: 'pending' as string
   });
 
   useEffect(() => {
     if (entry) {
-      setFormData({
-        staffId: entry.staffId,
-        month: entry.month,
-        year: entry.year,
-        basicSalary: entry.basicSalary,
-        allowances: entry.allowances,
-        deductions: entry.deductions,
-        status: entry.status
+      // Fetch full record to get allowance/deduction breakdown
+      payrollApi.getById(entry.id).then(full => {
+        setFormData({
+          staffId: full.staffId,
+          month: full.month,
+          year: full.year,
+          basicSalary: full.basicSalary ?? 0,
+          allowances: {
+            hra: full.allowances?.hra ?? 0,
+            da: full.allowances?.da ?? 0,
+            ta: full.allowances?.ta ?? 0,
+            other: full.allowances?.other ?? 0,
+          },
+          deductions: {
+            pf: full.deductions?.pf ?? 0,
+            esi: full.deductions?.esi ?? 0,
+            incomeTax: full.deductions?.incomeTax ?? 0,
+            other: full.deductions?.other ?? 0,
+          },
+          status: full.status,
+        });
+      }).catch(() => {
+        // Fallback to basic data if full fetch fails
+        setFormData(prev => ({ ...prev, month: entry.month, year: entry.year, status: entry.status }));
       });
     } else {
       setFormData({
@@ -236,7 +248,7 @@ function PayrollDialog({
         year: new Date().getFullYear(),
         basicSalary: 0,
         allowances: { hra: 0, da: 0, ta: 0, other: 0 },
-        deductions: { pf: 0, esi: 0, tax: 0, other: 0 },
+        deductions: { pf: 0, esi: 0, incomeTax: 0, other: 0 },
         status: 'pending'
       });
     }
@@ -244,21 +256,55 @@ function PayrollDialog({
 
   const calculateSalary = () => {
     const { basicSalary, allowances, deductions } = formData;
-    const totalAllowances = Object.values(allowances).reduce((sum, val) => sum + val, 0);
-    const totalDeductions = Object.values(deductions).reduce((sum, val) => sum + val, 0);
+    const totalAllowances = allowances.hra + allowances.da + allowances.ta + allowances.other;
+    const totalDeductions = deductions.pf + deductions.esi + deductions.incomeTax + deductions.other;
     const grossSalary = basicSalary + totalAllowances;
     const netSalary = grossSalary - totalDeductions;
-    
+
     return { grossSalary, netSalary };
   };
 
   const handleSave = () => {
-    const { grossSalary, netSalary } = calculateSalary();
-    onSave({
-      ...formData,
-      grossSalary,
-      netSalary
-    });
+    if (entry) {
+      // Update: only send update-allowed fields
+      const updateData: UpdatePayrollInput = {
+        allowances: {
+          hra: formData.allowances.hra,
+          da: formData.allowances.da,
+          ta: formData.allowances.ta,
+          other: formData.allowances.other
+        },
+        deductions: {
+          pf: formData.deductions.pf,
+          esi: formData.deductions.esi,
+          incomeTax: formData.deductions.incomeTax,
+          other: formData.deductions.other
+        },
+        status: formData.status
+      };
+      onSave(updateData);
+    } else {
+      // Create: send all fields
+      const createData: CreatePayrollInput = {
+        staffId: formData.staffId,
+        month: formData.month,
+        year: formData.year,
+        basicSalary: formData.basicSalary,
+        allowances: {
+          hra: formData.allowances.hra,
+          da: formData.allowances.da,
+          ta: formData.allowances.ta,
+          other: formData.allowances.other
+        },
+        deductions: {
+          pf: formData.deductions.pf,
+          esi: formData.deductions.esi,
+          incomeTax: formData.deductions.incomeTax,
+          other: formData.deductions.other
+        }
+      };
+      onSave(createData);
+    }
   };
 
   const { grossSalary, netSalary } = calculateSalary();
@@ -274,16 +320,16 @@ function PayrollDialog({
             {!defaultStaffId && (
               <div>
                 <Label>Staff Member</Label>
-                <Select value={formData.staffId} onValueChange={(value) => 
+                <Select value={formData.staffId} onValueChange={(value) =>
                   setFormData(prev => ({ ...prev, staffId: value }))
                 }>
                   <SelectTrigger>
                     <SelectValue placeholder="Select staff" />
                   </SelectTrigger>
                   <SelectContent>
-                    {staff.map((member) => (
+                    {staffList.map((member) => (
                       <SelectItem key={member.id} value={member.id}>
-                        {member.name}
+                        {member.name ?? `${member.firstName} ${member.lastName}`.trim()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -295,8 +341,8 @@ function PayrollDialog({
               <Label>Month</Label>
               <Select value={formData.month} onValueChange={(value) => 
                 setFormData(prev => ({ ...prev, month: value }))
-              }>
-                <SelectTrigger>
+              } disabled={!!entry}>
+                <SelectTrigger className={entry ? 'bg-muted text-muted-foreground' : ''}>
                   <SelectValue placeholder="Select month" />
                 </SelectTrigger>
                 <SelectContent>
@@ -318,6 +364,8 @@ function PayrollDialog({
                 type="number"
                 value={formData.year}
                 onChange={(e) => setFormData(prev => ({ ...prev, year: parseInt(e.target.value) }))}
+                disabled={!!entry}
+                className={entry ? 'bg-muted text-muted-foreground' : ''}
               />
             </div>
 
@@ -327,7 +375,10 @@ function PayrollDialog({
                 type="number"
                 value={formData.basicSalary}
                 onChange={(e) => setFormData(prev => ({ ...prev, basicSalary: parseFloat(e.target.value) || 0 }))}
+                disabled={!!entry}
+                className={entry ? 'bg-muted text-muted-foreground' : ''}
               />
+              {entry && <p className="text-xs text-muted-foreground mt-1">Basic salary cannot be changed after creation.</p>}
             </div>
           </div>
 
@@ -410,10 +461,10 @@ function PayrollDialog({
                 <Label>Tax</Label>
                 <Input
                   type="number"
-                  value={formData.deductions.tax}
+                  value={formData.deductions.incomeTax}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
-                    deductions: { ...prev.deductions, tax: parseFloat(e.target.value) || 0 }
+                    deductions: { ...prev.deductions, incomeTax: parseFloat(e.target.value) || 0 }
                   }))}
                 />
               </div>

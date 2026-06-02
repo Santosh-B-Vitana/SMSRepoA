@@ -51,14 +51,15 @@ namespace SmsApi.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] bool? unreadOnly = null,
-            [FromQuery] string? type = null)
+            [FromQuery] string? type = null,
+            [FromQuery] Guid? studentId = null)
         {
             try
             {
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
                 if (userId == null) return Unauthorized(new { message = "User identity not found." });
-                var result = await _notificationService.GetMyNotificationsAsync(schoolId, userId.Value, page, pageSize, unreadOnly, type);
+                var result = await _notificationService.GetMyNotificationsAsync(schoolId, userId.Value, page, pageSize, unreadOnly, type, studentId);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
@@ -239,5 +240,50 @@ namespace SmsApi.Controllers
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception ex) { _logger.LogError(ex, "Error admin-deleting notification: {Id}", id); return StatusCode(500, new { message = "An error occurred." }); }
         }
+
+        /// <summary>
+        /// Registers a mobile device push notification token (FCM/APNs) for the current user.
+        /// Called by the React Native mobile app on first launch after login.
+        /// </summary>
+        [HttpPost("register-device")]
+        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        public async Task<ActionResult> RegisterDeviceToken([FromBody] RegisterDeviceTokenRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.DeviceToken))
+                    return BadRequest(new { message = "Device token is required." });
+
+                if (request.Platform != "android" && request.Platform != "ios")
+                    return BadRequest(new { message = "Platform must be 'android' or 'ios'." });
+
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+
+                var schoolId = GetSchoolId();
+
+                // Store the device token (best-effort — failures are non-critical)
+                _logger.LogInformation(
+                    "Device token registered: userId={UserId}, platform={Platform}, schoolId={SchoolId}",
+                    userId, request.Platform, schoolId);
+
+                // TODO: persist to a DeviceTokens table or pass to FCM/APNs service
+                // For now, log and acknowledge — implement persistence when push service is wired up
+                return Ok(new { message = "Device token registered successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error registering device token");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
     }
 }
+
+/// <summary>
+/// Request DTO for mobile push notification device token registration.
+/// </summary>
+public record RegisterDeviceTokenRequest(
+    string DeviceToken,
+    string Platform  // "android" | "ios"
+);

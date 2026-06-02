@@ -64,5 +64,7 @@ $RECYCLE.BIN/
 logs/
 artifacts/buildcheck/
 
-#Node Modules
-node_modules/
+node_modules
+publish
+
+*.zip

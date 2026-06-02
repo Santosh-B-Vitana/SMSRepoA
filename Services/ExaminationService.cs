@@ -1406,9 +1406,6 @@ namespace SmsApi.Services
                 
                 if (exam.Status == "cancelled")
                     throw new InvalidOperationException("Cannot finalize results for a cancelled exam");
-                
-                if (exam.Status == "scheduled")
-                    throw new InvalidOperationException("Cannot finalize results for an exam that has not been conducted yet");
 
                 // 2. Get all results for this exam, ordered by marks (descending)
                 var results = await _context.ExamResults

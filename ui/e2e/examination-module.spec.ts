@@ -14,7 +14,7 @@
  *  6. API Smoke Tests: Verify backend state
  *
  * Auth: Uses proven pattern from staff-enrollment-v2.spec.ts
- * Runs against: Backend (localhost:5092) + Frontend (localhost:8081)
+ * Runs against: Backend (VITE_API_BASE_URL) + Frontend (PLAYWRIGHT_BASE_URL)
  */
 
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
@@ -28,8 +28,8 @@ const __dirname = dirname(__filename);
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const API_BASE = 'http://localhost:5092/api';
-const UI_BASE = 'http://localhost:8081';
+const API_BASE = process.env.VITE_API_BASE_URL ?? '';
+const UI_BASE = '';
 const AUTH_FILE = path.join(__dirname, '.auth/admin.json');
 
 // Test data fixtures

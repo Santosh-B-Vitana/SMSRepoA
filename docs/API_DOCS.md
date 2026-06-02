@@ -1,6 +1,6 @@
 # API Documentation — SMS API
 
-**Last Updated:** May 8, 2026 | **Version:** 1.0.0 | **Project:** SMSRepoA  
+**Last Updated:** May 25, 2026 | **Version:** 1.3.0 | **Project:** SMSRepoA  
 **Base URL:** `http://localhost:5092` (dev) | `https://api.your-domain.com` (prod)  
 **Format:** JSON | **Authentication:** JWT Bearer Token
 
@@ -9,7 +9,10 @@
 ## Index
 
 - [Authentication](#authentication)
+- [Settings and Branding](#settings-and-branding)
 - [Students](#students)
+- [Fees](#fees)
+- [Billing Management](#billing-management)
 - [Health & Status](#health--status)
 - [Error Responses](#error-responses)
 - [Rate Limiting](#rate-limiting)
@@ -65,6 +68,56 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```
 
 Tokens expire after 60 minutes (configurable in `JwtSettings:ExpirationInMinutes`).
+
+---
+
+## Settings and Branding
+
+### Public School Branding (No Auth)
+
+**Endpoint:** `GET /api/Settings/public-branding`  
+**Auth:** Not required (`[AllowAnonymous]`)
+
+Returns school name/logo metadata for pre-login pages.
+
+**Resolution order:**
+1. `schoolCode` query parameter
+2. `host` query parameter
+3. request host subdomain (`schoola.example.com` -> `schoola`)
+
+**Request Example:**
+```bash
+curl "http://localhost:5092/api/Settings/public-branding?schoolCode=demo001"
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Ajith's International Schools",
+  "logoUrl": "https://cdn.example.com/schools/demo001/logo.png",
+  "schoolCode": "DEMO001",
+  "status": "active"
+}
+```
+
+**Fallback Response (School Not Resolved):**
+```json
+{
+  "id": null,
+  "name": "VEDA",
+  "logoUrl": null,
+  "schoolCode": null,
+  "status": "active"
+}
+```
+
+### Current School Profile (Authenticated)
+
+**Endpoint:** `GET /api/Settings/school/me`  
+**Auth:** Required
+
+Returns the current school profile used by authenticated UI surfaces (header/sidebar/settings).
 
 ---
 
@@ -207,6 +260,238 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 **Auth:** Required (Admin)  
 **Response:** `204 No Content`  
 **Note:** Soft delete — `IsDeleted` set to `true`. Data is retained.
+
+---
+
+## Fees
+
+### Apply Fee Head Overrides
+
+**Endpoint:** `PATCH /api/Fees/records/{id}/fee-head-overrides`  
+**Auth:** Required — roles: Admin, Principal, Finance, FinanceOfficer, Accountant  
+**Added:** May 19, 2026
+
+Sets per-student overrides for individual fee heads (e.g. Library Fee exemption). Reduces `TotalAmount` directly — does **not** add to `DiscountAmount`. Overrides are persisted as a JSON dictionary in the `FeeHeadOverrides` column and merged with any previous overrides.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `id` | `Guid` | Fee record ID (`FeeRecord.Id`) |
+
+**Request Body:**
+```json
+{
+  "overrides": {
+    "libraryFee": 0,
+    "labFee": 500
+  },
+  "appliedBy": "admin@school.edu"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `overrides` | `Dictionary<string, decimal>` | ✅ | Map of fee head key → override amount. Use the fee head key as stored on `FeeStructureComponent`. |
+| `appliedBy` | `string` | ❌ | Username/email of person applying the override (for audit log). |
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Fee head overrides applied successfully.",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "totalAmount": 42000.00,
+    "pendingAmount": 42000.00,
+    "discountAmount": 0.00,
+    "feeHeadOverrides": "{\"libraryFee\":0,\"labFee\":500}",
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Not authenticated |
+| 403 | Role not permitted |
+| 404 | Fee record not found |
+| 400 | `overrides` dict is empty or null |
+
+**Example:**
+```bash
+curl -X PATCH http://localhost:5092/api/Fees/records/550e8400-e29b-41d4-a716-446655440000/fee-head-overrides \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"overrides":{"libraryFee":0},"appliedBy":"admin@school.edu"}'
+```
+
+---
+
+### Remove Concession / Discount
+
+**Endpoint:** `POST /api/Fees/records/{id}/remove-discount`  
+**Auth:** Required — roles: Admin, Principal, Finance, FinanceOfficer, Accountant  
+**Added:** May 19, 2026
+
+Zeroes out the `DiscountAmount` on a fee record and recalculates `PendingAmount`. Used when a previously granted concession must be reversed. Action is audit-logged.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `id` | `Guid` | Fee record ID (`FeeRecord.Id`) |
+
+**Request Body:**
+```json
+{
+  "reason": "Student no longer eligible for merit concession",
+  "removedBy": "principal@school.edu"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reason` | `string` | ❌ | Reason for removal (stored in audit log). |
+| `removedBy` | `string` | ❌ | Username/email of person removing the concession (for audit log). |
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Discount removed successfully.",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "discountAmount": 0.00,
+    "pendingAmount": 45000.00,
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Reason |
+|--------|--------|
+| 401 | Not authenticated |
+| 403 | Role not permitted (Teacher/Staff cannot remove discounts) |
+| 404 | Fee record not found |
+
+**Example:**
+```bash
+curl -X POST http://localhost:5092/api/Fees/records/550e8400-e29b-41d4-a716-446655440000/remove-discount \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"No longer eligible","removedBy":"principal@school.edu"}'
+```
+
+---
+
+## Billing Management
+
+> **Auth roles:** `GET` requires `SuperAdmin` or `Admin`; `PUT` requires `SuperAdmin` only; notification endpoint requires any authenticated role.
+
+### Get School Billing
+
+**Endpoint:** `GET /api/school-feature-permissions/schools/{schoolId}/billing`  
+**Auth:** `SuperAdmin` or `Admin`
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:5092/api/school-feature-permissions/schools/550e8400-e29b-41d4-a716-446655440000/billing
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "schoolId": "550e8400-e29b-41d4-a716-446655440000",
+    "schoolName": "Ajith International Schools",
+    "billingPlan": "Pro",
+    "billingStatus": "Active",
+    "billingExpiryDate": "2027-05-20T00:00:00",
+    "renewalReminderDays": 30,
+    "daysUntilExpiry": 365,
+    "isExpiringSoon": false,
+    "isExpired": false
+  }
+}
+```
+
+`isExpiringSoon` is `true` when `daysUntilExpiry <= renewalReminderDays`.  
+`isExpired` is `true` when `billingExpiryDate` is in the past.
+
+---
+
+### Update School Billing
+
+**Endpoint:** `PUT /api/school-feature-permissions/schools/{schoolId}/billing`  
+**Auth:** `SuperAdmin` only
+
+**Request:**
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "billingPlan": "Enterprise",
+    "billingStatus": "Active",
+    "billingExpiryDate": "2028-01-01",
+    "renewalReminderDays": 45
+  }' \
+  http://localhost:5092/api/school-feature-permissions/schools/550e8400-e29b-41d4-a716-446655440000/billing
+```
+
+**Fields (all optional — only supplied fields are updated):**
+
+| Field | Type | Allowed Values |
+|-------|------|----------------|
+| `billingPlan` | string | `Standard`, `Pro`, `Enterprise` |
+| `billingStatus` | string | `Active`, `Inactive`, `Suspended`, `Trial` |
+| `billingExpiryDate` | ISO 8601 date | any future date |
+| `renewalReminderDays` | int | 1–365 |
+
+**Success Response (200 OK):** Same shape as GET response above, with updated values.
+
+---
+
+### Get Billing Notification (Admin Dashboard)
+
+**Endpoint:** `GET /api/school-feature-permissions/billing-notification`  
+**Auth:** Any authenticated user (scoped to the caller's school via tenant context)
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:5092/api/school-feature-permissions/billing-notification
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "hasWarning": true,
+    "message": "Your Pro subscription expires in 6 days. Please renew to avoid service interruption.",
+    "severity": "critical",
+    "daysUntilExpiry": 6,
+    "billingPlan": "Pro",
+    "billingStatus": "Active",
+    "billingExpiryDate": "2026-05-27T00:00:00"
+  }
+}
+```
+
+**Severity values:**
+
+| Value | Condition |
+|-------|-----------|
+| `info` | Healthy — more than `renewalReminderDays` away |
+| `warning` | Within `renewalReminderDays` of expiry |
+| `critical` | Expired **or** ≤ 7 days remaining |
+
+When `hasWarning = false` the admin dashboard suppresses any toast notification. The frontend gates further calls with `sessionStorage` so the toast appears at most once per browser session.
 
 ---
 

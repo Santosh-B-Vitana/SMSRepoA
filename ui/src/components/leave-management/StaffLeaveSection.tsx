@@ -57,7 +57,8 @@ export function StaffLeaveSection({ staffId, staffName, userLoginId, canApprove 
   const [actionDialog, setActionDialog] = useState<ActionDialog>(null);
   const { toast } = useToast();
 
-  // Use userLoginId when available (correct ID for leave requests), fall back to staffId
+  // effectiveId: used for leave request queries (requests may be stored under either ID)
+  // Balance queries always use staffId (balances are stored under Staff entity ID)
   const effectiveId = userLoginId || staffId;
 
   useEffect(() => {
@@ -70,7 +71,7 @@ export function StaffLeaveSection({ staffId, staffName, userLoginId, canApprove 
       const [typesRes, leavesRes, balanceRes] = await Promise.allSettled([
         leaveManagementApi.getLeaveTypes("Staff"),
         leaveManagementApi.getLeaveRequests(1, 100, effectiveId, undefined),
-        leaveManagementApi.getLeaveBalance(effectiveId, "Staff"),
+        leaveManagementApi.getLeaveBalance(staffId, "Staff"),
       ]);
       const types = typesRes.status === "fulfilled" ? typesRes.value : [];
       const leaveItems = leavesRes.status === "fulfilled" ? leavesRes.value.items : [];

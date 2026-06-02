@@ -25,6 +25,9 @@ namespace SmsApi.Models.Entities
 
         public int? Capacity { get; set; }
 
+        /// <summary>How many sections this class has (A, B, C...). Created automatically on class creation.</summary>
+        public int NumberOfSections { get; set; } = 1;
+
         [MaxLength(20)]
         public string Status { get; set; } = "active";
 
@@ -97,11 +100,17 @@ namespace SmsApi.Models.Entities
 
         public string? Description { get; set; }
 
+        /// <summary>Curriculum board this subject belongs to. Null = school-default (applies to all boards).</summary>
+        public Guid? BoardConfigurationId { get; set; }
+
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
 
         [ForeignKey("SubjectTypeId")]
         public virtual SubjectType? SubjectTypeRef { get; set; }
+
+        [ForeignKey("BoardConfigurationId")]
+        public virtual BoardConfiguration? BoardConfig { get; set; }
     }
 
     public class ClassSubject : BaseEntity

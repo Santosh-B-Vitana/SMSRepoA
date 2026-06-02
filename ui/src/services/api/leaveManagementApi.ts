@@ -214,15 +214,26 @@ const leaveManagementApi = {
     }
   },
 
-  // Get leave balance for specific user (admin/principal)
+  // Get leave balance for specific user (admin/principal or self via staffMemberId)
   async getLeaveBalance(userId: string, userType: string = 'Staff'): Promise<LeaveBalance[]> {
     try {
       const response = await api.get(`/LeaveManagement/balance/${userId}`, {
         params: { userType }
       });
-      return response.data;
+      // Backend wraps response: { success, data: [...] }
+      return response.data?.data ?? response.data ?? [];
     } catch (error) {
       console.error('Error fetching leave balance:', error);
+      throw error;
+    }
+  },
+
+  async getMyLeaveBalance(): Promise<LeaveBalance[]> {
+    try {
+      const response = await api.get('/LeaveManagement/my-balance');
+      return response.data?.data ?? response.data ?? [];
+    } catch (error) {
+      console.error('Error fetching my leave balance:', error);
       throw error;
     }
   },
@@ -266,7 +277,43 @@ const leaveManagementApi = {
   async rejectStudentLeave(id: string, remarks: string): Promise<StudentLeaveItem> {
     const response = await api.post(`/LeaveManagement/student-leaves/${id}/reject`, { approverRemarks: remarks });
     return response.data;
-  }
+  },
+
+  // ── Leave Type Management (admin/principal) ─────────────────────────────
+
+  async createLeaveType(data: {
+    name: string;
+    description?: string;
+    applicableTo: string;
+    maxDaysPerYear: number;
+    requiresApproval: boolean;
+    requiresDocument: boolean;
+    minNoticeDays: number;
+    isCarryForward: boolean;
+    isPaid: boolean;
+  }): Promise<LeaveType> {
+    const response = await api.post('/LeaveManagement/types', data);
+    return response.data;
+  },
+
+  async updateLeaveType(id: string, data: {
+    name: string;
+    description?: string;
+    maxDaysPerYear: number;
+    requiresApproval: boolean;
+    requiresDocument: boolean;
+    minNoticeDays: number;
+    isCarryForward: boolean;
+    isPaid: boolean;
+    isActive: boolean;
+  }): Promise<LeaveType> {
+    const response = await api.put(`/LeaveManagement/types/${id}`, data);
+    return response.data;
+  },
+
+  async deleteLeaveType(id: string): Promise<void> {
+    await api.delete(`/LeaveManagement/types/${id}`);
+  },
 };
 
 export default leaveManagementApi;

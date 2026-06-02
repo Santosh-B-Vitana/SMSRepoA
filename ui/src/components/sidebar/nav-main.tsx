@@ -35,11 +35,23 @@ export function NavMain({
 }) {
   const location = useLocation()
 
+  // Filter out section labels that have no non-label items following them
+  // (i.e. labels whose entire section was hidden by permissions)
+  const visibleItems = items.filter((item, index) => {
+    if (!item.isLabel) return true
+    // Look ahead: is there at least one non-label item before the next label or end?
+    for (let i = index + 1; i < items.length; i++) {
+      if (items[i].isLabel) break
+      return true
+    }
+    return false
+  })
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Navigation</SidebarGroupLabel>
       <SidebarMenu>
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           // Section label rendering
           if (item.isLabel) {
             return (

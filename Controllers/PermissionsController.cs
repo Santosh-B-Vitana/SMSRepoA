@@ -1,9 +1,11 @@
 using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 
 namespace SmsApi.Controllers
 {
@@ -14,10 +16,12 @@ namespace SmsApi.Controllers
     {
         private readonly IPermissionsService _permissionsService;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
 
-        public PermissionsController(IPermissionsService permissionsService, ITenantContext tenant)
+        public PermissionsController(IPermissionsService permissionsService, ITenantContext tenant, AppDbContext db)
         {
             _permissionsService = permissionsService;
+            _db = db;
             _tenant = tenant;
         }
 
@@ -25,6 +29,52 @@ namespace SmsApi.Controllers
         {
             var claim = User.FindFirst("UserId") ?? User.FindFirst(ClaimTypes.NameIdentifier);
             return claim != null ? Guid.Parse(claim.Value) : Guid.Empty;
+        }
+
+        // --- Current user permissions --------------------------------------------
+
+        /// <summary>
+        /// Returns the effective permission strings ("Module.Action") for the current user,
+        /// plus an <c>isRoleManaged</c> flag that tells the UI whether this user has ever had
+        /// explicit Role Management assignments (active OR previously removed).
+        /// When <c>isRoleManaged = false</c> the UI falls back to designation-based defaults.
+        /// </summary>
+        [HttpGet("me")]
+        public async Task<ActionResult<object>> GetMyPermissions()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                if (userId == Guid.Empty)
+                    return Unauthorized(new { message = "Unable to identify user" });
+
+                // Admin / super-admin have full access — return wildcard, always managed
+                var jwtRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+                if (jwtRole.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+                    || jwtRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
+                    return Ok(new { permissions = new List<string> { "*" }, isRoleManaged = true });
+
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Does the user have any active role assignments right now?
+                // If yes → role management is in effect → fail-closed (strict permission check).
+                // If no  → no active roles configured → use designation-based fallback.
+                // Note: we intentionally check !IsDeleted so that removing all roles reverts to
+                // designation defaults rather than locking the user out permanently.
+                // isRoleManaged = true only when an admin has explicitly assigned a CUSTOM role.
+                // Auto-assigned system roles (Teacher / Class Teacher) must NOT trigger strict
+                // permission-only mode — those users still need their designation-based nav.
+                var isRoleManaged = await _db.UserRoles
+                    .AnyAsync(ur => ur.UserId == userId && ur.SchoolId == schoolId && !ur.IsDeleted
+                                   && ur.Role != null && !ur.Role.IsSystemRole);
+
+                var permissions = await _permissionsService.GetUserEffectivePermissionsAsync(userId, schoolId);
+                return Ok(new { permissions, isRoleManaged });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
         }
 
         // --- Roles ---------------------------------------------------------------
@@ -77,6 +127,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("roles")]
         public async Task<ActionResult<RoleResponse>> CreateRole([FromBody] CreateRoleRequest request)
         {
@@ -91,6 +142,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPut("roles/{id}")]
         public async Task<ActionResult<RoleResponse>> UpdateRole(Guid id, [FromBody] UpdateRoleRequest request)
         {
@@ -106,6 +158,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpDelete("roles/{id}")]
         public async Task<ActionResult> DeleteRole(Guid id)
         {
@@ -135,6 +188,7 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>Replace all permissions for a role � full matrix save</summary>
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPut("roles/{roleId}/permissions")]
         public async Task<ActionResult> SetRolePermissions(Guid roleId, [FromBody] SetRolePermissionsRequest request)
         {
@@ -175,6 +229,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("permissions")]
         public async Task<ActionResult<PermissionResponse>> CreatePermission([FromBody] CreatePermissionRequest request)
         {
@@ -190,6 +245,7 @@ namespace SmsApi.Controllers
 
         // --- User-Role Assignments ------------------------------------------------
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("user-roles")]
         public async Task<ActionResult<UserRoleResponse>> AssignRoleToUser([FromBody] AssignRoleRequest request)
         {
@@ -218,6 +274,7 @@ namespace SmsApi.Controllers
             catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpDelete("user-roles/user/{userId}/role/{roleId}")]
         public async Task<ActionResult> RemoveUserRole(Guid userId, Guid roleId)
         {
@@ -233,6 +290,7 @@ namespace SmsApi.Controllers
 
         // --- Bulk role-permission (legacy endpoint, kept) -------------------------
 
+        [Authorize(Roles = "Admin,SuperAdmin")]
         [HttpPost("role-permissions")]
         public async Task<ActionResult<RolePermissionResponse>> AssignPermissionsToRole([FromBody] AssignPermissionsRequest request)
         {

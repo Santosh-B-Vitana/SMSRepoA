@@ -31,6 +31,15 @@ namespace SmsApi.Models.DTOs
         public string? Description { get; set; }
     }
 
+    public class UpdateFinanceAccountDto
+    {
+        [MaxLength(100)]
+        public string? Name { get; set; }
+
+        [MaxLength(500)]
+        public string? Description { get; set; }
+    }
+
     // ========== FINANCE TRANSACTION DTOs ==========
     public class FinanceTransactionDto
     {
@@ -72,11 +81,14 @@ namespace SmsApi.Models.DTOs
         public string Description { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression("^(FEE|STORE|PETTY_CASH|DONATION|OTHER)$")]
+        [RegularExpression("^(FEE|STORE|PETTY_CASH|DONATION|OTHER|PAYROLL)$")]
         public string Source { get; set; } = string.Empty;
 
         [MaxLength(500)]
         public string? ReceiptUrl { get; set; }
+
+        [MaxLength(100)]
+        public string? ReferenceNumber { get; set; }
     }
 
     public class TransactionFiltersDto
@@ -149,6 +161,9 @@ namespace SmsApi.Models.DTOs
 
         [MaxLength(500)]
         public string? ReceiptUrl { get; set; }
+
+        /// <summary>Optional: link this entry to a specific staff member instead of the current user.</summary>
+        public Guid? StaffId { get; set; }
     }
 
     public class ApprovePettyCashDto
@@ -363,5 +378,15 @@ namespace SmsApi.Models.DTOs
         public decimal TotalPending { get; set; }
         public int TotalTransactions { get; set; }
         public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    // ========== PAYROLL SYNC DTOs ==========
+    public class PayrollSyncResultDto
+    {
+        public int Synced { get; set; }
+        public int Skipped { get; set; }
+        public int Total { get; set; }
+        public string? CustomMessage { get; set; }
+        public string Message => CustomMessage ?? $"Synced {Synced} payroll expense(s). {Skipped} already synced or skipped.";
     }
 }

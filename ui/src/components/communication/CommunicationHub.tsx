@@ -39,6 +39,7 @@ import {
   Layers, Smartphone, Globe, RefreshCw, Download, X, Check,
   BookOpen, Tag, Variable, Zap, TrendingUp, ArrowUpRight,
 } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   communicationApi,
   type AnnouncementBasic,
@@ -116,15 +117,22 @@ function ChannelBadge({ type }: { type: ChannelType }) {
 }
 
 function PriorityBadge({ priority }: { priority: Priority }) {
+  const { t } = useLanguage();
   const map: Record<Priority, string> = {
     low:    "bg-slate-100 text-slate-600",
     medium: "bg-blue-100 text-blue-700",
     high:   "bg-amber-100 text-amber-700",
     urgent: "bg-red-100 text-red-700",
   };
+  const labelMap: Record<Priority, string> = {
+    low: t('communication.priorities.low'),
+    medium: t('communication.priorities.medium'),
+    high: t('communication.priorities.high'),
+    urgent: t('communication.priorities.urgent'),
+  };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${map[priority]}`}>
-      {priority.charAt(0).toUpperCase() + priority.slice(1)}
+      {labelMap[priority]}
     </span>
   );
 }
@@ -150,10 +158,19 @@ function StatusDot({ status }: { status: string }) {
 }
 
 function AudienceChip({ audience }: { audience: TargetAudience }) {
+  const { t } = useLanguage();
   const a = AUDIENCES.find(x => x.value === audience);
+  const audienceLabelMap: Record<string, string> = {
+    all: t('communication.audiences.all'),
+    students: t('communication.audiences.students'),
+    parents: t('communication.audiences.parents'),
+    staff: t('communication.audiences.staff'),
+    specific_class: t('communication.audiences.specificClass'),
+    specific_section: t('communication.audiences.specificSection'),
+  };
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      {a?.icon}{a?.label ?? audience}
+      {a?.icon}{audienceLabelMap[audience] ?? audience}
     </span>
   );
 }
@@ -192,13 +209,14 @@ function SmsCounter({ text }: { text: string }) {
 function Pagination({ page, totalPages, onChange }: {
   page: number; totalPages: number; onChange: (p: number) => void;
 }) {
+  const { t } = useLanguage();
   if (totalPages <= 1) return null;
   return (
     <div className="flex items-center justify-center gap-2 mt-4">
       <Button variant="outline" size="sm" disabled={page === 1} onClick={() => onChange(page - 1)}>
         <ChevronLeft className="h-4 w-4" />
       </Button>
-      <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+      <span className="text-sm text-muted-foreground">{t('common.page')} {page} {t('common.of')} {totalPages}</span>
       <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => onChange(page + 1)}>
         <ChevronRight className="h-4 w-4" />
       </Button>
@@ -256,6 +274,7 @@ interface ComposeForm {
 }
 
 function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | null }) {
+  const { t } = useLanguage();
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [form, setForm] = useState<ComposeForm>({
     channel: "sms",
@@ -294,13 +313,13 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
   }
 
   function applyTemplate(id: string) {
-    const t = templates.find(t => t.id === id);
-    if (!t) return;
+    const tmpl = templates.find(tmpl => tmpl.id === id);
+    if (!tmpl) return;
     setForm(prev => ({
       ...prev,
       templateId: id,
-      subject: t.subject ?? prev.subject,
-      content: t.content,
+      subject: tmpl.subject ?? prev.subject,
+      content: tmpl.content,
     }));
   }
 
@@ -337,7 +356,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
   const channelInfo = CHANNELS.find(c => c.value === form.channel)!;
   const needsSubject = form.channel === "email";
   const needsGroups = form.audience === "specific_class" || form.audience === "specific_section";
-  const filteredTemplates = templates.filter(t => t.type === form.channel);
+  const filteredTemplates = templates.filter(tmpl => tmpl.type === form.channel);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -346,14 +365,14 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Send className="h-4 w-4" />Compose &amp; Broadcast
+              <Send className="h-4 w-4" />{t('communication.compose.cardTitle')}
             </CardTitle>
-            <CardDescription>Send a message to your school community via any channel</CardDescription>
+            <CardDescription>{t('communication.compose.cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Channel selector */}
             <div>
-              <Label className="text-xs text-muted-foreground mb-2 block">Channel</Label>
+              <Label className="text-xs text-muted-foreground mb-2 block">{t('communication.compose.channelLabel')}</Label>
               <div className="grid grid-cols-4 gap-2">
                 {CHANNELS.map(ch => (
                   <button
@@ -372,16 +391,16 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
             {/* Template picker */}
             {filteredTemplates.length > 0 && (
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Use Template (optional)</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">{t('communication.compose.templateLabel')}</Label>
                 <Select value={form.templateId || "_none_"} onValueChange={v => v === "_none_" ? set("templateId", "") : applyTemplate(v)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a template…" />
+                    <SelectValue placeholder={t('communication.compose.templatePlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_none_">— No template —</SelectItem>
-                    {filteredTemplates.map(t => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name} <span className="text-muted-foreground text-xs">· {t.category}</span>
+                    <SelectItem value="_none_">{t('communication.compose.templateNone')}</SelectItem>
+                    {filteredTemplates.map(tmpl => (
+                      <SelectItem key={tmpl.id} value={tmpl.id}>
+                        {tmpl.name} <span className="text-muted-foreground text-xs">· {tmpl.category}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -392,7 +411,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
             {/* Audience */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Audience</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">{t('communication.compose.audienceLabel')}</Label>
                 <Select value={form.audience} onValueChange={v => set("audience", v as TargetAudience)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -407,7 +426,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Priority</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">{t('communication.compose.priorityLabel')}</Label>
                 <Select value={form.priority} onValueChange={v => set("priority", v as "normal" | "high")}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -421,7 +440,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
             {needsGroups && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">
-                  {form.audience === "specific_class" ? "Class names" : "Section names"} (comma-separated)
+                  {form.audience === "specific_class" ? t('communication.compose.classNamesLabel') : t('communication.compose.sectionNamesLabel')}
                 </Label>
                 <Input
                   placeholder={form.audience === "specific_class" ? "e.g. Class 10, Class 11" : "e.g. 10-A, 10-B"}
@@ -433,9 +452,9 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
 
             {needsSubject && (
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Subject</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">{t('communication.compose.subjectLabel')}</Label>
                 <Input
-                  placeholder="Email subject"
+                  placeholder={t('communication.compose.subjectPlaceholder')}
                   value={form.subject}
                   onChange={e => set("subject", e.target.value)}
                 />
@@ -444,7 +463,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">
-                Message
+                {t('communication.compose.messageLabel')}
                 {form.channel === "sms" && <span className="ml-2 text-muted-foreground">(160 chars/SMS)</span>}
               </Label>
               <Textarea
@@ -477,10 +496,10 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
                 disabled={sending || !form.content.trim()}
               >
                 {sending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-                {sending ? "Sending…" : `Send via ${channelInfo.label}`}
+                {sending ? t('communication.compose.sendingButton') : t('communication.compose.sendButton')}
               </Button>
               <Button variant="outline" onClick={() => { set("content", ""); set("subject", ""); set("templateId", ""); setResult(null); }}>
-                Clear
+                {t('communication.compose.clearButton')}
               </Button>
             </div>
           </CardContent>
@@ -540,7 +559,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
         {/* Variable reference */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2"><Variable className="h-4 w-4" />Available Variables</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Variable className="h-4 w-4" />{t('communication.compose.variablesTitle')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-1.5">
@@ -556,7 +575,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
                 </button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Click a variable to insert it at the end of your message.</p>
+            <p className="text-xs text-muted-foreground mt-2">{t('communication.compose.variablesHint')}</p>
           </CardContent>
         </Card>
 
@@ -568,7 +587,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
             </CardHeader>
             <CardContent>
               <TemplatePreview
-                template={filteredTemplates.find(t => t.id === form.templateId) ?? null}
+                template={filteredTemplates.find(tmpl => tmpl.id === form.templateId) ?? null}
                 channel={form.channel}
               />
             </CardContent>
@@ -584,6 +603,7 @@ function ComposeTab({ selectedTemplate }: { selectedTemplate: MessageTemplate | 
 // ──────────────────────────────────────────────────────────────────────────────
 
 function AnnouncementsTab() {
+  const { t } = useLanguage();
   const [announcements, setAnnouncements] = useState<AnnouncementBasic[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -661,38 +681,38 @@ function AnnouncementsTab() {
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Search announcements…"
+            placeholder={t('communication.announcements.searchPlaceholder')}
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
         <div className="flex gap-2 flex-wrap">
           <Select value={filters.status ?? "_all_"} onValueChange={v => setFilter("status", v === "_all_" ? "" : v)}>
-            <SelectTrigger className="w-36"><SelectValue placeholder="All Status" /></SelectTrigger>
+            <SelectTrigger className="w-36"><SelectValue placeholder={t('communication.announcements.filterAllStatus')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all_">All Status</SelectItem>
-              <SelectItem value="published">Published</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="archived">Archived</SelectItem>
+              <SelectItem value="_all_">{t('communication.announcements.filterAllStatus')}</SelectItem>
+              <SelectItem value="published">{t('communication.announcements.filterPublished')}</SelectItem>
+              <SelectItem value="draft">{t('communication.announcements.filterDraft')}</SelectItem>
+              <SelectItem value="archived">{t('communication.announcements.filterArchived')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filters.priority ?? "_all_"} onValueChange={v => setFilter("priority", v === "_all_" ? "" : v)}>
-            <SelectTrigger className="w-36"><SelectValue placeholder="All Priority" /></SelectTrigger>
+            <SelectTrigger className="w-36"><SelectValue placeholder={t('communication.announcements.filterAllPriority')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all_">All Priority</SelectItem>
+              <SelectItem value="_all_">{t('communication.announcements.filterAllPriority')}</SelectItem>
               {PRIORITIES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filters.targetAudience ?? "_all_"} onValueChange={v => setFilter("targetAudience", v === "_all_" ? "" : v)}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="All Audiences" /></SelectTrigger>
+            <SelectTrigger className="w-40"><SelectValue placeholder={t('communication.announcements.filterAllAudiences')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all_">All Audiences</SelectItem>
+              <SelectItem value="_all_">{t('communication.announcements.filterAllAudiences')}</SelectItem>
               {AUDIENCES.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant="outline" size="icon" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" />New Announcement
+            <Plus className="h-4 w-4 mr-1" />{t('communication.announcements.newButton')}
           </Button>
         </div>
       </div>
@@ -706,20 +726,20 @@ function AnnouncementsTab() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-8"></TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead>Audience</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Published</TableHead>
-              <TableHead className="text-center">Reads</TableHead>
+              <TableHead>{t('communication.announcements.colTitle')}</TableHead>
+              <TableHead>{t('communication.announcements.colAudience')}</TableHead>
+              <TableHead>{t('communication.announcements.colPriority')}</TableHead>
+              <TableHead>{t('communication.announcements.colStatus')}</TableHead>
+              <TableHead>{t('communication.announcements.colPublished')}</TableHead>
+              <TableHead className="text-center">{t('communication.announcements.colReads')}</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">{t('communication.announcements.loading')}</TableCell></TableRow>
             ) : announcements.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No announcements found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">{t('communication.announcements.empty')}</TableCell></TableRow>
             ) : announcements.map(a => (
               <TableRow key={a.id} className="cursor-pointer hover:bg-muted/40" onClick={() => openDetail(a.id)}>
                 <TableCell className="pr-0">
@@ -739,13 +759,13 @@ function AnnouncementsTab() {
                       <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openDetail(a.id)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => openDetail(a.id)}><Eye className="h-4 w-4 mr-2" />{t('communication.announcements.menuView')}</DropdownMenuItem>
                       {a.status !== "published" && (
-                        <DropdownMenuItem onClick={() => handlePublish(a.id)}><Zap className="h-4 w-4 mr-2" />Publish Now</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handlePublish(a.id)}><Zap className="h-4 w-4 mr-2" />{t('communication.announcements.menuPublishNow')}</DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(a.id)}>
-                        <Trash2 className="h-4 w-4 mr-2" />Delete
+                        <Trash2 className="h-4 w-4 mr-2" />{t('communication.announcements.menuDelete')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -762,15 +782,15 @@ function AnnouncementsTab() {
       <Dialog open={!!detailId} onOpenChange={open => { if (!open) { setDetailId(null); setDetail(null); }}}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Announcement Detail</DialogTitle>
+            <DialogTitle>{t('communication.announcements.detailTitle')}</DialogTitle>
           </DialogHeader>
           {detailLoading ? (
-            <div className="py-12 text-center text-muted-foreground">Loading…</div>
+            <div className="py-12 text-center text-muted-foreground">{t('communication.announcements.loading')}</div>
           ) : detail ? (
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-lg font-semibold">{detail.title}</h2>
-                {detail.isPinned && <Badge variant="secondary"><Pin className="h-3 w-3 mr-1" />Pinned</Badge>}
+                {detail.isPinned && <Badge variant="secondary"><Pin className="h-3 w-3 mr-1" />{t('communication.announcements.badgePinned')}</Badge>}
               </div>
               <div className="flex flex-wrap gap-2">
                 <PriorityBadge priority={detail.priority} />
@@ -786,20 +806,20 @@ function AnnouncementsTab() {
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <p className="text-xl font-bold">{detail.readCount}</p>
-                  <p className="text-xs text-muted-foreground">Reads</p>
+                  <p className="text-xs text-muted-foreground">{t('communication.announcements.statReads')}</p>
                 </div>
                 <div>
                   <p className="text-xl font-bold">{detail.acknowledgedCount}</p>
-                  <p className="text-xs text-muted-foreground">Acknowledged</p>
+                  <p className="text-xs text-muted-foreground">{t('communication.announcements.statAcknowledged')}</p>
                 </div>
                 <div>
                   <p className="text-xl font-bold">{detail.totalTargetCount}</p>
-                  <p className="text-xs text-muted-foreground">Total Targeted</p>
+                  <p className="text-xs text-muted-foreground">{t('communication.announcements.statTotalTargeted')}</p>
                 </div>
               </div>
               {detail.status !== "published" && (
                 <Button className="w-full" onClick={() => { handlePublish(detail.id); setDetailId(null); }}>
-                  <Zap className="h-4 w-4 mr-2" />Publish Announcement
+                  <Zap className="h-4 w-4 mr-2" />{t('communication.announcements.publishButton')}
                 </Button>
               )}
             </div>
@@ -810,11 +830,11 @@ function AnnouncementsTab() {
       {/* Confirm Delete */}
       <Dialog open={!!deleteId} onOpenChange={open => !open && setDeleteId(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Delete Announcement?</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('communication.announcements.deleteDialogTitle')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">This action cannot be undone. The announcement will be permanently removed.</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deleteId && handleDelete(deleteId)}>Delete</Button>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>{t('communication.announcements.cancelButton')}</Button>
+            <Button variant="destructive" onClick={() => deleteId && handleDelete(deleteId)}>{t('communication.announcements.deleteButton')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -832,6 +852,7 @@ function CreateAnnouncementDialog({
 }: {
   open: boolean; onClose: () => void; onCreated: () => void;
 }) {
+  const { t } = useLanguage();
   const empty = (): CreateAnnouncementDto => ({
     title: "",
     content: "",
@@ -874,16 +895,16 @@ function CreateAnnouncementDialog({
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>New Announcement</DialogTitle>
+          <DialogTitle>{t('communication.createAnnouncement.dialogTitle')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-1">
           <div>
-            <Label>Title *</Label>
-            <Input value={form.title} onChange={e => set("title", e.target.value)} placeholder="Announcement title" />
+            <Label>{t('communication.createAnnouncement.titleLabel')} *</Label>
+            <Input value={form.title} onChange={e => set("title", e.target.value)} placeholder={t('communication.createAnnouncement.titlePlaceholder')} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Target Audience *</Label>
+              <Label>{t('communication.createAnnouncement.audienceLabel')} *</Label>
               <Select value={form.targetAudience} onValueChange={v => set("targetAudience", v as TargetAudience)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -892,7 +913,7 @@ function CreateAnnouncementDialog({
               </Select>
             </div>
             <div>
-              <Label>Priority *</Label>
+              <Label>{t('communication.createAnnouncement.priorityLabel')} *</Label>
               <Select value={form.priority} onValueChange={v => set("priority", v as Priority)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -903,7 +924,7 @@ function CreateAnnouncementDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Category</Label>
+              <Label>{t('communication.createAnnouncement.categoryLabel')}</Label>
               <Select value={form.category} onValueChange={v => set("category", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -912,7 +933,7 @@ function CreateAnnouncementDialog({
               </Select>
             </div>
             <div>
-              <Label>Schedule (optional)</Label>
+              <Label>{t('communication.createAnnouncement.scheduleLabel')}</Label>
               <Input
                 type="datetime-local"
                 value={form.scheduleDate ?? ""}
@@ -940,7 +961,7 @@ function CreateAnnouncementDialog({
             />
           </div>
           <div>
-            <Label>Expiry Date (optional)</Label>
+            <Label>{t('communication.createAnnouncement.expiryLabel')}</Label>
             <Input
               type="datetime-local"
               value={form.expiryDate ?? ""}
@@ -950,23 +971,23 @@ function CreateAnnouncementDialog({
           <div className="flex gap-6">
             <label className="flex items-center gap-2 cursor-pointer">
               <Switch checked={form.isPinned} onCheckedChange={v => set("isPinned", v)} />
-              <span className="text-sm">Pin announcement</span>
+              <span className="text-sm">{t('communication.createAnnouncement.pinLabel')}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <Switch checked={form.requiresAcknowledgement} onCheckedChange={v => set("requiresAcknowledgement", v)} />
-              <span className="text-sm">Require acknowledgement</span>
+              <span className="text-sm">{t('communication.createAnnouncement.requireAckLabel')}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <Switch checked={form.publishImmediately} onCheckedChange={v => set("publishImmediately", v)} />
-              <span className="text-sm">Publish immediately</span>
+              <span className="text-sm">{t('communication.createAnnouncement.publishImmediatelyLabel')}</span>
             </label>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('communication.createAnnouncement.cancelButton')}</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Megaphone className="h-4 w-4 mr-2" />}
-            {saving ? "Saving…" : form.publishImmediately ? "Publish" : "Save Draft"}
+            {saving ? t('communication.createAnnouncement.savingButton') : form.publishImmediately ? t('communication.createAnnouncement.publishButton') : t('communication.createAnnouncement.saveDraftButton')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -979,6 +1000,7 @@ function CreateAnnouncementDialog({
 // ──────────────────────────────────────────────────────────────────────────────
 
 function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemplate) => void }) {
+  const { t } = useLanguage();
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -1031,8 +1053,8 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
   }
 
   const filtered = useMemo(() =>
-    templates.filter(t =>
-      (categoryFilter === "_all_" || t.category === categoryFilter)
+    templates.filter(tmpl =>
+      (categoryFilter === "_all_" || tmpl.category === categoryFilter)
     ),
     [templates, categoryFilter]
   );
@@ -1040,9 +1062,9 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
   // Group by channel for display
   const byChannel = useMemo(() => {
     const map: Record<string, MessageTemplate[]> = {};
-    for (const t of filtered) {
-      if (!map[t.type]) map[t.type] = [];
-      map[t.type].push(t);
+    for (const tmpl of filtered) {
+      if (!map[tmpl.type]) map[tmpl.type] = [];
+      map[tmpl.type].push(tmpl);
     }
     return map;
   }, [filtered]);
@@ -1066,9 +1088,9 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
             ))}
           </div>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="All Categories" /></SelectTrigger>
+            <SelectTrigger className="w-40"><SelectValue placeholder={t('communication.templates.filterAllCategories')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="_all_">All Categories</SelectItem>
+              <SelectItem value="_all_">{t('communication.templates.filterAllCategories')}</SelectItem>
               {TEMPLATE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -1076,13 +1098,13 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
         <div className="flex gap-2">
           <Button variant="outline" size="icon" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
           <Button onClick={() => { setEditTemplate(null); setCreateOpen(true); }}>
-            <Plus className="h-4 w-4 mr-1" />New Template
+            <Plus className="h-4 w-4 mr-1" />{t('communication.templates.newButton')}
           </Button>
         </div>
       </div>
 
       {loading ? (
-        <div className="py-12 text-center text-muted-foreground">Loading templates…</div>
+        <div className="py-12 text-center text-muted-foreground">{t('communication.templates.loading')}</div>
       ) : loadError ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -1096,23 +1118,23 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
         <Card className="border-dashed">
           <CardContent className="py-16 text-center">
             <FileText className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
-            <p className="font-semibold mb-1">No templates yet</p>
+            <p className="font-semibold mb-1">{t('communication.templates.emptyTitle')}</p>
             <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
               Load the built-in starter kit — fee reminders, absent alerts, exam notices, PTM invitations and more — or create your own.
             </p>
             <div className="flex gap-3 justify-center flex-wrap">
               <Button onClick={handleSeedDefaults} disabled={seeding}>
                 {seeding ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
-                {seeding ? "Loading…" : "Load Default Templates"}
+                {seeding ? t('communication.templates.loading') : t('communication.templates.loadDefaultsButton')}
               </Button>
               <Button variant="outline" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />Create Blank Template
+                <Plus className="h-4 w-4 mr-1" />{t('communication.templates.createBlankButton')}
               </Button>
             </div>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <div className="py-8 text-center text-muted-foreground text-sm">No templates match the current filters.</div>
+        <div className="py-8 text-center text-muted-foreground text-sm">{t('communication.templates.noMatchFilter')}</div>
       ) : (
         <div className="space-y-6">
           {Object.entries(byChannel).map(([type, tpls]) => {
@@ -1125,51 +1147,51 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
                   <Badge variant="secondary">{tpls.length}</Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {tpls.map(t => (
-                    <Card key={t.id} className="flex flex-col">
+                  {tpls.map(tmpl => (
+                    <Card key={tmpl.id} className="flex flex-col">
                       <CardHeader className="pb-2">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <CardTitle className="text-sm">{t.name}</CardTitle>
-                            <CardDescription className="text-xs mt-0.5 capitalize">{t.category}</CardDescription>
+                            <CardTitle className="text-sm">{tmpl.name}</CardTitle>
+                            <CardDescription className="text-xs mt-0.5 capitalize">{tmpl.category}</CardDescription>
                           </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7"><MoreVertical className="h-3.5 w-3.5" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setPreviewTemplate(t)}>
-                                <Eye className="h-4 w-4 mr-2" />Preview
+                              <DropdownMenuItem onClick={() => setPreviewTemplate(tmpl)}>
+                                <Eye className="h-4 w-4 mr-2" />{t('communication.templates.menuPreview')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => { setEditTemplate(t); setCreateOpen(true); }}>
-                                <Edit2 className="h-4 w-4 mr-2" />Edit
+                              <DropdownMenuItem onClick={() => { setEditTemplate(tmpl); setCreateOpen(true); }}>
+                                <Edit2 className="h-4 w-4 mr-2" />{t('communication.templates.menuEdit')}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(t.id)}>
-                                <Trash2 className="h-4 w-4 mr-2" />Delete
+                              <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(tmpl.id)}>
+                                <Trash2 className="h-4 w-4 mr-2" />{t('communication.templates.menuDelete')}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
                       </CardHeader>
                       <CardContent className="flex-1 pb-3">
-                        {t.subject && (
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Subject: {t.subject}</p>
+                        {tmpl.subject && (
+                          <p className="text-xs font-medium text-muted-foreground mb-1">{t('communication.templates.subjectPrefix')} {tmpl.subject}</p>
                         )}
                         <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                          {t.content}
+                          {tmpl.content}
                         </p>
-                        {t.variables.length > 0 && (
+                        {tmpl.variables.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {t.variables.map(v => (
+                            {tmpl.variables.map(v => (
                               <span key={v} className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{v}</span>
                             ))}
                           </div>
                         )}
                       </CardContent>
                       <div className="px-4 py-3 border-t bg-muted/30 rounded-b-lg flex gap-2 justify-between items-center">
-                        <Button size="sm" className="flex-1" onClick={() => onUseTemplate(t)}>
-                          <Zap className="h-3.5 w-3.5 mr-1" />Use This Template
+                        <Button size="sm" className="flex-1" onClick={() => onUseTemplate(tmpl)}>
+                          <Zap className="h-3.5 w-3.5 mr-1" />{t('communication.templates.useButton')}
                         </Button>
                       </div>
                     </Card>
@@ -1211,11 +1233,11 @@ function TemplatesTab({ onUseTemplate }: { onUseTemplate: (template: MessageTemp
       {/* Confirm Delete */}
       <Dialog open={!!deleteId} onOpenChange={o => !o && setDeleteId(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Delete Template?</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('communication.templates.deleteDialogTitle')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">This will permanently delete the template. Any scheduled messages using it won't be affected.</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deleteId && handleDelete(deleteId)}>Delete</Button>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>{t('communication.templates.cancelButton')}</Button>
+            <Button variant="destructive" onClick={() => deleteId && handleDelete(deleteId)}>{t('communication.templates.deleteButton')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1233,6 +1255,7 @@ function TemplateFormDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useLanguage();
   const emptyForm = (): CreateTemplateDto => ({
     name: "",
     type: "sms",
@@ -1320,16 +1343,16 @@ function TemplateFormDialog({
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{template ? "Edit Template" : "New Template"}</DialogTitle>
+          <DialogTitle>{template ? t('communication.templateForm.editTitle') : t('communication.templateForm.createTitle')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-1">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Name *</Label>
+              <Label>{t('communication.templateForm.nameLabel')} *</Label>
               <Input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Fee Reminder SMS" />
             </div>
             <div>
-              <Label>Category *</Label>
+              <Label>{t('communication.templateForm.categoryLabel')} *</Label>
               <Select value={form.category} onValueChange={v => set("category", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1341,7 +1364,7 @@ function TemplateFormDialog({
 
           {/* Channel — editable only when creating */}
           <div>
-            <Label>Channel *</Label>
+            <Label>{t('communication.templateForm.channelLabel')} *</Label>
             <div className="grid grid-cols-4 gap-2 mt-1">
               {CHANNELS.map(ch => (
                 <button
@@ -1361,14 +1384,14 @@ function TemplateFormDialog({
 
           {form.type === "email" && (
             <div>
-              <Label>Subject</Label>
+              <Label>{t('communication.templateForm.subjectLabel')}</Label>
               <Input value={form.subject ?? ""} onChange={e => set("subject", e.target.value)} placeholder="Email subject" />
             </div>
           )}
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <Label>Content *</Label>
+              <Label>{t('communication.templateForm.contentLabel')} *</Label>
               {form.type === "sms" && <SmsCounter text={form.content} />}
             </div>
             <Textarea
@@ -1382,7 +1405,7 @@ function TemplateFormDialog({
 
           {/* Variable toolkit */}
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5"><Variable className="h-3.5 w-3.5" />Variables</Label>
+            <Label className="flex items-center gap-1.5"><Variable className="h-3.5 w-3.5" />{t('communication.templateForm.variablesLabel')}</Label>
             {unusedVars.length > 0 && (
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Suggested — click to insert &amp; track:</p>
@@ -1418,10 +1441,10 @@ function TemplateFormDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('communication.templateForm.cancelButton')}</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
-            {saving ? "Saving…" : template ? "Save Changes" : "Create Template"}
+            {saving ? t('communication.templateForm.savingButton') : template ? t('communication.templateForm.saveChangesButton') : t('communication.templateForm.createButton')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1434,6 +1457,7 @@ function TemplateFormDialog({
 // ──────────────────────────────────────────────────────────────────────────────
 
 function SentMessagesTab() {
+  const { t } = useLanguage();
   const [messages, setMessages] = useState<MessageBasic[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -1506,20 +1530,20 @@ function SentMessagesTab() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Channel</TableHead>
-              <TableHead>Subject / Content</TableHead>
-              <TableHead>From</TableHead>
-              <TableHead className="text-center">Recipients</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Sent</TableHead>
+              <TableHead>{t('communication.sentLog.colChannel')}</TableHead>
+              <TableHead>{t('communication.sentLog.colSubjectContent')}</TableHead>
+              <TableHead>{t('communication.sentLog.colFrom')}</TableHead>
+              <TableHead className="text-center">{t('communication.sentLog.colRecipients')}</TableHead>
+              <TableHead>{t('communication.sentLog.colStatus')}</TableHead>
+              <TableHead>{t('communication.sentLog.colSent')}</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">{t('communication.sentLog.loading')}</TableCell></TableRow>
             ) : messages.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No messages found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">{t('communication.sentLog.empty')}</TableCell></TableRow>
             ) : messages.map(m => (
               <TableRow key={m.id} className="cursor-pointer hover:bg-muted/40" onClick={() => openDetail(m.id)}>
                 <TableCell><ChannelBadge type={m.type} /></TableCell>
@@ -1544,18 +1568,18 @@ function SentMessagesTab() {
       {/* Detail Dialog */}
       <Dialog open={!!detailId} onOpenChange={o => { if (!o) { setDetailId(null); setDetail(null); }}}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Message Detail</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('communication.sentLog.detailTitle')}</DialogTitle></DialogHeader>
           {detail ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <ChannelBadge type={detail.type} />
                 <StatusDot status={detail.status} />
               </div>
-              {detail.subject && <div><p className="text-xs text-muted-foreground">Subject</p><p className="font-medium">{detail.subject}</p></div>}
-              <div><p className="text-xs text-muted-foreground">From</p><p className="text-sm">{detail.fromName ?? "—"}</p></div>
+              {detail.subject && <div><p className="text-xs text-muted-foreground">{t('communication.sentLog.detailSubjectLabel')}</p><p className="font-medium">{detail.subject}</p></div>}
+              <div><p className="text-xs text-muted-foreground">{t('communication.sentLog.detailFromLabel')}</p><p className="text-sm">{detail.fromName ?? "—"}</p></div>
               {detail.recipients.length > 0 && (
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Recipients ({detail.recipients.length})</p>
+                <p className="text-xs text-muted-foreground mb-1">{t('communication.sentLog.detailRecipientsLabel')} ({detail.recipients.length})</p>
                   <div className="flex flex-wrap gap-1">
                     {detail.recipients.slice(0, 10).map(r => (
                       <span key={r.userId} className="text-xs bg-muted px-2 py-0.5 rounded">{r.name}</span>
@@ -1569,8 +1593,8 @@ function SentMessagesTab() {
               <Separator />
               <div className="bg-muted/30 rounded p-3 text-sm whitespace-pre-wrap">{detail.content}</div>
               <div className="text-xs text-muted-foreground">
-                Sent: {detail.sentAt ? new Date(detail.sentAt).toLocaleString("en-IN") : "—"}
-                {detail.deliveredAt && <> · Delivered: {new Date(detail.deliveredAt).toLocaleString("en-IN")}</>}
+                {t('communication.sentLog.detailSentLabel')} {detail.sentAt ? new Date(detail.sentAt).toLocaleString("en-IN") : "—"}
+                {detail.deliveredAt && <> · {t('communication.sentLog.detailDeliveredLabel')} {new Date(detail.deliveredAt).toLocaleString("en-IN")}</>}
               </div>
               {detail.failureReason && (
                 <div className="bg-red-50 border border-red-200 rounded p-2 text-xs text-red-700">
@@ -1580,7 +1604,7 @@ function SentMessagesTab() {
               )}
             </div>
           ) : (
-            <div className="py-8 text-center text-muted-foreground">Loading…</div>
+            <div className="py-8 text-center text-muted-foreground">{t('communication.sentLog.loading')}</div>
           )}
         </DialogContent>
       </Dialog>
@@ -1593,6 +1617,7 @@ function SentMessagesTab() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 function AnalyticsTab() {
+  const { t } = useLanguage();
   const [stats, setStats] = useState<CommunicationStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [range, setRange] = useState("30");
@@ -1615,11 +1640,11 @@ function AnalyticsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="py-16 text-center text-muted-foreground">Loading analytics…</div>;
+  if (loading) return <div className="py-16 text-center text-muted-foreground">{t('communication.analytics.loading')}</div>;
   if (!stats) return (
     <div className="py-16 text-center">
       <BarChart2 className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-      <p className="font-medium mb-1">No analytics data</p>
+      <p className="font-medium mb-1">{t('communication.analytics.emptyTitle')}</p>
       <p className="text-sm text-muted-foreground mb-4">Data will appear once messages and announcements are sent.</p>
       <Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" />Retry</Button>
     </div>
@@ -1633,7 +1658,7 @@ function AnalyticsTab() {
       {/* Range picker */}
       <div className="flex justify-end">
         <div className="flex gap-1 bg-muted p-1 rounded-lg">
-          {[["7", "7 days"], ["30", "30 days"], ["90", "90 days"]].map(([v, label]) => (
+          {[["7", t('communication.analytics.range7days')], ["30", t('communication.analytics.range30days')], ["90", t('communication.analytics.range90days')]].map(([v, label]) => (
             <button
               key={v}
               type="button"
@@ -1649,27 +1674,27 @@ function AnalyticsTab() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total Announcements"
+          title={t('communication.analytics.statTotalAnnouncements')}
           value={stats.totalAnnouncements}
           sub={`${stats.publishedAnnouncements} published`}
           icon={<Megaphone className="h-5 w-5 text-white" />}
           color="bg-blue-500"
         />
         <StatCard
-          title="Messages Sent"
+          title={t('communication.analytics.statMessagesSent')}
           value={stats.totalMessages}
           sub={`${stats.failedMessages} failed`}
           icon={<Send className="h-5 w-5 text-white" />}
           color="bg-green-500"
         />
         <StatCard
-          title="Delivery Rate"
+          title={t('communication.analytics.statDeliveryRate')}
           value={`${stats.deliveryRate.toFixed(1)}%`}
           icon={<TrendingUp className="h-5 w-5 text-white" />}
           color="bg-violet-500"
         />
         <StatCard
-          title="Avg Read Rate"
+          title={t('communication.analytics.statAvgReadRate')}
           value={`${stats.avgReadRate.toFixed(1)}%`}
           icon={<Eye className="h-5 w-5 text-white" />}
           color="bg-amber-500"
@@ -1680,7 +1705,7 @@ function AnalyticsTab() {
         {/* Messages by channel */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Messages by Channel</CardTitle>
+            <CardTitle className="text-sm">{t('communication.analytics.channelBreakdownTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {CHANNELS.map(ch => {
@@ -1698,18 +1723,18 @@ function AnalyticsTab() {
                 </div>
               );
             })}
-            {totalChannels === 0 && <p className="text-sm text-muted-foreground text-center py-4">No messages in this period</p>}
+            {totalChannels === 0 && <p className="text-sm text-muted-foreground text-center py-4">{t('communication.analytics.channelBreakdownEmpty')}</p>}
           </CardContent>
         </Card>
 
         {/* Announcements by category */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Announcements by Category</CardTitle>
+            <CardTitle className="text-sm">{t('communication.analytics.categoryBreakdownTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {Object.entries(stats.announcementsByCategory).length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No announcements in this period</p>
+              <p className="text-sm text-muted-foreground text-center py-4">{t('communication.analytics.channelBreakdownEmpty')}</p>
             ) : Object.entries(stats.announcementsByCategory).map(([cat, count]) => {
               const pct = (count / maxCategory) * 100;
               return (
@@ -1736,15 +1761,15 @@ function AnalyticsTab() {
         <CardContent className="grid grid-cols-3 divide-x text-center">
           <div className="px-4">
             <p className="text-2xl font-bold text-green-600">{stats.sentMessages}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Sent</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('communication.analytics.deliveryHealthSent')}</p>
           </div>
           <div className="px-4">
             <p className="text-2xl font-bold text-red-600">{stats.failedMessages}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Failed</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('communication.analytics.deliveryHealthFailed')}</p>
           </div>
           <div className="px-4">
             <p className="text-2xl font-bold">{stats.deliveryRate.toFixed(1)}%</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Delivery Rate</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('communication.analytics.deliveryHealthRate')}</p>
           </div>
         </CardContent>
       </Card>
@@ -1757,6 +1782,7 @@ function AnalyticsTab() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 export function CommunicationHub() {
+  const { t } = useLanguage();
   const [stats, setStats] = useState<CommunicationStats | null>(null);
   // Lazy tab mounting: only mount a tab's content after first visit
   const [activeTab, setActiveTab] = useState("compose");
@@ -1784,9 +1810,9 @@ export function CommunicationHub() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Communications</h1>
+          <h1 className="text-2xl font-bold">{t('communication.title')}</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            Manage announcements and broadcast messages via SMS, WhatsApp &amp; Email
+            {t('communication.subtitle')}
           </p>
         </div>
         {/* Quick channel badges */}
@@ -1802,10 +1828,10 @@ export function CommunicationHub() {
       {/* Mini stat strip */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard title="Announcements" value={stats.totalAnnouncements} sub={`${stats.publishedAnnouncements} active`} icon={<Megaphone className="h-4 w-4 text-white" />} color="bg-blue-500" />
-          <StatCard title="Messages Sent" value={stats.totalMessages} icon={<Send className="h-4 w-4 text-white" />} color="bg-green-500" />
-          <StatCard title="Delivery Rate" value={`${stats.deliveryRate.toFixed(1)}%`} icon={<TrendingUp className="h-4 w-4 text-white" />} color="bg-violet-500" />
-          <StatCard title="Avg Read Rate" value={`${stats.avgReadRate.toFixed(1)}%`} icon={<Eye className="h-4 w-4 text-white" />} color="bg-amber-500" />
+          <StatCard title={t('communication.stats.announcements')} value={stats.totalAnnouncements} sub={`${stats.publishedAnnouncements} active`} icon={<Megaphone className="h-4 w-4 text-white" />} color="bg-blue-500" />
+          <StatCard title={t('communication.stats.messagesSent')} value={stats.totalMessages} icon={<Send className="h-4 w-4 text-white" />} color="bg-green-500" />
+          <StatCard title={t('communication.stats.deliveryRate')} value={`${stats.deliveryRate.toFixed(1)}%`} icon={<TrendingUp className="h-4 w-4 text-white" />} color="bg-violet-500" />
+          <StatCard title={t('communication.stats.avgReadRate')} value={`${stats.avgReadRate.toFixed(1)}%`} icon={<Eye className="h-4 w-4 text-white" />} color="bg-amber-500" />
         </div>
       )}
 
@@ -1813,19 +1839,19 @@ export function CommunicationHub() {
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="compose" className="flex items-center gap-1.5">
-            <Send className="h-4 w-4" />Compose
+            <Send className="h-4 w-4" />{t('communication.tabs.compose')}
           </TabsTrigger>
           <TabsTrigger value="announcements" className="flex items-center gap-1.5">
-            <Megaphone className="h-4 w-4" />Announcements
+            <Megaphone className="h-4 w-4" />{t('communication.tabs.announcements')}
           </TabsTrigger>
           <TabsTrigger value="templates" className="flex items-center gap-1.5">
-            <FileText className="h-4 w-4" />Templates
+            <FileText className="h-4 w-4" />{t('communication.tabs.templates')}
           </TabsTrigger>
           <TabsTrigger value="sent" className="flex items-center gap-1.5">
-            <MessageSquare className="h-4 w-4" />Sent Log
+            <MessageSquare className="h-4 w-4" />{t('communication.tabs.sentLog')}
           </TabsTrigger>
           <TabsTrigger value="analytics" className="flex items-center gap-1.5">
-            <BarChart2 className="h-4 w-4" />Analytics
+            <BarChart2 className="h-4 w-4" />{t('communication.tabs.analytics')}
           </TabsTrigger>
         </TabsList>
 

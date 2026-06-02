@@ -90,7 +90,6 @@ export interface AnnouncementFilters {
 export interface CreateAnnouncementDto {
   title: string;
   content: string;
-  createdByStaffId: string;
   priority: AnnouncementPriority;
   targetAudience: AnnouncementAudience;
   targetClassId?: string;
@@ -136,44 +135,44 @@ export async function getAnnouncements(
   if (filters?.targetAudience) params.set('targetAudience', filters.targetAudience);
   if (filters?.priority) params.set('priority', filters.priority);
   if (filters?.search) params.set('search', filters.search);
-  return apiGet<PaginatedAnnouncements>(`/api/announcements?${params.toString()}`);
+  return apiGet<PaginatedAnnouncements>(`announcements?${params.toString()}`);
 }
 
 export async function getAnnouncementById(id: string): Promise<AnnouncementBasic> {
-  return apiGet<AnnouncementBasic>(`/api/announcements/${id}`);
+  return apiGet<AnnouncementBasic>(`announcements/${id}`);
 }
 
 export async function getAnnouncementStats(): Promise<AnnouncementStats> {
-  return apiGet<AnnouncementStats>('/api/announcements/stats');
+  return apiGet<AnnouncementStats>('announcements/stats');
 }
 
-export async function getMyAnnouncements(
-  recipientId: string,
-  recipientType: string,
-): Promise<AnnouncementBasic[]> {
-  const params = new URLSearchParams({ recipientId, recipientType });
-  return apiGet<AnnouncementBasic[]>(`/api/announcements/my?${params.toString()}`);
+export async function getMyAnnouncements(): Promise<AnnouncementBasic[]> {
+  return apiGet<AnnouncementBasic[]>('announcements/my');
+}
+
+export async function getParentAnnouncements(): Promise<AnnouncementBasic[]> {
+  return apiGet<AnnouncementBasic[]>('announcements/for-parent');
 }
 
 export async function createAnnouncement(
   data: CreateAnnouncementDto,
 ): Promise<AnnouncementBasic> {
-  return apiPost<AnnouncementBasic>('/api/announcements', data);
+  return apiPost<AnnouncementBasic>('announcements', data);
 }
 
 export async function updateAnnouncement(
   id: string,
   data: UpdateAnnouncementDto,
 ): Promise<AnnouncementBasic> {
-  return apiPut<AnnouncementBasic>(`/api/announcements/${id}`, data);
+  return apiPut<AnnouncementBasic>(`announcements/${id}`, data);
 }
 
 export async function deleteAnnouncement(id: string): Promise<void> {
-  return apiDelete<void>(`/api/announcements/${id}`);
+  return apiDelete<void>(`announcements/${id}`);
 }
 
 export async function markAnnouncementAsRead(data: MarkAsReadDto): Promise<boolean> {
-  return apiPost<boolean>('/api/announcements/mark-as-read', data);
+  return apiPost<boolean>('announcements/mark-as-read', data);
 }
 
 export async function getAnnouncementRecipients(
@@ -185,6 +184,6 @@ export async function getAnnouncementRecipients(
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (isRead !== undefined) params.set('isRead', String(isRead));
   return apiGet<PaginatedRecipients>(
-    `/api/announcements/${announcementId}/recipients?${params.toString()}`,
+    `announcements/${announcementId}/recipients?${params.toString()}`,
   );
 }

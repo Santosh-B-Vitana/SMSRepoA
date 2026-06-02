@@ -54,6 +54,10 @@ export interface Student extends StudentBasic {
   nationality?: string;
   /** ISO date-time string */
   admissionDate: string;
+  
+  // Inactive tracking
+  inactiveReason?: string; // passed_out, dropped_out, transferred, admin_deactivation, etc.
+  inactiveDate?: string; // ISO date-time when marked inactive
 
   // Identification
   aadharNumber?: string;
@@ -232,6 +236,11 @@ export interface StudentFilters {
   status?: string;
 }
 
+export interface StudentClassesSections {
+  classes: string[];
+  sections: string[];
+}
+
 export interface CreateStudentRequest {
   name: string;
   firstName?: string;
@@ -287,14 +296,15 @@ export interface CreateStudentRequest {
 }
 
 export interface BulkPromoteRequest {
-  fromClass: string;
-  toClass: string;
-  studentIds?: string[];
+  studentIds: string[];
+  newClass: string;
+  newSection: string;
+  academicYear?: string;
 }
 
 export interface BulkOperationResult {
-  succeeded: number;
-  failed: number;
+  successCount: number;
+  failureCount: number;
   errors?: string[];
 }
 
@@ -327,13 +337,21 @@ export const studentApi = {
   list: (filters?: StudentFilters) =>
     apiGet<StudentListResponse>('/students', filters as Record<string, unknown>),
 
+  /** Distinct classes and sections across all students — for filter dropdowns. */
+  classesSections: () =>
+    apiGet<StudentClassesSections>('/students/classes-sections'),
+
+  /** Get the logged-in student's own record (Student role only — resolved via JWT email). */
+  getMe: () =>
+    apiGet<StudentResponse>('/students/me'),
+
   getById: (id: string) =>
     apiGet<Student>(`/students/${id}`),
 
   create: (data: CreateStudentRequest) =>
     apiPost<Student>('/students', data),
 
-  update: (id: string, data: Partial<CreateStudentRequest> & { status?: string }) =>
+  update: (id: string, data: Partial<CreateStudentRequest> & { status?: string; inactiveReason?: string; inactiveDate?: string }) =>
     apiPut<Student>(`/students/${id}`, data),
 
   delete: (id: string) =>
@@ -396,5 +414,86 @@ export const studentApi = {
     apiGet<GuardianStaffDto | null>(`/students/${studentId}/guardian-staff`),
 
   setGuardianStaff: (studentId: string, staffId: string | null) =>
-    apiPost<{ message: string }>(`/students/${studentId}/guardian-staff`, { staffId }),
+    apiPut<{ message: string }>(`/students/${studentId}/guardian-staff`, { staffId }),
+
+  // ── Exit (Dropout / Passout) ─────────────────────────────────────────────
+  getExitClearance: (studentId: string) =>
+    apiGet<ExitClearanceResponse>(`/students/${studentId}/exit-clearance`),
+
+  processDropout: (studentId: string, data: StudentDropoutRequest) =>
+    apiPost<StudentExitResponse>(`/students/${studentId}/dropout`, data),
+
+  processPassout: (studentId: string, data: StudentPassoutRequest) =>
+    apiPost<StudentExitResponse>(`/students/${studentId}/passout`, data),
 };
+
+// ── Exit feature types ───────────────────────────────────────────────────────
+
+export interface ExitPendingFee {
+  feeRecordId: string;
+  feeType: string;
+  academicYear: string;
+  totalAmount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  dueDate?: string;
+}
+
+export interface ExitDocument {
+  documentKey: string;
+  title: string;
+  isMandatory: boolean;
+  fields: Record<string, string>;
+}
+
+export interface ExitClearanceResponse {
+  studentId: string;
+  studentName: string;
+  currentClass: string;
+  currentSection: string;
+  academicYear: string;
+  isFeeClear: boolean;
+  totalPendingAmount: number;
+  pendingFees: ExitPendingFee[];
+  availableDocuments: ExitDocument[];
+}
+
+export interface StudentDropoutRequest {
+  dropoutType: 'transfer' | 'detain';
+  destinationSchool?: string;
+  reason?: string;
+  conduct?: string;
+  feeClearanceConfirmed: boolean;
+  documentsToGenerate: Array<{ documentKey: string; fields: Record<string, string> }>;
+  remarks?: string;
+}
+
+export interface StudentPassoutRequest {
+  academicYear?: string;
+  passingClass?: string;
+  destinationSchool?: string;
+  reason?: string;
+  conduct?: string;
+  feeClearanceConfirmed: boolean;
+  documentsToGenerate: Array<{ documentKey: string; fields: Record<string, string> }>;
+  remarks?: string;
+}
+
+export interface GeneratedDocumentInfo {
+  documentKey: string;
+  title: string;
+  fields: Record<string, string>;
+  fileUrl?: string;
+}
+
+export interface StudentExitResponse {
+  studentId: string;
+  studentName: string;
+  exitType: string;
+  subType?: string;
+  newStatus: string;
+  alumniId?: string;
+  alumniMessage?: string;
+  generatedDocuments: GeneratedDocumentInfo[];
+  message: string;
+}

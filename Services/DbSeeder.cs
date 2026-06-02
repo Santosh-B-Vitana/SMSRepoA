@@ -35,6 +35,11 @@ namespace SmsApi.Services
         Task SeedHealthAsync();
         Task EnsureParentChildrenTransportHostelAsync();
         Task EnsureParentNotificationsAsync();
+        Task SeedAssignmentsAsync();
+        Task SeedExamTypesAsync();
+        Task SeedExaminationsAsync();
+        Task EnsureStudentEnrollmentsAsync();
+        Task SeedRbacTestStaffAsync();
     }
 
     public class DbSeeder : IDbSeeder
@@ -72,12 +77,18 @@ namespace SmsApi.Services
                     await EnsureClassSubjectsForTeacherAssignmentsAsync();
                     await FixStudentClassNamesAsync();
                     await SeedLeaveTypesAsync();
+                    await SeedExamTypesAsync();
                     await SeedTimetablePeriodsAsync();
+                    await SeedAssignmentsAsync();
+                    await SeedExamTypesAsync();
+                    await SeedExaminationsAsync();
+                    await EnsureStudentEnrollmentsAsync();
                     await SeedTransportAsync();
                     await SeedHostelAsync();
                     await SeedHealthAsync();
                     await EnsureParentChildrenTransportHostelAsync();
                     await EnsureParentNotificationsAsync();
+                    await SeedRbacTestStaffAsync();
                     return;
                 }
 
@@ -98,12 +109,17 @@ namespace SmsApi.Services
                 await SeedFeeRecordsAsync();
                 await SeedLibraryBooksAsync();
                 await SeedAttendanceRecordsAsync();
+                await SeedAssignmentsAsync();
                 await SeedLeaveTypesAsync();
+                await SeedExamTypesAsync();
+                await SeedExaminationsAsync();
+                await EnsureStudentEnrollmentsAsync();
                 await SeedTransportAsync();
                 await SeedHostelAsync();
                 await SeedHealthAsync();
                 await EnsureParentChildrenTransportHostelAsync();
                 await EnsureParentNotificationsAsync();
+                await SeedRbacTestStaffAsync();
 
                 _logger.LogInformation("✅ Database seeding completed successfully!");
             }
@@ -317,11 +333,12 @@ namespace SmsApi.Services
             if (_schoolId == Guid.Empty)
                 _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
 
-            // Idempotency: skip if Teacher login for amit.k@demo.edu already exists with correct role
-            if (await _context.UserLogins.IgnoreQueryFilters()
-                    .AnyAsync(u => u.Email == "amit.k@demo.edu" && u.SchoolId == _schoolId && u.Role == "Teacher"))
+            // Idempotency: skip only if Teacher login exists AND LinkedEntityId is already set
+            var existingAmit = await _context.UserLogins.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email == "amit.k@demo.edu" && u.SchoolId == _schoolId && u.Role == "Teacher");
+            if (existingAmit?.LinkedEntityId != null)
             {
-                _logger.LogInformation("✅ Teacher user logins already seeded, skipping");
+                _logger.LogInformation("✅ Teacher user logins already seeded with LinkedEntityId, skipping");
                 return;
             }
 
@@ -338,6 +355,11 @@ namespace SmsApi.Services
 
             foreach (var (username, email, firstName, lastName) in teacherData)
             {
+                // Look up the matching StaffMember so we can link via LinkedEntityId
+                var staffMember = await _context.StaffMembers.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == _schoolId);
+                var linkedEntityId = staffMember?.Id;
+
                 var existing = await _context.UserLogins.IgnoreQueryFilters()
                     .FirstOrDefaultAsync(u => u.Email == email);
 
@@ -351,6 +373,9 @@ namespace SmsApi.Services
                     existing.LastName = lastName;
                     existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(teacherPassword, workFactor: 12);
                     existing.UpdatedAt = DateTime.UtcNow;
+                    // Link UserLogin → StaffMember so ResolveStaffIdAsync works without email fallback
+                    if (linkedEntityId.HasValue)
+                        existing.LinkedEntityId = linkedEntityId.Value;
                 }
                 else
                 {
@@ -365,6 +390,7 @@ namespace SmsApi.Services
                         PasswordHash = BCrypt.Net.BCrypt.HashPassword(teacherPassword, workFactor: 12),
                         Role = "Teacher",
                         Status = "active",
+                        LinkedEntityId = linkedEntityId,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     });
@@ -1302,6 +1328,50 @@ namespace SmsApi.Services
 
             var riyaId  = Guid.Parse("c0a80101-0000-4000-8000-000000000001");
             var rohanId = Guid.Parse("67e1d74f-5eab-42a8-918b-bf30c64111c3");
+            const string parentEmail = "aj@gmail.com";
+
+            // Guard: only proceed if both students exist in this database
+            var existingStudentIds = await _context.Students
+                .IgnoreQueryFilters()
+                .Where(s => s.SchoolId == _schoolId && (s.Id == riyaId || s.Id == rohanId))
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            if (!existingStudentIds.Contains(riyaId) && !existingStudentIds.Contains(rohanId))
+            {
+                _logger.LogInformation("Parent demo students not found in this database — skipping parent transport/hostel seed.");
+                return;
+            }
+
+            // ── Guardian records for demo parent (so diary notifications work) ─────
+            // Ensures each demo student has a StudentGuardian row with email = parentEmail,
+            // which is how the parent portal's email-based child lookup works.
+            foreach (var studentId in existingStudentIds)
+            {
+                var hasGuardian = await _context.StudentGuardians
+                    .IgnoreQueryFilters()
+                    .AnyAsync(sg => sg.StudentId == studentId && sg.SchoolId == _schoolId
+                                    && sg.Email != null && sg.Email.ToLower() == parentEmail);
+                if (!hasGuardian)
+                {
+                    _context.StudentGuardians.Add(new SmsApi.Models.Entities.StudentGuardian
+                    {
+                        Id          = Guid.NewGuid(),
+                        SchoolId    = _schoolId,
+                        StudentId   = studentId,
+                        Name        = "Ajith Hasthi",
+                        Relation    = "father",
+                        Phone       = "+91-9000000000",
+                        Email       = parentEmail,
+                        HasPortalAccess = true,
+                        CreatedAt   = DateTime.UtcNow,
+                        UpdatedAt   = DateTime.UtcNow,
+                        IsDeleted   = false,
+                    });
+                }
+            }
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Demo parent guardians ensured for {Count} student(s)", existingStudentIds.Count);
 
             // ── Transport ───────────────────────────────────────────────────
             var route = await _context.TransportRoutes
@@ -1318,7 +1388,7 @@ namespace SmsApi.Services
 
                 var toAddTransport = new List<TransportStudent>();
                 var routeFee = route.MonthlyFee ?? route.Fare;
-                if (!existingTransport.Contains(riyaId))
+                if (existingStudentIds.Contains(riyaId) && !existingTransport.Contains(riyaId))
                     toAddTransport.Add(new TransportStudent
                     {
                         Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = riyaId,
@@ -1326,7 +1396,7 @@ namespace SmsApi.Services
                         MonthlyFee = routeFee, Fare = routeFee,
                         Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
                     });
-                if (!existingTransport.Contains(rohanId))
+                if (existingStudentIds.Contains(rohanId) && !existingTransport.Contains(rohanId))
                     toAddTransport.Add(new TransportStudent
                     {
                         Id = Guid.NewGuid(), SchoolId = _schoolId, StudentId = rohanId,
@@ -1345,6 +1415,7 @@ namespace SmsApi.Services
 
             // ── Hostel ──────────────────────────────────────────────────────
             // Give Rohan (typically male) a hostel assignment if not already assigned
+            if (!existingStudentIds.Contains(rohanId)) return; // student doesn't exist in this DB
             var existingHostel = await _context.HostelStudents
                 .AnyAsync(hs => hs.SchoolId == _schoolId && hs.StudentId == rohanId && hs.Status == "active");
 
@@ -1493,13 +1564,238 @@ namespace SmsApi.Services
             }
         }
 
+        public async Task SeedAssignmentsAsync()
+        {
+            _logger.LogInformation("📝 Seeding assignments for classes...");
+
+            // Idempotency: skip if assignments already exist for this school
+            if (await _context.Assignments.AnyAsync(a => a.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Assignments already seeded, skipping");
+                return;
+            }
+
+            // Get all classes
+            var classes = await _context.Classes
+                .Where(c => c.SchoolId == _schoolId)
+                .ToListAsync();
+
+            if (classes.Count == 0)
+            {
+                _logger.LogWarning("⚠️ No classes found, skipping assignment seeding");
+                return;
+            }
+
+            // Get all subjects
+            var subjects = await _context.Subjects
+                .Where(s => s.SchoolId == _schoolId)
+                .ToListAsync();
+
+            if (subjects.Count == 0)
+            {
+                _logger.LogWarning("⚠️ No subjects found, skipping assignment seeding");
+                return;
+            }
+
+            // Get a teacher to assign as AssignedById (first available staff member)
+            var assignedByStaff = await _context.StaffMembers
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync();
+
+            if (assignedByStaff == null)
+            {
+                _logger.LogWarning("⚠️ No staff members found, skipping assignment seeding");
+                return;
+            }
+
+            var assignments = new List<Assignment>();
+            var today = DateTime.UtcNow.Date;
+            var assignmentIndex = 0;
+
+            // Create 2-3 assignments per class-subject combination (sample data)
+            foreach (var cls in classes)
+            {
+                // Select primary subjects for this class (subset to keep data reasonable)
+                var classSubjects = subjects.Take(4).ToList(); // Math, English, Science, Social Science
+
+                foreach (var subject in classSubjects)
+                {
+                    // Create 2 assignments per subject
+                    for (int i = 0; i < 2; i++)
+                    {
+                        assignmentIndex++;
+                        var assignedDate = today.AddDays(-Random.Shared.Next(1, 7));
+                        var dueDate = assignedDate.AddDays(Random.Shared.Next(3, 10));
+
+                        var assignment = new Assignment
+                        {
+                            Id = Guid.NewGuid(),
+                            SchoolId = _schoolId,
+                            ClassId = cls.Id,
+                            SectionId = null, // Applies to whole class
+                            SubjectId = subject.Id,
+                            AssignedById = assignedByStaff.Id,
+                            Title = $"{subject.Name} Assignment #{i + 1} - {cls.Name}",
+                            Description = $"Complete all exercises from Chapter {assignmentIndex % 5 + 1}. " +
+                                        $"Please solve all problems carefully and submit on time. " +
+                                        $"This assignment covers topics studied in the recent classes.",
+                            AssignedDate = assignedDate,
+                            DueDate = dueDate,
+                            MaxMarks = 100,
+                            Status = "active",
+                            AttachmentUrl = null,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                            IsDeleted = false
+                        };
+
+                        assignments.Add(assignment);
+                    }
+                }
+            }
+
+            _context.Assignments.AddRange(assignments);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} assignments seeded for {Classes} classes", assignments.Count, classes.Count);
+        }
+
+        public async Task EnsureStudentEnrollmentsAsync()
+        {
+            _logger.LogInformation("🎓 Ensuring StudentEnrollments for all students...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // Get current academic year (or create one if needed)
+            var currentYear = DateTime.UtcNow.Year;
+            var academicYear = await _context.AcademicYears
+                .FirstOrDefaultAsync(ay => ay.SchoolId == _schoolId && ay.Name.Contains(currentYear.ToString()));
+
+            if (academicYear == null)
+            {
+                _logger.LogWarning("⚠️ No academic year found for {Year}, creating default", currentYear);
+                academicYear = new AcademicYear
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    Name = $"{currentYear}-{currentYear + 1}",
+                    StartDate = new DateTime(currentYear, 4, 1),
+                    EndDate = new DateTime(currentYear + 1, 3, 31),
+                    IsCurrent = true,
+                    Status = "active",
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.AcademicYears.Add(academicYear);
+                await _context.SaveChangesAsync();
+            }
+
+            // Get all students
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .ToListAsync();
+
+            if (students.Count == 0)
+            {
+                _logger.LogWarning("⚠️ No students found, skipping StudentEnrollment seeding");
+                return;
+            }
+
+            var classMap = await _context.Classes
+                .Where(c => c.SchoolId == _schoolId)
+                .ToDictionaryAsync(c => c.Name);
+
+            var sectionMap = await _context.Sections
+                .Where(s => s.SchoolId == _schoolId)
+                .GroupBy(s => s.ClassId)
+                .ToDictionaryAsync(g => g.Key, g => g.ToDictionary(s => s.Name, s => s.Id));
+
+            var enrollmentsToAdd = new List<StudentEnrollment>();
+            var existingEnrollments = await _context.StudentEnrollments
+                .Where(e => e.SchoolId == _schoolId && e.AcademicYearId == academicYear.Id)
+                .Select(e => new { e.StudentId, e.ClassId, e.SectionId })
+                .ToListAsync();
+
+            foreach (var student in students)
+            {
+                try
+                {
+#pragma warning disable CS0618
+                    var className = student.Class ?? "Class 1";
+                    var sectionName = student.Section ?? "A";
+#pragma warning restore CS0618
+
+                    if (!classMap.TryGetValue(className, out var classEntity))
+                    {
+                        _logger.LogWarning("⚠️ Class '{ClassName}' not found for student {StudentId}", className, student.Id);
+                        continue;
+                    }
+
+                    if (!sectionMap.TryGetValue(classEntity.Id, out var sections) || !sections.TryGetValue(sectionName, out var sectionId))
+                    {
+                        _logger.LogWarning("⚠️ Section '{SectionName}' not found in class '{ClassName}' for student {StudentId}", sectionName, className, student.Id);
+                        continue;
+                    }
+
+                    // Check if enrollment already exists
+                    if (existingEnrollments.Any(e => e.StudentId == student.Id && e.ClassId == classEntity.Id && e.SectionId == sectionId))
+                    {
+                        continue;
+                    }
+
+                    var enrollment = new StudentEnrollment
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = _schoolId,
+                        StudentId = student.Id,
+                        AcademicYearId = academicYear.Id,
+                        ClassId = classEntity.Id,
+                        SectionId = sectionId,
+                        RollNumber = student.RollNumber,
+                        Status = "active",
+                        EnrollmentDate = DateTime.UtcNow,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    enrollmentsToAdd.Add(enrollment);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "⚠️ Error creating enrollment for student {StudentId}", student.Id);
+                }
+            }
+
+            if (enrollmentsToAdd.Count > 0)
+            {
+                _context.StudentEnrollments.AddRange(enrollmentsToAdd);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ {Count} student enrollments ensured", enrollmentsToAdd.Count);
+            }
+            else
+            {
+                _logger.LogInformation("✅ Student enrollments already up to date");
+            }
+        }
+
         public async Task EnsureParentNotificationsAsync()
         {
             if (_schoolId == Guid.Empty)
                 _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
 
-            // Fixed parent user ID (seeded demo account)
-            var parentId  = Guid.Parse("d3901aa4-d6d9-4a3c-93fd-ecdd7d0565f6");
+            // Look up the demo parent's actual UserLogin ID by email so notifications
+            // are always matched regardless of when/how the account was created.
+            const string parentEmail = "aj@gmail.com";
+            var parentUser = await _context.UserLogins
+                .IgnoreQueryFilters()
+                .Where(ul => ul.Email.ToLower() == parentEmail && ul.SchoolId == _schoolId && !ul.IsDeleted)
+                .FirstOrDefaultAsync();
+
+            if (parentUser == null)
+            {
+                _logger.LogInformation("Demo parent user not found — skipping parent notifications seed.");
+                return;
+            }
+
+            var parentId = parentUser.Id;
 
             // Stable notification IDs — used to check existence idempotently
             var seed = new[]
@@ -1514,8 +1810,27 @@ namespace SmsApi.Services
                 new { Id = Guid.Parse("c1000001-0001-4000-8000-000000000008"), Type = "Announcement", Priority = "High",   Title = "Parent-Teacher Meeting",         Content = "Parent-Teacher Meeting is scheduled on 16th June 2025 from 10 AM to 1 PM. Your presence is requested to discuss your child's academic progress.",      CreatedAt = new DateTime(2025, 6, 16,  8,  0, 0, DateTimeKind.Utc) },
             };
 
+            // Migrate any notifications that have the stable IDs but a wrong RecipientId
+            // (happens when a previous seeder run used a hard-coded placeholder GUID).
+            var allStableIds = seed.Select(s => s.Id).ToList();
+            var wrongRecipient = await _context.Notifications
+                .IgnoreQueryFilters()
+                .Where(n => allStableIds.Contains(n.Id) && n.RecipientId != parentId)
+                .ToListAsync();
+            if (wrongRecipient.Any())
+            {
+                foreach (var notif in wrongRecipient)
+                {
+                    notif.RecipientId = parentId;
+                    notif.UpdatedAt   = DateTime.UtcNow;
+                }
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ Migrated {Count} parent notifications to correct RecipientId", wrongRecipient.Count);
+            }
+
             var existingIds = await _context.Notifications
-                .Where(n => n.SchoolId == _schoolId && n.RecipientId == parentId)
+                .IgnoreQueryFilters()
+                .Where(n => allStableIds.Contains(n.Id))
                 .Select(n => n.Id)
                 .ToListAsync();
 
@@ -1546,6 +1861,236 @@ namespace SmsApi.Services
             {
                 _logger.LogInformation("Parent notifications already seeded ({Count} exist)", existingIds.Count);
             }
+        }
+
+        public async Task SeedExamTypesAsync()
+        {
+            if (await _context.ExamTypes.AnyAsync(e => e.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("Exam types already seeded");
+                return;
+            }
+
+            var examTypes = new List<ExamType>
+            {
+                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Unit Test",     DefaultMaxMarks = 25,  ExamsPerTerm = 2, IsUnitTest = true,  Description = "Short unit-level tests (typically 25 marks)",              Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Quarterly",     DefaultMaxMarks = 80,  ExamsPerTerm = 1, IsUnitTest = false, Description = "Quarterly exam covering Term 1 syllabus",                  Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Half Yearly",   DefaultMaxMarks = 80,  ExamsPerTerm = 1, IsUnitTest = false, Description = "Half-yearly (mid-term) exam covering first half syllabus", Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Pre-Board",     DefaultMaxMarks = 100, ExamsPerTerm = 1, IsUnitTest = false, Description = "Pre-board practice exam for senior classes",              Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Annual",        DefaultMaxMarks = 100, ExamsPerTerm = 1, IsUnitTest = false, Description = "Annual final examination covering full syllabus",          Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+                new() { Id = Guid.NewGuid(), SchoolId = _schoolId, Name = "Practical",     DefaultMaxMarks = 30,  ExamsPerTerm = 1, IsUnitTest = false, Description = "Practical / lab-based assessment",                        Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            };
+
+            _context.ExamTypes.AddRange(examTypes);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} exam types seeded", examTypes.Count);
+        }
+
+        // ─── RBAC Test Staff ─────────────────────────────────────────────────────
+        // Seeds one staff member + UserLogin per role group that needs RBAC testing:
+        //   Transport Manager, Accountant (fees/finance), Hostel Warden, Receptionist (admin/office)
+        public async Task SeedExaminationsAsync()
+        {
+            _logger.LogInformation("📝 Seeding examinations...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // Resolve the current/active academic year so seeded exams appear in the dropdown
+            var academicYear = await _context.AcademicYears
+                .Where(y => y.SchoolId == _schoolId && !y.IsDeleted)
+                .OrderByDescending(y => y.EndDate)
+                .Select(y => y.Name)
+                .FirstOrDefaultAsync() ?? "2026-27";
+
+            var examIds = new[]
+            {
+                Guid.Parse("eeeee001-0000-4000-8000-000000000001"),
+                Guid.Parse("eeeee001-0000-4000-8000-000000000002"),
+                Guid.Parse("eeeee001-0000-4000-8000-000000000003"),
+            };
+
+            // Idempotent: only add exams whose deterministic IDs are missing
+            var existingIds = await _context.Examinations
+                .Where(e => examIds.Contains(e.Id))
+                .Select(e => e.Id)
+                .ToListAsync();
+
+            var examsToAdd = new List<Exam>();
+            if (!existingIds.Contains(examIds[0]))
+                examsToAdd.Add(new() { Id = examIds[0], SchoolId = _schoolId, Name = "Mid-Term Mathematics",            Class = "Class 1", Subject = "Mathematics", ExamDate = DateTime.UtcNow.AddMonths(-3), TotalMarks = 100, PassingMarks = 35, AcademicYear = academicYear, Status = "completed", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            if (!existingIds.Contains(examIds[1]))
+                examsToAdd.Add(new() { Id = examIds[1], SchoolId = _schoolId, Name = "Unit Test 1 – English",           Class = "Class 2", Subject = "English",      ExamDate = DateTime.UtcNow.AddMonths(-2), TotalMarks =  50, PassingMarks = 18, AcademicYear = academicYear, Status = "completed", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            if (!existingIds.Contains(examIds[2]))
+                examsToAdd.Add(new() { Id = examIds[2], SchoolId = _schoolId, Name = "Quarterly Examination – Science", Class = "Class 3", Subject = "Science",      ExamDate = DateTime.UtcNow.AddMonths(-1), TotalMarks =  80, PassingMarks = 28, AcademicYear = academicYear, Status = "completed", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+
+            if (examsToAdd.Count > 0)
+            {
+                _context.Examinations.AddRange(examsToAdd);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ Added {Count} seed exams (academic year: {Year})", examsToAdd.Count, academicYear);
+            }
+            else
+            {
+                _logger.LogInformation("✅ Seed exams already present");
+            }
+
+            // Seed ExamResults — only for seed exams that have no results yet
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId)
+                .Take(10)
+                .ToListAsync();
+
+            if (students.Count == 0)
+            {
+                _logger.LogWarning("⚠️ No students found, skipping exam results seeding");
+                return;
+            }
+
+            var rng = new Random(42);
+            string[] subjects    = { "Mathematics", "English", "Science" };
+            int[]    maxMarkArr  = { 100, 50, 80 };
+            int[]    passMarkArr = { 35, 18, 28 };
+
+#pragma warning disable CS0618 // ExamResult kept for backward compat — ExaminationReportService reads _context.ExamResults
+            var results = new List<ExamResult>();
+            for (int i = 0; i < examIds.Length; i++)
+            {
+                // Skip if results already exist for this exam
+                var hasResults = await _context.ExamResults.AnyAsync(r => r.ExamId == examIds[i] && r.SchoolId == _schoolId);
+                if (hasResults) continue;
+
+                foreach (var student in students)
+                {
+                    int obtained = rng.Next(passMarkArr[i] - 5, maxMarkArr[i] + 1);
+                    if (obtained < 0) obtained = 0;
+                    decimal pct = Math.Round((decimal)obtained / maxMarkArr[i] * 100, 2);
+                    string grade = pct >= 90m ? "A+" : pct >= 80m ? "A" : pct >= 70m ? "B+" :
+                                   pct >= 60m ? "B"  : pct >= 50m ? "C" : pct >= 33m ? "D" : "F";
+                    results.Add(new ExamResult
+                    {
+                        Id            = Guid.NewGuid(),
+                        SchoolId      = _schoolId,
+                        ExamId        = examIds[i],
+                        StudentId     = student.Id,
+                        Subject       = subjects[i],
+                        MarksObtained = obtained,
+                        TotalMarks    = maxMarkArr[i],
+                        Percentage    = pct,
+                        Grade         = grade,
+                        IsPass        = obtained >= passMarkArr[i],
+                        CreatedAt     = DateTime.UtcNow,
+                        UpdatedAt     = DateTime.UtcNow
+                    });
+                }
+            }
+#pragma warning restore CS0618
+
+            if (results.Count > 0)
+            {
+                _context.ExamResults.AddRange(results);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ {Count} exam results seeded", results.Count);
+            }
+            else
+            {
+                _logger.LogInformation("✅ Exam results already present");
+            }
+        }
+
+        public async Task SeedRbacTestStaffAsync()        {
+            _logger.LogInformation("🔐 Seeding RBAC test staff accounts...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            // (email, username, firstName, lastName, designation, department, role, employeeId)
+            var rbacStaff = new[]
+            {
+                ("transport.mgr@demo.edu",  "transport.mgr",  "Vikram",   "Nair",    "Transport Manager", "Transport",       "Staff", "TRP001"),
+                ("accountant@demo.edu",     "accountant",     "Meena",    "Sharma",  "Accountant",        "Finance",         "Staff", "FIN001"),
+                ("hostel.warden@demo.edu",  "hostel.warden",  "Suresh",   "Pillai",  "Hostel Warden",     "Hostel",          "Staff", "HST001"),
+                ("receptionist@demo.edu",   "receptionist",   "Ananya",   "Verma",   "Receptionist",      "Administration",  "Staff", "ADM001"),
+            };
+
+            const string password = "Staff@123";
+
+            foreach (var (email, username, first, last, designation, dept, role, empId) in rbacStaff)
+            {
+                // Upsert StaffMember first (so we have its Id for LinkedEntityId)
+                var existingStaff = await _context.StaffMembers.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == _schoolId);
+
+                Guid staffEntityId;
+                if (existingStaff == null)
+                {
+                    staffEntityId = Guid.NewGuid();
+                    _context.StaffMembers.Add(new Staff
+                    {
+                        Id = staffEntityId,
+                        SchoolId = _schoolId,
+                        EmployeeId = empId,
+                        FirstName = first,
+                        LastName = last,
+                        Name = $"{first} {last}",
+                        Email = email,
+                        Phone = "+91-9876500001",
+                        DateOfBirth = new DateTime(1985, 1, 15),
+                        Gender = (first == "Meena" || first == "Ananya") ? "Female" : "Male",
+                        Address = "School Campus, Mumbai, Maharashtra 400001",
+                        Department = dept,
+                        Designation = designation,
+                        Qualification = "Graduate",
+                        Experience = 5,
+                        JoiningDate = new DateTime(2022, 6, 1),
+                        EmploymentType = "permanent",
+                        Salary = 35000m,
+                        Status = "active",
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync(); // flush so we have the Id
+                }
+                else
+                {
+                    staffEntityId = existingStaff.Id;
+                }
+
+                // Upsert UserLogin — link via LinkedEntityId = Staff.Id
+                var existingLogin = await _context.UserLogins.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Email == email && u.SchoolId == _schoolId);
+
+                if (existingLogin != null)
+                {
+                    existingLogin.Role = role;
+                    existingLogin.Status = "active";
+                    existingLogin.LinkedEntityId = staffEntityId;
+                    existingLogin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
+                    existingLogin.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _context.UserLogins.Add(new UserLogin
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = _schoolId,
+                        Username = username,
+                        Email = email,
+                        FirstName = first,
+                        LastName = last,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12),
+                        Role = role,
+                        Status = "active",
+                        LinkedEntityId = staffEntityId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ RBAC test staff seeded: transport.mgr, accountant, hostel.warden, receptionist @demo.edu (password: Staff@123)");
         }
     }
 }

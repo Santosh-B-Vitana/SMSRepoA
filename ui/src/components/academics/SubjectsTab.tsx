@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BookOpen, Plus, Trash2, Search, X } from "lucide-react";
+import { BookOpen, Plus, Trash2, Search, X, UserPlus, Pencil } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ interface Subject {
   code: string;
   type: 'Core' | 'Elective' | 'Language' | 'Activity';
   board: string;
+  boardConfigurationId?: string;
   description?: string;
 }
 
@@ -41,9 +42,11 @@ interface Staff {
 
 interface SubjectsTabProps {
   classId: string;
+  /** BoardConfigurationId of the class. Used to filter subjects: school-default + board-specific. */
+  boardConfigurationId?: string;
 }
 
-export function SubjectsTab({ classId }: SubjectsTabProps) {
+export function SubjectsTab({ classId, boardConfigurationId }: SubjectsTabProps) {
   // Available subjects from school-level configuration
   const [availableSubjects, setAvailableSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +66,13 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
   const [maxMarks, setMaxMarks] = useState("100");
   const [credits, setCredits] = useState("4");
 
+  // Edit-teacher dialog state
+  const [editTeacherTarget, setEditTeacherTarget] = useState<ClassSubject | null>(null);
+  const [editTeacherSearch, setEditTeacherSearch] = useState("");
+  const [editSelectedTeacherId, setEditSelectedTeacherId] = useState("");
+  const [editTeacherDropdownOpen, setEditTeacherDropdownOpen] = useState(false);
+  const [editTeacherSaving, setEditTeacherSaving] = useState(false);
+
   // Load available subjects from school and assigned subjects for this class
   useEffect(() => {
     loadSubjects();
@@ -81,7 +91,8 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
         name: s.name,
         code: s.code || "",
         type: (s.type || "Core") as Subject["type"],
-        board: s.board || "",
+        board: s.board || s.boardName || "",
+        boardConfigurationId: s.boardConfigurationId,
         description: s.description,
       })));
     } catch {
@@ -94,7 +105,8 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
           name: s.name,
           code: s.code || "",
           type: (s.type || "Core") as Subject["type"],
-          board: s.board || "",
+          board: s.board || s.boardName || "",
+          boardConfigurationId: s.boardConfigurationId,
           description: s.description,
         })));
       } catch {
@@ -147,8 +159,17 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
     }
   };
 
-  // Get unassigned subjects
-  const unassignedSubjects = availableSubjects.filter(
+  // Filter subjects eligible for this class:
+  // - School-default subjects (no boardConfigurationId) → always eligible
+  // - Board-specific subjects → only eligible if they match this class's board
+  const eligibleSubjects = availableSubjects.filter(s =>
+    !s.boardConfigurationId ||
+    !boardConfigurationId ||
+    s.boardConfigurationId === boardConfigurationId
+  );
+
+  // Get unassigned subjects (from eligible ones)
+  const unassignedSubjects = eligibleSubjects.filter(
     s => !assignedSubjects.find(as => as.subjectId === s.id)
   );
 
@@ -246,6 +267,35 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
       // Still update UI locally if API fails
       setAssignedSubjects(assignedSubjects.filter(s => s.id !== assignmentId));
       toast.success(`${subjectName ?? 'Subject'} removed from class`);
+    }
+  };
+
+  const openEditTeacher = (subject: ClassSubject) => {
+    setEditTeacherTarget(subject);
+    const currentTeacher = staffList.find(s => s.id === subject.teacherId);
+    setEditTeacherSearch(currentTeacher ? `${currentTeacher.firstName} ${currentTeacher.lastName}` : "");
+    setEditSelectedTeacherId(subject.teacherId ?? "");
+    setEditTeacherDropdownOpen(false);
+  };
+
+  const handleUpdateTeacher = async () => {
+    if (!editTeacherTarget) return;
+    if (!editSelectedTeacherId) {
+      toast.error("Please select a teacher");
+      return;
+    }
+    setEditTeacherSaving(true);
+    try {
+      await apiClient.patch(`/academics/class-subjects/${editTeacherTarget.id}/teacher`, {
+        teacherId: editSelectedTeacherId,
+      });
+      await loadAssignedSubjects();
+      toast.success("Teacher updated successfully");
+      setEditTeacherTarget(null);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message ?? "Failed to update teacher");
+    } finally {
+      setEditTeacherSaving(false);
     }
   };
 
@@ -419,7 +469,31 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
                     <TableCell>
                       <Badge variant="secondary">{subject.type}</Badge>
                     </TableCell>
-                    <TableCell>{subject.teacher}</TableCell>
+                    <TableCell>
+                      {subject.teacher ? (
+                        <span className="flex items-center gap-1">
+                          {subject.teacher}
+                          <button
+                            type="button"
+                            title="Change teacher"
+                            className="ml-1 text-muted-foreground hover:text-primary"
+                            onClick={() => openEditTeacher(subject)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                          onClick={() => openEditTeacher(subject)}
+                        >
+                          <UserPlus className="h-3.5 w-3.5 mr-1" />
+                          Assign Teacher
+                        </Button>
+                      )}
+                    </TableCell>
                     <TableCell>{subject.maxMarks}</TableCell>
                     <TableCell>{subject.credits}</TableCell>
                     <TableCell>
@@ -449,6 +523,87 @@ export function SubjectsTab({ classId }: SubjectsTabProps) {
           </p>
         </CardContent>
       </Card>
+
+      {/* Edit / Assign Teacher dialog */}
+      <Dialog open={!!editTeacherTarget} onOpenChange={(open) => { if (!open) setEditTeacherTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editTeacherTarget?.teacher ? "Change Teacher" : "Assign Teacher"} — {editTeacherTarget?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Select Teacher</Label>
+              <div className="relative mt-1">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search by name or email…"
+                    className="pl-8 pr-8"
+                    value={editTeacherSearch}
+                    onChange={e => {
+                      setEditTeacherSearch(e.target.value);
+                      setEditSelectedTeacherId("");
+                      setEditTeacherDropdownOpen(true);
+                    }}
+                    onFocus={() => setEditTeacherDropdownOpen(true)}
+                  />
+                  {editTeacherSearch && (
+                    <button
+                      type="button"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => { setEditTeacherSearch(""); setEditSelectedTeacherId(""); setEditTeacherDropdownOpen(false); }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {editTeacherDropdownOpen && editTeacherSearch && (
+                  <div className="absolute z-50 w-full bg-popover border rounded-md shadow-md mt-1 max-h-48 overflow-y-auto">
+                    {staffList.filter(s =>
+                      `${s.firstName} ${s.lastName}`.toLowerCase().includes(editTeacherSearch.toLowerCase()) ||
+                      (s.email || "").toLowerCase().includes(editTeacherSearch.toLowerCase())
+                    ).length === 0 ? (
+                      <p className="text-sm text-muted-foreground px-3 py-2">No teachers found</p>
+                    ) : (
+                      staffList
+                        .filter(s =>
+                          `${s.firstName} ${s.lastName}`.toLowerCase().includes(editTeacherSearch.toLowerCase()) ||
+                          (s.email || "").toLowerCase().includes(editTeacherSearch.toLowerCase())
+                        )
+                        .map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+                            onClick={() => {
+                              setEditSelectedTeacherId(s.id);
+                              setEditTeacherSearch(`${s.firstName} ${s.lastName}`);
+                              setEditTeacherDropdownOpen(false);
+                            }}
+                          >
+                            <span className="font-medium">{s.firstName} {s.lastName}</span>
+                            {s.email && <span className="text-xs text-muted-foreground ml-2">{s.email}</span>}
+                          </button>
+                        ))
+                    )}
+                  </div>
+                )}
+              </div>
+              {editSelectedTeacherId && (
+                <p className="text-xs text-green-600 mt-1">✓ Teacher selected</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleUpdateTeacher} disabled={editTeacherSaving || !editSelectedTeacherId}>
+                {editTeacherSaving ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="outline" onClick={() => setEditTeacherTarget(null)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

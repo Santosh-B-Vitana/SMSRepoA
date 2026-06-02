@@ -40,6 +40,10 @@ public class TokenService : ITokenService
         if (!string.IsNullOrWhiteSpace(user.Designation))
             claimsList.Add(new Claim("Designation", user.Designation));
 
+        // Include linked entity ID so staff can access their own leave balance, etc.
+        if (user.LinkedEntityId.HasValue)
+            claimsList.Add(new Claim("LinkedEntityId", user.LinkedEntityId.Value.ToString()));
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expiry = DateTime.UtcNow.AddMinutes(expirationInMinutes);
@@ -73,10 +77,18 @@ public class TokenService : ITokenService
         var des = (designation ?? "").Trim().ToLowerInvariant();
         return des switch
         {
-            "principal" or "vice principal"         => "Principal",
-            "hr manager" or "hrmanager"             => "HRManager",
-            "administrator" or "school administrator" => "Admin",
-            _                                       => NormalizeRole(rawRole)
+            "principal" or "vice principal"                => "Principal",
+            "hr manager" or "hrmanager"                    => "HRManager",
+            "administrator" or "school administrator"      => "Admin",
+            "librarian"                                    => "Librarian",
+            "transport manager" or "transportmanager"      => "TransportManager",
+            "hostel warden" or "hostelwarden"              => "HostelWarden",
+            "accountant" or "finance officer"              => "Accountant",
+            "receptionist" or "front desk" or "front desk officer" => "Receptionist",
+            "head of department" or "hod"                  => "Teacher",
+            "admissions officer" or "admissions"           => "Staff",
+            "counselor" or "counsellor"                    => "Staff",
+            _                                              => NormalizeRole(rawRole)
         };
     }
 
@@ -87,17 +99,22 @@ public class TokenService : ITokenService
     /// </summary>
     private static string NormalizeRole(string? rawRole) => (rawRole ?? "").ToLowerInvariant() switch
     {
-        "admin" or "administrator"          => "Admin",
-        "principal"                         => "Principal",
-        "teacher"                           => "Teacher",
-        "staff"                             => "Staff",
-        "parent" or "guardian"              => "Parent",
-        "student"                           => "Student",
-        "hrmanager" or "hr manager"         => "HRManager",
-        "super_admin" or "superadmin"       => "SuperAdmin",
-        "classteacher" or "class teacher"   => "Teacher",
-        _                                   => string.IsNullOrWhiteSpace(rawRole) ? "Staff"
-                                              : char.ToUpperInvariant(rawRole[0]) + rawRole[1..]
+        "admin" or "administrator"                         => "Admin",
+        "principal"                                        => "Principal",
+        "teacher"                                          => "Teacher",
+        "staff"                                            => "Staff",
+        "parent" or "guardian"                             => "Parent",
+        "student"                                          => "Student",
+        "hrmanager" or "hr manager"                        => "HRManager",
+        "super_admin" or "superadmin"                      => "SuperAdmin",
+        "classteacher" or "class teacher"                  => "Teacher",
+        "head of department" or "hod"                      => "Teacher",
+        "subject teacher"                                  => "Teacher",
+        "vice principal"                                   => "Principal",
+        "admissions officer" or "admissions"               => "Staff",
+        "counselor" or "counsellor"                        => "Staff",
+        _                                                  => string.IsNullOrWhiteSpace(rawRole) ? "Staff"
+                                                            : char.ToUpperInvariant(rawRole[0]) + rawRole[1..]
     };
 
     public ClaimsPrincipal ValidateToken(string token)

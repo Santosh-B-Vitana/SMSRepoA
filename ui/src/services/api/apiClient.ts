@@ -1,7 +1,7 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 
 // Base API configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const ACADEMIC_YEAR_KEY = 'selectedAcademicYearName';
 const AUTH_SESSION_KEY = 'auth_session';
 const SA_SCHOOL_KEY = 'sa_school_override';

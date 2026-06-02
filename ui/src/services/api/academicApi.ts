@@ -34,7 +34,8 @@ export interface ClassListResponse {
 export interface CreateClassRequest {
   name?: string;
   standard: string;
-  section: string;
+  section?: string;
+  numberOfSections?: number;
   academicYear: string;
   classTeacherId?: string;
   classTeacher?: string;
@@ -78,6 +79,8 @@ export interface CreateSectionRequest {
 // =========== My Class Assignments (Teacher) ===========
 export interface MyClassAssignment {
   assignmentId: string;
+  /** StaffMember.Id — use this to match against ExamSetupSubjectDto.assignedStaffId */
+  staffId: string;
   classId: string;
   className: string;
   sectionId?: string;
@@ -96,6 +99,8 @@ export interface SubjectBasic {
   name: string;
   code: string;
   board?: string;
+  boardConfigurationId?: string;
+  boardName?: string;
   type?: string;
 }
 
@@ -119,6 +124,7 @@ export interface CreateSubjectRequest {
   code: string;
   description?: string;
   board?: string;
+  boardConfigurationId?: string;
   type?: string;
   creditHours?: number;
   schoolId?: string;
@@ -151,6 +157,89 @@ export interface CreateAcademicYearRequest {
   startDate: string;
   endDate: string;
   schoolId?: string;
+}
+
+// =========== Grade Tiers ===========
+export interface GradeTierResponse {
+  id: string;
+  schoolId: string;
+  classId: string;
+  grade: string;
+  minMarks: number;
+  maxMarks: number;
+  gpa: number;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GradeTierListResponse {
+  gradeTiers: GradeTierResponse[];
+  total: number;
+}
+
+export interface CreateGradeTierRequest {
+  classId: string;
+  grade: string;
+  minMarks: number;
+  maxMarks: number;
+  gpa: number;
+  displayOrder?: number;
+}
+
+export interface UpdateGradeTierRequest {
+  grade?: string;
+  minMarks?: number;
+  maxMarks?: number;
+  gpa?: number;
+  displayOrder?: number;
+}
+
+// =========== Class Settings ===========
+export interface ClassSettingsResponse {
+  id: string;
+  schoolId: string;
+  classId: string;
+  passingPercentage: number;
+  minimumAttendance: number;
+  gradingScale: string;
+  promotionPolicy: string;
+  customPromotionPolicy?: string;
+  enableAutoPromotion: boolean;
+  enableSupplementaryExams: boolean;
+  enableGradingForPromotion: boolean;
+  minSubjectsToPass?: number;
+  notes?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateClassSettingsRequest {
+  classId: string;
+  passingPercentage: number;
+  minimumAttendance: number;
+  gradingScale: string;
+  promotionPolicy: string;
+  customPromotionPolicy?: string;
+  enableAutoPromotion: boolean;
+  enableSupplementaryExams: boolean;
+  enableGradingForPromotion: boolean;
+  minSubjectsToPass?: number;
+  notes?: string;
+}
+
+export interface UpdateClassSettingsRequest {
+  passingPercentage?: number;
+  minimumAttendance?: number;
+  gradingScale?: string;
+  promotionPolicy?: string;
+  customPromotionPolicy?: string;
+  enableAutoPromotion?: boolean;
+  enableSupplementaryExams?: boolean;
+  enableGradingForPromotion?: boolean;
+  minSubjectsToPass?: number;
+  notes?: string;
 }
 
 // =========== Class-Subject Assignment ===========
@@ -247,8 +336,13 @@ export const academicApi = {
     apiDelete<void>(`/academics/sections/${id}`),
 
   // ========== Subjects ==========
-  listSubjects: (page = 1, pageSize = 50) =>
-    apiGet<SubjectListResponse>('/academics/subjects', { page, pageSize }),
+  listSubjects: (page = 1, pageSize = 20, search?: string, type?: string, boardConfigurationId?: string) =>
+    apiGet<SubjectListResponse>('/academics/subjects', {
+      page, pageSize,
+      ...(search ? { search } : {}),
+      ...(type ? { type } : {}),
+      ...(boardConfigurationId === 'school_default_filter' ? { noBoardOnly: true } : boardConfigurationId ? { boardConfigurationId } : {}),
+    }),
 
   getSubject: (id: string) =>
     apiGet<SubjectResponse>(`/academics/subjects/${id}`),
@@ -301,6 +395,9 @@ export const academicApi = {
   removeTeacherAssignment: (id: string) =>
     apiDelete<void>(`/academics/teacher-assignments/${id}`),
 
+  unsetClassTeacher: (id: string) =>
+    apiPatch<void>(`/academics/teacher-assignments/${id}/unset-class-teacher`, {}),
+
   // ========== My Class Assignments (for logged-in teacher) ==========
   getMyClassAssignments: () =>
     apiGet<MyClassAssignment[]>('/academics/my-class-assignments'),
@@ -308,4 +405,52 @@ export const academicApi = {
   // ========== All assignments for a specific staff (admin view) ==========
   getTeacherAssignmentsForStaff: (staffId: string) =>
     apiGet<TeacherAssignmentListResponse>('/academics/teacher-assignments', { staffId, pageSize: 100 }),
+
+  // ========== Grade Tiers ==========
+  getGradeTiers: (classId: string) =>
+    apiGet<GradeTierListResponse>(`/academics/classes/${classId}/grade-tiers`),
+
+  createGradeTier: (data: CreateGradeTierRequest) =>
+    apiPost<GradeTierResponse>('/academics/grade-tiers', data),
+
+  updateGradeTier: (id: string, data: UpdateGradeTierRequest) =>
+    apiPut<GradeTierResponse>(`/academics/grade-tiers/${id}`, data),
+
+  deleteGradeTier: (id: string) =>
+    apiDelete<void>(`/academics/grade-tiers/${id}`),
+
+  // ========== Class Settings ==========
+  getClassSettings: (classId: string) =>
+    apiGet<ClassSettingsResponse>(`/academics/classes/${classId}/settings`),
+
+  createClassSettings: (data: CreateClassSettingsRequest) =>
+    apiPost<ClassSettingsResponse>('/academics/classes/settings', data),
+
+  updateClassSettings: (settingsId: string, data: UpdateClassSettingsRequest) =>
+    apiPut<ClassSettingsResponse>(`/academics/classes/settings/${settingsId}`, data),
+
+  // ========== Section Timetable (from academic setup) ==========
+  getSectionTimetable: (sectionId: string) =>
+    apiGet<SectionTimetableResponse>(`/academics/sections/${sectionId}/timetable`),
 };
+
+// ─── Section Timetable types (academic setup) ────────────────────────────────
+export interface SectionTimetableEntry {
+  id: string;
+  sectionId: string;
+  dayOfWeek: string;   // "Monday" ... "Sunday"
+  period: number;
+  subjectId?: string;
+  subjectName?: string;
+  teacherId?: string;
+  teacherName?: string | null;
+  startTime?: string;  // "HH:MM:SS"
+  endTime?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SectionTimetableResponse {
+  entries: SectionTimetableEntry[];
+  total: number;
+}

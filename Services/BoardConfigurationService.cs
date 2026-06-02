@@ -23,6 +23,13 @@ namespace SmsApi.Services
         Task<SchoolBoardConfigResponse?> GetSchoolBoardConfigAsync(Guid schoolId, string? academicYear = null);
         Task<SchoolBoardConfigResponse> SetSchoolBoardConfigAsync(Guid schoolId, SetSchoolBoardConfigRequest request);
 
+        // ── Multi-board school config ─────────────────────────────────────────
+        Task<SchoolBoardListResponse> GetSchoolBoardsAsync(Guid schoolId);
+        Task<SchoolBoardConfigResponse> AddSchoolBoardAsync(Guid schoolId, AddSchoolBoardRequest request);
+        Task RemoveSchoolBoardAsync(Guid schoolId, Guid configId);
+        Task<SchoolBoardConfigResponse> SetDefaultBoardAsync(Guid schoolId, Guid configId);
+        Task<SchoolBoardConfigResponse> UpdateSchoolBoardOverridesAsync(Guid schoolId, Guid configId, UpdateSchoolBoardOverridesRequest request);
+
         // ── Grading (board-aware) ─────────────────────────────────────────────
         Task<BoardAwareGradeResult> CalculateGradeAsync(Guid schoolId, decimal percentage, string? academicYear = null);
         Task<BoardAwareGradeResult> CalculateGradeAsync(Guid schoolId, decimal percentage, Guid? boardConfigurationId, string? academicYear = null);
@@ -274,6 +281,182 @@ namespace SmsApi.Services
             return MapToSchoolBoardConfigResponse(config);
         }
 
+        // ── Multi-board school config methods ─────────────────────────────────
+
+        public async Task<SchoolBoardListResponse> GetSchoolBoardsAsync(Guid schoolId)
+        {
+            var configs = await _context.SchoolBoardConfigs
+                .Include(s => s.BoardConfiguration)
+                .Where(s => s.SchoolId == schoolId && s.IsActive)
+                .OrderByDescending(s => s.IsDefault)
+                .ThenBy(s => s.CreatedAt)
+                .ToListAsync();
+
+            var items = configs.Select(MapToSchoolBoardConfigResponse).ToList();
+            return new SchoolBoardListResponse { Boards = items, Total = items.Count };
+        }
+
+        public async Task<SchoolBoardConfigResponse> AddSchoolBoardAsync(Guid schoolId, AddSchoolBoardRequest request)
+        {
+            var board = await _context.BoardConfigurations
+                .FirstOrDefaultAsync(b => b.Id == request.BoardConfigurationId && b.IsActive);
+            if (board == null)
+                throw new InvalidOperationException("Board configuration not found or inactive.");
+
+            var alreadyAdded = await _context.SchoolBoardConfigs
+                .AnyAsync(s => s.SchoolId == schoolId && s.BoardConfigurationId == request.BoardConfigurationId && s.IsActive);
+            if (alreadyAdded)
+                throw new InvalidOperationException("This board is already configured for the school.");
+
+            // Check if this will be the first board (auto-default)
+            var hasExisting = await _context.SchoolBoardConfigs
+                .AnyAsync(s => s.SchoolId == schoolId && s.IsActive);
+            var willBeDefault = !hasExisting || request.SetAsDefault;
+
+            if (willBeDefault)
+            {
+                // Unset existing defaults
+                var existingDefaults = await _context.SchoolBoardConfigs
+                    .Where(s => s.SchoolId == schoolId && s.IsActive && s.IsDefault)
+                    .ToListAsync();
+                foreach (var d in existingDefaults)
+                    d.IsDefault = false;
+            }
+
+            var config = new SchoolBoardConfig
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                BoardConfigurationId = request.BoardConfigurationId,
+                IsDefault = willBeDefault,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _context.SchoolBoardConfigs.Add(config);
+            await _context.SaveChangesAsync();
+
+            config = await _context.SchoolBoardConfigs
+                .Include(s => s.BoardConfiguration)
+                .FirstAsync(s => s.Id == config.Id);
+
+            return MapToSchoolBoardConfigResponse(config);
+        }
+
+        public async Task RemoveSchoolBoardAsync(Guid schoolId, Guid configId)
+        {
+            var config = await _context.SchoolBoardConfigs
+                .FirstOrDefaultAsync(s => s.Id == configId && s.SchoolId == schoolId && s.IsActive);
+            if (config == null)
+                throw new InvalidOperationException("School board configuration not found.");
+
+            var activeCount = await _context.SchoolBoardConfigs
+                .CountAsync(s => s.SchoolId == schoolId && s.IsActive);
+            if (activeCount <= 1)
+                throw new InvalidOperationException("Cannot remove the only configured board. Add another board first.");
+
+            // Check if any classes use this board
+            var hasClasses = await _context.Classes
+                .AnyAsync(c => c.SchoolId == schoolId && c.BoardConfigurationId == config.BoardConfigurationId && !c.IsDeleted);
+            if (hasClasses)
+                throw new InvalidOperationException("Cannot remove this board because it has classes assigned to it.");
+
+            config.IsActive = false;
+            config.UpdatedAt = DateTime.UtcNow;
+
+            // If this was the default, pick another one
+            if (config.IsDefault)
+            {
+                var next = await _context.SchoolBoardConfigs
+                    .Where(s => s.SchoolId == schoolId && s.IsActive && s.Id != configId)
+                    .OrderBy(s => s.CreatedAt)
+                    .FirstOrDefaultAsync();
+                if (next != null)
+                    next.IsDefault = true;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<SchoolBoardConfigResponse> SetDefaultBoardAsync(Guid schoolId, Guid configId)
+        {
+            var config = await _context.SchoolBoardConfigs
+                .Include(s => s.BoardConfiguration)
+                .FirstOrDefaultAsync(s => s.Id == configId && s.SchoolId == schoolId && s.IsActive);
+            if (config == null)
+                throw new InvalidOperationException("School board configuration not found.");
+
+            // Unset current defaults
+            var currentDefaults = await _context.SchoolBoardConfigs
+                .Where(s => s.SchoolId == schoolId && s.IsActive && s.IsDefault)
+                .ToListAsync();
+            foreach (var d in currentDefaults)
+                d.IsDefault = false;
+
+            config.IsDefault = true;
+            config.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return MapToSchoolBoardConfigResponse(config);
+        }
+
+        public async Task<SchoolBoardConfigResponse> UpdateSchoolBoardOverridesAsync(
+            Guid schoolId, Guid configId, UpdateSchoolBoardOverridesRequest request)
+        {
+            var config = await _context.SchoolBoardConfigs
+                .Include(s => s.BoardConfiguration)
+                .FirstOrDefaultAsync(s => s.Id == configId && s.SchoolId == schoolId && s.IsActive);
+            if (config == null)
+                throw new InvalidOperationException("School board configuration not found.");
+
+            var board = config.BoardConfiguration!;
+
+            // Validate passing percentages
+            if (request.CustomOverallPassingPercentage.HasValue &&
+                (request.CustomOverallPassingPercentage < 0 || request.CustomOverallPassingPercentage > 100))
+                throw new ArgumentException("CustomOverallPassingPercentage must be between 0 and 100");
+
+            if (request.CustomTheoryPassingPercentage.HasValue &&
+                (request.CustomTheoryPassingPercentage < 0 || request.CustomTheoryPassingPercentage > 100))
+                throw new ArgumentException("CustomTheoryPassingPercentage must be between 0 and 100");
+
+            if (request.CustomPracticalPassingPercentage.HasValue &&
+                (request.CustomPracticalPassingPercentage < 0 || request.CustomPracticalPassingPercentage > 100))
+                throw new ArgumentException("CustomPracticalPassingPercentage must be between 0 and 100");
+
+            // Validate custom grading scale entries if provided
+            if (request.CustomGradingScale != null && request.CustomGradingScale.Count > 0)
+            {
+                foreach (var entry in request.CustomGradingScale)
+                {
+                    if (entry.MinPercentage < 0 || entry.MinPercentage > 100 ||
+                        entry.MaxPercentage < 0 || entry.MaxPercentage > 100)
+                        throw new ArgumentException("Grade scale percentage values must be between 0 and 100");
+                    if (entry.MinPercentage > entry.MaxPercentage)
+                        throw new ArgumentException($"Grade '{entry.Grade}': minPercentage ({entry.MinPercentage}) cannot exceed maxPercentage ({entry.MaxPercentage})");
+                }
+            }
+
+            // Apply overrides — null clears the override (reverts to board default)
+            config.CustomOverallPassingPercentage = request.CustomOverallPassingPercentage;
+            config.CustomTheoryPassingPercentage = request.CustomTheoryPassingPercentage;
+            config.CustomPracticalPassingPercentage = request.CustomPracticalPassingPercentage;
+
+            // Empty list or null both mean "revert to board default"
+            config.CustomGradingScaleJson = (request.CustomGradingScale != null && request.CustomGradingScale.Count > 0)
+                ? JsonSerializer.Serialize(request.CustomGradingScale)
+                : null;
+
+            config.CustomExamStructureJson = (request.CustomExamStructure != null && request.CustomExamStructure.Count > 0)
+                ? JsonSerializer.Serialize(request.CustomExamStructure)
+                : null;
+
+            config.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return MapToSchoolBoardConfigResponse(config);
+        }
+
         // ── Grading (board-aware) ─────────────────────────────────────────────
 
         public async Task<BoardAwareGradeResult> CalculateGradeAsync(Guid schoolId, decimal percentage, string? academicYear = null)
@@ -459,6 +642,7 @@ namespace SmsApi.Services
                 HasCustomGradingScale = customScale != null,
                 HasCustomExamStructure = customStructure != null,
                 IsActive = c.IsActive,
+                IsDefault = c.IsDefault,
                 Board = MapToResponse(board),
                 CreatedAt = c.CreatedAt,
                 UpdatedAt = c.UpdatedAt

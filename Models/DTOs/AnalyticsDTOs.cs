@@ -178,6 +178,8 @@ namespace SmsApi.Models.DTOs
         public int TotalClasses { get; set; }
         public decimal TodayAttendancePercentage { get; set; }
         public decimal PendingFees { get; set; }
+        public decimal TotalCollected { get; set; }
+        public decimal TotalFees { get; set; }
         public int UpcomingExams { get; set; }
         public int PendingAssignments { get; set; }
         public int UnreadNotifications { get; set; }

@@ -21,6 +21,7 @@ namespace SmsApi.Services
         Task<bool> DeleteStaffAsync(Guid id, Guid schoolId);
         Task<StaffStatsResponse> GetStaffStatsAsync(Guid schoolId);
         Task<StaffDocumentDto> UploadDocumentAsync(Guid staffId, Guid schoolId, string documentType, string fileName, byte[] fileData);
+        Task<string> UploadPhotoAsync(Guid staffId, Guid schoolId, string fileName, byte[] fileData);
         Task<bool> DeleteDocumentAsync(Guid documentId, Guid schoolId);
         Task<List<string>> GetDepartmentsAsync(Guid schoolId);
         Task<List<string>> GetDesignationsAsync(Guid schoolId);
@@ -53,12 +54,16 @@ namespace SmsApi.Services
         // Leave Balance
         Task<LeaveBalanceDto> GetStaffLeaveBalanceAsync(Guid staffId, Guid schoolId);
         Task<LeaveBalanceDto> UpdateLeaveBalanceAsync(Guid schoolId, Guid staffId, UpdateLeaveBalanceDto dto);
+
+        /// <summary>Assign system roles to all active staff logins that are currently unroled.</summary>
+        Task<int> BulkAutoAssignRolesAsync(Guid schoolId);
     }
 
     public class StaffService : IStaffService
     {
         private readonly AppDbContext _context;
         private readonly ILogger<StaffService> _logger;
+        private readonly IFileStorageService _fileStorage;
 
         private static readonly HashSet<string> ValidGenders = new(StringComparer.OrdinalIgnoreCase)
             { "male", "female", "other", "prefer_not_to_say" };
@@ -67,10 +72,11 @@ namespace SmsApi.Services
         private static readonly HashSet<string> ValidEmploymentTypes = new(StringComparer.OrdinalIgnoreCase)
             { "permanent", "contract", "part_time", "probation", "intern", "consultant" };
 
-        public StaffService(AppDbContext context, ILogger<StaffService> logger)
+        public StaffService(AppDbContext context, ILogger<StaffService> logger, IFileStorageService fileStorage)
         {
             _context = context;
             _logger = logger;
+            _fileStorage = fileStorage;
         }
 
         // â”€â”€ PRIVATE HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -311,6 +317,8 @@ namespace SmsApi.Services
                 ["Warden"]              = "hostel warden",
                 ["Admissions Officer"]  = "admissions officer",
                 ["Counselor"]           = "counselor",
+                ["Receptionist"]        = "receptionist",
+                ["Front Desk Officer"]  = "receptionist",
             };
             var loginRole = roleMap.TryGetValue(staff.Designation ?? "", out var r) ? r : "staff";
 
@@ -355,6 +363,8 @@ namespace SmsApi.Services
                 ["Warden"]              = "Hostel Warden",
                 ["Admissions Officer"]  = "Admissions Officer",
                 ["Counselor"]           = "Counselor",
+                ["Receptionist"]        = "Receptionist",
+                ["Front Desk Officer"]  = "Receptionist",
             };
 
             if (systemRoleNameMap.TryGetValue(staff.Designation ?? "", out var roleName))
@@ -376,6 +386,74 @@ namespace SmsApi.Services
                     _logger.LogInformation("Auto-assigned role '{Role}' to new staff {EmployeeId}", roleName, staff.EmployeeId);
                 }
             }
+        }
+
+        /// <summary>
+        /// Assigns system roles to existing active staff whose login has no UserRole yet.
+        /// Safe to run on every startup — skips logins that already have a role assigned.
+        /// </summary>
+        public async Task<int> BulkAutoAssignRolesAsync(Guid schoolId)
+        {
+            var systemRoleNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["principal"]          = "Principal",
+                ["vice principal"]     = "Vice Principal",
+                ["head of department"] = "Head of Department",
+                ["class teacher"]      = "Class Teacher",
+                ["teacher"]            = "Teacher",
+                ["subject teacher"]    = "Teacher",
+                ["accountant"]         = "Accountant",
+                ["hr manager"]         = "HR Manager",
+                ["librarian"]          = "Librarian",
+                ["transport manager"]  = "Transport Manager",
+                ["hostel warden"]      = "Hostel Warden",
+                ["admissions officer"] = "Admissions Officer",
+                ["counselor"]          = "Counselor",
+                ["receptionist"]       = "Receptionist",
+                ["front desk officer"] = "Receptionist",
+                ["support staff"]      = "Support Staff",
+            };
+
+            // Get all system roles for this school once
+            var systemRoles = await _context.Roles
+                .Where(r => r.SchoolId == schoolId && r.IsSystemRole && !r.IsDeleted)
+                .ToListAsync();
+
+            // Get all logins that have no UserRole
+            var loginsWithoutRole = await _context.UserLogins
+                .Where(u => u.SchoolId == schoolId && !u.IsDeleted &&
+                            !_context.UserRoles.Any(ur => ur.UserId == u.Id && ur.SchoolId == schoolId))
+                .ToListAsync();
+
+            int assigned = 0;
+            var newRoles = new List<UserRole>();
+
+            foreach (var login in loginsWithoutRole)
+            {
+                if (!systemRoleNameMap.TryGetValue(login.Role ?? "", out var roleName)) continue;
+                var sysRole = systemRoles.FirstOrDefault(r => r.Name == roleName);
+                if (sysRole == null) continue;
+
+                newRoles.Add(new UserRole
+                {
+                    Id        = Guid.NewGuid(),
+                    UserId    = login.Id,
+                    RoleId    = sysRole.Id,
+                    SchoolId  = schoolId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
+                assigned++;
+            }
+
+            if (newRoles.Count > 0)
+            {
+                _context.UserRoles.AddRange(newRoles);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("BulkAutoAssignRoles: assigned {Count} missing roles for school {SchoolId}", assigned, schoolId);
+            }
+
+            return assigned;
         }
 
         private async Task CreateSalaryBreakdownAsync(Staff staff, decimal totalSalary)
@@ -519,19 +597,66 @@ namespace SmsApi.Services
             if (string.IsNullOrWhiteSpace(request.Phone))
                 return (false, "Phone is required.");
             if (string.IsNullOrWhiteSpace(request.Department))
-                return (false, "Department is required.");
+                return (false, "Department is required — e.g. 'Science', 'Mathematics', 'Administration'.");
             if (string.IsNullOrWhiteSpace(request.Designation))
-                return (false, "Designation is required.");
-            if (!ValidGenders.Contains(request.Gender))
-                return (false, $"Gender must be one of: {string.Join(", ", ValidGenders)}.");
-            if (!string.IsNullOrWhiteSpace(request.Status) && !ValidStatuses.Contains(request.Status))
-                return (false, $"Status must be one of: {string.Join(", ", ValidStatuses)}.");
-            if (!string.IsNullOrWhiteSpace(request.EmploymentType) && !ValidEmploymentTypes.Contains(request.EmploymentType))
-                return (false, $"EmploymentType must be one of: {string.Join(", ", ValidEmploymentTypes)}.");
+                return (false, "Designation is required — e.g. 'Teacher', 'Principal', 'Clerk'.");
+
+            // Normalise gender before checking (M/F accepted in addition to full words)
+            request.Gender = request.Gender?.Trim().ToLower() switch
+            {
+                "m" or "gents" or "boy"                              => "male",
+                "f" or "ladies" or "lady" or "girl"                  => "female",
+                "other" or "others"                                   => "other",
+                "prefer_not_to_say" or "na" or "not specified"       => "prefer_not_to_say",
+                var g                                                 => g
+            };
+            if (!ValidGenders.Contains(request.Gender ?? ""))
+                return (false, $"Gender '{request.Gender}' is not recognised — use: Male, Female, Other (or M/F as shorthand).");
+
+            // Normalise status
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                request.Status = request.Status.Trim().ToLower() switch
+                {
+                    "enabled" or "working"             => "active",
+                    "disabled"                          => "inactive",
+                    "on leave" or "leave"               => "on_leave",
+                    "dismissed" or "fired"             => "terminated",
+                    "probationary"                     => "probation",
+                    var s                              => s
+                };
+                if (!ValidStatuses.Contains(request.Status))
+                    return (false, $"Status '{request.Status}' is not valid — accepted: {string.Join(", ", ValidStatuses)} (leave blank to default to 'active').");
+            }
+
+            // Normalise employment type
+            if (!string.IsNullOrWhiteSpace(request.EmploymentType))
+            {
+                request.EmploymentType = request.EmploymentType.Trim().ToLower() switch
+                {
+                    "full time" or "fulltime" or "full_time" or "regular" => "permanent",
+                    "contractual" or "temp" or "temporary"                => "contract",
+                    "part time" or "parttime"                             => "part_time",
+                    "probationary" or "on probation"                      => "probation",
+                    "internship" or "trainee" or "apprentice"            => "intern",
+                    "consulting" or "freelance" or "visiting"            => "consultant",
+                    var e                                                 => e
+                };
+                if (!ValidEmploymentTypes.Contains(request.EmploymentType))
+                    return (false, $"EmploymentType '{request.EmploymentType}' is not valid — accepted: {string.Join(", ", ValidEmploymentTypes)}.");
+            }
+
+            if (request.DateOfBirth == default)
+                return (false, "DateOfBirth is required — use DD/MM/YYYY or YYYY-MM-DD format.");
             if (request.DateOfBirth >= DateTime.UtcNow.Date)
-                return (false, "DateOfBirth must be in the past.");
+                return (false, $"DateOfBirth '{request.DateOfBirth:yyyy-MM-dd}' is in the future — please check the year.");
             if (request.DateOfBirth > DateTime.UtcNow.AddYears(-18))
                 return (false, "Staff member must be at least 18 years old.");
+
+            // PAN length check
+            if (!string.IsNullOrWhiteSpace(request.PanNumber) && request.PanNumber.Length != 10)
+                return (false, $"PanNumber '{request.PanNumber}' has {request.PanNumber.Length} characters — PAN must be exactly 10 (format: ABCDE1234F).");
+
             if (request.Salary.HasValue && request.Salary.Value < 0)
                 return (false, "Salary cannot be negative.");
             return (true, string.Empty);
@@ -769,18 +894,47 @@ namespace SmsApi.Services
 
             staff.UpdatedAt = DateTime.UtcNow;
 
-            // Sync UserLogin status
-            if (request.Status != null && !string.IsNullOrEmpty(staff.Email))
+            // Sync UserLogin status — primary lookup by LinkedEntityId, email fallback
+            if (request.Status != null)
             {
                 var linkedLogin = await _context.UserLogins
                     .FirstOrDefaultAsync(u =>
                         u.SchoolId == staff.SchoolId &&
-                        u.Email.ToLower() == staff.Email.ToLower() &&
+                        u.LinkedEntityId == id &&
+                        u.LinkedEntityType == "staff" &&
                         !u.IsDeleted);
+
+                if (linkedLogin == null && !string.IsNullOrEmpty(staff.Email))
+                {
+                    linkedLogin = await _context.UserLogins
+                        .FirstOrDefaultAsync(u =>
+                            u.SchoolId == staff.SchoolId &&
+                            u.Email.ToLower() == staff.Email.Trim().ToLower() &&
+                            !u.IsDeleted);
+                }
+
                 if (linkedLogin != null)
                 {
                     linkedLogin.Status = request.Status == "inactive" ? "inactive" : "active";
+                    if (request.Status == "inactive")
+                    {
+                        linkedLogin.RefreshTokenHash = null;
+                        linkedLogin.RefreshTokenExpiry = null;
+                    }
                     linkedLogin.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            // Clear ClassSubjects.TeacherId when staff is deactivated via plain update
+            if (request.Status == "inactive")
+            {
+                var classSubjectsToUnassign = await _context.ClassSubjects
+                    .Where(cs => cs.SchoolId == schoolId && cs.TeacherId == id)
+                    .ToListAsync();
+                foreach (var cs in classSubjectsToUnassign)
+                {
+                    cs.TeacherId = null;
+                    cs.UpdatedAt = DateTime.UtcNow;
                 }
             }
 
@@ -989,6 +1143,9 @@ namespace SmsApi.Services
                     _context.StaffMembers.Add(staff);
                     await _context.SaveChangesAsync();
 
+                    // Provision a login account + system role (same as single-create flow)
+                    await AutoProvisionUserLoginAsync(staff);
+
                     result.SuccessCount++;
                     result.SuccessfulIds.Add(staff.Id);
 
@@ -1094,13 +1251,22 @@ namespace SmsApi.Services
             if (staff == null)
                 throw new InvalidOperationException("Staff member not found.");
 
-            var fileUrl = $"/uploads/staff/{staffId}/documents/{fileName}";
+            // Structured S3 key: SMS-Test/schools/{schoolId}/staff/{staffId}/documents/{type}/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/staff/{staffId}/documents/{documentType}/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload document to cloud storage.");
+
+            var fileUrl = _fileStorage.GetPublicUrl(key);
 
             var document = new StaffDocument
             {
                 Id = Guid.NewGuid(),
                 StaffId = staffId,
-                Name = documentType,
+                Name = fileName,
                 Type = documentType,
                 Url = fileUrl,
                 UploadedAt = DateTime.UtcNow
@@ -1108,6 +1274,8 @@ namespace SmsApi.Services
 
             _context.StaffDocuments.Add(document);
             await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Staff document uploaded: staffId={StaffId}, type={Type}, key={Key}", staffId, documentType, key);
 
             return new StaffDocumentDto
             {
@@ -1119,6 +1287,35 @@ namespace SmsApi.Services
             };
         }
 
+        public async Task<string> UploadPhotoAsync(Guid staffId, Guid schoolId, string fileName, byte[] fileData)
+        {
+            var staff = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.Id == staffId && s.SchoolId == schoolId);
+
+            if (staff == null)
+                throw new InvalidOperationException("Staff member not found.");
+
+            // Delete the previous photo from storage if one exists
+            if (!string.IsNullOrEmpty(staff.ProfilePhoto))
+                await _fileStorage.DeleteAsync(staff.ProfilePhoto);
+
+            // Structured S3 key: SMS-Test/schools/{schoolId}/staff/{staffId}/photos/{guid}.{ext}
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/staff/{staffId}/photos/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload photo to cloud storage.");
+
+            var photoUrl = _fileStorage.GetPublicUrl(key);
+            staff.ProfilePhoto = photoUrl;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Staff photo uploaded: staffId={StaffId}, key={Key}", staffId, key);
+            return photoUrl;
+        }
+
         public async Task<bool> DeleteDocumentAsync(Guid documentId, Guid schoolId)
         {
             var document = await _context.StaffDocuments
@@ -1126,6 +1323,10 @@ namespace SmsApi.Services
                 .FirstOrDefaultAsync(d => d.Id == documentId && d.Staff!.SchoolId == schoolId);
 
             if (document == null) return false;
+
+            // Delete from S3 storage (accepts full URL or key — service handles extraction)
+            if (!string.IsNullOrEmpty(document.Url))
+                await _fileStorage.DeleteAsync(document.Url);
 
             _context.StaffDocuments.Remove(document);
             await _context.SaveChangesAsync();
@@ -1216,18 +1417,32 @@ namespace SmsApi.Services
                     staff.Status = request.Status;
                     staff.UpdatedAt = DateTime.UtcNow;
 
-                    if (!string.IsNullOrEmpty(staff.Email))
+                    // Primary lookup by LinkedEntityId, email fallback
+                    var linkedLogin = await _context.UserLogins
+                        .FirstOrDefaultAsync(u =>
+                            u.SchoolId == schoolId &&
+                            u.LinkedEntityId == staff.Id &&
+                            u.LinkedEntityType == "staff" &&
+                            !u.IsDeleted);
+
+                    if (linkedLogin == null && !string.IsNullOrEmpty(staff.Email))
                     {
-                        var linkedLogin = await _context.UserLogins
+                        linkedLogin = await _context.UserLogins
                             .FirstOrDefaultAsync(u =>
                                 u.SchoolId == schoolId &&
-                                u.Email.ToLower() == staff.Email.ToLower() &&
+                                u.Email.ToLower() == staff.Email.Trim().ToLower() &&
                                 !u.IsDeleted);
-                        if (linkedLogin != null)
+                    }
+
+                    if (linkedLogin != null)
+                    {
+                        linkedLogin.Status = request.Status == "inactive" ? "inactive" : "active";
+                        if (request.Status == "inactive")
                         {
-                            linkedLogin.Status = request.Status == "inactive" ? "inactive" : "active";
-                            linkedLogin.UpdatedAt = DateTime.UtcNow;
+                            linkedLogin.RefreshTokenHash = null;
+                            linkedLogin.RefreshTokenExpiry = null;
                         }
+                        linkedLogin.UpdatedAt = DateTime.UtcNow;
                     }
 
                     result.SuccessCount++;

@@ -41,7 +41,7 @@ export const staffProfessionalInfoSchema = z.object({
   experience:       z.number().min(0).optional(),
   confirmationDate: z.string().optional(),
   employmentType:   z
-    .enum(["full_time", "part_time", "contract", "guest", "volunteer", "intern"])
+    .enum(["permanent", "contract", "temporary", "probation"])
     .optional(),
   workingDays:      z.string().optional(),
   leaveEntitlement: z.number().min(0).optional(),

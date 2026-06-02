@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, RefreshCw, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5092';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 interface ExamSummary {
   examId: string;
@@ -33,6 +33,8 @@ interface ResultSummaryReport {
   gradeCPercentage: number;
   gradeDPercentage: number;
   gradeEPercentage: number;
+  /** Board-aware dynamic grade breakdown — keys are grade labels (A1, O, 7, A*, etc.), values are % of students */
+  gradeBreakdown?: Record<string, number>;
 }
 
 export default function ExamSummary() {
@@ -203,26 +205,38 @@ export default function ExamSummary() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Grade A (90-100):</span>
-                      <span className="font-semibold">{report.gradeAPercentage.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Grade B (80-89):</span>
-                      <span className="font-semibold">{report.gradeBPercentage.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Grade C (70-79):</span>
-                      <span className="font-semibold">{report.gradeCPercentage.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Grade D (60-69):</span>
-                      <span className="font-semibold">{report.gradeDPercentage.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Grade E (Below 60):</span>
-                      <span className="font-semibold">{report.gradeEPercentage.toFixed(1)}%</span>
-                    </div>
+                    {report.gradeBreakdown && Object.keys(report.gradeBreakdown).length > 0
+                      ? Object.entries(report.gradeBreakdown).map(([grade, pct]) => (
+                          <div key={grade} className="flex justify-between text-sm">
+                            <span>Grade {grade}:</span>
+                            <span className="font-semibold">{pct.toFixed(1)}%</span>
+                          </div>
+                        ))
+                      : (
+                        <>
+                          <div className="flex justify-between text-sm">
+                            <span>Grade A (90-100):</span>
+                            <span className="font-semibold">{report.gradeAPercentage.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Grade B (80-89):</span>
+                            <span className="font-semibold">{report.gradeBPercentage.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Grade C (70-79):</span>
+                            <span className="font-semibold">{report.gradeCPercentage.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Grade D (60-69):</span>
+                            <span className="font-semibold">{report.gradeDPercentage.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Grade E (Below 60):</span>
+                            <span className="font-semibold">{report.gradeEPercentage.toFixed(1)}%</span>
+                          </div>
+                        </>
+                      )
+                    }
                   </div>
                 </CardContent>
               </Card>

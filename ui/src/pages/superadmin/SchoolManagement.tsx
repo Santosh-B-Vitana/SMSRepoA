@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Plus, Edit, Eye, PowerOff, Power, Building2, Search } from "lucide-react";
+﻿import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Edit, Eye, PowerOff, Power, Building2, Search, Rocket } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import * as superAdminApi from "@/services/api/superAdminApi";
 import type { SchoolListItem, SchoolDetail } from "@/services/api/superAdminApi";
 
@@ -24,13 +25,14 @@ interface SchoolForm {
 const emptyForm: SchoolForm = { name: "", schoolCode: "", address: "", phone: "", email: "", logo: "" };
 
 export default function SchoolManagement() {
-  const { toast } = useToast();
+  const navigate = useNavigate();
   const [schools, setSchools] = useState<SchoolListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [viewSchool, setViewSchool] = useState<SchoolListItem | null>(null);
   const [editSchool, setEditSchool] = useState<SchoolDetail | null>(null);
   const [editForm, setEditForm] = useState<SchoolForm>(emptyForm);
+  const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [addDialog, setAddDialog] = useState(false);
   const [addForm, setAddForm] = useState<SchoolForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -43,7 +45,7 @@ export default function SchoolManagement() {
       const data = await superAdminApi.getAllSchools();
       setSchools(data);
     } catch {
-      toast({ title: "Error", description: "Failed to load schools", variant: "destructive" });
+      toast.error("Failed to load schools");
     } finally {
       setLoading(false);
     }
@@ -61,12 +63,12 @@ export default function SchoolManagement() {
         email: addForm.email || undefined,
         logo: addForm.logo || undefined,
       });
-      toast({ title: "School created successfully" });
+      toast.success("School created successfully");
       setAddDialog(false);
       setAddForm(emptyForm);
       await fetchSchools();
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.message ?? "Failed to create school", variant: "destructive" });
+      toast.error(err?.response?.data?.message ?? "Failed to create school");
     } finally {
       setSubmitting(false);
     }
@@ -75,24 +77,33 @@ export default function SchoolManagement() {
   const openEditDialog = (school: SchoolListItem) => {
     setEditSchool(school as unknown as SchoolDetail);
     setEditForm({ name: school.name, schoolCode: school.schoolCode, address: school.address ?? "", phone: school.phone ?? "", email: school.email ?? "", logo: school.logo ?? "" });
+    setEditLogoFile(null);
   };
 
   const handleEditSchool = async () => {
     if (!editSchool) return;
     try {
       setSubmitting(true);
+      let logoUrl = editForm.logo || undefined;
+
+      if (editLogoFile) {
+        const upload = await superAdminApi.uploadSchoolLogo(editSchool.id, editLogoFile);
+        logoUrl = upload.logoUrl;
+      }
+
       await superAdminApi.updateSchool(editSchool.id, {
         name: editForm.name || undefined,
         address: editForm.address || undefined,
         phone: editForm.phone || undefined,
         email: editForm.email || undefined,
-        logo: editForm.logo || undefined,
+        logo: logoUrl,
       });
-      toast({ title: "School updated" });
+      toast.success("School updated");
       setEditSchool(null);
+      setEditLogoFile(null);
       await fetchSchools();
-    } catch {
-      toast({ title: "Error", description: "Failed to update school", variant: "destructive" });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to update school");
     } finally {
       setSubmitting(false);
     }
@@ -101,10 +112,10 @@ export default function SchoolManagement() {
   const handleToggleStatus = async (school: SchoolListItem) => {
     try {
       await superAdminApi.toggleSchoolStatus(school.id);
-      toast({ title: school.isActive ? "School deactivated" : "School activated" });
+      toast.success(school.isActive ? "School deactivated" : "School activated");
       await fetchSchools();
     } catch {
-      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+      toast.error("Failed to update status");
     }
   };
 
@@ -121,9 +132,15 @@ export default function SchoolManagement() {
           </h1>
           <p className="text-muted-foreground mt-1">Manage all registered schools on the Vitana platform</p>
         </div>
-        <Button onClick={() => { setAddForm(emptyForm); setAddDialog(true); }}>
-          <Plus className="h-4 w-4 mr-2" /> Add School
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/superadmin/onboard")} className="gap-2">
+            <Rocket className="h-4 w-4" />
+            Onboard School
+          </Button>
+          <Button onClick={() => { setAddForm(emptyForm); setAddDialog(true); }}>
+            <Plus className="h-4 w-4 mr-2" /> Add School
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -175,7 +192,14 @@ export default function SchoolManagement() {
                           ? <img src={school.logo} alt="" className="h-8 w-8 rounded object-cover border" />
                           : <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center"><Building2 className="h-4 w-4 text-primary" /></div>
                         }
-                        <span className="font-medium">{school.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{school.name}</span>
+                          {school.isOnboarded && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 w-fit mt-0.5">
+                              <Rocket className="h-3 w-3" /> Onboarded
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{school.schoolCode}</TableCell>
@@ -189,6 +213,16 @@ export default function SchoolManagement() {
                       <div className="flex items-center justify-center gap-1">
                         <Button size="sm" variant="ghost" onClick={() => setViewSchool(school)}><Eye className="h-4 w-4" /></Button>
                         <Button size="sm" variant="ghost" onClick={() => openEditDialog(school)}><Edit className="h-4 w-4" /></Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={school.isOnboarded ? "Already onboarded via wizard" : "Run onboarding wizard"}
+                          disabled={school.isOnboarded}
+                          onClick={() => !school.isOnboarded && navigate("/superadmin/onboard")}
+                          className={school.isOnboarded ? "opacity-40 cursor-not-allowed" : "text-indigo-600 hover:text-indigo-800"}
+                        >
+                          <Rocket className="h-4 w-4" />
+                        </Button>
                         <Button size="sm" variant="ghost" onClick={() => handleToggleStatus(school)}
                           className={school.isActive ? "text-red-500 hover:text-red-700" : "text-green-600 hover:text-green-800"}>
                           {school.isActive ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
@@ -255,17 +289,39 @@ export default function SchoolManagement() {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editSchool} onOpenChange={() => setEditSchool(null)}>
+      <Dialog open={!!editSchool} onOpenChange={() => { setEditSchool(null); setEditLogoFile(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Edit School</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1"><Label>Name</Label><Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="space-y-2">
+              <Label>School Logo</Label>
+              <div className="flex items-center gap-3">
+                {editForm.logo
+                  ? <img src={editForm.logo} alt="School logo" className="h-14 w-14 rounded object-cover border" />
+                  : <div className="h-14 w-14 rounded bg-primary/10 flex items-center justify-center"><Building2 className="h-7 w-7 text-primary" /></div>
+                }
+                <div className="flex-1">
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                    onChange={e => {
+                      const file = e.target.files?.[0] ?? null;
+                      setEditLogoFile(file);
+                      if (file) {
+                        setEditForm(f => ({ ...f, logo: URL.createObjectURL(file) }));
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Upload a new image to replace existing logo in storage.</p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-1"><Label>Address</Label><Textarea value={editForm.address} onChange={e => setEditForm(f => ({ ...f, address: e.target.value }))} rows={2} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Phone</Label><Input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
               <div className="space-y-1"><Label>Email</Label><Input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
             </div>
-            <div className="space-y-1"><Label>Logo URL</Label><Input value={editForm.logo} onChange={e => setEditForm(f => ({ ...f, logo: e.target.value }))} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditSchool(null)}>Cancel</Button>

@@ -15,10 +15,14 @@ namespace SmsApi.Controllers
     public class LeaveManagementController : ControllerBase
     {
         private readonly ILeaveManagementService _leaveManagementService;
+        private readonly IParentAuthorizationService _parentAuth;
+        private readonly ITenantContext _tenant;
 
-        public LeaveManagementController(ILeaveManagementService leaveManagementService)
+        public LeaveManagementController(ILeaveManagementService leaveManagementService, IParentAuthorizationService parentAuth, ITenantContext tenant)
         {
             _leaveManagementService = leaveManagementService;
+            _parentAuth = parentAuth;
+            _tenant = tenant;
         }
 
         private Guid GetSchoolId()
@@ -38,7 +42,7 @@ namespace SmsApi.Controllers
 
         // Leave Types
         [HttpGet("types")]
-        [Authorize(Roles = "Admin,Principal,Teacher,Staff,HRManager,Parent")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff + ",Parent")]
         public async Task<ActionResult<LeaveTypeListResponse>> GetLeaveTypes([FromQuery] string? applicableTo = null)
         {
             var schoolId = GetSchoolId();
@@ -95,6 +99,25 @@ namespace SmsApi.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("types/{id}")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
+        public async Task<IActionResult> DeleteLeaveType(Guid id)
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty)
+                return Unauthorized();
+
+            try
+            {
+                await _leaveManagementService.DeleteLeaveTypeAsync(id, schoolId);
+                return NoContent();
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
             }
         }
 
@@ -236,7 +259,10 @@ namespace SmsApi.Controllers
             var isPrivileged = User.IsInRole(StatusConstants.Roles.Admin)
                                || User.IsInRole(StatusConstants.Roles.Principal)
                                || User.IsInRole("HRManager");
-            if (!isPrivileged && currentUserId != userId)
+            // Also allow if the caller's LinkedEntityId matches userId (staff viewing their own balance)
+            var linkedEntityClaim = User.FindFirst("LinkedEntityId")?.Value;
+            var callerLinkedEntityId = Guid.TryParse(linkedEntityClaim, out var lid) ? lid : (Guid?)null;
+            if (!isPrivileged && currentUserId != userId && callerLinkedEntityId != userId)
             {
                 return Forbid();
             }
@@ -250,6 +276,23 @@ namespace SmsApi.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        /// <summary>Staff member views their own leave balance (resolves entity via email, so works even if LinkedEntityId is not in JWT).</summary>
+        [HttpGet("my-balance")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        public async Task<ActionResult<List<LeaveBalanceResponse>>> GetMyLeaveBalance()
+        {
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty)
+                return Unauthorized();
+
+            var callerEmail = User.FindFirst(ClaimTypes.Email)?.Value;
+            if (string.IsNullOrWhiteSpace(callerEmail))
+                return Unauthorized();
+
+            var balance = await _leaveManagementService.GetMyLeaveBalanceAsync(callerEmail, schoolId);
+            return Ok(balance);
         }
 
         // ── Student Leave Endpoints (parent-initiated, teacher/admin managed) ─────
@@ -284,6 +327,15 @@ namespace SmsApi.Controllers
         {
             var schoolId = GetSchoolId();
             if (schoolId == Guid.Empty) return Unauthorized();
+
+            // Verify the parent is authorised to view the given student (direct child or sibling)
+            if (studentId.HasValue)
+            {
+                var parentEmail = _tenant.UserEmail ?? string.Empty;
+                var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId.Value);
+                if (!canAccess)
+                    return StatusCode(403, new { message = "Parents can only access their own child's leave records." });
+            }
 
             var result = await _leaveManagementService.GetStudentLeaveRequestsAsync(schoolId, page, pageSize, studentId, status);
             return Ok(result);

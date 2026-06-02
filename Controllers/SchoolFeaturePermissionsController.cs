@@ -6,6 +6,8 @@ using SmsApi.Services;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using SmsApi.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace SmsApi.Controllers
 {
@@ -16,11 +18,13 @@ namespace SmsApi.Controllers
     {
         private readonly ISchoolFeaturePermissionService _service;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
 
-        public SchoolFeaturePermissionsController(ISchoolFeaturePermissionService service, ITenantContext tenant)
+        public SchoolFeaturePermissionsController(ISchoolFeaturePermissionService service, ITenantContext tenant, AppDbContext db)
         {
             _service = service;
             _tenant = tenant;
+            _db = db;
         }
 
         /// <summary>
@@ -34,6 +38,34 @@ namespace SmsApi.Controllers
             {
                 var schools = await _service.GetAllSchoolsAsync();
                 return Ok(schools);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get feature permissions for the current user's own school.
+        /// Accessible to all authenticated users (staff, admin, parent) so that
+        /// every login can respect school-level feature toggles.
+        /// </summary>
+        [HttpGet("my-school")]
+        [Authorize]
+        public async Task<ActionResult<SchoolPermissionsResponse>> GetMySchoolPermissions()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                if (schoolId == Guid.Empty)
+                    return BadRequest(new { message = "No school associated with this account" });
+
+                var permissions = await _service.GetSchoolPermissionsAsync(schoolId);
+                return Ok(permissions);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -247,6 +279,51 @@ namespace SmsApi.Controllers
             }
         }
 
+        /// <summary>Upload/replace a school's logo image (Super Admin only).</summary>
+        [HttpPost("schools/{schoolId}/logo")]
+        [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
+        [RequestSizeLimit(10 * 1024 * 1024)]
+        public async Task<ActionResult> UploadSchoolLogo(
+            Guid schoolId,
+            IFormFile file,
+            [FromServices] IFileStorageService fileStorage)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No file provided." });
+
+            var school = await _db.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                return NotFound(new { message = "School not found" });
+
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var allowed = new HashSet<string> { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+            if (!allowed.Contains(ext))
+                return BadRequest(new { message = "Only JPG, PNG, WEBP, GIF files are allowed." });
+
+            if (file.Length > 5 * 1024 * 1024)
+                return BadRequest(new { message = "Logo size must be 5 MB or less." });
+
+            var previousLogo = school.Logo;
+            var key = fileStorage.BuildAssetKey($"schools/{schoolId}/branding/logo-{Guid.NewGuid()}{ext}");
+
+            await using var stream = file.OpenReadStream();
+            var saved = await fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                return StatusCode(500, new { message = "Failed to upload school logo." });
+
+            var logoUrl = fileStorage.GetPublicUrl(key);
+            school.Logo = logoUrl;
+            school.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            if (!string.IsNullOrWhiteSpace(previousLogo) && !string.Equals(previousLogo, logoUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                _ = fileStorage.DeleteAsync(previousLogo);
+            }
+
+            return Ok(new { logoUrl });
+        }
+
         /// <summary>Toggle school active status (Super Admin only)</summary>
         [HttpPatch("schools/{schoolId}/toggle-status")]
         [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
@@ -369,6 +446,88 @@ namespace SmsApi.Controllers
             {
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
+        }
+
+        // ─── School Onboarding ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Onboard a new school end-to-end: creates school, academic year, admin user,
+        /// and applies module permissions in a single operation. (Super Admin only)
+        /// </summary>
+        [HttpPost("onboard")]
+        [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
+        public async Task<ActionResult<SchoolOnboardingResult>> OnboardSchool([FromBody] SchoolOnboardingRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            try
+            {
+                var result = await _service.OnboardSchoolAsync(request);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        // ── Billing ──────────────────────────────────────────────────────────────
+
+        /// <summary>Get billing info for a specific school (SuperAdmin or that school's Admin).</summary>
+        [HttpGet("schools/{schoolId}/billing")]
+        [Authorize(Roles = "SuperAdmin,Admin")]
+        public async Task<ActionResult<SchoolBillingDto>> GetSchoolBilling(Guid schoolId)
+        {
+            try
+            {
+                var dto = await _service.GetSchoolBillingAsync(schoolId);
+                return Ok(dto);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)            { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
+
+        /// <summary>Update billing info for a school (SuperAdmin only).</summary>
+        [HttpPut("schools/{schoolId}/billing")]
+        [Authorize(Roles = StatusConstants.Roles.SuperAdmin)]
+        public async Task<ActionResult<SchoolBillingDto>> UpdateSchoolBilling(Guid schoolId, [FromBody] UpdateSchoolBillingRequest request)
+        {
+            try
+            {
+                var dto = await _service.UpdateSchoolBillingAsync(schoolId, request);
+                return Ok(dto);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (Exception ex)            { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Login billing notification — called by admin dashboard on mount.
+        /// Returns a warning when subscription is expiring soon or expired.
+        /// </summary>
+        [HttpGet("billing-notification")]
+        [Authorize]
+        public async Task<ActionResult<BillingNotificationDto>> GetBillingNotification()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                if (schoolId == Guid.Empty)
+                    return Ok(new BillingNotificationDto { HasWarning = false });
+
+                var dto = await _service.GetBillingNotificationAsync(schoolId);
+                return Ok(dto);
+            }
+            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred", error = ex.Message }); }
         }
     }
 }

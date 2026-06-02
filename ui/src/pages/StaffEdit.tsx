@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { staffApi } from "@/services/api/staffApi";
 import type { Staff as RealStaff, CreateStaffRequest } from "@/services/api/staffApi";
+import { studentApi, StaffChildDto } from "@/services/api/studentApi";
+import type { StudentBasic } from "@/services/api/studentApi";
 
 // Extended local state — includes real API fields plus UI-only fields (bloodGroup etc.) kept only in memory
 type Staff = RealStaff & {
@@ -171,7 +173,7 @@ export default function StaffEdit() {
             <TabsTrigger value="contact">Contact</TabsTrigger>
             <TabsTrigger value="identification">Identification</TabsTrigger>
             <TabsTrigger value="medical">Medical</TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
+            <TabsTrigger value="children">Children</TabsTrigger>
           </TabsList>
         </div>
 
@@ -707,82 +709,149 @@ export default function StaffEdit() {
           </Card>
         </TabsContent>
 
-        {/* Security Tab */}
-        <SecurityTab staffId={id!} />
+        {/* Children Tab */}
+        <ChildrenTab staffId={id!} />
       </Tabs>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Security Tab — Reset staff login password
+// Children Tab — Link enrolled students who are children of this staff member
 // ---------------------------------------------------------------------------
-function SecurityTab({ staffId }: { staffId: string }) {
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [saving, setSaving] = useState(false);
+function ChildrenTab({ staffId }: { staffId: string }) {
+  const [linkedChildren, setLinkedChildren] = useState<StaffChildDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<StudentBasic[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [working, setWorking] = useState<string | null>(null);
 
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match.");
-      return;
-    }
-    setSaving(true);
+  useEffect(() => {
+    staffApi.getChildren(staffId)
+      .then(c => setLinkedChildren(Array.isArray(c) ? c : []))
+      .catch(() => setLinkedChildren([]))
+      .finally(() => setLoading(false));
+  }, [staffId]);
+
+  const searchStudents = async (q: string) => {
+    if (!q.trim()) { setResults([]); return; }
+    setSearching(true);
     try {
-      await staffApi.resetPassword(staffId, newPassword);
-      toast.success("Password reset successfully.");
-      setNewPassword("");
-      setConfirmPassword("");
+      const res = await studentApi.list({ search: q, pageSize: 10 });
+      setResults(res.students || []);
     } catch {
-      toast.error("Failed to reset password. Ensure this staff member has a login account.");
+      setResults([]);
     } finally {
-      setSaving(false);
+      setSearching(false);
+    }
+  };
+
+  const handleLink = async (student: StudentBasic) => {
+    setWorking(student.id);
+    try {
+      await studentApi.setGuardianStaff(student.id, staffId);
+      setLinkedChildren(prev => [...prev, {
+        id: student.id as unknown as import('@/services/api/studentApi').StaffChildDto['id'],
+        name: student.name,
+        admissionNumber: student.admissionNumber,
+        class: student.class,
+        section: student.section,
+        status: student.status,
+      } as StaffChildDto]);
+      setResults(prev => prev.filter(s => s.id !== student.id));
+      toast.success(`${student.name} linked as child`);
+    } catch {
+      toast.error("Failed to link student");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const handleUnlink = async (child: StaffChildDto) => {
+    setWorking(String(child.id));
+    try {
+      await studentApi.setGuardianStaff(String(child.id), null);
+      setLinkedChildren(prev => prev.filter(c => c.id !== child.id));
+      toast.success(`${child.name} unlinked`);
+    } catch {
+      toast.error("Failed to unlink student");
+    } finally {
+      setWorking(null);
     }
   };
 
   return (
-    <TabsContent value="security">
+    <TabsContent value="children">
       <Card>
         <CardHeader>
-          <CardTitle>Security — Reset Password</CardTitle>
+          <CardTitle>Children in School</CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            Set a new login password for this staff member. The previous password will be invalidated immediately.
+            Link enrolled students who are children of this staff member. Enables staff-child fee concessions.
           </p>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleResetPassword} className="space-y-4 max-w-sm">
+        <CardContent className="space-y-6">
+          {/* Linked children list */}
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : linkedChildren.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">No students linked yet.</p>
+          ) : (
             <div className="space-y-2">
-              <Label htmlFor="newPassword">New Password</Label>
-              <Input
-                id="newPassword"
-                type="password"
-                placeholder="Minimum 8 characters"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                required
-                minLength={8}
-              />
+              {linkedChildren.map(child => (
+                <div key={String(child.id)} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                  <div>
+                    <p className="font-medium text-sm">{child.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {child.admissionNumber ? `${child.admissionNumber} · ` : ''}Class {child.class}-{child.section}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive border-destructive hover:bg-destructive hover:text-white"
+                    disabled={working === String(child.id)}
+                    onClick={() => handleUnlink(child)}
+                  >
+                    {working === String(child.id) ? '…' : 'Unlink'}
+                  </Button>
+                </div>
+              ))}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Re-enter new password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Resetting..." : "Reset Password"}
-            </Button>
-          </form>
+          )}
+
+          {/* Search & link */}
+          <div className="space-y-2 pt-2 border-t">
+            <Label>Search &amp; Link Student</Label>
+            <Input
+              placeholder="Type student name…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); searchStudents(e.target.value); }}
+            />
+            {searching && <p className="text-xs text-muted-foreground">Searching…</p>}
+            {results.length > 0 && (
+              <div className="border rounded-md overflow-hidden max-h-56 overflow-y-auto">
+                {results
+                  .filter(s => !linkedChildren.find(c => String(c.id) === s.id))
+                  .map(s => (
+                    <div key={s.id} className="flex items-center justify-between px-4 py-3 hover:bg-accent text-sm">
+                      <div>
+                        <p className="font-medium">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">Class {s.class}-{s.section}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={working === s.id}
+                        onClick={() => { handleLink(s); setSearch(''); setResults([]); }}
+                      >
+                        {working === s.id ? 'Linking…' : 'Link as Child'}
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </TabsContent>

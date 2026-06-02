@@ -1,13 +1,17 @@
 using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using SmsApi.Models.DTOs;
+using SmsApi.Models.Entities;
 using SmsApi.Services;
+using SmsApi.Data;
 
 namespace SmsApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Route("api/user-management")]
     [Authorize]
     public class UserManagementController : ControllerBase
     {
@@ -39,8 +43,11 @@ namespace SmsApi.Controllers
         /// </summary>
         private Guid GetCurrentUserId()
         {
-            var userIdClaim = User.FindFirst("UserId");
-            return userIdClaim != null ? Guid.Parse(userIdClaim.Value) : Guid.Empty;
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)
+                ?? User.FindFirst("UserId");
+            return userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId)
+                ? userId
+                : Guid.Empty;
         }
 
         /// <summary>
@@ -65,6 +72,101 @@ namespace SmsApi.Controllers
                 return BadRequest(new { message = result.Message });
 
             return CreatedAtAction(nameof(GetUserById), new { userId = result.Data?.Id }, result.Data);
+        }
+
+        /// <summary>
+        /// Update current user's own profile (firstName, lastName only).
+        /// Uses JWT identity — no SchoolId scoping needed since the user is updating themselves.
+        /// </summary>
+        [HttpPut("me")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<UserResponse>> UpdateMyProfile([FromBody] UpdateProfileRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return Unauthorized(new { message = "User ID not found in token" });
+
+            var result = await _userManagementService.UpdateMyProfileAsync(userId, request);
+
+            if (!result.Success)
+                return result.Message == "User not found"
+                    ? NotFound(new { message = result.Message })
+                    : BadRequest(new { message = result.Message });
+
+            return Ok(result.Data);
+        }
+
+        /// <summary>
+        /// Upload current user's profile photo.
+        /// Stores the public URL in UserSettings with key "profile_photo_url".
+        /// </summary>
+        [HttpPost("me/photo")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<ActionResult> UploadMyProfilePhoto(
+            IFormFile file,
+            [FromServices] IFileValidationService fileValidation,
+            [FromServices] IFileStorageService fileStorage,
+            [FromServices] AppDbContext db)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No file provided." });
+
+            var userId = GetCurrentUserId();
+            if (userId == Guid.Empty)
+                return Unauthorized(new { message = "User ID not found in token" });
+
+            var schoolId = GetSchoolId();
+            if (schoolId == Guid.Empty)
+                return Unauthorized(new { message = "School ID not found in token" });
+
+            var (isValid, errorMessage) = await fileValidation.ValidateAsync(file);
+            if (!isValid)
+                return BadRequest(new { message = errorMessage });
+
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var key = fileStorage.BuildAssetKey($"schools/{schoolId}/users/{userId}/profile/{Guid.NewGuid()}{ext}");
+
+            await using var stream = file.OpenReadStream();
+            var saved = await fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                return StatusCode(500, new { message = "Failed to save profile photo." });
+
+            var photoUrl = fileStorage.GetPublicUrl(key);
+
+            var setting = await db.UserSettings
+                .FirstOrDefaultAsync(s => s.UserId == userId && s.SettingKey == "profile_photo_url" && !s.IsDeleted);
+
+            if (setting == null)
+            {
+                db.UserSettings.Add(new UserSettings
+                {
+                    UserId = userId,
+                    SettingKey = "profile_photo_url",
+                    SettingValue = photoUrl,
+                    Category = "profile",
+                    DataType = "string",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
+            }
+            else
+            {
+                setting.SettingValue = photoUrl;
+                setting.Category = "profile";
+                setting.DataType = "string";
+                setting.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+
+            return Ok(new { photoUrl });
         }
 
         /// <summary>

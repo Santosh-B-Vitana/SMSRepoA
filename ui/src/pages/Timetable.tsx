@@ -11,10 +11,12 @@ import { staffApi } from "@/services/api/staffApi";
 import { timetableApi } from "@/services/api/timetableApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function Timetable() {
   const { academicYear } = useAcademicYear();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const [stats, setStats] = useState({
     totalClasses: 0,
@@ -46,10 +48,10 @@ export default function Timetable() {
         <div>
           <h1 className="text-display flex items-center gap-3">
             <Clock className="h-8 w-8" />
-            My Timetable
+            {t('timetable.myTitle')}
           </h1>
           <p className="text-muted-foreground mt-2">
-            Your personal class schedule for the week
+            {t('timetable.myDesc')}
           </p>
         </div>
         <StaffTimetableView />
@@ -65,10 +67,10 @@ export default function Timetable() {
         <div>
           <h1 className="text-display flex items-center gap-3">
             <Clock className="h-8 w-8" />
-            Timetable Management
+            {t('timetable.title')}
           </h1>
           <p className="text-muted-foreground mt-2">
-            Manage class schedules, teacher assignments, and holidays
+            {t('timetable.desc')}
           </p>
         </div>
       </div>
@@ -79,9 +81,9 @@ export default function Timetable() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Classes</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('timetable.totalClasses')}</p>
                 <h3 className="text-2xl font-bold mt-2">{stats.totalClasses}</h3>
-                <p className="text-xs text-muted-foreground mt-1">Active schedules</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('timetable.activeSchedules')}</p>
               </div>
               <div className="h-12 w-12 rounded-full bg-blue-500/10 flex items-center justify-center">
                 <Users className="h-6 w-6 text-blue-500" />
@@ -94,9 +96,9 @@ export default function Timetable() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Periods Per Day</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('timetable.periodsPerDay')}</p>
                 <h3 className="text-2xl font-bold mt-2">{stats.periodsPerDay}</h3>
-                <p className="text-xs text-muted-foreground mt-1">{stats.workingDays} working days</p>
+                <p className="text-xs text-muted-foreground mt-1">{stats.workingDays} {t('timetable.workingDays')}</p>
               </div>
               <div className="h-12 w-12 rounded-full bg-green-500/10 flex items-center justify-center">
                 <Clock className="h-6 w-6 text-green-500" />
@@ -109,9 +111,9 @@ export default function Timetable() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Active Teachers</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('timetable.activeTeachers')}</p>
                 <h3 className="text-2xl font-bold mt-2">{stats.activeTeachers}</h3>
-                <p className="text-xs text-muted-foreground mt-1">Teaching staff</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('timetable.teachingStaff')}</p>
               </div>
               <div className="h-12 w-12 rounded-full bg-purple-500/10 flex items-center justify-center">
                 <BookOpen className="h-6 w-6 text-purple-500" />
@@ -124,9 +126,9 @@ export default function Timetable() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Upcoming Holidays</p>
+                <p className="text-sm font-medium text-muted-foreground">{t('timetable.upcomingHolidays')}</p>
                 <h3 className="text-2xl font-bold mt-2">{stats.upcomingHolidays}</h3>
-                <p className="text-xs text-orange-600 mt-1">Next 30 days</p>
+                <p className="text-xs text-orange-600 mt-1">{t('timetable.next30Days')}</p>
               </div>
               <div className="h-12 w-12 rounded-full bg-orange-500/10 flex items-center justify-center">
                 <Sun className="h-6 w-6 text-orange-500" />
@@ -141,11 +143,11 @@ export default function Timetable() {
         <TabsList className="grid w-full grid-cols-2 h-auto">
           <TabsTrigger value="timetable" className="flex items-center gap-2 py-3">
             <Clock className="h-4 w-4" />
-            Class Timetable
+            {t('timetable.tabTimetable')}
           </TabsTrigger>
           <TabsTrigger value="holidays" className="flex items-center gap-2 py-3">
             <Sun className="h-4 w-4" />
-            Holiday Management
+            {t('timetable.tabHolidays')}
           </TabsTrigger>
         </TabsList>
 

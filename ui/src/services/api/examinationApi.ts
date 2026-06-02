@@ -400,6 +400,296 @@ export const calculateGrade = async (percentage: number): Promise<GradeDto> => {
   return response.data;
 };
 
+// ========== HALL TICKETS ==========
+
+export interface HallTicket {
+  id: string;
+  examId: string;
+  studentId: string;
+  studentName: string;
+  hallTicketNumber: string;
+  rollNumber?: string;
+  class: string;
+  section?: string;
+  generatedAt: string;
+}
+
+export interface GenerateHallTicketsDto {
+  prefix?: string;
+}
+
+export const generateHallTickets = async (examId: string, data?: GenerateHallTicketsDto): Promise<HallTicket[]> => {
+  const response = await apiClient.post(`${BASE_PATH}/exams/${examId}/generate-hall-tickets`, data ?? {});
+  return response.data;
+};
+
+export const getHallTicket = async (examId: string, studentId: string): Promise<HallTicket> => {
+  const response = await apiClient.get(`${BASE_PATH}/exams/${examId}/hall-tickets/${studentId}`);
+  return response.data;
+};
+
+export const getHallTickets = async (examId: string): Promise<HallTicket[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/exams/${examId}/hall-tickets`);
+  return response.data;
+};
+
+// ========== PROMOTE EXAM STRUCTURE ==========
+
+export interface PromoteExamStructureDto {
+  sourceAcademicYear: string;
+  targetAcademicYear: string;
+  force?: boolean;
+}
+
+export const promoteExamStructure = async (data: PromoteExamStructureDto): Promise<{ promoted: number; skipped: number }> => {
+  const response = await apiClient.post(`${BASE_PATH}/exams/promote`, data);
+  return response.data;
+};
+
+// ========== CO-SCHOLASTIC ==========
+
+export type CoScholasticCategory = "co_scholastic_activities" | "attitudes_values" | "life_skills" | "discipline";
+
+export const CO_SCHOLASTIC_CATEGORY_LABELS: Record<string, string> = {
+  co_scholastic_activities: "Co-Scholastic Activities",
+  attitudes_values: "Attitudes & Values",
+  life_skills: "Life Skills",
+  discipline: "Discipline",
+};
+
+export interface CoScholasticArea {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  gradeScale: string;
+  category?: CoScholasticCategory;
+  applicableFromGrade?: number;
+  applicableToGrade?: number;
+  displayOrder: number;
+  isActive: boolean;
+}
+
+export interface CreateCoScholasticAreaDto {
+  name: string;
+  code?: string;
+  description?: string;
+  gradeScale?: string;
+  category?: string;
+  applicableFromGrade?: number;
+  applicableToGrade?: number;
+  displayOrder?: number;
+}
+
+export interface UpdateCoScholasticAreaDto {
+  name?: string;
+  code?: string;
+  description?: string;
+  gradeScale?: string;
+  category?: string;
+  applicableFromGrade?: number;
+  applicableToGrade?: number;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export interface CoScholasticAssessment {
+  id: string;
+  studentId: string;
+  coScholasticAreaId: string;
+  area: { id: string; name: string; code: string; gradeScale: string };
+  academicYear: string;
+  term: number;
+  grade: string;
+  remarks?: string;
+}
+
+/** Single row sent to POST /coscholastic/assessments (matches backend flat list format) */
+export interface SaveCoScholasticEntryDto {
+  studentId: string;
+  coScholasticAreaId: string;
+  academicYear: string;
+  term: number;
+  grade: string;
+  remarks?: string;
+  examId?: string;
+}
+
+/** Class-level grid response from GET /coscholastic/class/{classId} */
+export interface ClassCoScholasticGrid {
+  academicYear: string;
+  term: number;
+  areas: CoScholasticArea[];
+  students: {
+    studentId: string;
+    name: string;
+    rollNumber?: string;
+    grades: Record<string, { grade: string; remarks?: string }>;
+  }[];
+}
+
+export const getCoScholasticAreas = async (): Promise<CoScholasticArea[]> => {
+  const response = await apiClient.get(`${BASE_PATH}/coscholastic/areas`);
+  return response.data;
+};
+
+export const createCoScholasticArea = async (data: CreateCoScholasticAreaDto): Promise<CoScholasticArea> => {
+  const response = await apiClient.post(`${BASE_PATH}/coscholastic/areas`, data);
+  return response.data;
+};
+
+export const updateCoScholasticArea = async (id: string, data: UpdateCoScholasticAreaDto): Promise<CoScholasticArea> => {
+  const response = await apiClient.put(`${BASE_PATH}/coscholastic/areas/${id}`, data);
+  return response.data;
+};
+
+export const deleteCoScholasticArea = async (id: string): Promise<void> => {
+  await apiClient.delete(`${BASE_PATH}/coscholastic/areas/${id}`);
+};
+
+export const seedCoScholasticAreas = async (): Promise<{ created: number; skipped: number; message: string }> => {
+  const response = await apiClient.post(`${BASE_PATH}/coscholastic/areas/seed`);
+  return response.data;
+};
+
+export const getStudentCoScholastic = async (studentId: string, academicYear?: string, term?: number): Promise<CoScholasticAssessment[]> => {
+  const params = new URLSearchParams();
+  if (academicYear) params.append('academicYear', academicYear);
+  if (term !== undefined) params.append('term', term.toString());
+  const response = await apiClient.get(`${BASE_PATH}/coscholastic/students/${studentId}?${params.toString()}`);
+  return response.data;
+};
+
+export const getClassCoScholastic = async (classId: string, academicYear?: string, term?: number, sectionId?: string): Promise<ClassCoScholasticGrid> => {
+  const params = new URLSearchParams();
+  if (academicYear) params.append('academicYear', academicYear);
+  if (term !== undefined) params.append('term', term.toString());
+  if (sectionId) params.append('sectionId', sectionId);
+  const response = await apiClient.get(`${BASE_PATH}/coscholastic/class/${classId}?${params.toString()}`);
+  return response.data;
+};
+
+/** Save a flat list of co-scholastic entries (upsert). Used for class bulk entry. */
+export const saveCoScholasticAssessments = async (entries: SaveCoScholasticEntryDto[]): Promise<void> => {
+  await apiClient.post(`${BASE_PATH}/coscholastic/assessments`, entries);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CCE REPORT CARD — types + API calls
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CceExamSetupOption {
+  id: string;
+  name: string;
+  term: number;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+  examType?: string;
+}
+
+export interface CceAssessmentDetail {
+  marks: number;
+  maxMarks: number;
+  percentage: number;
+  isAbsent: boolean;
+}
+
+export interface CceSubjectReport {
+  subjectId: string;
+  subjectName: string;
+  assessments: Partial<Record<'FA1' | 'FA2' | 'SA1' | 'FA3' | 'FA4' | 'SA2', CceAssessmentDetail>>;
+  term1WeightedScore: number;
+  term2WeightedScore: number;
+  annualPercentage: number;
+  grade: string;
+  gradePoint: number;
+  isPass: boolean;
+}
+
+export interface CceCoScholasticReport {
+  areaId: string;
+  areaName: string;
+  category?: string;
+  gradeScale: string;
+  term1Grade?: string;
+  term2Grade?: string;
+  term1Remarks?: string;
+  term2Remarks?: string;
+}
+
+export interface CceStudentReport {
+  studentId: string;
+  studentName: string;
+  admissionNumber?: string;
+  rollNumber?: string;
+  subjects: CceSubjectReport[];
+  coScholastic: CceCoScholasticReport[];
+  overallGrade: string;
+  cgpa: number;
+  result: 'Pass' | 'Fail';
+}
+
+export interface CceClassReportDto {
+  classId: string;
+  className?: string;
+  sectionId?: string;
+  sectionName?: string;
+  academicYear: string;
+  generatedAt: string;
+  examMappings: Partial<Record<'FA1' | 'FA2' | 'SA1' | 'FA3' | 'FA4' | 'SA2', { id: string; name: string } | null>>;
+  students: CceStudentReport[];
+  passCount: number;
+  failCount: number;
+  avgCgpa: number;
+}
+
+// CBSE 9-point grading scale
+export interface CbseGradeInfo { label: string; grade: string; gradePoint: number; color: string; }
+export const CBSE_GRADE_SCALE: CbseGradeInfo[] = [
+  { label: '91–100', grade: 'A1', gradePoint: 10.0, color: 'text-green-700 bg-green-50' },
+  { label: '81–90',  grade: 'A2', gradePoint: 9.0,  color: 'text-green-700 bg-green-50' },
+  { label: '71–80',  grade: 'B1', gradePoint: 8.0,  color: 'text-blue-700 bg-blue-50' },
+  { label: '61–70',  grade: 'B2', gradePoint: 7.0,  color: 'text-blue-700 bg-blue-50' },
+  { label: '51–60',  grade: 'C1', gradePoint: 6.0,  color: 'text-yellow-700 bg-yellow-50' },
+  { label: '41–50',  grade: 'C2', gradePoint: 5.0,  color: 'text-yellow-700 bg-yellow-50' },
+  { label: '33–40',  grade: 'D',  gradePoint: 4.0,  color: 'text-orange-700 bg-orange-50' },
+  { label: '21–32',  grade: 'E1', gradePoint: 0,    color: 'text-red-700 bg-red-50' },
+  { label: '0–20',   grade: 'E2', gradePoint: 0,    color: 'text-red-700 bg-red-50' },
+];
+export const getCbseGradeColor = (grade: string) =>
+  CBSE_GRADE_SCALE.find(g => g.grade === grade)?.color ?? '';
+
+export const getCceExamSetups = async (
+  classId: string,
+  academicYear?: string,
+  sectionId?: string,
+): Promise<CceExamSetupOption[]> => {
+  const res = await apiClient.get('/examinations/cce/exam-setups', {
+    params: {
+      classId,
+      ...(academicYear ? { academicYear } : {}),
+      ...(sectionId    ? { sectionId }    : {}),
+    },
+  });
+  return res.data;
+};
+
+export const getCceClassReport = async (params: {
+  classId: string;
+  academicYear?: string;
+  sectionId?: string;
+  fa1ExamId?: string;
+  fa2ExamId?: string;
+  sa1ExamId?: string;
+  fa3ExamId?: string;
+  fa4ExamId?: string;
+  sa2ExamId?: string;
+}): Promise<CceClassReportDto> => {
+  const res = await apiClient.get('/examinations/cce/class-report', { params });
+  return res.data;
+};
+
 // Export all functions as a single object for convenience
 export const examinationApi = {
   getExams,
@@ -415,6 +705,22 @@ export const examinationApi = {
   generateReportCard,
   getExamStats,
   calculateGrade,
+  // New
+  generateHallTickets,
+  getHallTicket,
+  getHallTickets,
+  promoteExamStructure,
+  getCoScholasticAreas,
+  createCoScholasticArea,
+  updateCoScholasticArea,
+  deleteCoScholasticArea,
+  seedCoScholasticAreas,
+  getStudentCoScholastic,
+  getClassCoScholastic,
+  saveCoScholasticAssessments,
+  // CCE Report Cards
+  getCceExamSetups,
+  getCceClassReport,
 };
 
 export default examinationApi;

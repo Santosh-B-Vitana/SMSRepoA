@@ -51,9 +51,49 @@ export interface SchoolBoardConfigResponse {
   academicYear?: string;
   boardName: string;
   boardCode: string;
+  boardLevel: string;
   isActive: boolean;
+  isDefault: boolean;
+  // Effective values (custom overrides take precedence over board defaults)
+  effectiveOverallPassingPercentage: number;
+  effectiveTheoryPassingPercentage: number;
+  effectivePracticalPassingPercentage: number;
   effectiveGradingScale: GradeScaleEntry[];
   effectiveExamStructure: ExamStructureEntry[];
+  // Raw override values (null = using board default)
+  customOverallPassingPercentage?: number;
+  customTheoryPassingPercentage?: number;
+  customPracticalPassingPercentage?: number;
+  hasCustomGradingScale: boolean;
+  hasCustomExamStructure: boolean;
+  board: BoardConfigurationResponse;
+}
+
+export interface SchoolBoardListResponse {
+  boards: SchoolBoardConfigResponse[];
+  total: number;
+}
+
+export interface AddSchoolBoardRequest {
+  boardConfigurationId: string;
+  setAsDefault?: boolean;
+}
+
+/**
+ * Update custom overrides on an existing school-board config.
+ * Set a field to `null` (or omit it) to revert it to the board default.
+ */
+export interface UpdateSchoolBoardOverridesRequest {
+  /** Override overall passing %. null = revert to board default */
+  customOverallPassingPercentage?: number | null;
+  /** Override theory component passing %. null = revert to board default */
+  customTheoryPassingPercentage?: number | null;
+  /** Override practical component passing %. null = revert to board default */
+  customPracticalPassingPercentage?: number | null;
+  /** Override grading scale entries. Empty array / null = revert to board default */
+  customGradingScale?: GradeScaleEntry[] | null;
+  /** Override exam structure. null = revert to board default */
+  customExamStructure?: ExamStructureEntry[] | null;
 }
 
 export interface SetSchoolBoardConfigRequest {
@@ -117,6 +157,44 @@ export const boardApi = {
   // Get effective exam structure for school
   async getExamStructure(): Promise<ExamStructureEntry[]> {
     const response = await apiClient.get('/board/exam-structure');
+    return response.data;
+  },
+
+  // ── Multi-board school config ───────────────────────────────────────────
+
+  // List all boards configured for this school
+  async getSchoolBoards(): Promise<SchoolBoardListResponse> {
+    const response = await apiClient.get('/board/school-boards');
+    return response.data;
+  },
+
+  // Add a board to this school's configured boards
+  async addSchoolBoard(request: AddSchoolBoardRequest): Promise<SchoolBoardConfigResponse> {
+    const response = await apiClient.post('/board/school-boards', request);
+    return response.data;
+  },
+
+  // Remove a board from this school's configured boards
+  async removeSchoolBoard(id: string): Promise<void> {
+    await apiClient.delete(`/board/school-boards/${id}`);
+  },
+
+  // Set a board as the default for this school
+  async setDefaultBoard(id: string): Promise<SchoolBoardConfigResponse> {
+    const response = await apiClient.patch(`/board/school-boards/${id}/set-default`);
+    return response.data;
+  },
+
+  /**
+   * Update custom overrides (passing %, grading scale, exam structure) on an existing
+   * school-board config without replacing or recreating it.
+   * Send null for any field to revert it to the board default.
+   */
+  async updateSchoolBoardOverrides(
+    id: string,
+    request: UpdateSchoolBoardOverridesRequest
+  ): Promise<SchoolBoardConfigResponse> {
+    const response = await apiClient.patch(`/board/school-boards/${id}/overrides`, request);
     return response.data;
   }
 };

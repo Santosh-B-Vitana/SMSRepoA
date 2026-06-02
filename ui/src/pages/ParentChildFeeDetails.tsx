@@ -4,7 +4,7 @@ import {
   BadgeIndianRupee, ArrowLeft, Loader2, AlertCircle, CheckCircle,
   Clock, Receipt, Download, CreditCard, GraduationCap, CalendarDays,
   ChevronDown, ChevronUp, BookOpen, FlaskConical, Trophy, Bus, Home,
-  Shirt, BookMarked, Wrench, HelpCircle, FileText
+  Shirt, BookMarked, Wrench, HelpCircle, FileText, CalendarClock, Tag
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { studentApi, type StudentBasic } from "@/services/api/studentApi";
-import { getFeeRecords, getFeeStructureById, type FeeRecord, type FeeStructure, type PaymentTransaction } from "@/services/api/feeApi";
+import { getFeeRecords, getFeeStructureById, getFeeRecordById, type FeeRecord, type FeeStructure, type PaymentTransaction, type TermSchedule } from "@/services/api/feeApi";
 import { toast } from "sonner";
 
 const FEE_HEAD_CONFIG: { key: string; label: string; icon: React.ReactNode; category: string }[] = [
@@ -36,6 +36,7 @@ export default function ParentChildFeeDetails() {
   const navigate = useNavigate();
   const [child, setChild] = useState<StudentBasic | null>(null);
   const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
+  const [detailedRecords, setDetailedRecords] = useState<Record<string, FeeRecord>>({});
   const [feeStructures, setFeeStructures] = useState<Record<string, FeeStructure>>({});
   const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,17 @@ export default function ParentChildFeeDetails() {
       const records = feeData.feeRecords || feeData.items || [];
       setFeeRecords(records);
 
+      // Fetch each record individually to get transport/hostel module fees
+      const detailMap: Record<string, FeeRecord> = {};
+      await Promise.all(
+        records.map(async (r: FeeRecord) => {
+          try {
+            detailMap[r.id] = await getFeeRecordById(r.id);
+          } catch { detailMap[r.id] = r; }
+        })
+      );
+      setDetailedRecords(detailMap);
+
       // Load fee structures for each record to show detailed breakdown
       const structureIds = [...new Set(records.map(r => r.feeStructureId).filter(Boolean))] as string[];
       const structureMap: Record<string, FeeStructure> = {};
@@ -74,9 +86,37 @@ export default function ParentChildFeeDetails() {
     }
   };
 
-  const totalAmount = feeRecords.reduce((s, r) => s + r.totalAmount, 0);
+  // Helper: compute the authoritative fee sum for a record from the CURRENT structure fee heads
+  // (with any saved overrides applied). Fallback to stored totalAmount when no structure is linked.
+  const getComponentSum = (r: FeeRecord): number => {
+    const det = detailedRecords[r.id] ?? r;
+    const structure = r.feeStructureId ? feeStructures[r.feeStructureId] : null;
+    if (!structure) return det.totalAmount ?? 0;
+    const overrides: Record<string, number> = (() => {
+      if (!det.feeHeadOverrides) return {};
+      try { return JSON.parse(det.feeHeadOverrides) as Record<string, number>; } catch { return {}; }
+    })();
+    const sum = FEE_HEAD_CONFIG.reduce((s, h) => {
+      const effAmt = overrides[h.key] !== undefined ? overrides[h.key] : (structure as any)[h.key] as number;
+      return effAmt > 0 ? s + effAmt : s;
+    }, 0);
+    return sum || (det.totalAmount ?? 0); // fallback if structure has no fee heads set
+  };
+
+  // Use structure-based component sums for all aggregate totals so they match admin view
+  const totalAmount = feeRecords.reduce((s, r) => {
+    const det = detailedRecords[r.id] ?? r;
+    const compSum = getComponentSum(r);
+    return s + (compSum - (det.discountAmount || 0)) + (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+  }, 0);
   const paidAmount = feeRecords.reduce((s, r) => s + r.paidAmount, 0);
-  const pendingAmount = totalAmount - paidAmount;
+  const totalPending = feeRecords.reduce((s, r) => {
+    const det = detailedRecords[r.id] ?? r;
+    const compSum = getComponentSum(r);
+    const moduleTotal = (det.transportFee ?? 0) + (det.hostelFee ?? 0);
+    return s + Math.max(0, compSum - (det.discountAmount || 0) + (det.lateFeeAmount ?? 0) + moduleTotal - (det.paidAmount ?? 0));
+  }, 0);
+  const pendingAmount = totalPending;
   const discountAmount = feeRecords.reduce((s, r) => s + (r.discountAmount || 0), 0);
   const lateFeeAmount = feeRecords.reduce((s, r) => s + (r.lateFeeAmount || 0), 0);
 
@@ -117,7 +157,7 @@ export default function ParentChildFeeDetails() {
             </p>
           )}
         </div>
-        {pendingAmount > 0 && (
+        {(pendingAmount > 0 || totalPending > 0) && (
           <Button onClick={() => navigate(`/parent-fees/${childId}/pay`)}>
             <CreditCard className="h-4 w-4 mr-1.5" />
             Pay Now
@@ -129,7 +169,7 @@ export default function ParentChildFeeDetails() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <SummaryCard label="Total Fee" value={totalAmount} color="blue" icon={<BadgeIndianRupee className="h-4 w-4" />} />
         <SummaryCard label="Paid" value={paidAmount} color="green" icon={<CheckCircle className="h-4 w-4" />} />
-        <SummaryCard label="Pending" value={pendingAmount} color={pendingAmount > 0 ? "amber" : "green"} icon={<Clock className="h-4 w-4" />} />
+        <SummaryCard label="Pending" value={totalPending} color={totalPending > 0 ? "amber" : "green"} icon={<Clock className="h-4 w-4" />} />
         <SummaryCard label="Discount" value={discountAmount} color="purple" icon={<Receipt className="h-4 w-4" />} />
         <SummaryCard label="Late Fee" value={lateFeeAmount} color={lateFeeAmount > 0 ? "red" : "green"} icon={<CalendarDays className="h-4 w-4" />} />
       </div>
@@ -172,14 +212,88 @@ export default function ParentChildFeeDetails() {
             <div className="space-y-4">
               {feeRecords.map(record => {
                 const structure = record.feeStructureId ? feeStructures[record.feeStructureId] : null;
+                const det = detailedRecords[record.id] ?? record;
+                const transportFee = det.transportFee ?? 0;
+                const hostelFee = det.hostelFee ?? 0;
+                const moduleTotal = transportFee + hostelFee;
+                // Net fee = structure fee heads (with overrides) minus discount + module fees.
+                // This function mirrors the admin view: effectiveTotal always equals what
+                // the fee head table sums to, never the stale stored totalAmount.
+                const computeEffectiveTotals = () => {
+                  const ov: Record<string, number> = (() => {
+                    if (!det.feeHeadOverrides) return {};
+                    try { return JSON.parse(det.feeHeadOverrides) as Record<string, number>; } catch { return {}; }
+                  })();
+                  const cs = structure
+                    ? FEE_HEAD_CONFIG.reduce((s, h) => {
+                        const effAmt = ov[h.key] !== undefined ? ov[h.key] : (structure as any)[h.key] as number;
+                        return effAmt > 0 ? s + effAmt : s;
+                      }, 0) || (det.totalAmount ?? 0)
+                    : (det.totalAmount ?? 0);
+                  const eff = (cs - (det.discountAmount || 0)) + moduleTotal;
+                  const pend = Math.max(0, cs - (det.discountAmount || 0) + (det.lateFeeAmount ?? 0) + moduleTotal - (det.paidAmount ?? 0));
+                  return { cs, eff, pend };
+                };
+                const { cs: cardComponentSum, eff: effectiveTotal, pend: effectivePending } = computeEffectiveTotals();
                 const isExpanded = expandedRecord === record.id;
+
+                // Parse per-student fee head overrides (e.g. library fee ₹1500→₹1000)
+                const overrides: Record<string, number> = (() => {
+                  if (!det.feeHeadOverrides) return {};
+                  try { return JSON.parse(det.feeHeadOverrides) as Record<string, number>; } catch { return {}; }
+                })();
+                const hasOverrides = Object.keys(overrides).length > 0;
+                // Total saving from fee head adjustments
+                const overrideSaving = structure
+                  ? Object.entries(overrides).reduce((s, [key, overrideAmt]) => {
+                      const orig = (structure as any)[key] as number ?? 0;
+                      return s + Math.max(0, orig - overrideAmt);
+                    }, 0)
+                  : 0;
+
                 const feeHeads = structure
-                  ? FEE_HEAD_CONFIG.filter(h => (structure as any)[h.key] > 0)
+                  ? FEE_HEAD_CONFIG.filter(h => {
+                      const effAmt = overrides[h.key] !== undefined ? overrides[h.key] : (structure as any)[h.key] as number;
+                      return effAmt > 0;
+                    })
                   : [];
+                // componentSum uses effective (overridden) amounts so percentages are correct
+                const componentSum = feeHeads.reduce((s, h) => {
+                  const effAmt = overrides[h.key] !== undefined ? overrides[h.key] : (structure as any)[h.key] as number;
+                  return s + effAmt;
+                }, 0);
 
                 return (
-                <Card key={record.id} className="overflow-hidden">
+                <Card key={record.id} className={`overflow-hidden ${record.academicYear && record.academicYear < getCurrentAcademicYear() ? "border-orange-200" : ""}`}>
                   <CardContent className="p-5">
+                    {record.academicYear && record.academicYear < getCurrentAcademicYear() && (
+                      <div className="flex items-center gap-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5 mb-3">
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                        <span><strong>Carry-forward balance</strong> from {record.academicYear} — this amount was outstanding from the previous academic year.</span>
+                      </div>
+                    )}
+                    {/* Savings / Concessions applied banner */}
+                    {(hasOverrides || record.discountAmount > 0) && (
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-3">
+                        <div className="flex items-center gap-1.5 font-semibold">
+                          <Tag className="h-3.5 w-3.5 shrink-0" />
+                          Savings applied
+                        </div>
+                        {hasOverrides && overrideSaving > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-green-100 border border-green-200">
+                            Fee adjustments: - {"\u20B9"}{overrideSaving.toLocaleString("en-IN")}
+                          </span>
+                        )}
+                        {record.discountAmount > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-green-100 border border-green-200">
+                            Concession: - {"\u20B9"}{record.discountAmount.toLocaleString("en-IN")}
+                          </span>
+                        )}
+                        <span className="text-green-600 ml-auto font-semibold">
+                          Total saved: {"\u20B9"}{(overrideSaving + record.discountAmount).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="font-semibold">{record.feeStructureName || "Fee Record"}</h3>
@@ -194,7 +308,7 @@ export default function ParentChildFeeDetails() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <p className="text-muted-foreground">Total</p>
-                        <p className="font-semibold">{"\u20B9"}{record.totalAmount.toLocaleString("en-IN")}</p>
+                        <p className="font-semibold">{"\u20B9"}{effectiveTotal.toLocaleString("en-IN")}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Paid</p>
@@ -202,8 +316,8 @@ export default function ParentChildFeeDetails() {
                       </div>
                       <div>
                         <p className="text-muted-foreground">Pending</p>
-                        <p className={`font-semibold ${record.pendingAmount > 0 ? "text-amber-600" : "text-green-600"}`}>
-                          {"\u20B9"}{record.pendingAmount.toLocaleString("en-IN")}
+                        <p className={`font-semibold ${effectivePending > 0 ? "text-amber-600" : "text-green-600"}`}>
+                          {"\u20B9"}{effectivePending.toLocaleString("en-IN")}
                         </p>
                       </div>
                       <div>
@@ -216,7 +330,111 @@ export default function ParentChildFeeDetails() {
                       </div>
                     </div>
                     {record.totalAmount > 0 && (
-                      <Progress value={(record.paidAmount / record.totalAmount) * 100} className="h-1.5 mt-3" />
+                      <Progress value={(record.paidAmount / effectiveTotal) * 100} className="h-1.5 mt-3" />
+                    )}
+
+                    {/* Term Schedule Timeline */}
+                    {(() => {
+                      const terms = parseTermSchedule(structure);
+                      if (terms.length === 0) return null;
+                      // Scale term amounts to reflect applied concession (paid terms keep gross; remaining scale proportionally)
+                      const scaledTerms = scaleTermSchedule(terms, cardComponentSum || (det.totalAmount ?? 0), det.discountAmount || 0, record.paidAmount);
+                      const statuses = getTermStatuses(scaledTerms, record.paidAmount);
+                      let cumulative = 0;
+                      return (
+                        <div className="mt-3 pt-3 border-t">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Term Schedule</p>
+                          <div className="space-y-1.5">
+                            {scaledTerms.map((term, i) => {
+                              const prev = cumulative;
+                              cumulative += term.amount;
+                              const st = statuses[i];
+                              const label = term.name || `Term ${term.termNumber}`;
+                              const dueFormatted = new Date(term.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+                              const fromFormatted = new Date(term.fromDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                              const toFormatted = new Date(term.toDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+                              // For prepay: show how much was advanced and how much remains
+                              const prepaidIntoTerm = st === "prepay" ? record.paidAmount - prev : 0;
+                              const remainingForTerm = st === "prepay" ? cumulative - record.paidAmount : term.amount;
+                              return (
+                                <div key={i} className={`flex items-center gap-3 text-sm px-3 py-2 rounded-lg border ${
+                                  st === "paid"    ? "bg-green-50 border-green-200" :
+                                  st === "prepay"  ? "bg-blue-50 border-blue-200" :
+                                  st === "partial" ? "bg-amber-50 border-amber-200" :
+                                  st === "due"     ? "bg-red-50 border-red-200" :
+                                  "bg-muted/40 border-muted"
+                                }`}>
+                                  <div className={`shrink-0 ${
+                                    st === "paid"    ? "text-green-600" :
+                                    st === "prepay"  ? "text-blue-600" :
+                                    st === "partial" ? "text-amber-600" :
+                                    st === "due"     ? "text-red-600" :
+                                    "text-muted-foreground"
+                                  }`}>
+                                    {st === "paid" ? <CheckCircle className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-medium">{label}</span>
+                                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide ${
+                                        st === "paid"    ? "bg-green-100 text-green-700" :
+                                        st === "prepay"  ? "bg-blue-100 text-blue-700" :
+                                        st === "partial" ? "bg-amber-100 text-amber-700" :
+                                        st === "due"     ? "bg-red-100 text-red-700" :
+                                        "bg-muted text-muted-foreground"
+                                      }`}>
+                                        {st === "paid" ? "Paid" : st === "prepay" ? "Prepaid" : st === "partial" ? "Partial" : st === "due" ? "Due Now" : "Upcoming"}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {fromFormatted} – {toFormatted} · Due: {dueFormatted}
+                                    </p>
+                                    {st === "prepay" && (
+                                      <p className="text-xs text-blue-600 mt-0.5">
+                                        {"\u20B9"}{prepaidIntoTerm.toLocaleString("en-IN")} advance paid · {"\u20B9"}{remainingForTerm.toLocaleString("en-IN")} remaining
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-sm font-semibold tabular-nums">{"\u20B9"}{term.amount.toLocaleString("en-IN")}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Transport & Hostel Module Fees */}
+                    {moduleTotal > 0 && (
+                      <div className="mt-3 pt-3 border-t rounded-lg bg-blue-50/60 border border-blue-100 p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 mb-2">Module Fees (Pro-rata)</p>
+                        {transportFee > 0 && (
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="flex items-center gap-1.5 text-blue-800">
+                              <Bus className="h-3.5 w-3.5" />
+                              Transport Fee
+                              {det.transportRoute && <span className="text-[11px] text-blue-500">({det.transportRoute})</span>}
+                            </span>
+                            <span className="font-semibold tabular-nums">{"\u20B9"}{transportFee.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+                        {hostelFee > 0 && (
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="flex items-center gap-1.5 text-blue-800">
+                              <Home className="h-3.5 w-3.5" />
+                              Hostel Fee
+                              {det.hostelRoom && <span className="text-[11px] text-blue-500">(Room: {det.hostelRoom})</span>}
+                            </span>
+                            <span className="font-semibold tabular-nums">{"\u20B9"}{hostelFee.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between text-sm font-bold pt-1.5 border-t border-blue-200 mt-1">
+                          <span className="text-blue-700">Module Total</span>
+                          <span className="text-blue-800">{"\u20B9"}{moduleTotal.toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
                     )}
 
                     {/* Fee Head Breakdown Toggle */}
@@ -241,15 +459,28 @@ export default function ParentChildFeeDetails() {
                                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{cat}</p>
                                   <div className="space-y-1">
                                     {catHeads.map(h => {
-                                      const amt = (structure as any)[h.key] as number;
-                                      const pct = structure.totalAmount > 0 ? (amt / structure.totalAmount) * 100 : 0;
+                                      const origAmt = (structure as any)[h.key] as number;
+                                      const overrideAmt = overrides[h.key];
+                                      const effectiveAmt = overrideAmt !== undefined ? overrideAmt : origAmt;
+                                      const pct = componentSum > 0 ? (effectiveAmt / componentSum) * 100 : 0;
+                                      const isAdjusted = overrideAmt !== undefined && overrideAmt !== origAmt;
                                       return (
-                                        <div key={h.key} className="flex items-center gap-2 text-sm">
+                                        <div key={h.key} className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 ${isAdjusted ? "bg-green-50/70" : ""}`}>
                                           <span className="text-muted-foreground shrink-0">{h.icon}</span>
                                           <span className="flex-1">{h.label}</span>
+                                          {isAdjusted && (
+                                            <span className="text-[10px] font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full border border-green-200">adjusted</span>
+                                          )}
                                           <span className="text-xs text-muted-foreground">{pct.toFixed(0)}%</span>
                                           <span className="font-semibold tabular-nums min-w-[80px] text-right">
-                                            {"\u20B9"}{amt.toLocaleString("en-IN")}
+                                            {isAdjusted ? (
+                                              <span>
+                                                <span className="line-through text-muted-foreground text-xs mr-1">{"\u20B9"}{origAmt.toLocaleString("en-IN")}</span>
+                                                <span className="text-green-700">{"\u20B9"}{effectiveAmt.toLocaleString("en-IN")}</span>
+                                              </span>
+                                            ) : (
+                                              `\u20B9${effectiveAmt.toLocaleString("en-IN")}`
+                                            )}
                                           </span>
                                         </div>
                                       );
@@ -259,10 +490,32 @@ export default function ParentChildFeeDetails() {
                               );
                             })}
 
-                            {/* Total line */}
+                            {/* Sub-total of listed components */}
+                            <div className="flex items-center justify-between pt-2 border-t text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                Listed components sub-total
+                                {hasOverrides && (
+                                  <span className="text-[10px] text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full border border-green-200 font-medium">adjusted</span>
+                                )}
+                              </span>
+                              <span>{"\u20B9"}{componentSum.toLocaleString("en-IN")}</span>
+                            </div>
+                            {/* Fee structure total (always use componentSum — the authoritative structure-based value) */}
+                            <div className="flex items-center justify-between text-sm text-muted-foreground font-medium">
+                              <span>Fee Structure Total</span>
+                              <span>{"\u20B9"}{componentSum.toLocaleString("en-IN")}</span>
+                            </div>
+                            {/* Module fees */}
+                            {moduleTotal > 0 && (
+                              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                                <span>Module Fees (pro-rata)</span>
+                                <span>+ {"\u20B9"}{moduleTotal.toLocaleString("en-IN")}</span>
+                              </div>
+                            )}
+                            {/* Grand total */}
                             <div className="flex items-center justify-between pt-2 border-t text-sm font-bold">
-                              <span>Total Fee</span>
-                              <span>{"\u20B9"}{structure.totalAmount.toLocaleString("en-IN")}</span>
+                              <span>Grand Total</span>
+                              <span>{"\u20B9"}{effectiveTotal.toLocaleString("en-IN")}</span>
                             </div>
 
                             {/* Discount & Late fee info */}
@@ -270,7 +523,7 @@ export default function ParentChildFeeDetails() {
                               <div className="space-y-1 text-sm">
                                 {record.discountAmount > 0 && (
                                   <div className="flex items-center justify-between text-green-600">
-                                    <span>Discount Applied</span>
+                                    <span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" />Concession applied</span>
                                     <span>- {"\u20B9"}{record.discountAmount.toLocaleString("en-IN")}</span>
                                   </div>
                                 )}
@@ -367,4 +620,72 @@ function SummaryCard({ label, value, color, icon }: { label: string; value: numb
       </CardContent>
     </Card>
   );
+}
+
+// ── Term helpers ────────────────────────────────────────────────────────────
+
+function getCurrentAcademicYear(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  return (now.getMonth() + 1) >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+}
+
+function parseTermSchedule(structure: FeeStructure | null | undefined): TermSchedule[] {
+  if (!structure?.installmentDueDates) return [];
+  try {
+    const parsed = JSON.parse(structure.installmentDueDates);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object") {
+      return parsed as TermSchedule[];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+type TermStatus = "paid" | "prepay" | "partial" | "due" | "upcoming";
+
+function getTermStatuses(terms: TermSchedule[], paidAmount: number): TermStatus[] {
+  let cumulative = 0;
+  return terms.map(term => {
+    const prev = cumulative;
+    cumulative += term.amount;
+    if (paidAmount >= cumulative) return "paid";
+    if (paidAmount > prev) {
+      return prev > 0 ? "prepay" : "partial";
+    }
+    const now = new Date();
+    const due = new Date(term.dueDate);
+    return due <= now ? "due" : "upcoming";
+  });
+}
+
+/**
+ * Scale installment term amounts to reflect an applied concession.
+ * Paid terms keep their gross amount (receipts were issued at that price).
+ * Only remaining (partial/upcoming) terms are scaled proportionally.
+ */
+function scaleTermSchedule(
+  terms: TermSchedule[],
+  totalAmount: number,
+  discountAmount: number,
+  paidAmount: number,
+): TermSchedule[] {
+  if (!discountAmount || !terms.length) return terms;
+  const netTotal = Math.max(0, totalAmount - discountAmount);
+  const netRemaining = Math.max(0, netTotal - paidAmount);
+  let cumulativeGross = 0;
+  const grossInfo = terms.map(term => {
+    const prev = cumulativeGross;
+    cumulativeGross += term.amount;
+    const grossPaid = Math.max(0, Math.min(term.amount, paidAmount - prev));
+    const grossRemaining = term.amount - grossPaid;
+    return { grossPaid, grossRemaining, isPaid: grossRemaining <= 0 };
+  });
+  const grossRemainingTotal = grossInfo.reduce((s, g) => s + g.grossRemaining, 0);
+  if (grossRemainingTotal <= 0) return terms;
+  const scaleFactor = netRemaining / grossRemainingTotal;
+  return terms.map((term, i) => {
+    const g = grossInfo[i];
+    if (g.isPaid) return term; // preserve gross — receipt issued at this price
+    return { ...term, amount: g.grossPaid + Math.round(g.grossRemaining * scaleFactor) };
+  });
 }

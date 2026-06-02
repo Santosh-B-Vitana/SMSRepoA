@@ -457,4 +457,370 @@ namespace SmsApi.Models.DTOs
         public int Rank { get; set; }
     }
 
+    // ========== EXAM SETUP DTOs ==========
+
+    /// <summary>List-view DTO for ExamSetup.</summary>
+    public class ExamSetupBasicDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string ExamType { get; set; } = string.Empty;
+        public bool IsCustomType { get; set; }
+        public string? CustomTypeName { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public Guid ClassId { get; set; }
+        public string? SectionName { get; set; }
+        public Guid? SectionId { get; set; }
+        public string? BoardName { get; set; }
+        public Guid? BoardConfigurationId { get; set; }
+        public string AcademicYear { get; set; } = string.Empty;
+        public int Term { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public int SubjectCount { get; set; }
+        public int MarksEnteredCount { get; set; }
+        public DateTime CreatedAt { get; set; }
+
+        /// <summary>
+        /// True when the requesting staff member is the class teacher for this exam's class.
+        /// Only set when returned via the staff-scoped endpoint (GetExamSetupsForStaffAsync).
+        /// </summary>
+        public bool IsClassTeacherForThisClass { get; set; }
+
+        /// <summary>
+        /// The subject IDs within this exam that are explicitly assigned to the requesting staff.
+        /// Empty when <see cref="IsClassTeacherForThisClass"/> is true (they can access all subjects).
+        /// Only set when returned via the staff-scoped endpoint (GetExamSetupsForStaffAsync).
+        /// </summary>
+        public List<Guid> MyAssignedSubjectIds { get; set; } = new();
+    }
+
+    /// <summary>Detail DTO for ExamSetup with subjects list.</summary>
+    public class ExamSetupDetailDto : ExamSetupBasicDto
+    {
+        public List<ExamSetupSubjectDto> Subjects { get; set; } = new();
+        public DateTime? PublishedAt { get; set; }
+
+        // ── Board grading context ─────────────────────────────────────────
+        /// <summary>Board code (e.g. "CBSE", "IB", "STATE-MH").</summary>
+        public string? BoardCode { get; set; }
+        /// <summary>Grading system label (e.g. "A1-E2 10-point scale").</summary>
+        public string? GradingSystem { get; set; }
+        /// <summary>Overall pass percentage for this exam's board (school override applied).</summary>
+        public decimal? OverallPassingPercentage { get; set; }
+        /// <summary>
+        /// Ordered grading scale for rendering the grade key on exam setup pages and mark entry sheets.
+        /// Always populated regardless of exam status.
+        /// </summary>
+        public List<GradeScaleEntryDto> EffectiveGradingScale { get; set; } = new();
+    }
+
+    /// <summary>Per-subject slot within an ExamSetup.</summary>
+    public class ExamSetupSubjectDto
+    {
+        public Guid Id { get; set; }
+        public Guid SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
+        public string? SubjectCode { get; set; }
+        public bool IsElective { get; set; }
+        public decimal MaxTheoryMarks { get; set; }
+        public decimal MaxPracticalMarks { get; set; }
+        public decimal MaxInternalMarks { get; set; }
+        public decimal MaxTotalMarks { get; set; }
+        public decimal PassingMarks { get; set; }
+        public Guid? AssignedStaffId { get; set; }
+        public string? AssignedStaffName { get; set; }
+        public DateTime? ExamDate { get; set; }
+        public string? StartTime { get; set; }
+        public string? EndTime { get; set; }
+        public string? Venue { get; set; }
+        public int SubjectOrder { get; set; }
+        public string Status { get; set; } = "pending";
+        public int StudentsEnrolled { get; set; }
+        public int MarksEntered { get; set; }
+    }
+
+    /// <summary>Create/update payload for ExamSetup (Step 1 of wizard).</summary>
+    public class CreateExamSetupDto
+    {
+        public Guid? ExamTypeId { get; set; }
+
+        public bool IsCustomType { get; set; } = false;
+
+        [MaxLength(100)]
+        public string? CustomTypeName { get; set; }
+
+        [Required]
+        public Guid ClassId { get; set; }
+
+        public Guid? SectionId { get; set; }
+
+        /// <summary>Explicitly chosen board (required when class has multiple boards).</summary>
+        public Guid? BoardConfigurationId { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        public int Term { get; set; } = 0;
+
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+
+        /// <summary>Subjects to include (Step 3 of wizard).</summary>
+        [Required]
+        public List<CreateExamSetupSubjectDto> Subjects { get; set; } = new();
+    }
+
+    /// <summary>Per-subject payload when creating an ExamSetup.</summary>
+    public class CreateExamSetupSubjectDto
+    {
+        [Required]
+        public Guid SubjectId { get; set; }
+
+        public bool IsElective { get; set; } = false;
+
+        [Range(0, 1000)]
+        public decimal MaxTheoryMarks { get; set; } = 0;
+
+        [Range(0, 1000)]
+        public decimal MaxPracticalMarks { get; set; } = 0;
+
+        [Range(0, 1000)]
+        public decimal MaxInternalMarks { get; set; } = 0;
+
+        [Range(0, 1000)]
+        public decimal PassingMarks { get; set; } = 35;
+
+        public Guid? AssignedStaffId { get; set; }
+
+        public DateTime? ExamDate { get; set; }
+
+        [MaxLength(10)]
+        public string? StartTime { get; set; }
+
+        [MaxLength(10)]
+        public string? EndTime { get; set; }
+
+        [MaxLength(100)]
+        public string? Venue { get; set; }
+
+        public int SubjectOrder { get; set; } = 0;
+    }
+
+    // ========== MARKS ENTRY DTOs ==========
+
+    /// <summary>Sheet returned to the marks-entry UI: one row per enrolled student.</summary>
+    public class MarksEntrySheetDto
+    {
+        public Guid ExamSetupId { get; set; }
+        public Guid ExamSetupSubjectId { get; set; }
+        public string ExamName { get; set; } = string.Empty;
+        public string SubjectName { get; set; } = string.Empty;
+        public string? SubjectCode { get; set; }
+        public decimal MaxTheoryMarks { get; set; }
+        public decimal MaxPracticalMarks { get; set; }
+        public decimal MaxInternalMarks { get; set; }
+        public decimal MaxTotalMarks { get; set; }
+        public decimal PassingMarks { get; set; }
+        public bool IsLocked { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public List<StudentMarksRowDto> Rows { get; set; } = new();
+    }
+
+    public class StudentMarksRowDto
+    {
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? RollNumber { get; set; }
+        public string? AdmissionNumber { get; set; }
+        public Guid? MarksEntryId { get; set; }
+        public decimal? TheoryMarks { get; set; }
+        public decimal? PracticalMarks { get; set; }
+        public decimal? InternalMarks { get; set; }
+        public decimal? ObtainedMarks { get; set; }
+        public bool IsAbsent { get; set; }
+        public string? Grade { get; set; }
+        public decimal? Percentage { get; set; }
+        public bool IsPass { get; set; }
+        public string? Remarks { get; set; }
+        public string Status { get; set; } = "draft";
+    }
+
+    /// <summary>Bulk save marks for all students in a subject.</summary>
+    public class BulkMarksEntryDto
+    {
+        [Required]
+        public Guid ExamSetupId { get; set; }
+
+        [Required]
+        public Guid ExamSetupSubjectId { get; set; }
+
+        [Required]
+        public List<SingleStudentMarksDto> Entries { get; set; } = new();
+    }
+
+    public class SingleStudentMarksDto
+    {
+        [Required]
+        public Guid StudentId { get; set; }
+
+        [Range(0, 1000)]
+        public decimal? TheoryMarks { get; set; }
+
+        [Range(0, 1000)]
+        public decimal? PracticalMarks { get; set; }
+
+        [Range(0, 1000)]
+        public decimal? InternalMarks { get; set; }
+
+        public bool IsAbsent { get; set; } = false;
+
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+    }
+
+    // ========== HELPER DTOs (for wizard dropdowns) ==========
+
+    /// <summary>Board info returned when a class has multiple boards configured.</summary>
+    public class ClassBoardDto
+    {
+        public Guid BoardConfigurationId { get; set; }
+        public string BoardName { get; set; } = string.Empty;
+        public string BoardCode { get; set; } = string.Empty;
+        public string BoardLevel { get; set; } = string.Empty;
+    }
+
+    /// <summary>Subject info returned for the exam subject picker (filtered by class+board).</summary>
+    public class ClassSubjectForExamDto
+    {
+        public Guid SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
+        public string? SubjectCode { get; set; }
+        public bool IsElective { get; set; }
+        public int DefaultMaxMarks { get; set; }
+        public int DefaultTheoryMarks { get; set; }
+        public int DefaultPracticalMarks { get; set; }
+        public Guid? DefaultStaffId { get; set; }
+        public string? DefaultStaffName { get; set; }
+    }
+
+    /// <summary>Preview of the auto-generated exam name returned by the wizard before creation.</summary>
+    public class ExamNamePreviewDto
+    {
+        public string SuggestedName { get; set; } = string.Empty;
+    }
+
+    /// <summary>Response after publishing exam results to parent portals.</summary>
+    public class PublishResultsResponseDto
+    {
+        public Guid ExamSetupId { get; set; }
+        public int StudentsNotified { get; set; }
+        public int ReportCardsGenerated { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
+
+    /// <summary>Consolidated results for one student across all subjects of an ExamSetup.</summary>
+    public class StudentExamResultSummaryDto
+    {
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? RollNumber { get; set; }
+        public string ExamName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+        public List<SubjectResultSummaryDto> Subjects { get; set; } = new();
+        public decimal TotalObtained { get; set; }
+        public decimal TotalMax { get; set; }
+        public decimal Percentage { get; set; }
+        public string? OverallGrade { get; set; }
+        public decimal? CGPA { get; set; }
+        public int? Rank { get; set; }
+        public bool IsPass { get; set; }
+
+        // ── Board context for mark card / report card rendering ────────────
+        /// <summary>Board code (e.g. "CBSE", "IB", "STATE-MH"). Null if no board configured.</summary>
+        public string? BoardCode { get; set; }
+        /// <summary>Full board name (e.g. "Central Board of Secondary Education").</summary>
+        public string? BoardName { get; set; }
+        /// <summary>Grading system description (e.g. "A1-E2 10-point scale").</summary>
+        public string? GradingSystem { get; set; }
+        /// <summary>
+        /// Ordered grading scale legend for this exam. Populated after finalization.
+        /// Allows the frontend to render the correct grade key on mark cards for every board.
+        /// </summary>
+        public List<GradeScaleEntryDto> GradingScaleLegend { get; set; } = new();
+    }
+
+    public class SubjectResultSummaryDto
+    {
+        public string SubjectName { get; set; } = string.Empty;
+        public bool IsElective { get; set; }
+        public decimal? TheoryMarks { get; set; }
+        public decimal? PracticalMarks { get; set; }
+        public decimal? InternalMarks { get; set; }
+        public decimal ObtainedMarks { get; set; }
+        public decimal MaxMarks { get; set; }
+        public decimal Percentage { get; set; }
+        public string? Grade { get; set; }
+        public decimal? GradePoint { get; set; }
+        public bool IsAbsent { get; set; }
+        public bool IsPass { get; set; }
+    }
+
+    // ========== STAFF GRADES DASHBOARD DTOs ==========
+
+    /// <summary>KPI stats for the staff grades dashboard — scoped to this staff's exam assignments.</summary>
+    public class StaffExamStatsDto
+    {
+        public int TotalExams { get; set; }
+        public int PublishedExams { get; set; }
+        public int TotalMarksEntries { get; set; }
+        public decimal AveragePercentage { get; set; }
+        public decimal PassRate { get; set; }
+    }
+
+    /// <summary>One row in the student grades history tab — one student × one subject × one exam.</summary>
+    public class StaffStudentMarkDto
+    {
+        public Guid ExamMarksEntryId { get; set; }
+        public Guid ExamSetupId { get; set; }
+        public string ExamName { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+        public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string? RollNumber { get; set; }
+        public Guid SubjectId { get; set; }
+        public string SubjectName { get; set; } = string.Empty;
+        public decimal ObtainedMarks { get; set; }
+        public decimal MaxMarks { get; set; }
+        public decimal? Percentage { get; set; }
+        public string? Grade { get; set; }
+        public bool IsPass { get; set; }
+        public bool IsAbsent { get; set; }
+    }
+
+    /// <summary>Paginated response for staff student marks, includes class/section filter options.</summary>
+    public class StaffStudentMarksPageDto
+    {
+        public int Total { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public List<StaffStudentMarkDto> Items { get; set; } = new();
+        public List<ClassSectionFilterOption> Classes { get; set; } = new();
+    }
+
+    /// <summary>Class+section combo for the filter dropdowns in the staff grades tab.</summary>
+    public class ClassSectionFilterOption
+    {
+        public Guid ClassId { get; set; }
+        public string ClassName { get; set; } = string.Empty;
+        public Guid? SectionId { get; set; }
+        public string? SectionName { get; set; }
+    }
+
 }

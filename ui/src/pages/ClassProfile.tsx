@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { academicApi } from "@/services/api/academicApi";
 import { studentApi, type Student } from "@/services/api/studentApi";
+import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -102,8 +103,10 @@ export default function ClassProfile() {
     standard: "",
     section: "",
     academicYear: "",
-    classTeacher: ""
+    classTeacher: "",
+    classTeacherId: "" as string | undefined,
   });
+  const [teachingStaff, setTeachingStaff] = useState<StaffBasic[]>([]);
 
   const loadStudents = async (standard: string, section: string) => {
     setStudentsLoading(true);
@@ -120,8 +123,11 @@ export default function ClassProfile() {
   useEffect(() => {
     if (!classId) return;
     setLoading(true);
-    academicApi.getClass(classId)
-      .then(cls => {
+    // Load staff list and class data in parallel
+    Promise.all([
+      academicApi.getClass(classId),
+      staffApi.getTeachingStaff().catch(() => ({ staff: [] })),
+    ]).then(([cls, staffRes]) => {
         const info: ClassInfo = {
           id: cls.id,
           standard: cls.standard || cls.name || "",
@@ -136,7 +142,9 @@ export default function ClassProfile() {
           section: info.section,
           academicYear: info.academicYear,
           classTeacher: info.classTeacher,
+          classTeacherId: cls.classTeacherId ?? undefined,
         });
+        setTeachingStaff(staffRes.staff ?? []);
         // Load students for this class
         loadStudents(info.standard, info.section);
       })
@@ -206,11 +214,13 @@ export default function ClassProfile() {
                 onSubmit={async (e) => {
                   e.preventDefault();
                   try {
+                    const selectedStaff = teachingStaff.find(s => s.id === editForm.classTeacherId);
                     await academicApi.updateClass(classId!, {
                       standard: editForm.standard,
                       section: editForm.section,
                       academicYear: editForm.academicYear,
-                      classTeacher: editForm.classTeacher,
+                      classTeacher: selectedStaff ? `${selectedStaff.firstName} ${selectedStaff.lastName}`.trim() : editForm.classTeacher,
+                      classTeacherId: editForm.classTeacherId || undefined,
                     });
                     toast.success("Class updated successfully");
                     const updated = await academicApi.getClass(classId!);
@@ -223,6 +233,14 @@ export default function ClassProfile() {
                       totalStudents: updated.totalStudents || 0,
                     };
                     setClassInfo(info);
+                    setEditForm(f => ({
+                      ...f,
+                      standard: info.standard,
+                      section: info.section,
+                      academicYear: info.academicYear,
+                      classTeacher: info.classTeacher,
+                      classTeacherId: updated.classTeacherId ?? undefined,
+                    }));
                     setEditDialogOpen(false);
                   } catch {
                     toast.error("Failed to update class");
@@ -255,11 +273,24 @@ export default function ClassProfile() {
                 </div>
                 <div>
                   <Label htmlFor="classTeacher">Class Teacher</Label>
-                  <Input
-                    id="classTeacher"
-                    value={editForm.classTeacher}
-                    onChange={e => setEditForm(f => ({ ...f, classTeacher: e.target.value }))}
-                  />
+                  <Select
+                    value={editForm.classTeacherId || "none"}
+                    onValueChange={(value) =>
+                      setEditForm(f => ({ ...f, classTeacherId: value === "none" ? undefined : value }))
+                    }
+                  >
+                    <SelectTrigger id="classTeacher">
+                      <SelectValue placeholder="Select class teacher" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Class Teacher</SelectItem>
+                      {teachingStaff.map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.firstName} {s.lastName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex gap-2 items-center">
                   <Button type="submit" className="flex-1">Update</Button>
@@ -441,7 +472,7 @@ export default function ClassProfile() {
 
                     <div className="flex justify-between items-center pt-4">
                       <p className="text-sm text-muted-foreground">
-                        Showing {visibleRecords} of {attendanceHistory.length} records
+                        Showing {Math.min(visibleRecords, attendanceHistory.length)} of {attendanceHistory.length} records
                       </p>
                       {visibleRecords < attendanceHistory.length ? (
                         <Button variant="outline" onClick={handleLoadMore}>

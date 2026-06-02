@@ -1,244 +1,251 @@
-
-import { useState, useEffect } from "react";
-import { Search, Filter, Eye, RotateCcw } from "lucide-react";
+﻿
+import { Search, Filter, Eye, UserX, Users, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { StudentBasic, studentApi } from "@/services/api/studentApi";
+import { StudentBasic } from "@/services/api/studentApi";
+import { useUserPreferences } from "@/hooks/useUserPreferences";
 import placeholderImg from '/placeholder.svg';
-import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface StudentListProps {
+  // data
   students: StudentBasic[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  // filter state (all controlled by parent / server-side)
+  statusFilter: "" | "active" | "inactive";
+  onStatusChange: (v: "" | "active" | "inactive") => void;
+  search: string;
+  onSearchChange: (v: string) => void;
+  classFilter: string;
+  onClassChange: (v: string) => void;
+  sectionFilter: string;
+  onSectionChange: (v: string) => void;
+  availableClasses: string[];
+  availableSections: string[];
+  // pagination
+  onPageChange: (page: number) => void;
   onRefresh: () => void;
 }
 
-export function StudentList({ students, onRefresh }: StudentListProps) {
-  const [filteredStudents, setFilteredStudents] = useState<StudentBasic[]>(students);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClass, setSelectedClass] = useState("all");
-  const [selectedSection, setSelectedSection] = useState("all");
+/** Build a compact page-number list with ellipsis. Returns numbers or null (ellipsis). */
+function buildPageList(current: number, total: number): (number | null)[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | null)[] = [];
+  const addPage = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+  addPage(1);
+  if (current - 2 > 2) pages.push(null); // leading ellipsis
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) addPage(p);
+  if (current + 2 < total - 1) pages.push(null); // trailing ellipsis
+  addPage(total);
+  return pages;
+}
 
-  const { toast } = useToast();
+export function StudentList({
+  students, total, page, pageSize, totalPages,
+  statusFilter, onStatusChange,
+  search, onSearchChange,
+  classFilter, onClassChange,
+  sectionFilter, onSectionChange,
+  availableClasses, availableSections,
+  onPageChange, onRefresh,
+}: StudentListProps) {
+  const { preferences } = useUserPreferences();
   const navigate = useNavigate();
   const { t } = useLanguage();
 
-  // Re-filter whenever source data or filters change
-  useEffect(() => {
-    let filtered = students;
+  const rowPadding = preferences.compactMode ? "py-3" : "py-5";
+  const cellPadding = preferences.compactMode ? "px-4" : "px-6";
+  const fontSize = preferences.compactMode ? "text-sm" : "text-base";
+  const fontSizeSmall = preferences.compactMode ? "text-xs" : "text-sm";
+  const nameTextSize = preferences.compactMode ? "text-[13px]" : "text-[16px]";
+  const tableViewClass = preferences.tableView === "compact" ? "text-xs" : fontSize;
 
-    if (searchTerm) {
-      const lower = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (s) =>
-          (s.name ?? '').toLowerCase().includes(lower) ||
-          (s.admissionNumber ?? '').toLowerCase().includes(lower) ||
-          (s.rollNumber ?? '').toLowerCase().includes(lower)
-      );
-    }
+  const isInactive = (s: StudentBasic) => s.status?.toLowerCase() !== "active";
 
-    if (selectedClass !== "all") {
-      filtered = filtered.filter((s) => s.class === selectedClass);
-    }
+  const firstItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastItem = Math.min(page * pageSize, total);
 
-    if (selectedSection !== "all") {
-      filtered = filtered.filter((s) => s.section === selectedSection);
-    }
-
-    setFilteredStudents(filtered);
-  }, [students, searchTerm, selectedClass, selectedSection]);
-
-  const toggleStudentStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    try {
-      await studentApi.update(id, { status: newStatus });
-      onRefresh();
-      toast({
-        title: "Success",
-        description: `Student ${newStatus === "active" ? "reactivated" : "deactivated"} successfully`,
-      });
-    } catch {
-      toast({
-        title: "Error",
-        description: `Failed to update student status`,
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Build unique class/section options from data
-  const classes = [...new Set(students.map((s) => s.class).filter(Boolean))].sort((a, b) =>
-    Number(a) - Number(b) || (a ?? '').localeCompare(b ?? '')
-  );
-  const sections = [...new Set(students.map((s) => s.section).filter(Boolean))].sort();
+  const hasActiveFilters = !!search || !!classFilter || !!sectionFilter;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      {/* Filters */}
-      <Card className="border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">{t("studentList.filters")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={t("studentList.searchPlaceholder")}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-
-            <Select value={selectedClass} onValueChange={setSelectedClass}>
-              <SelectTrigger>
-                <SelectValue placeholder={t("studentList.allClasses")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("studentList.allClasses")}</SelectItem>
-                {classes.map((cls) => (
-                  <SelectItem key={cls} value={cls}>
-                    {t("studentList.class")} {cls}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedSection} onValueChange={setSelectedSection}>
-              <SelectTrigger>
-                <SelectValue placeholder={t("studentList.allSections")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("studentList.allSections")}</SelectItem>
-                {sections.map((sec) => (
-                  <SelectItem key={sec} value={sec}>
-                    {t("studentList.section")} {sec}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSearchTerm("");
-                setSelectedClass("all");
-                setSelectedSection("all");
-              }}
-              className="w-full"
+      {/* Status tab bubbles */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(["", "active", "inactive"] as const).map((v) => {
+          const label = v === "" ? "All Students" : v === "active" ? "Active" : "Inactive";
+          const icon = v === "inactive" ? <UserX className="h-3.5 w-3.5" /> : <Users className="h-3.5 w-3.5" />;
+          const activeStyle =
+            v === "" ? "bg-primary text-primary-foreground border-primary shadow-sm" :
+            v === "active" ? "bg-green-600 text-white border-green-600 shadow-sm" :
+            "bg-orange-500 text-white border-orange-500 shadow-sm";
+          const inactiveStyle =
+            v === "" ? "bg-background border-border text-muted-foreground hover:bg-muted" :
+            v === "active" ? "bg-background border-green-200 text-green-700 hover:bg-green-50" :
+            "bg-background border-orange-200 text-orange-600 hover:bg-orange-50";
+          const isSelected = statusFilter === v;
+          return (
+            <button
+              key={v}
+              onClick={() => onStatusChange(v)}
+              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                isSelected ? activeStyle : inactiveStyle
+              }`}
             >
-              <Filter className="h-4 w-4 mr-2" />
-              {t("studentList.clearFilters")}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              {icon}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search & Filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={t("studentList.searchPlaceholder")}
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        <Select
+          value={classFilter || "all"}
+          onValueChange={(v) => onClassChange(v === "all" ? "" : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("studentList.allClasses")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("studentList.allClasses")}</SelectItem>
+            {availableClasses.map((cls) => (
+              <SelectItem key={cls} value={cls}>
+                {t("studentList.class")} {cls}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={sectionFilter || "all"}
+          onValueChange={(v) => onSectionChange(v === "all" ? "" : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t("studentList.allSections")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("studentList.allSections")}</SelectItem>
+            {availableSections.map((sec) => (
+              <SelectItem key={sec} value={sec}>
+                {t("studentList.section")} {sec}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Button
+          variant="outline"
+          onClick={() => { onSearchChange(""); onClassChange(""); onSectionChange(""); }}
+          disabled={!hasActiveFilters}
+          className="w-full"
+        >
+          <Filter className="h-4 w-4 mr-2" />
+          {t("studentList.clearFilters")}
+        </Button>
+      </div>
 
       {/* Results summary */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {t("studentList.showing")} {filteredStudents.length} {t("studentList.of")}{" "}
-          {students.length} {t("studentList.students")}
-        </span>
+      <div className="text-sm text-muted-foreground">
+        {total === 0
+          ? "No students found"
+          : `Showing ${firstItem}–${lastItem} of ${total} student${total !== 1 ? "s" : ""}`}
+        {statusFilter && <span className="ml-1">· {statusFilter} only</span>}
       </div>
 
       {/* Table */}
       <Card className="border-border">
         <CardContent className="p-0">
-          {filteredStudents.length > 0 ? (
+          {students.length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="border-border">
-                    <TableHead className="font-semibold">{t("studentList.rollNo")}</TableHead>
-                    <TableHead className="font-semibold">{t("studentList.name")}</TableHead>
-                    <TableHead className="font-semibold hidden sm:table-cell">
+                  <TableRow className={`border-border hover:bg-muted/50 transition-colors ${rowPadding}`}>
+                    <TableHead className={`font-semibold ${cellPadding}`}>{t("studentList.rollNo")}</TableHead>
+                    <TableHead className={`font-semibold ${cellPadding}`}>{t("studentList.name")}</TableHead>
+                    <TableHead className={`font-semibold hidden sm:table-cell ${cellPadding}`}>
                       {t("studentList.class")}
                     </TableHead>
-                    <TableHead className="font-semibold hidden md:table-cell">
+                    <TableHead className={`font-semibold hidden md:table-cell ${cellPadding}`}>
                       Admission No
                     </TableHead>
-                    <TableHead className="font-semibold">{t("studentList.status")}</TableHead>
-                    <TableHead className="font-semibold text-right">
+                    <TableHead className={`font-semibold ${cellPadding}`}>{t("studentList.status")}</TableHead>
+                    <TableHead className={`font-semibold text-right ${cellPadding}`}>
                       {t("studentList.actions")}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStudents.map((student) => (
+                  {students.map((student) => (
                     <TableRow
                       key={student.id}
-                      className="border-border hover:bg-muted/50 transition-colors"
+                      className={`border-border hover:bg-muted/50 transition-colors ${rowPadding} ${isInactive(student) ? "opacity-80" : ""}`}
                     >
-                      <TableCell className="font-medium text-sm">
-                        {student.rollNumber || "—"}
+                      <TableCell className={`font-medium ${cellPadding} ${tableViewClass}`}>
+                        {student.rollNumber || "-"}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <span className="inline-block w-9 h-9 rounded-full overflow-hidden bg-gray-200 border border-gray-300 flex-shrink-0">
+                      <TableCell className={cellPadding}>
+                        <div className={`flex items-center ${preferences.compactMode ? "gap-3" : "gap-4"}`}>
+                          <span className={`inline-block rounded-full overflow-hidden bg-gray-200 border border-gray-300 flex-shrink-0 ${
+                            preferences.compactMode ? "w-9 h-9" : "w-10 h-10"
+                          }`}>
                             {student.photoUrl ? (
-                              <img
-                                src={student.photoUrl}
-                                alt={student.name}
-                                className="w-full h-full object-cover"
-                              />
+                              <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
                             ) : (
-                              <img
-                                src={placeholderImg}
-                                alt="No photo"
-                                className="w-full h-full object-cover opacity-60"
-                              />
+                              <img src={placeholderImg} alt="No photo" className="w-full h-full object-cover opacity-60" />
                             )}
                           </span>
                           <div className="space-y-0.5">
-                            <div className="font-medium text-sm">{student.name}</div>
-                            <div className="text-xs text-muted-foreground sm:hidden">
+                            <div className={`font-medium ${cellPadding} ${nameTextSize} ${isInactive(student) ? "text-muted-foreground" : ""}`}>
+                              {student.name}
+                            </div>
+                            <div className={`text-muted-foreground sm:hidden ${fontSizeSmall}`}>
                               {student.class}-{student.section}
                             </div>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell text-sm">
+                      <TableCell className={`hidden sm:table-cell ${cellPadding} ${tableViewClass}`}>
                         {student.class}-{student.section}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm">
+                      <TableCell className={`hidden md:table-cell ${cellPadding} ${tableViewClass}`}>
                         {student.admissionNumber}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={cellPadding}>
                         <Badge
-                          variant={student.status === "active" ? "default" : "secondary"}
-                          className="text-xs"
+                          variant={student.status?.toLowerCase() === "active" ? "default" : "secondary"}
+                          className={`text-xs capitalize ${isInactive(student) ? "border-orange-200 text-orange-700 bg-orange-50" : ""} ${preferences.compactMode ? "" : "text-sm px-2.5 py-1.5"}`}
                         >
-                          {student.status === "active"
-                            ? t("common.active")
-                            : t("common.inactive")}
+                          {student.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => navigate(`/students/${student.id}`)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            {t("common.manage")}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleStudentStatus(student.id, student.status)}
-                            title={student.status === "active" ? "Deactivate" : "Reactivate"}
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
-                        </div>
+                      <TableCell className={`text-right ${cellPadding}`}>
+                        <Button
+                          variant="outline"
+                          size={preferences.compactMode ? "xs" : "sm"}
+                          onClick={() => navigate(`/students/${student.id}`)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          {isInactive(student) ? "View / Reactivate" : t("common.manage")}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -256,7 +263,51 @@ export function StudentList({ students, onRefresh }: StudentListProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-4 pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+
+          <div className="flex items-center gap-1">
+            {buildPageList(page, totalPages).map((p, i) =>
+              p === null ? (
+                <span key={`ellipsis-${i}`} className="px-2 text-muted-foreground select-none">…</span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => onPageChange(p)}
+                  className={`w-8 h-8 text-sm rounded-md transition-colors ${
+                    p === page
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "hover:bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {p}
+                </button>
+              )
+            )}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= totalPages}
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
-

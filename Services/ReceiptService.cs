@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
 using SmsApi.Models.Entities;
@@ -9,11 +10,38 @@ public class ReceiptService : IReceiptService
 {
     private readonly AppDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public ReceiptService(AppDbContext context, IConfiguration configuration)
+    public ReceiptService(AppDbContext context, IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
     {
         _context = context;
         _configuration = configuration;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    /// <summary>
+    /// Converts a relative URL (e.g. /files/schools/.../logo.jpg) to an absolute URL
+    /// so that &lt;img&gt; tags work in receipt popups opened from a different origin/port.
+    /// </summary>
+    private string ResolveUrl(string? relativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(relativeUrl)) return string.Empty;
+        if (relativeUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            relativeUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            relativeUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return relativeUrl;
+
+        // Try configured server URL first (overrides auto-detection in reverse-proxy scenarios)
+        var configured = _configuration["App:ServerUrl"] ?? _configuration["ServerUrl"] ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured.TrimEnd('/') + "/" + relativeUrl.TrimStart('/');
+
+        // Fall back to current request origin
+        var req = _httpContextAccessor.HttpContext?.Request;
+        if (req != null)
+            return $"{req.Scheme}://{req.Host}{(relativeUrl.StartsWith('/') ? relativeUrl : "/" + relativeUrl)}";
+
+        return relativeUrl;
     }
 
     public async Task<byte[]> GeneratePaymentReceiptPdfAsync(Guid paymentId, Guid schoolId)
@@ -108,9 +136,177 @@ public class ReceiptService : IReceiptService
         _          => method ?? "—"
     };
 
+    // ── IST helper ─────────────────────────────────────────────────────────────
+    private static DateTime ToIst(DateTime utc)
+    {
+        try
+        {
+            var tzId = System.Runtime.InteropServices.RuntimeInformation
+                .IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)
+                ? "India Standard Time" : "Asia/Kolkata";
+            return TimeZoneInfo.ConvertTimeFromUtc(
+                utc.Kind == DateTimeKind.Utc ? utc : DateTime.SpecifyKind(utc, DateTimeKind.Utc),
+                TimeZoneInfo.FindSystemTimeZoneById(tzId));
+        }
+        catch { return utc.AddHours(5).AddMinutes(30); } // safe fallback
+    }
+
+    // ── Hostel Mess Bill Receipt ────────────────────────────────────────────────
+    private string GenerateMessReceiptHtml(PaymentTransaction payment, School? school)
+    {
+        var fr         = payment.FeeRecord;
+        var student    = fr?.Student;
+        var schoolName = school?.Name    ?? "School Name";
+        var schoolAddr = school?.Address ?? "";
+        var schoolPhone= school?.Phone   ?? "";
+        var schoolEmail= school?.Email   ?? "";
+        var schoolLogo = ResolveUrl(school?.Logo);
+        var initials   = string.Concat((schoolName.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                            .Take(2).Select(w => w[0])).ToUpper();
+
+        var studentName  = student != null
+            ? (!string.IsNullOrWhiteSpace(student.FirstName)
+                ? $"{student.FirstName} {student.LastName}".Trim()
+                : student.Name)
+            : (fr != null ? "N/A" : "N/A");
+        var admNo        = student?.AdmissionNumber ?? "N/A";
+        var className    = student?.Class    ?? "—";
+        var section      = student?.Section  ?? "";
+        var classSection = section.Length > 0 ? $"{className} – {section}" : className;
+
+        var receiptNo  = payment.ReceiptNumber;
+        var payDate    = ToIst(payment.Date).ToString("dd MMMM yyyy");
+        var methodStr  = FormatMethod(payment.Method);
+        var amtPaid    = payment.Amount;
+        var amtWords   = AmountInWords(amtPaid);
+        var processedBy= payment.ProcessedBy ?? "Hostel Office";
+
+        // Extract month label from Remarks: "Mess bill payment for 2026-05"
+        var month = payment.Remarks ?? "";
+        if (month.StartsWith("Mess bill payment for "))
+            month = month["Mess bill payment for ".Length..].Trim();
+
+        var logoHtml = !string.IsNullOrWhiteSpace(schoolLogo)
+            ? $@"<img class='logo-img' src='{schoolLogo}' alt='Logo'>"
+            : $@"<div class='logo-ph'>{initials}</div>";
+
+        return $@"<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<title>Mess Bill Receipt – {receiptNo}</title>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' rel='stylesheet'>
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin:0; padding:0; }}
+  body {{ font-family:'Inter',Arial,sans-serif; background:#f4f6f9; color:#1a1a2e; font-size:13px; line-height:1.5; }}
+  .page {{ max-width:680px; margin:30px auto; background:#fff; border-radius:12px; box-shadow:0 4px 32px rgba(0,0,0,.12); overflow:hidden; position:relative; }}
+  .header {{ background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%); color:#fff; padding:28px 32px 22px; display:flex; align-items:center; gap:18px; }}
+  .logo-img {{ width:60px; height:60px; object-fit:contain; border-radius:8px; background:rgba(255,255,255,.15); }}
+  .logo-ph  {{ width:60px; height:60px; border-radius:8px; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; flex-shrink:0; }}
+  .school-info h1 {{ font-size:18px; font-weight:700; }}
+  .school-info p  {{ font-size:11px; opacity:.8; margin-top:2px; }}
+  .receipt-meta {{ display:flex; justify-content:space-between; align-items:center; padding:14px 32px; background:#f8fafd; border-bottom:1px solid #e2e8f0; }}
+  .receipt-meta .badge {{ font-size:10px; font-weight:700; letter-spacing:1.5px; color:#2563eb; background:#dbeafe; border-radius:4px; padding:3px 10px; text-transform:uppercase; }}
+  .receipt-meta .meta-right {{ text-align:right; font-size:11px; color:#64748b; }}
+  .receipt-meta .meta-right strong {{ display:block; font-size:13px; color:#1a1a2e; }}
+  .body {{ padding:24px 32px; }}
+  .section-title {{ font-size:10px; font-weight:600; letter-spacing:1.5px; color:#64748b; text-transform:uppercase; margin-bottom:10px; }}
+  .info-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px; padding:16px; background:#f8fafd; border-radius:8px; border:1px solid #e2e8f0; }}
+  .info-item label {{ font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:.8px; }}
+  .info-item span  {{ display:block; font-size:13px; font-weight:600; color:#1a1a2e; margin-top:2px; }}
+  table {{ width:100%; border-collapse:collapse; margin-bottom:18px; }}
+  thead th {{ background:#1e3a5f; color:#fff; font-size:11px; font-weight:600; padding:9px 12px; text-align:left; letter-spacing:.5px; text-transform:uppercase; }}
+  thead th.num {{ text-align:right; }}
+  tbody tr {{ border-bottom:1px solid #f1f5f9; }}
+  tbody td {{ padding:10px 12px; font-size:13px; }}
+  tbody td.num {{ text-align:right; font-weight:600; color:#1e3a5f; }}
+  .totals {{ display:flex; justify-content:flex-end; margin-bottom:22px; }}
+  .totals-box {{ width:260px; }}
+  .totals-row {{ display:flex; justify-content:space-between; padding:5px 0; font-size:12px; color:#64748b; border-bottom:1px dashed #e2e8f0; }}
+  .totals-row.paid {{ font-size:14px; font-weight:700; color:#16a34a; padding-top:8px; border-bottom:none; }}
+  .words-box {{ padding:14px 16px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; margin-bottom:22px; }}
+  .words-box p {{ font-size:12px; color:#15803d; font-style:italic; }}
+  .words-box span {{ font-size:11px; color:#64748b; }}
+  .payment-detail {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px; background:#f8fafd; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:22px; font-size:12px; }}
+  .payment-detail label {{ color:#94a3b8; font-size:10px; text-transform:uppercase; letter-spacing:.8px; }}
+  .payment-detail span {{ display:block; font-weight:600; margin-top:2px; }}
+  .watermark {{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-30deg); font-size:80px; font-weight:900; color:rgba(22,163,74,.07); pointer-events:none; letter-spacing:6px; text-transform:uppercase; white-space:nowrap; }}
+  .footer {{ background:#f8fafd; border-top:1px solid #e2e8f0; padding:16px 32px; text-align:center; font-size:11px; color:#94a3b8; }}
+  @media print {{ body{{background:#fff;}} .page{{box-shadow:none; margin:0; border-radius:0;}} }}
+</style>
+</head>
+<body>
+<div class='page'>
+  <div class='watermark'>PAID</div>
+  <div class='header'>
+    {logoHtml}
+    <div class='school-info'>
+      <h1>{schoolName}</h1>
+      <p>{schoolAddr}</p>
+      {(schoolPhone.Length > 0 || schoolEmail.Length > 0 ? $"<p>{schoolPhone}{(schoolPhone.Length > 0 && schoolEmail.Length > 0 ? " &nbsp;·&nbsp; " : "")}{schoolEmail}</p>" : "")}
+    </div>
+  </div>
+  <div class='receipt-meta'>
+    <div>
+      <div class='badge'>Hostel Mess Receipt</div>
+      <div style='font-size:11px; color:#64748b; margin-top:4px;'>Receipt No: <strong style='color:#1a1a2e;'>{receiptNo}</strong></div>
+    </div>
+    <div class='meta-right'>
+      <strong>{payDate}</strong>
+      Date of Payment
+    </div>
+  </div>
+  <div class='body'>
+    <div class='section-title'>Student Details</div>
+    <div class='info-grid'>
+      <div class='info-item'><label>Student Name</label><span>{studentName}</span></div>
+      <div class='info-item'><label>Admission No.</label><span>{admNo}</span></div>
+      <div class='info-item'><label>Class / Section</label><span>{classSection}</span></div>
+      <div class='info-item'><label>Billing Month</label><span>{month}</span></div>
+    </div>
+
+    <div class='section-title'>Charge Details</div>
+    <table>
+      <thead><tr><th>#</th><th>Description</th><th class='num'>Amount</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>Hostel Mess Charges &nbsp;<span style='color:#64748b;font-size:11px;'>({month})</span></td>
+          <td class='num'>₹{amtPaid:N2}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class='totals'>
+      <div class='totals-box'>
+        <div class='totals-row'><span>Mess Charge</span><span>₹{amtPaid:N2}</span></div>
+        <div class='totals-row paid'><span>Amount Paid</span><span>₹{amtPaid:N2}</span></div>
+      </div>
+    </div>
+
+    <div class='words-box'>
+      <span>Amount in Words</span>
+      <p>{amtWords}</p>
+    </div>
+
+    <div class='section-title'>Payment Details</div>
+    <div class='payment-detail'>
+      <div><label>Payment Method</label><span>{methodStr}</span></div>
+      <div><label>Processed By</label><span>{processedBy}</span></div>
+    </div>
+  </div>
+  <div class='footer'>This is a computer-generated receipt. No signature required. &nbsp;·&nbsp; Thank you.</div>
+</div>
+</body></html>";
+    }
+
     // ── Premium Receipt HTML ───────────────────────────────────────────────────
     private string GenerateReceiptHtml(PaymentTransaction payment, School? school)
     {
+        // ── Mess bill: dedicated single-item receipt ──────────────────────────
+        if (payment.ReceiptNumber?.StartsWith("MESS-", StringComparison.OrdinalIgnoreCase) == true)
+            return GenerateMessReceiptHtml(payment, school);
+
         var fr           = payment.FeeRecord;
         var student      = fr?.Student;
         var structure    = fr?.FeeStructure;
@@ -118,6 +314,7 @@ public class ReceiptService : IReceiptService
         var schoolAddr   = school?.Address ?? "";
         var schoolPhone  = school?.Phone  ?? "";
         var schoolEmail  = school?.Email  ?? "";
+        var schoolLogo   = ResolveUrl(school?.Logo);
 
         var studentName  = student?.Name             ?? "N/A";
         var admNo        = student?.AdmissionNumber  ?? "N/A";
@@ -126,7 +323,7 @@ public class ReceiptService : IReceiptService
         var classSection = section.Length > 0 ? $"{className} – {section}" : className;
 
         var receiptNo    = payment.ReceiptNumber;
-        var payDate      = payment.Date.ToString("dd MMMM yyyy");
+        var payDate      = ToIst(payment.Date).ToString("dd MMMM yyyy");
         var academicYear = payment.AcademicYear ?? fr?.AcademicYear ?? "—";
 
         var methodStr    = FormatMethod(payment.Method);
@@ -180,6 +377,35 @@ public class ReceiptService : IReceiptService
             if (structure.UniformFee   > 0) AddRow("Uniform Fee",        structure.UniformFee);
             if (structure.BooksFee     > 0) AddRow("Books / Stationery", structure.BooksFee);
             if (structure.Miscellaneous> 0) AddRow("Miscellaneous",      structure.Miscellaneous);
+        }
+        else if (!string.IsNullOrWhiteSpace(fr?.FeeHeadOverrides))
+        {
+            // No fee structure — this is a standalone record (e.g. hostel mess charge).
+            // Read known heads from FeeHeadOverrides JSON.
+            try
+            {
+                var overrides = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(fr!.FeeHeadOverrides);
+                decimal GetDec(string key) =>
+                    overrides.TryGetProperty(key, out var p) && p.TryGetDecimal(out var v) ? v : 0m;
+                string GetStr(string key) =>
+                    overrides.TryGetProperty(key, out var p) ? p.GetString() ?? "" : "";
+
+                var hostelAmt  = GetDec("hostelFee");
+                var messMonth  = GetStr("messMonth");
+                var rowLabel   = hostelAmt > 0
+                    ? (messMonth.Length > 0 ? $"Hostel Mess Fee ({messMonth})" : "Hostel Mess Fee")
+                    : null;
+
+                if (hostelAmt > 0)
+                    headRows.Append($@"
+                <tr>
+                  <td>{rowLabel}</td>
+                  <td class='num'>₹{hostelAmt:N0}</td>
+                  <td class='num disc'>—</td>
+                  <td class='num'>₹{hostelAmt:N0}</td>
+                </tr>");
+            }
+            catch { /* malformed JSON — skip */ }
         }
         // If extra charges were added (total > structure total), add a row
         var extraAmt = structure != null ? totalFee - structure.TotalAmount : 0m;
@@ -250,13 +476,22 @@ public class ReceiptService : IReceiptService
     gap: 22px;
   }}
   .school-logo {{
-    width: 64px; height: 64px; border-radius: 50%;
+    width: 68px; height: 68px; border-radius: 50%;
     background: rgba(255,255,255,0.15);
-    border: 2px solid rgba(255,255,255,0.35);
+    border: 2.5px solid rgba(255,255,255,0.45);
     display: flex; align-items: center; justify-content: center;
     font-family: 'Playfair Display', serif;
     font-size: 22px; font-weight: 700;
     color: #fff; letter-spacing: 1px; flex-shrink: 0;
+    overflow: hidden;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.08);
+  }}
+  .school-logo img {{
+    width: 100%; height: 100%;
+    object-fit: contain;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.95);
+    padding: 4px;
   }}
   .school-info {{ flex: 1; }}
   .school-name {{
@@ -463,7 +698,11 @@ public class ReceiptService : IReceiptService
 
   <!-- ── HEADER ── -->
   <div class='header'>
-    <div class='school-logo'>{initials}</div>
+    <div class='school-logo'>
+      {(schoolLogo.Length > 0
+        ? $"<img src='{System.Web.HttpUtility.HtmlAttributeEncode(schoolLogo)}' alt='{System.Web.HttpUtility.HtmlEncode(schoolName)} logo' loading='eager' />"
+        : System.Web.HttpUtility.HtmlEncode(initials))}
+    </div>
     <div class='school-info'>
       <div class='school-name'>{System.Web.HttpUtility.HtmlEncode(schoolName)}</div>
       <div class='school-meta'>

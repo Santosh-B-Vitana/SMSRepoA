@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -54,6 +55,7 @@ export default function ImprovedFeesManager() {
   const [statusFilter, setStatusFilter] = useState("all");
   
   // Dialog states  
+  const navigate = useNavigate();
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<FeeRecord | null>(null);
@@ -316,10 +318,7 @@ export default function ImprovedFeesManager() {
                                   View Details
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={() => {
-                                    setSelectedRecord(record);
-                                    setPaymentDialogOpen(true);
-                                  }}
+                                  onClick={() => navigate(`/fees/collect/${record.studentId}`)}
                                 >
                                   Collect Payment
                                 </DropdownMenuItem>
@@ -384,15 +383,7 @@ export default function ImprovedFeesManager() {
             installmentPlans={[]}
             academicYear={academicYear}
           />
-          <PaymentProcessor
-            open={paymentDialogOpen}
-            onClose={() => setPaymentDialogOpen(false)}
-            feeRecord={selectedRecord}
-            onPaymentSuccess={() => {
-              toast({ title: "Payment recorded successfully" });
-              // Refresh
-            }}
-          />
+
         </>
       )}
     </div>

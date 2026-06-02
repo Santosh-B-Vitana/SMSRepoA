@@ -830,16 +830,21 @@ namespace SmsApi.Services
                 if (alumni == null)
                     throw new KeyNotFoundException("Alumni not found");
 
+                // Truncate DonationType to the column max-length (50) to prevent DB errors
+                var donationType = (dto.Purpose ?? "General").Length > 50
+                    ? (dto.Purpose ?? "General")[..50]
+                    : (dto.Purpose ?? "General");
+
                 var donation = new AlumniDonation
                 {
                     Id = Guid.NewGuid(),
                     SchoolId = schoolId,
                     AlumniId = dto.AlumniId,
                     Amount = dto.Amount,
-                    DonationType = dto.Purpose,
-                    Purpose = dto.Purpose,
+                    DonationType = donationType,
+                    Purpose = dto.Purpose ?? "General",
                     DonationDate = dto.DonationDate,
-                    PaymentMethod = dto.PaymentMethod,
+                    PaymentMethod = dto.PaymentMethod ?? "Cash",
                     TransactionReference = dto.ReceiptNumber,
                     AcknowledgementMessage = dto.Message,
                     Status = dto.IsAnonymous ? "Anonymous" : "Pending",
@@ -858,8 +863,10 @@ namespace SmsApi.Services
                     AlumniId = donation.AlumniId,
                     AlumniName = alumni.Name,
                     Amount = donation.Amount,
+                    DonationType = donation.DonationType,
                     Purpose = donation.Purpose,
                     DonationDate = donation.DonationDate,
+                    Status = donation.Status,
                     PaymentMethod = donation.PaymentMethod,
                     ReceiptNumber = donation.TransactionReference,
                     IsAnonymous = donation.Status == "Anonymous",
@@ -1041,6 +1048,72 @@ namespace SmsApi.Services
         public async Task<AlumniDonationFullDto> CreateAlumniDonationAsync(Guid schoolId, CreateAlumniDonationDto dto, Guid userId)
         {
             var donation = await CreateDonationAsync(schoolId, dto);
+
+            // Auto-post to wallet as DONATION income (non-blocking)
+            try
+            {
+                // Find or create "Alumni Donations" income category
+                var category = await _context.FinanceCategories
+                    .FirstOrDefaultAsync(c => c.SchoolId == schoolId && c.Type == "INCOME"
+                        && c.Name == "Alumni Donations" && c.IsActive);
+
+                if (category == null)
+                {
+                    category = new FinanceCategory
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        Name = "Alumni Donations",
+                        Type = "INCOME",
+                        IsActive = true,
+                        Description = "Income from alumni donations",
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    _context.FinanceCategories.Add(category);
+                    await _context.SaveChangesAsync();
+                }
+
+                // Find the first active finance account for the school
+                var account = await _context.FinanceAccounts
+                    .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.IsActive);
+
+                if (account != null)
+                {
+                    var donorLabel = donation.IsAnonymous ? "Anonymous Donor" : donation.AlumniName;
+                    var txn = new FinanceTransaction
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        AccountId = account.Id,
+                        Amount = dto.Amount,
+                        Type = "CREDIT",
+                        CategoryId = category.Id,
+                        Date = dto.DonationDate,
+                        Description = $"Alumni Donation – {donorLabel}: {dto.Purpose ?? "General"}",
+                        Source = "DONATION",
+                        ReferenceNumber = dto.ReceiptNumber,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    _context.FinanceTransactions.Add(txn);
+                    account.Balance += dto.Amount;
+                    account.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogInformation("Auto-posted donation {DonationId} to wallet account {AccountId}", donation.Id, account.Id);
+                }
+                else
+                {
+                    _logger.LogWarning("No active finance account found for school {SchoolId} — wallet entry skipped", schoolId);
+                }
+            }
+            catch (Exception walletEx)
+            {
+                _logger.LogWarning(walletEx, "Could not auto-post donation to wallet for school {SchoolId}", schoolId);
+                // Donation was already saved — don't fail the whole request
+            }
+
             return new AlumniDonationFullDto
             {
                 Id = donation.Id,

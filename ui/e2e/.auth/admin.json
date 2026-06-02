@@ -10,11 +10,11 @@
         },
         {
           "name": "pw_e2e_auth",
-          "value": "{\"user\":{\"id\":\"ad900ba6-9779-4886-9456-952a2dc3b425\",\"name\":\"Admin User\",\"email\":\"admin@vitanaschools.edu\",\"role\":\"admin\",\"designation\":\"Admin\",\"schoolId\":\"550e8400-e29b-41d4-a716-446655440000\",\"requirePasswordChange\":false},\"sessionId\":\"052dc3ac014bfad8018a97f2bbd97282e55bab5a6c78801683f851e63b6f2c40\",\"expiresAt\":1778412945492,\"createdAt\":1778409345681,\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImFkOTAwYmE2LTk3NzktNDg4Ni05NDU2LTk1MmEyZGMzYjQyNSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiZGM0YTU5MDgtZTExNi00MTc0LTg1YTgtYzU5OTgwNjQyOWU3IiwiaWF0IjoiMTc3ODQwOTM0NSIsImV4cCI6MTc3ODQxMjk0NSwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.qXj_HCY9g3nUWXfWHxEpKatt8BSRdm0mbUFvq45lEwI\",\"refreshToken\":\"Zzge4KhPHWHpI/6cyZdtJthHKX6tJxSbF1B7NKWZE1rcj2ZkD8TbxGmJ0u0L5jLBTm7E9IzX8WpokBEokAkaYw==\"}"
+          "value": "{\"user\":{\"id\":\"e4f5cd01-aecc-40fe-bb95-cc7271ea9049\",\"name\":\"Admin User\",\"email\":\"admin@vitanaschools.edu\",\"role\":\"admin\",\"designation\":\"Admin\",\"schoolId\":\"550e8400-e29b-41d4-a716-446655440000\",\"requirePasswordChange\":false},\"sessionId\":\"e81bc6eb9e6f7994344edfb00b28c07746a74fe6624f3bbf4ab2865363a9acb2\",\"expiresAt\":1779359484910,\"createdAt\":1779355885062,\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImU0ZjVjZDAxLWFlY2MtNDBmZS1iYjk1LWNjNzI3MWVhOTA0OSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiMzhmYzNjOWUtY2JmZi00YzA1LTlhNmYtMGI2Yjc4ZTMwMjRkIiwiaWF0IjoiMTc3OTM1NTg4NCIsImV4cCI6MTc3OTM1OTQ4NCwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.jhp4-rfbDUHrESfCq7OWxzsA6Zj4tmEFAed4RGDV734\",\"refreshToken\":\"PwZorVTjebvI7AK29mVC7bamowZtDnopXJkQ0lN4nz2VD6gBCDsrsvLENNCupc3bfdVSWH7nz8UUfv6Y/SFXvw==\"}"
         },
         {
           "name": "authToken",
-          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImFkOTAwYmE2LTk3NzktNDg4Ni05NDU2LTk1MmEyZGMzYjQyNSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiZGM0YTU5MDgtZTExNi00MTc0LTg1YTgtYzU5OTgwNjQyOWU3IiwiaWF0IjoiMTc3ODQwOTM0NSIsImV4cCI6MTc3ODQxMjk0NSwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.qXj_HCY9g3nUWXfWHxEpKatt8BSRdm0mbUFvq45lEwI"
+          "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6ImU0ZjVjZDAxLWFlY2MtNDBmZS1iYjk1LWNjNzI3MWVhOTA0OSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI6ImFkbWluQHZpdGFuYXNjaG9vbHMuZWR1IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkFkbWluIFVzZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsIlNjaG9vbElkIjoiNTUwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAwIiwianRpIjoiMzhmYzNjOWUtY2JmZi00YzA1LTlhNmYtMGI2Yjc4ZTMwMjRkIiwiaWF0IjoiMTc3OTM1NTg4NCIsImV4cCI6MTc3OTM1OTQ4NCwiaXNzIjoiU21zQXBpIiwiYXVkIjoiU21zQXBpQ2xpZW50In0.jhp4-rfbDUHrESfCq7OWxzsA6Zj4tmEFAed4RGDV734"
         },
         {
           "name": "language",
@@ -22,11 +22,15 @@
         },
         {
           "name": "selectedAcademicYearId",
-          "value": "a1000000-0000-0000-0000-000000000002"
+          "value": "179a9992-f68f-49b2-b6db-11788b747dbc"
         },
         {
           "name": "selectedAcademicYearName",
-          "value": "2025-2026"
+          "value": "2026-2027"
+        },
+        {
+          "name": "user_preferences",
+          "value": "{\"theme\":\"system\",\"language\":\"en\",\"dateFormat\":\"DD/MM/YYYY\",\"timeFormat\":\"12h\",\"currency\":\"USD\",\"itemsPerPage\":20,\"emailNotifications\":true,\"smsNotifications\":false,\"compactMode\":false,\"sidebarCollapsed\":false,\"tableView\":\"comfortable\"}"
         }
       ]
     }

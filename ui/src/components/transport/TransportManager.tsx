@@ -10,13 +10,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X } from "lucide-react";
-import { transportApi, TransportRoute, TransportStudent, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto } from "@/services/api/transportApi";
+import { Bus, Users, Plus, Pencil, Trash2, MapPin, Phone, Loader2, Search, Route, X, ShieldOff, Truck, Navigation } from "lucide-react";
+import { transportApi, TransportRoute, TransportStudent, TransportStudentListResponse, CreateRouteDto, AssignStudentDto, UpdateTransportStudentDto, Vehicle, VehicleListResponse, CreateVehicleDto, TransportStop, CreateTransportStopDto } from "@/services/api/transportApi";
 import { studentApi, StudentBasic } from "@/services/api/studentApi";
+import { usePermissions } from "@/contexts/PermissionsContext";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { AdvancedPagination } from "@/components/common/AdvancedPagination";
+
+const ROUTES_PAGE_SIZE = 20;
+const STUDENTS_PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 // ─── Route Form Dialog ────────────────────────────────────────────────────────
 
 function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<CreateRouteDto>({
     routeNumber: route?.routeNumber ?? "",
     routeName: route?.routeName ?? "",
@@ -30,8 +38,23 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
     status: route?.status ?? "active",
   });
   const [saving, setSaving] = useState(false);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+
+  useEffect(() => {
+    transportApi.getVehicles("active").then(r => setVehicles(r.vehicles ?? [])).catch(() => {});
+  }, []);
 
   function set(k: keyof CreateRouteDto, v: string | number) { setForm(p => ({ ...p, [k]: v })); }
+
+  function handleVehicleSelect(regNumber: string) {
+    const v = vehicles.find(x => x.registrationNumber === regNumber);
+    setForm(p => ({
+      ...p,
+      vehicleNumber: regNumber,
+      driverName: v?.driverName ?? p.driverName,
+      driverPhone: v?.driverPhone ?? p.driverPhone,
+    }));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,52 +77,61 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{route ? "Edit Route" : "Add Bus Route"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{route ? t('transport.routeForm.titleEdit') : t('transport.routeForm.titleAdd')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Route Number *</Label>
+            <Label>{t('transport.routeForm.routeNumber')} *</Label>
             <Input value={form.routeNumber} onChange={e => set("routeNumber", e.target.value)} placeholder="R-001" />
           </div>
           <div className="space-y-1.5">
-            <Label>Route Name *</Label>
+            <Label>{t('transport.routeForm.routeName')} *</Label>
             <Input value={form.routeName} onChange={e => set("routeName", e.target.value)} placeholder="Banjara Hills Route" />
           </div>
           <div className="space-y-1.5">
-            <Label>Vehicle Number</Label>
-            <Input value={form.vehicleNumber ?? ""} onChange={e => set("vehicleNumber", e.target.value)} placeholder="TS 09 AB 1234" />
+            <Label>{t('transport.routeForm.vehicleNumber')}</Label>
+            <Select value={form.vehicleNumber ?? ""} onValueChange={handleVehicleSelect}>
+              <SelectTrigger><SelectValue placeholder="Select a vehicle" /></SelectTrigger>
+              <SelectContent>
+                {vehicles.map(v => (
+                  <SelectItem key={v.id} value={v.registrationNumber}>
+                    {v.registrationNumber}{v.vehicleType ? ` (${v.vehicleType})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Driver Name</Label>
+            <Label>{t('transport.routeForm.driverName')}</Label>
             <Input value={form.driverName ?? ""} onChange={e => set("driverName", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Driver Phone</Label>
+            <Label>{t('transport.routeForm.driverPhone')}</Label>
             <Input value={form.driverPhone ?? ""} onChange={e => set("driverPhone", e.target.value)} placeholder="+91 98765 43210" />
           </div>
           <div className="space-y-1.5">
-            <Label>Capacity</Label>
+            <Label>{t('transport.routeForm.capacity')}</Label>
             <Input type="number" value={form.capacity} onChange={e => set("capacity", parseInt(e.target.value) || 0)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Monthly Fee (₹)</Label>
+            <Label>{t('transport.routeForm.monthlyFee')}</Label>
             <Input type="number" value={form.monthlyFee ?? 0} onChange={e => set("monthlyFee", parseFloat(e.target.value) || 0)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Status</Label>
+            <Label>{t('transport.routeForm.status')}</Label>
             <Select value={form.status} onValueChange={v => set("status", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="active">{t('transport.routeForm.status.active')}</SelectItem>
+                <SelectItem value="inactive">{t('transport.routeForm.status.inactive')}</SelectItem>
+                <SelectItem value="maintenance">{t('transport.routeForm.status.maintenance')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <DialogFooter className="col-span-2 gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('transport.routeForm.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {route ? "Update" : "Create Route"}
+              {route ? t('transport.routeForm.update') : t('transport.routeForm.create')}
             </Button>
           </DialogFooter>
         </form>
@@ -108,9 +140,203 @@ function RouteFormDialog({ route, onClose, onSaved }: { route?: TransportRoute; 
   );
 }
 
+// ─── Stop Form Dialog ────────────────────────────────────────────────────────
+
+function StopFormDialog({ routeId, stop, nextOrder, onClose, onSaved }: { routeId: string; stop?: TransportStop; nextOrder?: number; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<CreateTransportStopDto>({
+    stopName: stop?.stopName ?? "",
+    stopOrder: stop?.stopOrder ?? nextOrder ?? 1,
+    landmark: stop?.landmark ?? "",
+    morningArrivalTime: stop?.morningArrivalTime ?? "",
+    eveningDepartureTime: stop?.eveningDepartureTime ?? "",
+    distanceKm: stop?.distanceKm ?? undefined,
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set<K extends keyof CreateTransportStopDto>(k: K, v: CreateTransportStopDto[K]) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.stopName.trim()) { toast.error("Stop name is required"); return; }
+    setSaving(true);
+    // Normalize time strings: HTML time inputs return "HH:MM"; backend TimeSpan needs "HH:MM:SS"
+    function toTimeSpan(t: string | undefined): string | undefined {
+      if (!t) return undefined;
+      return /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t;
+    }
+    const payload: CreateTransportStopDto = {
+      ...form,
+      morningArrivalTime: toTimeSpan(form.morningArrivalTime),
+      eveningDepartureTime: toTimeSpan(form.eveningDepartureTime),
+    };
+    try {
+      if (stop) {
+        await transportApi.updateStop(stop.id, payload);
+        toast.success("Stop updated");
+      } else {
+        await transportApi.createStop(routeId, payload);
+        toast.success("Stop added");
+      }
+      onSaved(); onClose();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save stop");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{stop ? "Edit Stop" : "Add Stop"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Stop Name *</Label>
+              <Input value={form.stopName} onChange={e => set("stopName", e.target.value)} placeholder="e.g., City Centre" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Stop Order</Label>
+              <Input type="number" min={1} value={form.stopOrder} onChange={e => set("stopOrder", Number(e.target.value))} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Landmark</Label>
+            <Input value={form.landmark ?? ""} onChange={e => set("landmark", e.target.value)} placeholder="Near City Mall" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Morning Arrival</Label>
+              <Input type="time" value={form.morningArrivalTime ?? ""} onChange={e => set("morningArrivalTime", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Evening Departure</Label>
+              <Input type="time" value={form.eveningDepartureTime ?? ""} onChange={e => set("eveningDepartureTime", e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Distance from School (km)</Label>
+            <Input type="number" step="0.1" min={0} value={form.distanceKm ?? ""} onChange={e => set("distanceKm", e.target.value ? Number(e.target.value) : undefined)} />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving} className="gap-2">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{stop ? "Update" : "Add Stop"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Stops Dialog ─────────────────────────────────────────────────────────────
+
+function StopsDialog({ route, canEdit, onClose }: { route: TransportRoute; canEdit: boolean; onClose: () => void }) {
+  const [stops, setStops] = useState<TransportStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editStop, setEditStop] = useState<TransportStop | undefined>();
+
+  const loadStops = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await transportApi.getStops(route.id);
+      setStops((data ?? []).sort((a, b) => a.stopOrder - b.stopOrder));
+    } catch { toast.error("Failed to load stops"); }
+    finally { setLoading(false); }
+  }, [route.id]);
+
+  useEffect(() => { loadStops(); }, [loadStops]);
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this stop?")) return;
+    try {
+      await transportApi.deleteStop(id);
+      toast.success("Stop deleted");
+      loadStops();
+    } catch { toast.error("Failed to delete stop"); }
+  }
+
+  return (
+    <>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Navigation className="h-5 w-5" />
+            Stops — {route.routeName} ({route.routeNumber})
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : stops.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground">
+              <Navigation className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="font-medium">No stops added yet</p>
+              {canEdit && <Button className="mt-3 gap-1" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4" />Add First Stop</Button>}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-10">#</TableHead>
+                    <TableHead>Stop Name</TableHead>
+                    <TableHead>Landmark</TableHead>
+                    <TableHead>Morning</TableHead>
+                    <TableHead>Evening</TableHead>
+                    <TableHead>Distance</TableHead>
+                    {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stops.map(s => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium text-muted-foreground">{s.stopOrder}</TableCell>
+                      <TableCell className="font-medium">{s.stopName}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{s.landmark || '—'}</TableCell>
+                      <TableCell className="text-sm">{s.morningArrivalTime ? s.morningArrivalTime.slice(0, 5) : '—'}</TableCell>
+                      <TableCell className="text-sm">{s.eveningDepartureTime ? s.eveningDepartureTime.slice(0, 5) : '—'}</TableCell>
+                      <TableCell className="text-sm">{s.distanceKm != null ? `${s.distanceKm} km` : '—'}</TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => setEditStop(s)}><Pencil className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {canEdit && stops.length > 0 && (
+            <div className="flex justify-end">
+              <Button onClick={() => setShowAdd(true)} className="gap-1"><Plus className="h-4 w-4" />Add Stop</Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    {(showAdd || editStop) && (
+      <StopFormDialog
+        routeId={route.id}
+        stop={editStop}
+        nextOrder={stops.length + 1}
+        onClose={() => { setShowAdd(false); setEditStop(undefined); }}
+        onSaved={loadStops}
+      />
+    )}
+    </>
+  );
+}
+
 // ─── Assign Student Dialog ────────────────────────────────────────────────────
 
 function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRoute[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [searchResults, setSearchResults] = useState<StudentBasic[]>([]);
   const [assignedStudentIds, setAssignedStudentIds] = useState<Set<string>>(new Set());
   const [loadingAssigned, setLoadingAssigned] = useState(true);
@@ -126,8 +352,8 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
   // Load assigned student IDs once on mount
   useEffect(() => {
     setLoadingAssigned(true);
-    transportApi.getAllTransportStudents().then(ts => {
-      setAssignedStudentIds(new Set(ts.map(t => t.studentId)));
+    transportApi.getAllTransportStudents(1, 500).then(res => {
+      setAssignedStudentIds(new Set(res.students.map(t => t.studentId)));
     }).catch(() => {
       toast.error("Failed to load current assignments");
     }).finally(() => setLoadingAssigned(false));
@@ -192,15 +418,15 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Assign Student to Route</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('transport.assignDialog.title')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Student *</Label>
+            <Label>{t('transport.assignDialog.studentLabel')} *</Label>
             <div ref={studentRef} className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 className="pl-9 pr-8"
-                placeholder={loadingAssigned ? "Loading..." : "Type name or admission number to search…"}
+                placeholder={loadingAssigned ? t('transport.assignDialog.searchLoading') : t('transport.assignDialog.searchPlaceholder')}
                 value={selectedStudent && !studentOpen
                   ? `${selectedStudent.name} — ${selectedStudent.class} ${selectedStudent.section} (${selectedStudent.admissionNumber})`
                   : studentQuery}
@@ -222,7 +448,7 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
                 <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
                   {searching ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />Searching…
+                      <Loader2 className="h-4 w-4 animate-spin" />{t('transport.assignDialog.searching')}
                     </div>
                   ) : filteredResults.length > 0 ? (
                     filteredResults.map(s => (
@@ -234,7 +460,7 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
                       </button>
                     ))
                   ) : searchResults.length > 0 ? (
-                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">All matching students are already assigned</div>
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">{t('transport.assignDialog.allAssigned')}</div>
                   ) : (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">No active students found for "{studentQuery}"</div>
                   )}
@@ -243,9 +469,9 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Route *</Label>
+            <Label>{t('transport.assignDialog.routeLabel')} *</Label>
             <Select value={form.routeId} onValueChange={v => setForm(p => ({ ...p, routeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('transport.assignDialog.selectRoute')} /></SelectTrigger>
               <SelectContent>
                 {routes.filter(r => r.status === "active").map(r => (
                   <SelectItem key={r.id} value={r.id}>{r.routeNumber} — {r.routeName} ({r.studentsAssigned}/{r.capacity})</SelectItem>
@@ -255,18 +481,18 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Pickup Point</Label>
+              <Label>{t('transport.assignDialog.pickupPoint')}</Label>
               <Input value={form.pickupPoint ?? ""} onChange={e => setForm(p => ({ ...p, pickupPoint: e.target.value }))} placeholder="Main Gate" />
             </div>
             <div className="space-y-1.5">
-              <Label>Drop Point</Label>
+              <Label>{t('transport.assignDialog.dropPoint')}</Label>
               <Input value={form.dropPoint ?? ""} onChange={e => setForm(p => ({ ...p, dropPoint: e.target.value }))} placeholder="Bus Stand" />
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('transport.assignDialog.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Assign Student
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('transport.assignDialog.assign')}
             </Button>
           </DialogFooter>
         </form>
@@ -278,6 +504,7 @@ function AssignStudentDialog({ routes, onClose, onSaved }: { routes: TransportRo
 // ─── Edit Transport Student Dialog ───────────────────────────────────────────
 
 function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { assignment: TransportStudent; routes: TransportRoute[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<UpdateTransportStudentDto>({
     routeId: assignment.routeId,
     pickupPoint: assignment.pickupPoint ?? "",
@@ -306,9 +533,9 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
         <DialogHeader><DialogTitle>Edit Transport Assignment — {assignment.studentName}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Route *</Label>
+            <Label>{t('transport.editDialog.routeLabel')} *</Label>
             <Select value={form.routeId} onValueChange={v => setForm(p => ({ ...p, routeId: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('transport.editDialog.selectRoute')} /></SelectTrigger>
               <SelectContent>
                 {routes.filter(r => r.status === "active" || r.id === assignment.routeId).map(r => (
                   <SelectItem key={r.id} value={r.id}>{r.routeNumber} — {r.routeName} ({r.studentsAssigned}/{r.capacity})</SelectItem>
@@ -318,36 +545,160 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Pickup Point</Label>
+              <Label>{t('transport.editDialog.pickupPoint')}</Label>
               <Input value={form.pickupPoint ?? ""} onChange={e => setForm(p => ({ ...p, pickupPoint: e.target.value }))} placeholder="Main Gate" />
             </div>
             <div className="space-y-1.5">
-              <Label>Drop Point</Label>
+              <Label>{t('transport.editDialog.dropPoint')}</Label>
               <Input value={form.dropPoint ?? ""} onChange={e => setForm(p => ({ ...p, dropPoint: e.target.value }))} placeholder="Bus Stand" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Monthly Fee (₹)</Label>
+              <Label>{t('transport.editDialog.monthlyFee')}</Label>
               <Input type="number" value={form.monthlyFee ?? 0} onChange={e => setForm(p => ({ ...p, monthlyFee: parseFloat(e.target.value) || 0 }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>{t('transport.editDialog.status')}</Label>
               <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="active">{t('transport.editDialog.status.active')}</SelectItem>
+                  <SelectItem value="inactive">{t('transport.editDialog.status.inactive')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('transport.editDialog.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}Update Assignment
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}{t('transport.editDialog.update')}
             </Button>
           </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Vehicle Form Dialog ──────────────────────────────────────────────────────
+
+function VehicleFormDialog({ vehicle, onClose, onSaved }: { vehicle?: Vehicle; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<CreateVehicleDto>({
+    registrationNumber: vehicle?.registrationNumber ?? "",
+    make: vehicle?.make ?? "",
+    model: vehicle?.model ?? "",
+    year: vehicle?.year ?? undefined,
+    vehicleType: vehicle?.vehicleType ?? "bus",
+    seatingCapacity: vehicle?.seatingCapacity ?? 40,
+    color: vehicle?.color ?? "",
+    fuelType: vehicle?.fuelType ?? "diesel",
+    driverName: vehicle?.driverName ?? "",
+    driverPhone: vehicle?.driverPhone ?? "",
+    status: vehicle?.status ?? "active",
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(k: keyof CreateVehicleDto, v: string | number | undefined) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.registrationNumber.trim()) { toast.error("Registration number is required"); return; }
+    setSaving(true);
+    try {
+      if (vehicle) {
+        await transportApi.updateVehicle(vehicle.id, form);
+        toast.success("Vehicle updated");
+      } else {
+        await transportApi.createVehicle(form);
+        toast.success("Vehicle added");
+      }
+      onSaved(); onClose();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save vehicle");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{vehicle ? "Edit Vehicle" : "Add Vehicle"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Registration Number *</Label>
+            <Input value={form.registrationNumber} onChange={e => set("registrationNumber", e.target.value)} placeholder="TS 09 AB 1234" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Vehicle Type</Label>
+            <Select value={form.vehicleType} onValueChange={v => set("vehicleType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bus">Bus</SelectItem>
+                <SelectItem value="van">Van</SelectItem>
+                <SelectItem value="minibus">Mini Bus</SelectItem>
+                <SelectItem value="auto">Auto</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Make</Label>
+            <Input value={form.make ?? ""} onChange={e => set("make", e.target.value)} placeholder="Tata" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Model</Label>
+            <Input value={form.model ?? ""} onChange={e => set("model", e.target.value)} placeholder="Starbus" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Year</Label>
+            <Input type="number" value={form.year ?? ""} onChange={e => set("year", e.target.value ? Number(e.target.value) : undefined)} placeholder="2020" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Seating Capacity</Label>
+            <Input type="number" value={form.seatingCapacity} onChange={e => set("seatingCapacity", Number(e.target.value))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Fuel Type</Label>
+            <Select value={form.fuelType ?? "diesel"} onValueChange={v => set("fuelType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="diesel">Diesel</SelectItem>
+                <SelectItem value="petrol">Petrol</SelectItem>
+                <SelectItem value="cng">CNG</SelectItem>
+                <SelectItem value="electric">Electric</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Color</Label>
+            <Input value={form.color ?? ""} onChange={e => set("color", e.target.value)} placeholder="Yellow" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Driver Name</Label>
+            <Input value={form.driverName ?? ""} onChange={e => set("driverName", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Driver Phone</Label>
+            <Input value={form.driverPhone ?? ""} onChange={e => set("driverPhone", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select value={form.status} onValueChange={v => set("status", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="col-span-2">
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={saving} className="gap-2">
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}{vehicle ? "Update" : "Add Vehicle"}
+              </Button>
+            </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
@@ -357,50 +708,103 @@ function EditTransportStudentDialog({ assignment, routes, onClose, onSaved }: { 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TransportManager() {
+  const { t } = useLanguage();
+  const { hasUserPermission } = usePermissions();
+  const canViewTransport   = hasUserPermission('Transport', 'View');
+  const canManageRoutes    = hasUserPermission('Transport', 'Create');
+  const canEditRoutes      = hasUserPermission('Transport', 'Edit');
+  const canDeleteRoutes    = hasUserPermission('Transport', 'Delete');
+  const accessDenied       = !canViewTransport;
+
   const [routes, setRoutes] = useState<TransportRoute[]>([]);
   const [students, setStudents] = useState<TransportStudent[]>([]);
   const [routesLoading, setRoutesLoading] = useState(true);
   const [studentsLoading, setStudentsLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  // Routes: local search, server-side pagination
+  const [routesSearch, setRoutesSearch] = useState("");
+  const [routesPage, setRoutesPage] = useState(1);
+  const [routesTotal, setRoutesTotal] = useState(0);
+  // Students: server-side search + pagination
+  const [studentsSearch, setStudentsSearch] = useState("");
+  const [studentsPage, setStudentsPage] = useState(1);
+  const [studentsTotal, setStudentsTotal] = useState(0);
+  const studentsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingStudentsSearch = useRef("");
   const [editRoute, setEditRoute] = useState<TransportRoute | undefined>();
   const [showAddRoute, setShowAddRoute] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [editStudent, setEditStudent] = useState<TransportStudent | undefined>();
   const [tab, setTab] = useState("routes");
 
-  const loadRoutes = useCallback(async () => {
+  // ── Vehicles state ──────────────────────────────────────────────────────
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehiclesLoading, setVehiclesLoading] = useState(false);
+  const [vehiclesLoaded, setVehiclesLoaded] = useState(false);
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [editVehicle, setEditVehicle] = useState<Vehicle | undefined>();
+  const [stopsRoute, setStopsRoute] = useState<TransportRoute | undefined>();
+
+  const loadRoutes = useCallback(async (page = 1) => {
     setRoutesLoading(true);
     try {
-      const r = await transportApi.getRoutes(1, 200);
+      const r = await transportApi.getRoutes(page, ROUTES_PAGE_SIZE);
       setRoutes(r.routes ?? []);
+      setRoutesTotal(r.total ?? 0);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load routes");
     } finally { setRoutesLoading(false); }
   }, []);
 
-  const loadStudents = useCallback(async () => {
+  const loadVehicles = useCallback(async () => {
+    setVehiclesLoading(true);
+    try {
+      const r = await transportApi.getVehicles();
+      setVehicles(r.vehicles ?? []);
+      setVehiclesLoaded(true);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load vehicles");
+    } finally { setVehiclesLoading(false); }
+  }, []);
+
+  const loadStudents = useCallback(async (page = 1, search = "") => {
     setStudentsLoading(true);
     try {
-      const s = await transportApi.getAllTransportStudents();
-      setStudents(s ?? []);
+      const s = await transportApi.getAllTransportStudents(page, STUDENTS_PAGE_SIZE, search || undefined);
+      setStudents(s.students ?? []);
+      setStudentsTotal(s.total ?? 0);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load students");
     } finally { setStudentsLoading(false); }
   }, []);
 
-  useEffect(() => { loadRoutes(); }, [loadRoutes]);
+  useEffect(() => { loadRoutes(routesPage); }, [loadRoutes, routesPage]);
 
   function handleTabChange(v: string) {
     setTab(v);
-    if (v === "students" && students.length === 0) loadStudents();
+    if (v === "students") loadStudents(studentsPage, studentsSearch);
+    if (v === "vehicles" && !vehiclesLoaded) loadVehicles();
   }
+
+  function handleStudentsSearchChange(value: string) {
+    setStudentsSearch(value);
+    pendingStudentsSearch.current = value;
+    if (studentsDebounceRef.current) clearTimeout(studentsDebounceRef.current);
+    studentsDebounceRef.current = setTimeout(() => {
+      setStudentsPage(1);
+      loadStudents(1, pendingStudentsSearch.current);
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
+    if (tab === "students") loadStudents(studentsPage, studentsSearch);
+  }, [studentsPage]);
 
   async function handleDeleteRoute(id: string) {
     if (!confirm("Delete this route? Students assigned will be unlinked.")) return;
     try {
       await transportApi.deleteRoute(id);
       toast.success("Route deleted");
-      loadRoutes();
+      loadRoutes(routesPage);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to delete route");
     }
@@ -411,56 +815,66 @@ export function TransportManager() {
     try {
       await transportApi.removeStudentFromRoute(id);
       toast.success("Student removed from route");
-      loadStudents();
-      loadRoutes();
+      loadStudents(studentsPage, studentsSearch);
+      loadRoutes(routesPage);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to remove student");
     }
   }
 
+  // Stats computed from paginated totals + current page data
   const activeRoutes = routes.filter(r => r.status === "active").length;
-  const totalStudents = routes.reduce((a, r) => a + r.studentsAssigned, 0);
+  const totalStudents = routesTotal > 0 ? routes.reduce((a, r) => a + r.studentsAssigned, 0) : students.length;
   const totalCapacity = routes.reduce((a, r) => a + r.capacity, 0);
 
-  const filteredRoutes = routes.filter(r =>
-    r.routeName.toLowerCase().includes(search.toLowerCase()) ||
-    r.routeNumber.toLowerCase().includes(search.toLowerCase()) ||
-    (r.vehicleNumber ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  // Local search filter within current page for routes
+  const filteredRoutes = routesSearch
+    ? routes.filter(r =>
+        r.routeName.toLowerCase().includes(routesSearch.toLowerCase()) ||
+        r.routeNumber.toLowerCase().includes(routesSearch.toLowerCase()) ||
+        (r.vehicleNumber ?? "").toLowerCase().includes(routesSearch.toLowerCase())
+      )
+    : routes;
 
-  const filteredStudents = students.filter(s =>
-    s.studentName.toLowerCase().includes(search.toLowerCase()) ||
-    s.routeName.toLowerCase().includes(search.toLowerCase()) ||
-    (s.pickupPoint ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-6">
+        <ShieldOff className="h-16 w-16 text-muted-foreground opacity-40" />
+        <h2 className="text-xl font-semibold">{t('transport.accessRestricted')}</h2>
+        <p className="text-muted-foreground max-w-sm">
+          {t('transport.accessDeniedMessage')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Bus className="h-6 w-6 text-amber-600" />Transport Management</h1>
-          <p className="text-muted-foreground">Manage bus routes and student transport assignments</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Bus className="h-6 w-6 text-amber-600" />{t('transport.title')}</h1>
+          <p className="text-muted-foreground">{canManageRoutes ? t('transport.subtitle.manage') : t('transport.subtitle.view')}</p>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Total Routes</p>
-          <p className="text-2xl font-bold">{routes.length}</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.totalRoutes')}</p>
+          <p className="text-2xl font-bold">{routesTotal || routes.length}</p>
           <p className="text-xs text-green-600">{activeRoutes} active</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Students Using Transport</p>
-          <p className="text-2xl font-bold">{totalStudents}</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.studentsUsingTransport')}</p>
+          <p className="text-2xl font-bold">{studentsTotal || totalStudents}</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Total Capacity</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.totalCapacity')}</p>
           <p className="text-2xl font-bold">{totalCapacity}</p>
           <p className="text-xs text-muted-foreground">{totalCapacity > 0 ? Math.round((totalStudents / totalCapacity) * 100) : 0}% utilized</p>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground">Revenue/Month</p>
+          <p className="text-sm text-muted-foreground">{t('transport.stats.revenuePerMonth')}</p>
           <p className="text-2xl font-bold">₹{routes.reduce((a, r) => a + (r.monthlyFee ?? 0) * r.studentsAssigned, 0).toLocaleString("en-IN")}</p>
         </CardContent></Card>
       </div>
@@ -468,16 +882,26 @@ export function TransportManager() {
       <Tabs value={tab} onValueChange={handleTabChange}>
         <div className="flex items-center justify-between gap-4">
           <TabsList>
-            <TabsTrigger value="routes" className="gap-1.5"><Route className="h-4 w-4" />Bus Routes</TabsTrigger>
-            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />Students</TabsTrigger>
+            <TabsTrigger value="routes" className="gap-1.5"><Route className="h-4 w-4" />{t('transport.tabs.busRoutes')}</TabsTrigger>
+            <TabsTrigger value="students" className="gap-1.5"><Users className="h-4 w-4" />{t('transport.tabs.students')}</TabsTrigger>
+            <TabsTrigger value="vehicles" className="gap-1.5"><Truck className="h-4 w-4" />Vehicles</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9 w-64" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-            {tab === "routes" && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />Add Route</Button>}
-            {tab === "students" && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />Assign Student</Button>}
+            {tab === "routes" && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9 w-64" placeholder={t('transport.search.placeholder')} value={routesSearch} onChange={e => setRoutesSearch(e.target.value)} />
+              </div>
+            )}
+            {tab === "students" && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9 w-64" placeholder="Search students…" value={studentsSearch} onChange={e => handleStudentsSearchChange(e.target.value)} />
+              </div>
+            )}
+            {tab === "routes" && canManageRoutes && <Button onClick={() => setShowAddRoute(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
+            {tab === "students" && canManageRoutes && <Button onClick={() => setShowAssign(true)} className="gap-1"><Plus className="h-4 w-4" />{t('transport.actions.assignStudent')}</Button>}
+            {tab === "vehicles" && canManageRoutes && <Button onClick={() => setShowAddVehicle(true)} className="gap-1"><Plus className="h-4 w-4" />Add Vehicle</Button>}
           </div>
         </div>
 
@@ -488,50 +912,55 @@ export function TransportManager() {
           ) : filteredRoutes.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <Bus className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No routes found</p>
-              <p className="text-sm">Create your first bus route to get started</p>
-              <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />Add Route</Button>
+              <p className="font-medium">{t('transport.routes.emptyTitle')}</p>
+              <p className="text-sm">{t('transport.routes.emptySubtitle')}</p>
+              {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddRoute(true)}><Plus className="h-4 w-4" />{t('transport.actions.addRoute')}</Button>}
             </CardContent></Card>
           ) : (
-            <div className="border rounded-lg">
+            <>
+            <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Route</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead className="text-center">Students</TableHead>
-                    <TableHead className="text-right">Fee/Month</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                  <TableRow className="bg-muted/50 dark:bg-slate-800 hover:bg-muted/50">
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.route')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.vehicle')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.driver')}</TableHead>
+                    <TableHead className="text-center font-semibold text-foreground">{t('transport.routes.col.students')}</TableHead>
+                    <TableHead className="text-right font-semibold text-foreground">{t('transport.routes.col.feePerMonth')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.routes.col.status')}</TableHead>
+                    <TableHead className="text-right font-semibold text-foreground">{t('transport.routes.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="dark:[&>tr]:border-slate-600/70">
                   {filteredRoutes.map(r => (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="dark:border-slate-600/70 dark:hover:bg-slate-700/40">
                       <TableCell>
-                        <div className="font-medium">{r.routeName}</div>
-                        <div className="text-xs text-muted-foreground">{r.routeNumber}</div>
+                        <div className="font-medium dark:text-white">{r.routeName}</div>
+                        <div className="text-xs text-muted-foreground dark:text-slate-400">{r.routeNumber}</div>
                       </TableCell>
-                      <TableCell>{r.vehicleNumber || "—"}</TableCell>
+                      <TableCell className="dark:text-slate-200">{r.vehicleNumber || "—"}</TableCell>
                       <TableCell>
-                        <div>{r.driverName || "—"}</div>
-                        {r.driverPhone && <div className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{r.driverPhone}</div>}
+                        <div className="dark:text-slate-200">{r.driverName || "—"}</div>
+                        {r.driverPhone && <div className="text-xs text-muted-foreground dark:text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" />{r.driverPhone}</div>}
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-medium">{r.studentsAssigned}</span>
-                        <span className="text-muted-foreground">/{r.capacity}</span>
+                        <span className="font-medium dark:text-slate-200">{r.studentsAssigned}</span>
+                        <span className="text-muted-foreground dark:text-slate-400">/{r.capacity}</span>
                       </TableCell>
-                      <TableCell className="text-right">₹{(r.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="text-right dark:text-slate-200">₹{(r.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
                       <TableCell>
                         <Badge variant={r.status === "active" ? "default" : r.status === "maintenance" ? "secondary" : "outline"}>
                           {r.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => setEditRoute(r)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRoute(r.id)}><Trash2 className="h-4 w-4" /></Button>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="secondary" size="sm" onClick={() => setStopsRoute(r)} className="gap-1">
+                            <Navigation className="h-3.5 w-3.5" />
+                            Stops
+                          </Button>
+                          {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditRoute(r)}><Pencil className="h-4 w-4" /></Button>}
+                          {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRoute(r.id)}><Trash2 className="h-4 w-4" /></Button>}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -539,6 +968,19 @@ export function TransportManager() {
                 </TableBody>
               </Table>
             </div>
+            {routesTotal > ROUTES_PAGE_SIZE && (
+              <div className="mt-4">
+                <AdvancedPagination
+                  currentPage={routesPage}
+                  pageSize={ROUTES_PAGE_SIZE}
+                  totalItems={routesTotal}
+                  onPageChange={(p) => setRoutesPage(p)}
+                  onPageSizeChange={() => {}}
+                  pageSizeOptions={[ROUTES_PAGE_SIZE]}
+                />
+              </div>
+            )}
+            </>
           )}
         </TabsContent>
 
@@ -546,57 +988,128 @@ export function TransportManager() {
         <TabsContent value="students">
           {studentsLoading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : filteredStudents.length === 0 ? (
+          ) : students.length === 0 ? (
             <Card><CardContent className="py-12 text-center text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              {search ? (
+              {studentsSearch ? (
                 <>
-                  <p className="font-medium">No assigned student matches "{search}"</p>
+                  <p className="font-medium">No assigned student matches "{studentsSearch}"</p>
                   <p className="text-sm mt-1">This student may not be assigned to a transport route yet.</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Route</Button>
+                  {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student to Route</Button>}
                 </>
               ) : (
                 <>
-                  <p className="font-medium">No students assigned yet</p>
-                  <p className="text-sm">Assign students to bus routes</p>
-                  <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />Assign Student</Button>
+                  <p className="font-medium">{t('transport.students.emptyTitle')}</p>
+                  <p className="text-sm">{t('transport.students.emptySubtitle')}</p>
+                  {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAssign(true)}><Plus className="h-4 w-4" />{t('transport.actions.assignStudent')}</Button>}
                 </>
               )}
             </CardContent></Card>
           ) : (
-            <div className="border rounded-lg">
+            <>
+            <div className="rounded-lg overflow-hidden border border-border dark:border-slate-700 bg-card dark:text-slate-100">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
-                    <TableHead>Route</TableHead>
-                    <TableHead>Pickup Point</TableHead>
-                    <TableHead>Drop Point</TableHead>
-                    <TableHead>Fee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                  <TableRow className="bg-muted/50 dark:bg-slate-800 hover:bg-muted/50">
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.student')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.class')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.route')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.pickupPoint')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.dropPoint')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.fee')}</TableHead>
+                    <TableHead className="font-semibold text-foreground">{t('transport.students.col.status')}</TableHead>
+                    <TableHead className="text-right font-semibold text-foreground">{t('transport.students.col.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {filteredStudents.map(s => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.studentName}</TableCell>
-                      <TableCell>{s.studentClass} {s.studentSection}</TableCell>
+                <TableBody className="dark:[&>tr]:border-slate-600/70">
+                  {students.map(s => (
+                    <TableRow key={s.id} className="dark:border-slate-600/70 dark:hover:bg-slate-700/40">
+                      <TableCell className="font-medium dark:text-white">{s.studentName}</TableCell>
+                      <TableCell className="dark:text-slate-200">{s.studentClass} {s.studentSection}</TableCell>
                       <TableCell>
-                        <div className="font-medium">{s.routeName}</div>
-                        <div className="text-xs text-muted-foreground">{s.routeNumber}</div>
+                        <div className="font-medium dark:text-slate-200">{s.routeName}</div>
+                        <div className="text-xs text-muted-foreground dark:text-slate-400">{s.routeNumber}</div>
                       </TableCell>
-                      <TableCell><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-green-600" />{s.pickupPoint || "—"}</div></TableCell>
-                      <TableCell><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-red-500" />{s.dropPoint || "—"}</div></TableCell>
-                      <TableCell>₹{(s.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="dark:text-slate-200"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-green-600 dark:text-green-400" />{s.pickupPoint || "—"}</div></TableCell>
+                      <TableCell className="dark:text-slate-200"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-red-500 dark:text-red-400" />{s.dropPoint || "—"}</div></TableCell>
+                      <TableCell className="dark:text-slate-200">₹{(s.monthlyFee ?? 0).toLocaleString("en-IN")}</TableCell>
                       <TableCell><Badge variant={s.status === "active" ? "default" : "outline"}>{s.status}</Badge></TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveStudent(s.id)}><Trash2 className="h-4 w-4" /></Button>
+                          {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditStudent(s)}><Pencil className="h-4 w-4" /></Button>}
+                          {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveStudent(s.id)}><Trash2 className="h-4 w-4" /></Button>}
                         </div>
                       </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {studentsTotal > STUDENTS_PAGE_SIZE && (
+              <div className="mt-4">
+                <AdvancedPagination
+                  currentPage={studentsPage}
+                  pageSize={STUDENTS_PAGE_SIZE}
+                  totalItems={studentsTotal}
+                  onPageChange={(p) => setStudentsPage(p)}
+                  onPageSizeChange={() => {}}
+                  pageSizeOptions={[STUDENTS_PAGE_SIZE]}
+                />
+              </div>
+            )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* Vehicles Tab */}
+        <TabsContent value="vehicles">
+          {vehiclesLoading ? (
+            <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+          ) : vehicles.length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">
+              <Truck className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No vehicles registered</p>
+              <p className="text-sm">Add vehicles to track compliance and assignments</p>
+              {canManageRoutes && <Button className="mt-4 gap-1" onClick={() => setShowAddVehicle(true)}><Plus className="h-4 w-4" />Add Vehicle</Button>}
+            </CardContent></Card>
+          ) : (
+            <div className="rounded-lg overflow-hidden border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Registration</TableHead>
+                    <TableHead>Make / Model</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Capacity</TableHead>
+                    <TableHead>Driver</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Compliance</TableHead>
+                    {(canEditRoutes || canDeleteRoutes) && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vehicles.map(v => (
+                    <TableRow key={v.id}>
+                      <TableCell className="font-mono font-medium">{v.registrationNumber}</TableCell>
+                      <TableCell>{v.make} {v.model}{v.year ? ` (${v.year})` : ''}</TableCell>
+                      <TableCell className="capitalize">{v.vehicleType}</TableCell>
+                      <TableCell>{v.seatingCapacity}</TableCell>
+                      <TableCell>{v.driverName ?? <span className="text-muted-foreground text-sm">—</span>}</TableCell>
+                      <TableCell><Badge variant={v.status === 'active' ? 'default' : 'outline'}>{v.status}</Badge></TableCell>
+                      <TableCell>
+                        {(v.complianceAlerts ?? []).length === 0
+                          ? <span className="text-green-600 text-sm">OK</span>
+                          : <Badge variant="destructive">{(v.complianceAlerts ?? []).length} alert{(v.complianceAlerts ?? []).length > 1 ? 's' : ''}</Badge>
+                        }
+                      </TableCell>
+                      {(canEditRoutes || canDeleteRoutes) && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {canEditRoutes && <Button variant="ghost" size="icon" onClick={() => setEditVehicle(v)}><Pencil className="h-4 w-4" /></Button>}
+                            {canDeleteRoutes && <Button variant="ghost" size="icon" className="text-destructive" onClick={async () => { if(confirm(`Delete vehicle ${v.registrationNumber}?`)) { try { await transportApi.deleteVehicle(v.id); loadVehicles(); } catch { toast.error('Failed to delete'); } } }}><Trash2 className="h-4 w-4" /></Button>}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -608,10 +1121,16 @@ export function TransportManager() {
 
       {/* Dialogs */}
       {(showAddRoute || editRoute) && (
-        <RouteFormDialog route={editRoute} onClose={() => { setShowAddRoute(false); setEditRoute(undefined); }} onSaved={() => { loadRoutes(); }} />
+        <RouteFormDialog route={editRoute} onClose={() => { setShowAddRoute(false); setEditRoute(undefined); }} onSaved={() => { loadRoutes(routesPage); }} />
       )}
-      {showAssign && <AssignStudentDialog routes={routes} onClose={() => setShowAssign(false)} onSaved={() => { loadStudents(); loadRoutes(); }} />}
-      {editStudent && <EditTransportStudentDialog assignment={editStudent} routes={routes} onClose={() => setEditStudent(undefined)} onSaved={() => { loadStudents(); loadRoutes(); }} />}
+      {showAssign && <AssignStudentDialog routes={routes} onClose={() => setShowAssign(false)} onSaved={() => { loadStudents(studentsPage, studentsSearch); loadRoutes(routesPage); }} />}
+      {editStudent && <EditTransportStudentDialog assignment={editStudent} routes={routes} onClose={() => setEditStudent(undefined)} onSaved={() => { loadStudents(studentsPage, studentsSearch); loadRoutes(routesPage); }} />}
+      {(showAddVehicle || editVehicle) && (
+        <VehicleFormDialog vehicle={editVehicle} onClose={() => { setShowAddVehicle(false); setEditVehicle(undefined); }} onSaved={loadVehicles} />
+      )}
+      {stopsRoute && (
+        <StopsDialog route={stopsRoute} canEdit={canEditRoutes || canManageRoutes} onClose={() => setStopsRoute(undefined)} />
+      )}
     </div>
   );
 }

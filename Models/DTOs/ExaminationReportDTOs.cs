@@ -16,6 +16,12 @@ namespace SmsApi.Models.DTOs
         public decimal GradeCPercentage { get; set; }
         public decimal GradeDPercentage { get; set; }
         public decimal GradeEPercentage { get; set; }
+        /// <summary>
+        /// Board-specific grade distribution. Key = grade label (e.g. "A1", "O", "7", "A*"),
+        /// Value = percentage of students who received that grade.
+        /// Use this for non-CBSE boards where A/B/C/D/E buckets don't apply.
+        /// </summary>
+        public Dictionary<string, decimal> GradeBreakdown { get; set; } = new();
         public List<ExamSummary> ExamSummaries { get; set; } = new();
         public DateTime GeneratedAt { get; set; }
     }

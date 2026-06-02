@@ -13,9 +13,8 @@ namespace SmsApi.Models.Entities
         [MaxLength(200)]
         public string Name { get; set; } = string.Empty;
         
-        [Required]
         [MaxLength(20)]
-        public string Class { get; set; } = string.Empty;
+        public string? Class { get; set; }
         
         [Required]
         [MaxLength(20)]
@@ -70,9 +69,36 @@ namespace SmsApi.Models.Entities
         public string? InstallmentAmounts { get; set; } // JSON array
         
         public string? InstallmentDueDates { get; set; } // JSON array
-        
+
+        /// <summary>
+        /// Per-head billing frequency stored as a JSON dictionary.
+        /// Keys match the camelCase fee head names (tuitionFee, admissionFee, etc.).
+        /// Valid values: "once" | "termly" | "halfYearly" | "quarterly" | "monthly"
+        /// Missing key = "termly" (default — spreads evenly across all installments).
+        /// Example: {"admissionFee":"once","examFee":"halfYearly"}
+        /// </summary>
+        [MaxLength(2000)]
+        public string? FeeHeadFrequencies { get; set; }
+
+        public bool IsActive { get; set; } = true;
+
+        [ForeignKey("BoardConfig")]
+        public Guid? BoardConfigurationId { get; set; }
+        public virtual BoardConfiguration? BoardConfig { get; set; }
+
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
+
+        /// <summary>
+        /// Computes the true total by summing all fee head components.
+        /// Always use this when creating or updating fee records so TotalAmount
+        /// on the record is never stale relative to the structure's actual heads.
+        /// </summary>
+        public decimal ComputeTotalFromComponents() =>
+            TuitionFee + AdmissionFee + ExamFee + LibraryFee + LabFee + SportsFee +
+            UniformFee + BooksFee + DevelopmentFee + Miscellaneous;
+            // TransportFee and HostelFee are excluded — they are per-student charges
+            // calculated individually based on bus route and hostel room assignment.
     }
 
     public class FeeRecord : BaseEntity
@@ -135,6 +161,15 @@ namespace SmsApi.Models.Entities
 
         [ForeignKey("StudentEnrollmentId")]
         public virtual StudentEnrollment? StudentEnrollment { get; set; }
+
+        /// <summary>
+        /// Per-student fee head overrides stored as a JSON dictionary.
+        /// Example: {"libraryFee":0,"examFee":400}
+        /// When set, TotalAmount reflects these per-head reductions instead of the structure total.
+        /// These are NOT counted as concessions (DiscountAmount is unaffected).
+        /// </summary>
+        [MaxLength(2000)]
+        public string? FeeHeadOverrides { get; set; }
     }
 
     public class PaymentTransaction : BaseEntity
@@ -234,6 +269,257 @@ namespace SmsApi.Models.Entities
         [Required]
         public bool IsActive { get; set; } = true;
         
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FeeHead — Normalized fee component types (Tuition, Lab, Sports, etc.)
+    // Replaces hardcoded columns on FeeStructure for flexible fee configuration.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class FeeHead : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        [MaxLength(100)]
+        public string Name { get; set; } = string.Empty; // e.g. "Tuition Fee", "Lab Fee"
+
+        [MaxLength(20)]
+        public string? Code { get; set; } // e.g. "TUITION", "LAB"
+
+        [MaxLength(500)]
+        public string? Description { get; set; }
+
+        /// <summary>Controls whether this head appears in fee receipts</summary>
+        public bool IsVisibleOnReceipt { get; set; } = true;
+
+        /// <summary>Determines if this head is mandatory or optional</summary>
+        public bool IsMandatory { get; set; } = true;
+
+        public int DisplayOrder { get; set; } = 0;
+
+        public bool IsActive { get; set; } = true;
+
+        /// <summary>Default billing frequency for this fee head: once|termly|halfYearly|quarterly|monthly</summary>
+        [MaxLength(20)]
+        public string? DefaultFrequency { get; set; }
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FeeStructureComponent — maps a FeeHead to a FeeStructure with an amount.
+    // Optionally scoped to a specific FeeTerm (e.g. Tuition charged in Term1 only).
+    // ─────────────────────────────────────────────────────────────────────────
+    public class FeeStructureComponent : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        [Required]
+        public Guid FeeHeadId { get; set; }
+
+        /// <summary>Optional: if set, this component belongs to a specific FeeTerm.</summary>
+        public Guid? FeeTermId { get; set; }
+
+        /// <summary>Optional: pre-applied concession on this line item.</summary>
+        public Guid? ConcessionTypeId { get; set; }
+
+        [Required]
+        [Column(TypeName = "decimal(12,2)")]
+        public decimal Amount { get; set; }
+
+        /// <summary>Due date for this specific component, if different from the term's due date.</summary>
+        public DateTime? DueDate { get; set; }
+
+        [MaxLength(200)]
+        public string? Remarks { get; set; }
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+
+        [ForeignKey("FeeHeadId")]
+        public virtual FeeHead? FeeHead { get; set; }
+
+        [ForeignKey("FeeTermId")]
+        public virtual FeeTerm? FeeTerm { get; set; }
+
+        [ForeignKey("ConcessionTypeId")]
+        public virtual ConcessionType? ConcessionType { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FeeTerm — Named installment / payment term within a FeeStructure.
+    // e.g. "Q1 – April", "Q2 – July", "Annual"
+    // Replaces the JSON-string InstallmentAmounts/InstallmentDueDates pattern.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class FeeTerm : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        /// <summary>Optional: null for school-level terms not tied to a specific structure.</summary>
+        public Guid? FeeStructureId { get; set; }
+
+        [Required]
+        [MaxLength(100)]
+        public string Name { get; set; } = string.Empty; // "Term 1", "Q2", "Annual"
+
+        [Required]
+        public int TermNumber { get; set; } // 1, 2, 3, 4 — used for ordering
+
+        [Required]
+        [Column(TypeName = "decimal(12,2)")]
+        public decimal Amount { get; set; }
+
+        [Required]
+        public DateTime DueDate { get; set; }
+
+        /// <summary>Status: pending | paid | overdue | waived</summary>
+        [MaxLength(20)]
+        public string Status { get; set; } = "pending";
+
+        [MaxLength(500)]
+        public string? Remarks { get; set; }
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ClassFeeStructure — many-to-many join between a Class (by name) and a
+    // FeeStructure. Replaces the single Class string column on FeeStructure for
+    // schools that assign one structure to multiple classes.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class ClassFeeStructure : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        /// <summary>Class name e.g. "5A", "10B". Matches Student.Class.</summary>
+        [Required]
+        [MaxLength(50)]
+        public string ClassName { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        public bool IsActive { get; set; } = true;
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // StudentFeeItem — per-student discount applied at the line-item level.
+    // Tracks which FeeStructureComponent is discounted, the discount type
+    // (Scholarship / Sibling / Management / Others) and the percentage.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class StudentFeeItem : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid StudentId { get; set; }
+
+        [Required]
+        public Guid FeeStructureId { get; set; }
+
+        /// <summary>The specific component (fee head line) this discount applies to.
+        /// Null = applies to the whole structure (legacy aggregate discount).</summary>
+        public Guid? FeeStructureComponentId { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        /// <summary>Discount category: Scholarship | Sibling | Management | Others</summary>
+        [Required]
+        [MaxLength(50)]
+        public string DiscountType { get; set; } = "Others";
+
+        /// <summary>Discount as a percentage of the component amount (0–100).</summary>
+        [Required]
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal DiscountPercentage { get; set; } = 0;
+
+        /// <summary>Flat override amount. When both are set, flat takes precedence.</summary>
+        [Column(TypeName = "decimal(12,2)")]
+        public decimal? FlatAmount { get; set; }
+
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+
+        public bool IsActive { get; set; } = true;
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("StudentId")]
+        public virtual Student? Student { get; set; }
+
+        [ForeignKey("FeeStructureId")]
+        public virtual FeeStructure? FeeStructure { get; set; }
+
+        [ForeignKey("FeeStructureComponentId")]
+        public virtual FeeStructureComponent? FeeStructureComponent { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ReceiptTemplate — Custom receipt layout per school.
+    // Allows schools to brand their fee receipts with logo, footer text, etc.
+    // ─────────────────────────────────────────────────────────────────────────
+    public class ReceiptTemplate : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        [MaxLength(100)]
+        public string Name { get; set; } = string.Empty; // "Standard Receipt", "CBSE Format"
+
+        [MaxLength(500)]
+        public string? HeaderText { get; set; }
+
+        [MaxLength(500)]
+        public string? FooterText { get; set; }
+
+        /// <summary>URL/path to the school logo displayed on the receipt</summary>
+        [MaxLength(500)]
+        public string? LogoUrl { get; set; }
+
+        /// <summary>Primary color hex for receipt branding e.g. "#1a3c5e"</summary>
+        [MaxLength(10)]
+        public string? PrimaryColor { get; set; }
+
+        /// <summary>JSON config for which FeeHead columns to show on the receipt</summary>
+        public string? ColumnConfigJson { get; set; }
+
+        /// <summary>Whether this is the default template for the school</summary>
+        public bool IsDefault { get; set; } = false;
+
+        public bool IsActive { get; set; } = true;
+
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
     }

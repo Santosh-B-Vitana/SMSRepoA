@@ -1,9 +1,35 @@
 # Coding Agent Guidelines — SMS API
 
-**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 8, 2026  
+**Framework:** ASP.NET Core 8 · .NET 8 | **Last Updated:** May 25, 2026 (Session 11)  
 **Status:** Production Release Candidate
 
 This is the primary instruction set for AI coding agents and developers performing bug fixes, maintenance, and feature work. Follow these architectural patterns to maintain code quality and system integrity.
+
+---
+
+## 0. AI Support First-Read (Before Any Edit)
+
+For quick support tasks, read these in order:
+
+1. `docs/AI_SUPPORT_RUNBOOK.md` (latest triage playbook)
+2. `docs/TECHNICAL_DOCUMENT.md` (latest session changelog)
+3. `docs/MODULE_STATUS.md` (module readiness and constraints)
+
+### High-impact current behaviors (must preserve)
+
+- Unified login UX is role-first (Admin/Staff/Parent) in `ui/src/pages/Login.tsx`.
+- Super admin remains a dedicated entry route (`/super-admin-login`).
+- Pre-login branding is provided by anonymous `GET /api/settings/public-branding`.
+- `SchoolContext` caches branding (`school_branding_cache`) and falls back safely.
+- Finance aggregated income must exclude petty cash.
+
+### Non-negotiables for AI edits
+
+1. Keep RBAC enforcement server-side (`[Authorize]`, role claims, tenant filters).
+2. Do not treat UI role selection as a security boundary.
+3. Avoid tenant-specific literals (for example, hardcoded school codes/domains) in comments or docs.
+4. After login/branding edits, verify both `/login` and `/super-admin-login` flows.
+5. After finance aggregation edits, verify backend + UI totals match.
 
 ---
 
@@ -403,6 +429,17 @@ refactor: simplify attendance entity mapping
 | **Catching all exceptions** | `catch (Exception ex) { return BadRequest(); }` | Let middleware handle it |
 | **N+1 queries** | Loop + lazy load | `.Include()` upfront |
 | **Secrets in config** | `"Secret": "my-real-secret"` in appsettings.Production.json | Environment variable |
+| **Role claim comparison** | `role is "admin"` | `role.ToLowerInvariant() is "admin"` — JWT stores title-case (`"Admin"`, `"Teacher"`) |
+| **UserLogin.Id as StaffMember.Id** | `TeacherAssignment.StaffId == GetUserId()` | Resolve via email: `StaffMembers.Where(s => s.Email == userEmail)` — `UserLogin.Id ≠ StaffMember.Id` |
+| **FK violation on EnteredByStaffId** | Store `UserLogin.Id` | Store resolved `StaffMember.Id` (nullable for admins who have no StaffMember row) |
+| **Parent lookup via Guardians table** | `_context.Guardians` / `_context.GuardianStudents` | These tables are empty legacy tables. Use `from sg in _context.StudentGuardians join ul in _context.UserLogins on sg.Email equals ul.Email` |
+| **Parent notification RecipientId** | Store student ID or guardian name | Store `UserLogins.Id` (the login record of the parent). `Notifications.RecipientId = UserLogin.Id` |
+| **Staff deactivation — UserLogin sync** | Update only `StaffMember.Status` | Always also update `UserLogin.Status = "inactive"` + clear `RefreshTokenHash`/`RefreshTokenExpiry`. Use `LinkedEntityId`-first lookup: `UserLogins.Where(u => u.LinkedEntityId == staffId && u.LinkedEntityType == "staff")`. Email fallback only if `LinkedEntityId` is null. |
+| **Staff login guard** | Trust only `UserLogin.Status` for staff roles | Query `StaffMember.Status` live at login (same as parent guard). A stale `UserLogin.Status` must not let an inactive staff member in. Pattern in `AuthController.Login` and `OnTokenValidated`. |
+| **Fee structural override vs concession** | Call `inline-discount` to exempt a student from Library Fee | Use `PATCH /fees/records/{id}/fee-head-overrides` with `Overrides: {"libraryFee": 0}`. This reduces `TotalAmount` directly. `DiscountAmount` must stay for concessions/waivers only. Mixing them corrupts reports. |
+| **FeeRecord fields — do not confuse** | Treat `DiscountAmount` as "total fee reduction" | `TotalAmount` = gross minus fee-head overrides. `DiscountAmount` = concession/waiver only. `PendingAmount` = `TotalAmount + LateFeeAmount − PaidAmount − DiscountAmount`. All three are distinct. |
+| **Fee dialog — stale prop** | Read from the `record` prop passed into the fee dialog | Use `activeRecord = liveRecord ?? record`. After any fee operation, `liveRecord` is refreshed via `getFeeRecordById`; `record` is never mutated. Reading `record.*` after an operation shows stale data. |
+| **Empty EF migration after model change** | Run `dotnet ef migrations add` immediately | Always `dotnet build SmsApi.csproj` first. The migrations tool uses the compiled assembly; if the binary is stale it produces an empty `Up()`. Manually write the SQL if the migration came out empty. |
 
 ---
 
@@ -456,6 +493,6 @@ Before committing any code, verify:
 
 ---
 
-**Last Updated:** May 8, 2026 | **Project:** SMSRepoA (Release Candidate)  
+**Last Updated:** May 16, 2026 (Session 7) | **Project:** SMSRepoA (Release Candidate)  
 **For architecture details:** [TECHNICAL_DOCUMENT.md](./TECHNICAL_DOCUMENT.md)  
 **For deployment:** [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)

@@ -159,4 +159,13 @@ namespace SmsApi.Models.DTOs
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
     }
+
+    public class TransportStudentListResponse
+    {
+        public List<TransportStudentDetailResponse> Students { get; set; } = [];
+        public int Total { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public int TotalPages => PageSize > 0 ? (int)Math.Ceiling(Total / (double)PageSize) : 0;
+    }
 }

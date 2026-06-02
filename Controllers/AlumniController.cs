@@ -367,7 +367,12 @@ namespace SmsApi.Controllers
                 var userId = GetUserId();
                 var result = await _service.CreateAlumniDonationAsync(schoolId, dto, userId);
                 
-                return CreatedAtAction(nameof(GetAlumniDonations), new { id = result.Id }, result);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                _logger.LogWarning(ex, "Alumni not found when recording donation");
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {

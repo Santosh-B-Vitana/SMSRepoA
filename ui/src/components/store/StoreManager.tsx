@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -35,6 +36,8 @@ import {
   MarkOrderPaidDto,
 } from "@/services/api/storeApi";
 import { StorePaymentProcessor } from "./StorePaymentProcessor";
+import { generateStoreReceipt } from "@/utils/storeReceiptGenerator";
+import { useSchool } from "@/contexts/SchoolContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -110,6 +113,8 @@ interface CartItem {
 
 export function StoreManager() {
   const visitedTabs = useRef(new Set<string>(["dashboard"]));
+  const { schoolInfo } = useSchool();
+  const { t } = useLanguage();
 
   // ─── Stats
   const [stats, setStats] = useState<StoreStatsDto | null>(null);
@@ -397,9 +402,9 @@ export function StoreManager() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Package className="h-6 w-6" />School Store
+            <Package className="h-6 w-6" />{t('store.storeTitle')}
           </h1>
-          <p className="text-sm text-muted-foreground">Manage inventory, run POS sales, track orders</p>
+          <p className="text-sm text-muted-foreground">{t('store.manageDesc')}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => { loadStats(); }}>
@@ -413,38 +418,38 @@ export function StoreManager() {
 
       <Tabs defaultValue="dashboard" onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="dashboard">{t('store.dashboard')}</TabsTrigger>
           <TabsTrigger value="pos" className="flex items-center gap-1">
-            <ShoppingCart className="h-4 w-4" />POS
+            <ShoppingCart className="h-4 w-4" />{t('store.pos')}
             {cartCount > 0 && (
               <span className="ml-1 rounded-full bg-emerald-500 text-white text-xs px-1.5 py-0.5 leading-none">{cartCount}</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          <TabsTrigger value="inventory">{t('store.inventory')}</TabsTrigger>
           <TabsTrigger value="orders">
-            Orders
+            {t('store.orders')}
             {stats && stats.pendingOrders > 0 && (
               <span className="ml-1.5 rounded-full bg-amber-500 text-white text-xs px-1.5 py-0.5 leading-none">{stats.pendingOrders}</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+          <TabsTrigger value="reports">{t('store.reports')}</TabsTrigger>
         </TabsList>
 
         {/* ══════════════════════ DASHBOARD ══════════════════════ */}
         <TabsContent value="dashboard" className="space-y-6 mt-4">
           {statsLoading ? (
-            <div className="text-center py-20 text-muted-foreground">Loading…</div>
+            <div className="text-center py-20 text-muted-foreground">{t('store.loadingStore')}</div>
           ) : !stats ? (
-            <div className="text-center py-20 text-muted-foreground">No store data yet</div>
+            <div className="text-center py-20 text-muted-foreground">{t('store.noStoreData')}</div>
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 {[
-                  { label: "Today's Revenue", value: fmt(stats.todayRevenue), icon: TrendingUp, color: "bg-emerald-500", sub: `${stats.todayOrders} orders` },
-                  { label: "This Month", value: fmt(stats.thisMonthRevenue), icon: BarChart3, color: "bg-blue-500", sub: "Month to date" },
-                  { label: "Pending Orders", value: stats.pendingOrders.toString(), icon: Clock, color: "bg-amber-500", sub: "Awaiting action" },
-                  { label: "Low Stock", value: stats.lowStockItems.toString(), icon: AlertTriangle, color: "bg-orange-500", sub: `${stats.outOfStockItems} out of stock` },
-                  { label: "Active Items", value: stats.activeItems.toString(), icon: Package, color: "bg-violet-500", sub: `${stats.totalItems} total` },
+                  { label: t('store.todaysRevenue'), value: fmt(stats.todayRevenue), icon: TrendingUp, color: "bg-emerald-500", sub: `${stats.todayOrders} orders` },
+                  { label: t('store.thisMonth'), value: fmt(stats.thisMonthRevenue), icon: BarChart3, color: "bg-blue-500", sub: "Month to date" },
+                  { label: t('store.pendingOrders'), value: stats.pendingOrders.toString(), icon: Clock, color: "bg-amber-500", sub: "Awaiting action" },
+                  { label: t('store.lowStock'), value: stats.lowStockItems.toString(), icon: AlertTriangle, color: "bg-orange-500", sub: `${stats.outOfStockItems} out of stock` },
+                  { label: t('store.activeItems'), value: stats.activeItems.toString(), icon: Package, color: "bg-violet-500", sub: `${stats.totalItems} total` },
                 ].map(kpi => (
                   <Card key={kpi.label}>
                     <CardContent className="pt-5">
@@ -462,13 +467,13 @@ export function StoreManager() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Revenue by category */}
                 <Card>
-                  <CardHeader><CardTitle className="text-base">Revenue by Category</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-base">{t('store.revenueByCategory')}</CardTitle></CardHeader>
                   <CardContent>
                     {Object.keys(stats.revenueByCategory).length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-8">No sales yet</p>
+                      <p className="text-sm text-muted-foreground text-center py-8">{t('store.noSalesYet')}</p>
                     ) : (
                       <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={Object.entries(stats.revenueByCategory).map(([cat, rev]) => ({ cat, rev }))}>
+                        <BarChart data={Object.entries(stats.revenueByCategory).map(([cat, rev]) => ({ cat: cat.charAt(0).toUpperCase() + cat.slice(1), rev }))}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="cat" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
@@ -484,13 +489,13 @@ export function StoreManager() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />Low Stock Alerts
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />{t('store.lowStock')}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     {stats.lowStockAlerts.length === 0 ? (
                       <div className="text-center py-8 text-emerald-600 text-sm font-medium">
-                        <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-60" />All stock levels are healthy
+                        <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-60" />{t('store.allStockHealthy')}
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -554,8 +559,8 @@ export function StoreManager() {
               ) : posItems.length === 0 ? (
                 <div className="text-center py-16 text-muted-foreground">
                   <Package className="h-12 w-12 mx-auto mb-2 opacity-30" />
-                  <p>No items found</p>
-                  <Button variant="link" onClick={() => setAddItemOpen(true)}>Add items to the store</Button>
+                  <p>{t('store.noItemsFound')}</p>
+                  <Button variant="link" onClick={() => setAddItemOpen(true)}>{t('store.addFirstItem')}</Button>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -598,18 +603,18 @@ export function StoreManager() {
             <div className="border rounded-xl bg-card flex flex-col h-fit sticky top-4">
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <h2 className="font-semibold flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4" />Cart
+                  <ShoppingCart className="h-4 w-4" />{t('store.cart')}
                   {cartCount > 0 && <Badge>{cartCount} items</Badge>}
                 </h2>
                 {cart.length > 0 && (
-                  <Button variant="ghost" size="sm" className="text-red-500 h-7 px-2" onClick={() => setCart([])}>Clear</Button>
+                  <Button variant="ghost" size="sm" className="text-red-500 h-7 px-2" onClick={() => setCart([])}>{t('common.clear')}</Button>
                 )}
               </div>
 
               {cart.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">
                   <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                  Click items to add to cart
+                  {t('store.clickToAdd')}
                 </div>
               ) : (
                 <>
@@ -647,17 +652,17 @@ export function StoreManager() {
 
                     {/* Total */}
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="text-muted-foreground">{t('store.subtotal')}</span>
                       <span>{fmt(cartSubtotal)}</span>
                     </div>
                     {globalDiscount > 0 && (
                       <div className="flex justify-between text-sm text-emerald-600">
-                        <span>Discount</span>
+                        <span>{t('store.discountLabel')}</span>
                         <span>−{fmt(globalDiscount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-lg border-t pt-2">
-                      <span>Total</span>
+                      <span>{t('store.total')}</span>
                       <span className="text-primary">{fmt(finalTotal)}</span>
                     </div>
                   </div>
@@ -697,7 +702,7 @@ export function StoreManager() {
                       disabled={cart.length === 0}
                       onClick={handleCheckout}
                     >
-                      <Receipt className="h-4 w-4 mr-2" />Proceed to Payment · {fmt(finalTotal)}
+                      <Receipt className="h-4 w-4 mr-2" />{t('store.proceedToPayment')} · {fmt(finalTotal)}
                     </Button>
                   </div>
                 </>
@@ -741,7 +746,7 @@ export function StoreManager() {
             <Select value={invCategory || "all"} onValueChange={v => setInvCategory(v === "all" ? "" : v)}>
               <SelectTrigger className="w-36"><SelectValue placeholder="All categories" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
+                <SelectItem value="all">{t('store.allCategoriesOption')}</SelectItem>
                 {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -755,24 +760,24 @@ export function StoreManager() {
 
           <Card>
             {invLoading ? (
-              <div className="text-center py-16 text-muted-foreground">Loading…</div>
+              <div className="text-center py-16 text-muted-foreground">{t('store.loadingStore')}</div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t('store.itemHeader')}</TableHead>
+                    <TableHead>{t('store.category')}</TableHead>
+                    <TableHead className="text-right">{t('store.price')}</TableHead>
+                    <TableHead className="text-right">{t('store.stock')}</TableHead>
+                    <TableHead>{t('common.status')}</TableHead>
+                    <TableHead>{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {invItems.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
-                        No items found. <button className="underline text-primary" onClick={() => setAddItemOpen(true)}>Add your first item</button>
+                        No items found. <button className="underline text-primary" onClick={() => setAddItemOpen(true)}>{t('store.addFirstItem')}</button>
                       </TableCell>
                     </TableRow>
                   ) : invItems.map(item => (
@@ -824,7 +829,7 @@ export function StoreManager() {
             <Select value={ordersStatus || "all"} onValueChange={v => setOrdersStatus(v === "all" ? "" : v)}>
               <SelectTrigger className="w-40"><SelectValue placeholder="All statuses" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="all">{t('store.allStatuses')}</SelectItem>
                 {ORDER_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -832,30 +837,30 @@ export function StoreManager() {
               <SlidersHorizontal className="h-4 w-4 mr-2" />Filter
             </Button>
             <Button variant="outline" size="sm" className="ml-auto" onClick={() => loadOrders(ordersPage)}>
-              <RefreshCw className="h-4 w-4 mr-2" />Refresh
+              <RefreshCw className="h-4 w-4 mr-2" />{t('common.refresh')}
             </Button>
           </div>
 
           <Card>
             {ordersLoading ? (
-              <div className="text-center py-16 text-muted-foreground">Loading…</div>
+              <div className="text-center py-16 text-muted-foreground">{t('store.loadingStore')}</div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Order #</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Payment</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t('store.orderNo')}</TableHead>
+                    <TableHead>{t('store.customer')}</TableHead>
+                    <TableHead>{t('common.date')}</TableHead>
+                    <TableHead className="text-right">{t('store.amount')}</TableHead>
+                    <TableHead>{t('common.status')}</TableHead>
+                    <TableHead>{t('store.payment')}</TableHead>
+                    <TableHead>{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {orders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No orders found</TableCell>
+                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">{t('store.noOrdersFound')}</TableCell>
                     </TableRow>
                   ) : orders.map(order => (
                     <TableRow key={order.id} className="cursor-pointer hover:bg-muted/30" onClick={() => { setSelectedOrder(order); }}>
@@ -899,16 +904,16 @@ export function StoreManager() {
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Total Revenue</p><p className="text-2xl font-bold text-emerald-600">{fmt(stats.totalRevenue)}</p></CardContent></Card>
-                <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Total Orders</p><p className="text-2xl font-bold">{stats.totalOrders}</p></CardContent></Card>
-                <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">Avg. Order Value</p><p className="text-2xl font-bold">{stats.totalOrders > 0 ? fmt(stats.totalRevenue / stats.totalOrders) : "—"}</p></CardContent></Card>
+                <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{t('store.totalRevenue')}</p><p className="text-2xl font-bold text-emerald-600">{fmt(stats.totalRevenue)}</p></CardContent></Card>
+                <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{t('store.totalOrders')}</p><p className="text-2xl font-bold">{stats.totalOrders}</p></CardContent></Card>
+                <Card><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{t('store.avgOrderValue')}</p><p className="text-2xl font-bold">{stats.totalOrders > 0 ? fmt(stats.totalRevenue / stats.totalOrders) : "—"}</p></CardContent></Card>
               </div>
 
               <Card>
-                <CardHeader><CardTitle className="text-base">Revenue by Category</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{t('store.revenueByCategory')}</CardTitle></CardHeader>
                 <CardContent>
                   {Object.keys(stats.revenueByCategory).length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">No revenue data yet</p>
+                    <p className="text-sm text-muted-foreground text-center py-8">{t('store.noRevenueData')}</p>
                   ) : (
                     <ResponsiveContainer width="100%" height={280}>
                       <BarChart data={Object.entries(stats.revenueByCategory).map(([cat, rev]) => ({ cat, rev }))}>
@@ -924,14 +929,14 @@ export function StoreManager() {
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="text-base">Inventory Health</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">{t('store.inventoryHealth')}</CardTitle></CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {[
-                      { label: "Total Items", value: stats.totalItems, color: "text-foreground" },
-                      { label: "Available", value: stats.activeItems, color: "text-emerald-600" },
-                      { label: "Low Stock", value: stats.lowStockItems, color: "text-amber-600" },
-                      { label: "Out of Stock", value: stats.outOfStockItems, color: "text-red-600" },
+                      { label: t('store.totalItems'), value: stats.totalItems, color: "text-foreground" },
+                      { label: t('store.available'), value: stats.activeItems, color: "text-emerald-600" },
+                      { label: t('store.lowStock'), value: stats.lowStockItems, color: "text-amber-600" },
+                      { label: t('store.outOfStock'), value: stats.outOfStockItems, color: "text-red-600" },
                     ].map(s => (
                       <div key={s.label} className="rounded-lg border p-4 text-center">
                         <p className={cn("text-3xl font-bold", s.color)}>{s.value}</p>
@@ -951,31 +956,31 @@ export function StoreManager() {
       {/* Add Item */}
       <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Plus className="h-5 w-5" />Add Store Item</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Plus className="h-5 w-5" />{t('store.addStoreItem')}</DialogTitle></DialogHeader>
           <form onSubmit={handleAddItem} className="space-y-3 py-2">
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2"><Label>Name *</Label><Input name="name" required placeholder="e.g. School Uniform Shirt" /></div>
-              <div><Label>Item Code</Label><Input name="itemCode" placeholder="SKU-001" /></div>
+              <div className="col-span-2"><Label>{t('store.nameLabel')}</Label><Input name="name" required placeholder="e.g. School Uniform Shirt" /></div>
+              <div><Label>{t('store.itemCode')}</Label><Input name="itemCode" placeholder="SKU-001" /></div>
               <div>
-                <Label>Category *</Label>
+                <Label>{t('store.categoryLabel')}</Label>
                 <Select name="category" required>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div><Label>Price (₹) *</Label><Input name="price" type="number" min={0} step="0.01" required /></div>
+              <div><Label>{t('store.priceLabel')}</Label><Input name="price" type="number" min={0} step="0.01" required /></div>
               <div>
-                <Label>Unit</Label>
+                <Label>{t('store.unitLabel')}</Label>
                 <Select name="unit">
                   <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                   <SelectContent>{["Piece", "Set", "Kg", "Liter"].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div><Label>Stock Qty *</Label><Input name="stockQuantity" type="number" min={0} defaultValue={0} required /></div>
-              <div><Label>Min Stock Level</Label><Input name="minStockLevel" type="number" min={0} defaultValue={5} /></div>
-              <div className="col-span-2"><Label>Description</Label><Textarea name="description" rows={2} placeholder="Optional description…" /></div>
+              <div><Label>{t('store.stockQtyLabel')}</Label><Input name="stockQuantity" type="number" min={0} defaultValue={0} required /></div>
+              <div><Label>{t('store.minStockLevel')}</Label><Input name="minStockLevel" type="number" min={0} defaultValue={5} /></div>
+              <div className="col-span-2"><Label>{t('store.descriptionLabel')}</Label><Textarea name="description" rows={2} placeholder="Optional description…" /></div>
             </div>
-            <Button type="submit" disabled={submitting} className="w-full">{submitting ? "Adding…" : "Add Item"}</Button>
+            <Button type="submit" disabled={submitting} className="w-full">{submitting ? t('store.adding') : t('store.addItem')}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -983,21 +988,21 @@ export function StoreManager() {
       {/* Edit Item */}
       <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Edit className="h-5 w-5" />Edit Item</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Edit className="h-5 w-5" />{t('store.editItem')}</DialogTitle></DialogHeader>
           {editItem && (
             <form onSubmit={handleEditItem} className="space-y-3 py-2">
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2"><Label>Name *</Label><Input name="name" required defaultValue={editItem.name} /></div>
-                <div><Label>Price (₹) *</Label><Input name="price" type="number" min={0} step="0.01" required defaultValue={editItem.price} /></div>
-                <div><Label>Stock Qty</Label><Input name="stockQuantity" type="number" min={0} required defaultValue={editItem.stockQuantity} /></div>
-                <div><Label>Min Stock Level</Label><Input name="minStockLevel" type="number" min={0} defaultValue={editItem.minStockLevel} /></div>
+                <div className="col-span-2"><Label>{t('store.nameLabel')}</Label><Input name="name" required defaultValue={editItem.name} /></div>
+                <div><Label>{t('store.priceLabel')}</Label><Input name="price" type="number" min={0} step="0.01" required defaultValue={editItem.price} /></div>
+                <div><Label>{t('store.stockQtyEdit')}</Label><Input name="stockQuantity" type="number" min={0} required defaultValue={editItem.stockQuantity} /></div>
+                <div><Label>{t('store.minStockLevel')}</Label><Input name="minStockLevel" type="number" min={0} defaultValue={editItem.minStockLevel} /></div>
                 <div className="flex items-center gap-2 pt-5">
                   <input type="checkbox" name="isAvailable" id="isAvailable" defaultChecked={editItem.isAvailable} className="h-4 w-4" />
-                  <Label htmlFor="isAvailable">Show in Store</Label>
+                  <Label htmlFor="isAvailable">{t('store.showInStore')}</Label>
                 </div>
-                <div className="col-span-2"><Label>Description</Label><Textarea name="description" rows={2} defaultValue={editItem.description ?? ""} /></div>
+                <div className="col-span-2"><Label>{t('store.descriptionLabel')}</Label><Textarea name="description" rows={2} defaultValue={editItem.description ?? ""} /></div>
               </div>
-              <Button type="submit" disabled={submitting} className="w-full">{submitting ? "Saving…" : "Save Changes"}</Button>
+              <Button type="submit" disabled={submitting} className="w-full">{submitting ? t('store.saving') : t('store.saveChanges')}</Button>
             </form>
           )}
         </DialogContent>
@@ -1006,7 +1011,7 @@ export function StoreManager() {
       {/* Adjust Stock */}
       <Dialog open={!!adjustItem} onOpenChange={() => setAdjustItem(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Layers className="h-5 w-5" />Adjust Stock</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Layers className="h-5 w-5" />{t('store.adjustStock')}</DialogTitle></DialogHeader>
           {adjustItem && (
             <form onSubmit={handleAdjustStock} className="space-y-4 py-2">
               <div className="rounded-lg bg-muted p-3 flex items-center justify-between">
@@ -1017,7 +1022,7 @@ export function StoreManager() {
                 <StockBadge qty={adjustItem.stockQuantity} min={adjustItem.minStockLevel} />
               </div>
               <div>
-                <Label>Transaction Type *</Label>
+                <Label>{t('store.transactionType')}</Label>
                 <Select name="transactionType" required>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
@@ -1027,14 +1032,14 @@ export function StoreManager() {
                 <p className="text-xs text-muted-foreground mt-1">Purchase/Return adds stock · Damage/Adjustment deducts stock</p>
               </div>
               <div>
-                <Label>Quantity *</Label>
+                <Label>{t('store.quantityLabel')}</Label>
                 <Input name="quantity" type="number" min={1} required placeholder="Enter quantity" />
               </div>
               <div>
-                <Label>Remarks</Label>
+                <Label>{t('store.remarksLabel')}</Label>
                 <Input name="remarks" placeholder="Optional notes…" />
               </div>
-              <Button type="submit" disabled={submitting} className="w-full">{submitting ? "Adjusting…" : "Apply Adjustment"}</Button>
+              <Button type="submit" disabled={submitting} className="w-full">{submitting ? t('store.adjusting') : t('store.applyAdjustment')}</Button>
             </form>
           )}
         </DialogContent>
@@ -1049,15 +1054,15 @@ export function StoreManager() {
           {selectedOrder && (
             <div className="space-y-4 py-2">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><p className="text-muted-foreground text-xs">Customer</p><p className="font-medium">{selectedOrder.customerName ?? "—"} ({selectedOrder.customerType})</p></div>
-                <div><p className="text-muted-foreground text-xs">Date</p><p className="font-medium">{fmtDate(selectedOrder.orderDate)}</p></div>
-                <div><p className="text-muted-foreground text-xs">Status</p><OrderStatusBadge status={selectedOrder.status} /></div>
-                <div><p className="text-muted-foreground text-xs">Payment</p><PaymentBadge status={selectedOrder.paymentStatus} /></div>
+                <div><p className="text-muted-foreground text-xs">{t('store.orderCustomer')}</p><p className="font-medium">{selectedOrder.customerName ?? "—"} ({selectedOrder.customerType})</p></div>
+                <div><p className="text-muted-foreground text-xs">{t('store.orderDate')}</p><p className="font-medium">{fmtDate(selectedOrder.orderDate)}</p></div>
+                <div><p className="text-muted-foreground text-xs">{t('store.orderStatus')}</p><OrderStatusBadge status={selectedOrder.status} /></div>
+                <div><p className="text-muted-foreground text-xs">{t('store.orderPayment')}</p><PaymentBadge status={selectedOrder.paymentStatus} /></div>
               </div>
               <div className="rounded-lg border overflow-hidden">
                 <Table>
                   <TableHeader>
-                    <TableRow><TableHead>Item</TableHead><TableHead className="text-center">Qty</TableHead><TableHead className="text-right">Price</TableHead><TableHead className="text-right">Total</TableHead></TableRow>
+                    <TableRow><TableHead>{t('store.itemHeader')}</TableHead><TableHead className="text-center">{t('store.qtyHeader')}</TableHead><TableHead className="text-right">{t('store.priceLabel')}</TableHead><TableHead className="text-right">{t('common.total')}</TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
                     {(selectedOrder.items ?? []).map(item => (
@@ -1082,10 +1087,10 @@ export function StoreManager() {
               <DialogFooter>
                 {selectedOrder.paymentStatus !== "Paid" && (
                   <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleMarkPaid(selectedOrder.id)}>
-                    <CheckCircle className="h-4 w-4 mr-2" />Mark as Paid
+                    <CheckCircle className="h-4 w-4 mr-2" />{t('store.markAsPaid')}
                   </Button>
                 )}
-                <Button variant="outline" onClick={() => setSelectedOrder(null)}>Close</Button>
+                <Button variant="outline" onClick={() => setSelectedOrder(null)}>{t('common.close')}</Button>
               </DialogFooter>
             </div>
           )}
@@ -1095,14 +1100,14 @@ export function StoreManager() {
       {/* Inventory Logs */}
       <Dialog open={!!invLogsItem} onOpenChange={() => setInvLogsItem(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Stock History — {invLogsItem?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('store.stockHistory')} — {invLogsItem?.name}</DialogTitle></DialogHeader>
           <div className="max-h-[400px] overflow-y-auto">
             {invLogs.length === 0 ? (
               <p className="text-center py-8 text-muted-foreground text-sm">No history yet</p>
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow><TableHead>Type</TableHead><TableHead>Qty</TableHead><TableHead>Before</TableHead><TableHead>After</TableHead><TableHead>Date</TableHead></TableRow>
+                  <TableRow><TableHead>{t('store.typeHeader')}</TableHead><TableHead>{t('store.qtyHeader')}</TableHead><TableHead>{t('store.beforeHeader')}</TableHead><TableHead>{t('store.afterHeader')}</TableHead><TableHead>{t('common.date')}</TableHead></TableRow>
                 </TableHeader>
                 <TableBody>
                   {invLogs.map(log => (
@@ -1137,18 +1142,48 @@ export function StoreManager() {
             <div className="rounded-full bg-emerald-100 w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="h-8 w-8 text-emerald-600" />
             </div>
-            <h2 className="text-xl font-bold">Sale Complete!</h2>
+            <h2 className="text-xl font-bold">{t('store.saleComplete')}</h2>
             <p className="text-muted-foreground text-sm mt-1">Order #{checkoutOrder?.orderNumber}</p>
             <div className="mt-4 rounded-xl border p-4 text-left space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Customer</span><span className="font-medium">{checkoutOrder?.customerName}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Items</span><span>{checkoutOrder?.items?.length ?? 0}</span></div>
-              <div className="flex justify-between font-bold text-base border-t mt-2 pt-2"><span>Total Paid</span><span className="text-emerald-600">{fmt(checkoutOrder?.finalAmount ?? 0)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('store.orderCustomer')}</span><span className="font-medium">{checkoutOrder?.customerName}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('store.itemsCount')}</span><span>{checkoutOrder?.items?.length ?? 0}</span></div>
+              <div className="flex justify-between font-bold text-base border-t mt-2 pt-2"><span>{t('store.totalPaid')}</span><span className="text-emerald-600">{fmt(checkoutOrder?.finalAmount ?? 0)}</span></div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="flex-1" onClick={() => setCheckoutOrder(null)}>New Sale</Button>
-            <Button className="flex-1" onClick={() => { toast.success("Receipt feature coming soon"); setCheckoutOrder(null); }}>
-              <Download className="h-4 w-4 mr-2" />Receipt
+            <Button variant="outline" className="flex-1" onClick={() => setCheckoutOrder(null)}>{t('store.newSale')}</Button>
+            <Button className="flex-1" onClick={() => {
+              if (checkoutOrder) {
+                try {
+                  const doc = generateStoreReceipt(
+                    {
+                      name: schoolInfo?.name ?? "School Store",
+                      address: schoolInfo?.address,
+                      phone: schoolInfo?.phone,
+                      email: schoolInfo?.email,
+                      website: schoolInfo?.websiteUrl,
+                    },
+                    {
+                      receiptNumber: checkoutOrder.orderNumber,
+                      date: new Date(checkoutOrder.orderDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+                      customerName: checkoutOrder.customerName,
+                      items: (checkoutOrder.items ?? []).map((i) => ({
+                        name: i.itemName,
+                        qty: i.quantity,
+                        price: i.unitPrice,
+                      })),
+                      total: checkoutOrder.finalAmount,
+                      paymentMethod: checkoutOrder.paymentMethod ?? "Cash",
+                    }
+                  );
+                  doc.save(`receipt-${checkoutOrder.orderNumber}.pdf`);
+                } catch {
+                  toast.error("Could not generate receipt. Please try again.");
+                }
+              }
+              setCheckoutOrder(null);
+            }}>
+              <Download className="h-4 w-4 mr-2" />{t('store.receipt')}
             </Button>
           </DialogFooter>
         </DialogContent>

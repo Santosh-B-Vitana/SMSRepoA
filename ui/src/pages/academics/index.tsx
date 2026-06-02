@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, BookOpen, GraduationCap, Layers } from "lucide-react";
+import { Calendar, BookOpen, GraduationCap, Shield } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { academicApi } from "@/services/api/academicApi";
+import { boardApi } from "@/services/api/boardApi";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import AcademicYearManager from "./AcademicYearManager";
 import ClassManager from "./ClassManager";
 import SubjectManager from "./SubjectManager";
@@ -15,6 +17,7 @@ interface AcademicStats {
   totalYears: number;
   totalClasses: number;
   totalSubjects: number;
+  totalBoards: number;
 }
 
 function StatTile({
@@ -48,6 +51,7 @@ export default function Academics() {
   const [stats, setStats] = useState<AcademicStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const { currentYear } = useAcademicYear();
+  const { t } = useLanguage();
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +60,9 @@ export default function Academics() {
       academicApi.listAcademicYears(1, 50),
       academicApi.listClasses(1, 1),
       academicApi.listSubjects(1, 1),
+      boardApi.getSchoolBoards(),
     ])
-      .then(([years, classes, subjects]) => {
+      .then(([years, classes, subjects, boards]) => {
         if (cancelled) return;
         const activeYear = years.academicYears.find(y => y.isCurrent || y.status === "active");
         setStats({
@@ -65,10 +70,11 @@ export default function Academics() {
           totalYears: years.total,
           totalClasses: classes.total,
           totalSubjects: subjects.total,
+          totalBoards: boards.boards?.length ?? 0,
         });
       })
       .catch(() => {
-        if (!cancelled) setStats({ currentYear: currentYear ?? "—", totalYears: 0, totalClasses: 0, totalSubjects: 0 });
+        if (!cancelled) setStats({ currentYear: currentYear ?? "—", totalYears: 0, totalClasses: 0, totalSubjects: 0, totalBoards: 0 });
       })
       .finally(() => { if (!cancelled) setStatsLoading(false); });
     return () => { cancelled = true; };
@@ -85,14 +91,14 @@ export default function Academics() {
               <GraduationCap className="h-4 w-4 text-indigo-600" />
             </div>
             <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 bg-indigo-50 border-indigo-200 text-indigo-700">
-              Academic Setup
+              {t('academicSetup.title')}
             </Badge>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            Academic Configuration
+            {t('academicSetup.title')}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Manage academic years, class structures, and subject catalogue.
+            {t('academicSetup.subtitle')}
           </p>
         </div>
         {!statsLoading && stats && (
@@ -108,23 +114,23 @@ export default function Academics() {
       {/* Stats Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatTile
-          icon={Calendar} label="Active Year"
-          value={stats?.currentYear ?? "—"} sub="Current session"
+          icon={Calendar} label={t('academicSetup.tabs.years')}
+          value={stats?.currentYear ?? "—"} sub={t('academicSetup.year.isActive')}
           iconColor="text-indigo-600" iconBg="bg-indigo-50" loading={statsLoading}
         />
         <StatTile
-          icon={GraduationCap} label="Total Classes"
-          value={stats?.totalClasses ?? "—"} sub="All standards & sections"
+          icon={GraduationCap} label={t('academicSetup.tabs.classes')}
+          value={stats?.totalClasses ?? "—"} sub={t('academicSetup.class.numericLevel')}
           iconColor="text-blue-600" iconBg="bg-blue-50" loading={statsLoading}
         />
         <StatTile
-          icon={BookOpen} label="Subjects"
-          value={stats?.totalSubjects ?? "—"} sub="Across all classes"
+          icon={BookOpen} label={t('academicSetup.tabs.subjects')}
+          value={stats?.totalSubjects ?? "—"} sub={t('academicSetup.subject.subjectName')}
           iconColor="text-teal-600" iconBg="bg-teal-50" loading={statsLoading}
         />
         <StatTile
-          icon={Layers} label="Academic Years"
-          value={stats?.totalYears ?? "—"} sub="Configured on record"
+          icon={Shield} label="Boards"
+          value={stats?.totalBoards ?? "—"} sub="Configured"
           iconColor="text-violet-600" iconBg="bg-violet-50" loading={statsLoading}
         />
       </div>
@@ -134,18 +140,18 @@ export default function Academics() {
         <div className="border-b border-border mb-6">
           <TabsList className="h-auto bg-transparent p-0 gap-0 rounded-none">
             {[
-              { value: "academic-years", icon: Calendar, label: "Academic Years" },
-              { value: "classes",        icon: GraduationCap, label: "Classes" },
-              { value: "subjects",       icon: BookOpen, label: "Subjects" },
-            ].map(t => (
+              { value: "academic-years", icon: Calendar, label: t('academicSetup.tabs.years') },
+              { value: "classes",        icon: GraduationCap, label: t('academicSetup.tabs.classes') },
+              { value: "subjects",       icon: BookOpen, label: t('academicSetup.tabs.subjects') },
+            ].map(tab => (
               <TabsTrigger
-                key={t.value}
-                value={t.value}
+                key={tab.value}
+                value={tab.value}
                 className="relative rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none px-4 py-2.5 text-sm font-medium text-muted-foreground gap-2"
               >
-                <t.icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{t.label}</span>
-                <span className="sm:hidden">{t.label.split(" ")[0]}</span>
+                <tab.icon className="h-4 w-4" />
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.split(" ")[0]}</span>
               </TabsTrigger>
             ))}
           </TabsList>

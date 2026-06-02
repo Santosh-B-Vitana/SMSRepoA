@@ -40,7 +40,10 @@ export const admissionContactSchema = z.object({
 
 export const admissionAcademicSchema = z.object({
   classAppliedFor:    z.string().min(1, "Class is required"),
-  academicYearId:     z.string().optional(),
+  academicYearId:     z
+    .string()
+    .min(1, "Academic year is required")
+    .regex(/^\d{4}(-\d{2,4})?$/, "Format: YYYY or YYYY-YY (e.g. 2025-26)"),
   previousSchool:     z.string().optional(),
   previousClass:      z.string().optional(),
   previousPercentage: z

@@ -1,7 +1,8 @@
 
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { QrCode, School } from "lucide-react";
+import { QrCode } from "lucide-react";
+import { useSchool } from "@/contexts/SchoolContext";
 
 interface Person {
   id: string;
@@ -12,11 +13,11 @@ interface Person {
 }
 
 interface Student extends Person {
-  rollNo: string;
+  rollNumber: string;
   class: string;
   section: string;
-  guardianName: string;
-  guardianPhone: string;
+  guardianName?: string;
+  guardianPhone?: string;
 }
 
 interface Staff extends Person {
@@ -30,6 +31,12 @@ interface PrintableIdCardProps {
 }
 
 export function PrintableIdCard({ person, type }: PrintableIdCardProps) {
+  const { schoolInfo } = useSchool();
+  const schoolName = schoolInfo?.name ?? 'School';
+  const schoolAddress = schoolInfo?.address ?? '';
+  const schoolPhone = schoolInfo?.phone ?? '';
+  const schoolEmail = schoolInfo?.email ?? '';
+  const schoolLogoUrl = schoolInfo?.logoUrl;
   const isStudent = type === 'student';
   const student = isStudent ? person as Student : null;
   const staff = !isStudent ? person as Staff : null;
@@ -59,12 +66,17 @@ export function PrintableIdCard({ person, type }: PrintableIdCardProps) {
       <div className="id-card-front mb-8">
         <Card className="w-80 h-52 mx-auto bg-white border-2 border-gray-300 relative overflow-hidden print:shadow-none">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-3 text-center relative">
-            <div className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full flex items-center justify-center">
-              <School className="w-4 h-4 text-blue-600" />
+          <div className="bg-gradient-to-r from-blue-800 to-blue-900 text-white p-3 text-center relative">
+            <div className="absolute top-2 left-2 h-8 w-8 rounded-full border-2 border-white/30 bg-white/10 overflow-hidden flex items-center justify-center shrink-0">
+              {schoolLogoUrl
+                ? <img src={schoolLogoUrl} alt={schoolName} className="h-full w-full object-contain p-0.5 bg-white/90" />
+                : <span className="text-white font-bold text-xs">{schoolName.charAt(0)}</span>
+              }
             </div>
-            <h3 className="font-bold text-xs leading-tight">VITANA SCHOOLS</h3>
-            <p className="text-xs opacity-90 leading-tight">Est. 1985 | CBSE Affiliated</p>
+            <h3 className="font-bold text-xs leading-tight uppercase">{schoolName}</h3>
+            {schoolAddress && (
+              <p className="text-[10px] opacity-80 leading-tight mt-0.5 truncate px-8">{schoolAddress}</p>
+            )}
           </div>
 
           {/* Photo Section */}
@@ -98,7 +110,7 @@ export function PrintableIdCard({ person, type }: PrintableIdCardProps) {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Roll:</span>
-                    <span className="font-semibold">{student.rollNo}</span>
+                    <span className="font-semibold">{student.rollNumber}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">ID:</span>
@@ -191,11 +203,13 @@ export function PrintableIdCard({ person, type }: PrintableIdCardProps) {
             {/* Footer */}
             <div className="bg-gray-100 p-2 border-t text-center">
               <p className="text-xs text-gray-600 font-medium leading-tight">
-                If found, return to Vitana Schools
+                If found, return to {schoolName}
               </p>
-              <p className="text-xs text-gray-600 leading-tight">
-                123 Education St. | +1-555-123-4567
-              </p>
+              {(schoolPhone || schoolEmail) && (
+                <p className="text-xs text-gray-500 leading-tight mt-0.5">
+                  {[schoolPhone && `Tel: ${schoolPhone}`, schoolEmail].filter(Boolean).join(' | ')}
+                </p>
+              )}
             </div>
           </div>
         </Card>

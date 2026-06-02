@@ -71,9 +71,8 @@ namespace SmsApi.Models.DTOs
 
         public string? AuthorAvatar { get; set; }
 
-        [Required]
-        [MinLength(1)]
-        public string Content { get; set; } = string.Empty;
+        [MaxLength(5000)]
+        public string? Content { get; set; }
 
         [MaxLength(20)]
         public string? MediaType { get; set; }
@@ -97,9 +96,8 @@ namespace SmsApi.Models.DTOs
     /// </summary>
     public class UpdateSchoolConnectPostRequest
     {
-        [Required]
-        [MinLength(1)]
-        public string Content { get; set; } = string.Empty;
+        [MaxLength(5000)]
+        public string? Content { get; set; }
 
         [MaxLength(20)]
         public string? MediaType { get; set; }
@@ -362,5 +360,15 @@ namespace SmsApi.Models.DTOs
         public DateTime? FromDate { get; set; }
         public DateTime? ToDate { get; set; }
         public Guid? TargetClassId { get; set; }
+    }
+
+    // ==================== MEDIA UPLOAD DTO ====================
+
+    public class UploadMediaResponse
+    {
+        public string Url { get; set; } = string.Empty;
+        public string MediaType { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public long FileSizeBytes { get; set; }
     }
 }

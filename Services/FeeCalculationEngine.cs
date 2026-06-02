@@ -20,6 +20,8 @@ namespace SmsApi.Services
         public decimal GrossAmount { get; set; }
         public decimal ConcessionAmount { get; set; }
         public decimal NetAmount { get; set; }
+        /// <summary>Billing frequency for this head: once | termly | halfYearly | quarterly | monthly</summary>
+        public string Frequency { get; set; } = "termly";
     }
 
     public class ConcessionBreakdown
@@ -255,32 +257,45 @@ namespace SmsApi.Services
                 AcademicYear = structure.AcademicYear,
             };
 
-            // ── Step 1: Build line items from fee components ──
-            var heads = new (string key, string label, decimal amount)[]
+            // Parse frequencies once for use in line-item labels and installment calc
+            Dictionary<string, string>? freqMap = null;
+            try
             {
-                ("TuitionFee",      "Tuition Fee",          structure.TuitionFee),
-                ("AdmissionFee",    "Admission Fee",        structure.AdmissionFee),
-                ("ExamFee",         "Examination Fee",      structure.ExamFee),
-                ("LibraryFee",      "Library Fee",          structure.LibraryFee),
-                ("LabFee",          "Lab Fee",              structure.LabFee),
-                ("SportsFee",       "Sports Fee",           structure.SportsFee),
-                ("TransportFee",    "Transport Fee",        structure.TransportFee),
-                ("HostelFee",       "Hostel Fee",           structure.HostelFee),
-                ("UniformFee",      "Uniform Fee",          structure.UniformFee),
-                ("BooksFee",        "Books / Stationery",   structure.BooksFee),
-                ("DevelopmentFee",  "Development Fund",     structure.DevelopmentFee),
-                ("Miscellaneous",   "Miscellaneous",        structure.Miscellaneous),
+                if (!string.IsNullOrEmpty(structure.FeeHeadFrequencies))
+                    freqMap = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                        structure.FeeHeadFrequencies,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch { /* ignore malformed JSON */ }
+
+            // ── Step 1: Build line items from fee components ──
+            var heads = new (string key, string camelKey, string label, decimal amount)[]
+            {
+                ("TuitionFee",      "tuitionFee",     "Tuition Fee",          structure.TuitionFee),
+                ("AdmissionFee",    "admissionFee",   "Admission Fee",        structure.AdmissionFee),
+                ("ExamFee",         "examFee",        "Examination Fee",      structure.ExamFee),
+                ("LibraryFee",      "libraryFee",     "Library Fee",          structure.LibraryFee),
+                ("LabFee",          "labFee",         "Lab Fee",              structure.LabFee),
+                ("SportsFee",       "sportsFee",      "Sports Fee",           structure.SportsFee),
+                ("TransportFee",    "transportFee",   "Transport Fee",        structure.TransportFee),
+                ("HostelFee",       "hostelFee",      "Hostel Fee",           structure.HostelFee),
+                ("UniformFee",      "uniformFee",     "Uniform Fee",          structure.UniformFee),
+                ("BooksFee",        "booksFee",       "Books / Stationery",   structure.BooksFee),
+                ("DevelopmentFee",  "developmentFee", "Development Fund",     structure.DevelopmentFee),
+                ("Miscellaneous",   "miscellaneous",  "Miscellaneous",        structure.Miscellaneous),
             };
 
-            foreach (var (key, label, amount) in heads)
+            foreach (var (key, camelKey, label, amount) in heads)
             {
                 if (amount <= 0) continue;
+                var freq = freqMap != null && freqMap.TryGetValue(camelKey, out var fv) ? fv : "termly";
                 invoice.LineItems.Add(new FeeLineItem
                 {
                     Head = label,
                     GrossAmount = amount,
                     ConcessionAmount = 0,
                     NetAmount = amount,
+                    Frequency = freq,
                 });
             }
 
@@ -397,6 +412,7 @@ namespace SmsApi.Services
 
             List<DateTime>? dueDates = null;
             List<decimal>? amounts = null;
+            Dictionary<string, string>? headFreqs = null;
 
             try
             {
@@ -404,15 +420,91 @@ namespace SmsApi.Services
                     dueDates = JsonSerializer.Deserialize<List<DateTime>>(structure.InstallmentDueDates);
                 if (!string.IsNullOrEmpty(structure.InstallmentAmounts))
                     amounts = JsonSerializer.Deserialize<List<decimal>>(structure.InstallmentAmounts);
+                if (!string.IsNullOrEmpty(structure.FeeHeadFrequencies))
+                    headFreqs = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                        structure.FeeHeadFrequencies,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
             catch { /* fallback to equal split */ }
+
+            // Determine per-installment amounts driven by per-head frequencies when defined.
+            // Frequencies: "once"=installment 1 only, "termly"=all installments (default),
+            // "halfYearly"=2 times/year, "quarterly"=4/year, "monthly"=12/year.
+            // The installment amount is the sum of heads that fire in that installment slot.
+            decimal[]? freqBasedAmounts = null;
+            if (headFreqs != null && headFreqs.Count > 0 && installmentCount > 1)
+            {
+                // Map camelCase head keys → gross amounts (before concession)
+                var headAmounts = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["tuitionFee"]    = structure.TuitionFee,
+                    ["admissionFee"]  = structure.AdmissionFee,
+                    ["examFee"]       = structure.ExamFee,
+                    ["libraryFee"]    = structure.LibraryFee,
+                    ["labFee"]        = structure.LabFee,
+                    ["sportsFee"]     = structure.SportsFee,
+                    ["transportFee"]  = structure.TransportFee,
+                    ["hostelFee"]     = structure.HostelFee,
+                    ["uniformFee"]    = structure.UniformFee,
+                    ["booksFee"]      = structure.BooksFee,
+                    ["developmentFee"]= structure.DevelopmentFee,
+                    ["miscellaneous"] = structure.Miscellaneous,
+                };
+
+                // Concession ratio to scale individual head amounts proportionally
+                var grossTotal = headAmounts.Values.Sum();
+                var concessionRatio = grossTotal > 0
+                    ? (grossTotal - invoice.TotalConcession) / grossTotal
+                    : 1m;
+
+                freqBasedAmounts = new decimal[installmentCount];
+
+                foreach (var (head, gross) in headAmounts)
+                {
+                    if (gross <= 0) continue;
+                    var net = Math.Round(gross * concessionRatio, 2);
+                    var freq = headFreqs.TryGetValue(head, out var f) ? f.ToLower() : "termly";
+
+                    // How many installments does this head fire across?
+                    int firesCount = freq switch
+                    {
+                        "once"        => 1,
+                        "halfyearly"  => Math.Min(2, installmentCount),
+                        "quarterly"   => Math.Min(4, installmentCount),
+                        "monthly"     => Math.Min(12, installmentCount),
+                        _             => installmentCount  // "termly" = all
+                    };
+                    // Evenly space the firing installments (1-indexed slots)
+                    var interval = installmentCount / (double)firesCount;
+                    var perFiring = Math.Round(net / firesCount, 2);
+
+                    for (int f2 = 0; f2 < firesCount; f2++)
+                    {
+                        var slot = (int)Math.Round(f2 * interval);   // 0-indexed
+                        slot = Math.Min(slot, installmentCount - 1);
+                        freqBasedAmounts[slot] += perFiring;
+                    }
+                }
+
+                // Correct rounding drift so total matches NetPayable
+                var freqTotal = freqBasedAmounts.Sum();
+                if (freqTotal != invoice.NetPayable && installmentCount > 0)
+                    freqBasedAmounts[0] += invoice.NetPayable - freqTotal;
+            }
 
             var today = DateTime.UtcNow.Date;
             decimal installmentPaidRemaining = paidAmount;
 
             for (int i = 0; i < installmentCount; i++)
             {
-                var instAmount = (amounts != null && amounts.Count > i) ? amounts[i] : perInstallment;
+                decimal instAmount;
+                if (freqBasedAmounts != null)
+                    instAmount = freqBasedAmounts[i];
+                else if (amounts != null && amounts.Count > i)
+                    instAmount = amounts[i];
+                else
+                    instAmount = perInstallment;
+
                 var instDue = (dueDates != null && dueDates.Count > i)
                     ? dueDates[i]
                     : existingRecord?.DueDate.AddMonths(i * (12 / installmentCount)) ?? DateTime.UtcNow.AddMonths(i * (12 / installmentCount));

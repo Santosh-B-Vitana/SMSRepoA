@@ -27,11 +27,54 @@ public class S3FileStorageService : IFileStorageService
         _logger = logger;
     }
 
+    // ── Key helpers ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Prepends the configured RootFolder prefix to a relative path.
+    /// "schools/{schoolId}/students/{id}/photos/x.jpg"
+    ///   → "SMS-Test/schools/{schoolId}/students/{id}/photos/x.jpg"
+    /// </summary>
+    public string BuildAssetKey(string relativePath)
+    {
+        if (string.IsNullOrEmpty(_settings.RootFolder))
+            return relativePath.TrimStart('/');
+        return $"{_settings.RootFolder.TrimEnd('/')}/{relativePath.TrimStart('/')}";
+    }
+
+    /// <summary>
+    /// Extracts the S3 object key from a full public URL.
+    /// Handles both standard AWS URLs and custom ServiceUrl formats.
+    /// Returns the input as-is if it doesn't match a known URL prefix (assumed to already be a key).
+    /// </summary>
+    private string ExtractKeyFromUrl(string filePathOrUrl)
+    {
+        if (!filePathOrUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return filePathOrUrl; // already a key
+
+        if (!string.IsNullOrEmpty(_settings.ServiceUrl))
+        {
+            var prefix = $"{_settings.ServiceUrl.TrimEnd('/')}/{_settings.BucketName}/";
+            if (filePathOrUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return filePathOrUrl[prefix.Length..];
+        }
+        else
+        {
+            var prefix = $"https://{_settings.BucketName}.s3.{_settings.Region}.amazonaws.com/";
+            if (filePathOrUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return filePathOrUrl[prefix.Length..];
+        }
+
+        return filePathOrUrl;
+    }
+
+    // ── IFileStorageService ────────────────────────────────────────────────────
+
     public async Task<byte[]?> GetAsync(string filePath)
     {
+        var key = ExtractKeyFromUrl(filePath);
         try
         {
-            var request = new GetObjectRequest { BucketName = _settings.BucketName, Key = filePath };
+            var request = new GetObjectRequest { BucketName = _settings.BucketName, Key = key };
             using var response = await _s3.GetObjectAsync(request);
             using var ms = new MemoryStream();
             await response.ResponseStream.CopyToAsync(ms);
@@ -39,36 +82,42 @@ public class S3FileStorageService : IFileStorageService
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger.LogWarning("S3 file not found: {Key}", filePath);
+            _logger.LogWarning("S3 file not found: {Key}", key);
             return null;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting file from S3: {Key}", filePath);
+            _logger.LogError(ex, "Error getting file from S3: {Key}", key);
             return null;
         }
     }
 
+    /// <summary>
+    /// Deletes a file. Accepts either a raw S3 key or a full public/pre-signed URL —
+    /// the key is automatically extracted if a URL is provided.
+    /// </summary>
     public async Task<bool> DeleteAsync(string filePath)
     {
+        var key = ExtractKeyFromUrl(filePath);
         try
         {
-            var request = new DeleteObjectRequest { BucketName = _settings.BucketName, Key = filePath };
+            var request = new DeleteObjectRequest { BucketName = _settings.BucketName, Key = key };
             var response = await _s3.DeleteObjectAsync(request);
             return response.HttpStatusCode is HttpStatusCode.NoContent or HttpStatusCode.OK;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting S3 file: {Key}", filePath);
+            _logger.LogError(ex, "Error deleting S3 file: {Key}", key);
             return false;
         }
     }
 
     public async Task<bool> ExistsAsync(string filePath)
     {
+        var key = ExtractKeyFromUrl(filePath);
         try
         {
-            await _s3.GetObjectMetadataAsync(_settings.BucketName, filePath);
+            await _s3.GetObjectMetadataAsync(_settings.BucketName, key);
             return true;
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -77,7 +126,7 @@ public class S3FileStorageService : IFileStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking S3 file existence: {Key}", filePath);
+            _logger.LogError(ex, "Error checking S3 file existence: {Key}", key);
             return false;
         }
     }
@@ -117,7 +166,7 @@ public class S3FileStorageService : IFileStorageService
         string fileName, string folder, Guid schoolId, TimeSpan expiration, string? contentType = null)
     {
         var extension = Path.GetExtension(fileName);
-        var key = $"{schoolId}/{folder}/{Guid.NewGuid()}{extension}";
+        var key = BuildAssetKey($"schools/{schoolId}/{folder}/{Guid.NewGuid()}{extension}");
 
         var request = new GetPreSignedUrlRequest
         {
@@ -136,10 +185,11 @@ public class S3FileStorageService : IFileStorageService
 
     public string GetPresignedDownloadUrl(string filePath, TimeSpan expiration)
     {
+        var key = ExtractKeyFromUrl(filePath);
         var request = new GetPreSignedUrlRequest
         {
             BucketName = _settings.BucketName,
-            Key = filePath,
+            Key = key,
             Verb = HttpVerb.GET,
             Expires = DateTime.UtcNow.Add(expiration)
         };

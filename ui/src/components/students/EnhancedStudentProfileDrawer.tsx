@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Dialog as RadixDialog } from "@radix-ui/react-dialog";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Student } from "../../services/mockApi";
-import { studentApi } from "@/services/api/studentApi";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { studentApi, type Student } from "@/services/api/studentApi";
 import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Users, Phone, Mail, MapPin, Heart, FileText, Shield } from "lucide-react";
+import { toast } from "sonner";
 
 function SiblingInfo({ siblingId }: { siblingId: string }) {
   const [sibling, setSibling] = useState<Student | null>(null);
@@ -26,7 +28,7 @@ function SiblingInfo({ siblingId }: { siblingId: string }) {
       <div className="flex-1">
         <div className="font-medium text-sm">{sibling.name}</div>
         <div className="text-xs text-muted-foreground">
-          Class {sibling.class}-{sibling.section} • Roll No: {sibling.rollNo}
+          Class {sibling.class}-{sibling.section} • Roll No: {sibling.rollNumber}
         </div>
       </div>
     </div>
@@ -62,6 +64,8 @@ export function EnhancedStudentProfileDrawer({ studentId, open, onClose }: {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [showReactivateDialog, setShowReactivateDialog] = useState(false);
+  const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
+  const [deactivateForm, setDeactivateForm] = useState({ reason: '', date: new Date().toISOString().slice(0, 10) });
   const navigate = useNavigate();
   const { t } = useLanguage();
 
@@ -75,6 +79,7 @@ export function EnhancedStudentProfileDrawer({ studentId, open, onClose }: {
   if (!open) return null;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl w-full p-0 max-h-[90vh] overflow-y-auto">
         <DialogHeader className="p-6 border-b">
@@ -105,6 +110,11 @@ export function EnhancedStudentProfileDrawer({ studentId, open, onClose }: {
                     <Badge variant={student.status === 'active' ? 'default' : 'secondary'}>
                       {student.status === 'active' ? 'Active' : 'Inactive'}
                     </Badge>
+                    {student.status !== 'active' && student.inactiveReason && (
+                      <div className="text-sm text-muted-foreground">
+                        {student.inactiveReason}{student.inactiveDate && ` (${new Date(student.inactiveDate).toLocaleDateString()})`}
+                      </div>
+                    )}
                     <span className="text-sm text-muted-foreground">
                       Class {student.class}-{student.section} • Roll {student.rollNo}
                     </span>
@@ -313,13 +323,7 @@ export function EnhancedStudentProfileDrawer({ studentId, open, onClose }: {
                   <Button
                     variant="destructive"
                     disabled={actionLoading}
-                    onClick={async () => {
-                      if (!student) return;
-                      setActionLoading(true);
-                      await studentApi.update(student.id, { status: 'inactive' });
-                      setStudent({ ...student, status: 'inactive' });
-                      setActionLoading(false);
-                    }}
+                    onClick={() => setShowDeactivateDialog(true)}
                   >Deactivate</Button>
                 ) : (
                   <Button
@@ -340,35 +344,106 @@ export function EnhancedStudentProfileDrawer({ studentId, open, onClose }: {
                 >Report Card</Button>
               </div>
 
-              {/* Reactivate Warning Dialog */}
-              <RadixDialog open={showReactivateDialog} onOpenChange={setShowReactivateDialog}>
-                <DialogContent className="max-w-sm w-full">
-                  <DialogHeader>
-                    <DialogTitle>Warning</DialogTitle>
-                  </DialogHeader>
-                  <div className="mb-4 text-yellow-700 font-semibold">
-                    Reactivating this student will restore their access to the system.
-                  </div>
-                  <div className="flex gap-4 justify-end">
-                    <Button variant="outline" onClick={() => setShowReactivateDialog(false)}>Cancel</Button>
-                    <Button
-                      variant="secondary"
-                      onClick={async () => {
-                        if (!student) return;
-                        setActionLoading(true);
-                        await studentApi.update(student.id, { status: 'active' });
-                        setStudent({ ...student, status: 'active' });
-                        setActionLoading(false);
-                        setShowReactivateDialog(false);
-                      }}
-                    >Reactivate</Button>
-                  </div>
-                </DialogContent>
-              </RadixDialog>
             </>
           )}
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Deactivate Dialog */}
+    <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
+      <DialogContent className="max-w-sm w-full">
+        <DialogHeader>
+          <DialogTitle>Deactivate Student</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Reason for Deactivation *</Label>
+            <select
+              className="w-full px-3 py-2 border rounded-md bg-background text-foreground"
+              value={deactivateForm.reason}
+              onChange={e => setDeactivateForm({ ...deactivateForm, reason: e.target.value })}
+            >
+              <option value="">Select a reason</option>
+              <option value="passed_out">Passed Out</option>
+              <option value="dropped_out">Dropped Out</option>
+              <option value="transferred">Transferred</option>
+              <option value="admin_deactivation">Deactivation by Admin</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Date of Deactivation *</Label>
+            <Input
+              type="date"
+              value={deactivateForm.date}
+              onChange={e => setDeactivateForm({ ...deactivateForm, date: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="flex gap-4 justify-end mt-6">
+          <Button variant="outline" onClick={() => setShowDeactivateDialog(false)}>Cancel</Button>
+          <Button
+            variant="destructive"
+            disabled={actionLoading}
+            onClick={async () => {
+              if (!student || !deactivateForm.reason) {
+                toast.error("Please select a reason");
+                return;
+              }
+              setActionLoading(true);
+              try {
+                await studentApi.update(student.id, {
+                  status: 'inactive',
+                  inactiveReason: deactivateForm.reason,
+                  inactiveDate: deactivateForm.date
+                });
+                setStudent({ ...student, status: 'inactive', inactiveReason: deactivateForm.reason, inactiveDate: deactivateForm.date });
+                toast.success("Student deactivated successfully");
+                setShowDeactivateDialog(false);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Failed to deactivate student");
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+          >Deactivate</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Reactivate Warning Dialog */}
+    <Dialog open={showReactivateDialog} onOpenChange={setShowReactivateDialog}>
+      <DialogContent className="max-w-sm w-full">
+        <DialogHeader>
+          <DialogTitle>Reactivate Student</DialogTitle>
+        </DialogHeader>
+        <div className="mb-4 text-yellow-700 dark:text-yellow-400 font-semibold">
+          Reactivating this student will restore their access to the system. Are you sure?
+        </div>
+        <div className="flex gap-4 justify-end">
+          <Button variant="outline" onClick={() => setShowReactivateDialog(false)}>Cancel</Button>
+          <Button
+            variant="secondary"
+            disabled={actionLoading}
+            onClick={async () => {
+              if (!student) return;
+              setActionLoading(true);
+              try {
+                await studentApi.update(student.id, { status: 'active' });
+                setStudent({ ...student, status: 'active', inactiveReason: undefined, inactiveDate: undefined });
+                toast.success("Student reactivated successfully");
+                setShowReactivateDialog(false);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Failed to reactivate student");
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+          >Reactivate</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -7,7 +7,7 @@ import { ArrowLeft, RefreshCw, Download, BookOpen, TrendingUp, TrendingDown } fr
 import { useNavigate } from "react-router-dom";
 import examinationApi, { ExamBasic } from "@/services/api/examinationApi";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5092";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 interface SubjectMetric {
   subjectName: string;
@@ -244,10 +244,6 @@ export default function SubjectPerformance() {
           </>
         )}
       </div>
-    </div>
-  );
-}
-
     </div>
   );
 }

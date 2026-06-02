@@ -12,7 +12,7 @@ namespace SmsApi.Services
     public interface INotificationService
     {
         Task<NotificationListResponse> GetMyNotificationsAsync(Guid schoolId, Guid userId,
-            int page, int pageSize, bool? unreadOnly, string? type);
+            int page, int pageSize, bool? unreadOnly, string? type, Guid? studentId = null);
 
         Task<NotificationListResponse> GetSchoolNotificationsAsync(Guid schoolId,
             int page, int pageSize, string? type, string? priority, Guid? recipientId);
@@ -48,7 +48,7 @@ namespace SmsApi.Services
         {
             "Fee", "Attendance", "Exam", "Assignment", "Announcement",
             "Message", "General", "Payment", "Transport", "Library",
-            "Leave", "Hostel", "Certificate", "System"
+            "Leave", "Hostel", "Certificate", "System", "Diary"
         };
 
         public static readonly HashSet<string> ValidPriorities = new(StringComparer.OrdinalIgnoreCase)
@@ -99,7 +99,8 @@ namespace SmsApi.Services
             IsRead = n.IsRead,
             ReadAt = n.ReadAt,
             Priority = n.Priority,
-            CreatedAt = n.CreatedAt
+            CreatedAt = n.CreatedAt,
+            StudentId = n.StudentId
         };
 
         private static void ValidateType(string type)
@@ -140,13 +141,18 @@ namespace SmsApi.Services
 
         public async Task<NotificationListResponse> GetMyNotificationsAsync(
             Guid schoolId, Guid userId,
-            int page, int pageSize, bool? unreadOnly, string? type)
+            int page, int pageSize, bool? unreadOnly, string? type, Guid? studentId = null)
         {
             page = NormalizePage(page);
             pageSize = NormalizePageSize(pageSize);
 
             var query = _db.Notifications
                 .Where(n => n.SchoolId == schoolId && n.RecipientId == userId);
+
+            // When a parent selects a specific child, show only that child's notifications.
+            // Notifications without a StudentId (e.g. announcements) are always shown.
+            if (studentId.HasValue)
+                query = query.Where(n => n.StudentId == null || n.StudentId == studentId.Value);
 
             if (unreadOnly == true)
                 query = query.Where(n => !n.IsRead);
@@ -156,7 +162,8 @@ namespace SmsApi.Services
 
             var total = await query.CountAsync();
             var unreadCount = await _db.Notifications
-                .Where(n => n.SchoolId == schoolId && n.RecipientId == userId && !n.IsRead)
+                .Where(n => n.SchoolId == schoolId && n.RecipientId == userId && !n.IsRead
+                            && (studentId == null || n.StudentId == null || n.StudentId == studentId.Value))
                 .CountAsync();
 
             var items = await query

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,14 +17,17 @@ import {
   Users, Key, LayoutGrid, Loader2, CheckCircle2, AlertCircle, X,
   ChevronLeft, ChevronRight, UserCog, Settings2, GraduationCap,
   BookOpen, Banknote, UserCheck, Building2, Car, Home, HeartPulse,
-  ClipboardList, Info,
+  ClipboardList, Info, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import roleApi, {
   RoleResponse, PermissionGroupResponse, UserWithRolesResponse,
   RoleStatsResponse, CreateRoleDto, UpdateRoleDto
 } from "@/services/api/roleApi";
+import { academicApi, type TeacherAssignmentResponse } from "@/services/api/academicApi";
+import { staffApi, type StaffBasic } from "@/services/api/staffApi";
 
 // ─── Role configuration ───────────────────────────────────────────────────────
 
@@ -45,6 +48,16 @@ interface RoleConfig {
 }
 
 const SCOPE_ORDER: AccessScope[] = ["Full", "Broad", "Standard", "Domain", "Limited"];
+
+// Maps RoleTier values to their i18n keys in LanguageContext
+const TIER_I18N_KEY: Record<RoleTier, string> = {
+  "System":       "system",
+  "Leadership":   "leadership",
+  "Academic":     "academic",
+  "Finance & HR": "financeHr",
+  "Operations":   "operations",
+  "Support":      "support",
+};
 
 const ROLE_CONFIG: Record<string, RoleConfig> = {
   "Admin": {
@@ -77,14 +90,14 @@ const ROLE_CONFIG: Record<string, RoleConfig> = {
   },
   "Class Teacher": {
     tier: "Academic", scope: "Standard",
-    keyModules: ["Students", "Attendance", "Grades", "Communication"],
+    keyModules: ["Students", "Attendance", "Grades", "Health"],
     bg: "from-sky-50 to-sky-100/50", border: "border-sky-200",
     iconColor: "text-sky-600", badge: "bg-sky-100 text-sky-700 border-sky-200",
     tierColor: "text-sky-600", scopeBadge: "bg-sky-100 text-sky-700", icon: BookOpen,
   },
   "Teacher": {
     tier: "Academic", scope: "Limited",
-    keyModules: ["Attendance", "Grades", "Exams", "Timetable"],
+    keyModules: ["Attendance", "Grades", "Assignments", "Timetable"],
     bg: "from-cyan-50 to-cyan-100/50", border: "border-cyan-200",
     iconColor: "text-cyan-600", badge: "bg-cyan-100 text-cyan-700 border-cyan-200",
     tierColor: "text-cyan-600", scopeBadge: "bg-cyan-100 text-cyan-700", icon: BookOpen,
@@ -243,6 +256,7 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const cfg = getRoleConfig(role.name);
+  const { t } = useLanguage();
 
   useEffect(() => {
     let mounted = true;
@@ -254,17 +268,30 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
     return () => { mounted = false; };
   }, [role.id]);
 
+  // Any granted action in a module implies View access for that module —
+  // otherwise a user could get Edit/Delete without being able to open the list page.
+  function withViewImplied(set: Set<string>): Set<string> {
+    const n = new Set(set);
+    groups.forEach(g => {
+      if (g.permissions.some(p => n.has(p.id))) {
+        const view = g.permissions.find(p => p.action === 'View');
+        if (view) n.add(view.id);
+      }
+    });
+    return n;
+  }
+
   function toggle(id: string) {
-    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return withViewImplied(n); });
   }
   function toggleModule(group: PermissionGroupResponse, checked: boolean) {
-    setSelectedIds(prev => { const n = new Set(prev); group.permissions.forEach(p => checked ? n.add(p.id) : n.delete(p.id)); return n; });
+    setSelectedIds(prev => { const n = new Set(prev); group.permissions.forEach(p => checked ? n.add(p.id) : n.delete(p.id)); return withViewImplied(n); });
   }
   function toggleAction(action: string, checked: boolean) {
     setSelectedIds(prev => {
       const n = new Set(prev);
       groups.forEach(g => g.permissions.filter(p => p.action === action).forEach(p => checked ? n.add(p.id) : n.delete(p.id)));
-      return n;
+      return withViewImplied(n);
     });
   }
 
@@ -289,14 +316,14 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
               <Key className={`h-5 w-5 ${cfg.iconColor}`} />
             </div>
             <div>
-              <DialogTitle className="text-lg">{role.displayName ?? role.name} — Permission Matrix</DialogTitle>
-              <p className="text-sm text-muted-foreground">{selectedIds.size} of {groups.reduce((a, g) => a + g.permissions.length, 0)} permissions selected</p>
+              <DialogTitle className="text-lg">{role.displayName ?? role.name} — {t('roles.card.permissionMatrixButton')}</DialogTitle>
+              <p className="text-sm text-muted-foreground">{selectedIds.size} {t('roles.permMatrix.selectedCount')} {groups.reduce((a, g) => a + g.permissions.length, 0)} {t('roles.permMatrix.permissionsSelected')}</p>
             </div>
-            {role.isSystemRole && <Badge variant="outline" className="ml-auto gap-1 text-xs"><Lock className="h-3 w-3" />System — read only</Badge>}
+            {role.isSystemRole && <Badge variant="outline" className="ml-auto gap-1 text-xs"><Lock className="h-3 w-3" />{t('roles.permMatrix.systemReadOnly')}</Badge>}
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 px-6 py-4">
+        <div className="overflow-y-auto flex-1 min-h-0 px-6 py-4">
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
@@ -304,11 +331,11 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-muted/60">
-                    <th className="text-left p-3 font-medium text-muted-foreground w-52 rounded-tl-lg">Module</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground w-52 rounded-tl-lg">{t('roles.permMatrix.moduleHeader')}</th>
                     {usedActions.map(a => (
                       <th key={a} className="p-3 text-center w-24 font-medium">
                         <div className="flex flex-col items-center gap-1.5">
-                          <span>{a}</span>
+                          <span>{t(`roles.permMatrix.action${a}`)}</span>
                           {!role.isSystemRole && (
                             <Checkbox
                               checked={groups.every(g => { const p = g.permissions.find(p2 => p2.action === a); return p ? selectedIds.has(p.id) : true; })}
@@ -361,14 +388,14 @@ function PermissionMatrixDialog({ role, onClose }: { role: RoleResponse; onClose
               </table>
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="px-6 py-4 border-t gap-2">
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={onClose}>{t('roles.permMatrix.close')}</Button>
           {!role.isSystemRole && (
             <Button onClick={handleSave} disabled={saving || loading} className="gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Save Permissions
+              {t('roles.permMatrix.savePermissions')}
             </Button>
           )}
         </DialogFooter>
@@ -384,6 +411,7 @@ function RoleFormDialog({ role, onClose, onSaved }: { role?: RoleResponse; onClo
   const [displayName, setDisplayName] = useState(role?.displayName ?? "");
   const [description, setDescription] = useState(role?.description ?? "");
   const [saving, setSaving] = useState(false);
+  const { t } = useLanguage();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -406,29 +434,204 @@ function RoleFormDialog({ role, onClose, onSaved }: { role?: RoleResponse; onClo
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>{role ? "Edit Role" : "Create Custom Role"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{role ? t('roles.form.editTitle') : t('roles.form.createTitle')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>Role Key <span className="text-destructive">*</span></Label>
+            <Label>{t('roles.form.roleKeyLabel')} <span className="text-destructive">*</span></Label>
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. lab_assistant" disabled={!!role} autoFocus />
-            {!role && <p className="text-xs text-muted-foreground">Unique key. No spaces — use underscore. Cannot be changed later.</p>}
+            {!role && <p className="text-xs text-muted-foreground">{t('roles.form.roleKeyHint')}</p>}
           </div>
           <div className="space-y-2">
-            <Label>Display Name</Label>
+            <Label>{t('roles.form.displayNameLabel')}</Label>
             <Input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="e.g. Lab Assistant" />
           </div>
           <div className="space-y-2">
-            <Label>Description</Label>
+            <Label>{t('roles.form.descriptionLabel')}</Label>
             <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this role do?" rows={3} />
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('roles.form.cancel')}</Button>
             <Button type="submit" disabled={saving} className="gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {role ? "Save Changes" : "Create Role"}
+              {role ? t('roles.form.saveChanges') : t('roles.form.createRole')}
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Class Teacher Removal Confirmation Dialog ────────────────────────────────
+
+function ClassTeacherRemovalDialog({
+  user,
+  assignment,
+  onForceRemove,
+  onReplaceAndRemove,
+  onCancel,
+}: {
+  user: UserWithRolesResponse;
+  assignment: TeacherAssignmentResponse;
+  onForceRemove: () => Promise<void>;
+  onReplaceAndRemove: (newStaffId: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [staffList, setStaffList] = useState<StaffBasic[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(true);
+  const [replacementId, setReplacementId] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const [forceRemoving, setForceRemoving] = useState(false);
+  const acting = replacing || forceRemoving;
+  const { t } = useLanguage();
+
+  useEffect(() => {
+    setLoadingStaff(true);
+    staffApi.list({ status: "active", pageSize: 200 })
+      .then(r => {
+        const others = (r.staff ?? []).filter(s => s.id !== user.staffId);
+        setStaffList(others);
+      })
+      .catch(() => toast.error("Could not load staff list"))
+      .finally(() => setLoadingStaff(false));
+  }, [user.staffId]);
+
+  const classLabel = [assignment.className, assignment.sectionName].filter(Boolean).join(" – ");
+  const staffName = `${user.firstName} ${user.lastName}`;
+
+  async function handleReplace() {
+    if (!replacementId) { toast.error("Please select a replacement teacher"); return; }
+    setReplacing(true);
+    try {
+      await onReplaceAndRemove(replacementId);
+    } finally {
+      setReplacing(false);
+    }
+  }
+
+  async function handleForce() {
+    setForceRemoving(true);
+    try {
+      await onForceRemove();
+    } finally {
+      setForceRemoving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onCancel}>
+      <DialogContent className="max-w-[480px]">
+        <DialogHeader className="pb-1">
+          <DialogTitle className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            </span>
+            <span className="text-amber-700">{t('roles.ctConflict.title')}</span>
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed pt-1">
+            <span className="font-medium text-foreground">{staffName}</span> is the class teacher
+            for <span className="font-semibold text-foreground">{classLabel}</span>. Choose how to
+            handle this before removing the role.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Current assignment info strip */}
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-3.5 py-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100/80">
+            <GraduationCap className="h-4 w-4 text-amber-600" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t('roles.ctConflict.currentAssignmentLabel')}
+            </p>
+            <p className="text-sm font-semibold truncate">{classLabel}</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {/* ── Path A: Assign replacement (recommended) ── */}
+          <div className="rounded-lg border border-green-200 bg-green-50/60 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+              <p className="text-sm font-semibold text-green-800">{t('roles.ctConflict.assignReplacementTitle')}</p>
+            </div>
+
+            {loadingStaff ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t('roles.ctConflict.loadingStaff')}
+              </div>
+            ) : (
+              <Select value={replacementId} onValueChange={setReplacementId} disabled={acting}>
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder={t('roles.ctConflict.selectReplacementPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffList.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      {t('roles.ctConflict.noOtherStaff')}
+                    </div>
+                  ) : (
+                    staffList.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span>{s.firstName} {s.lastName}</span>
+                        {s.designation && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">— {s.designation}</span>
+                        )}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              The selected teacher will be assigned to <strong>{classLabel}</strong> before the role is removed.
+            </p>
+
+            <Button
+              onClick={handleReplace}
+              disabled={!replacementId || acting}
+              className="w-full gap-2"
+            >
+              {replacing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {t('roles.ctConflict.replaceAndRemove')}
+            </Button>
+          </div>
+
+          {/* Divider */}
+          <div className="relative flex items-center gap-3">
+            <div className="flex-1 border-t" />
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('roles.ctConflict.or')}</span>
+            <div className="flex-1 border-t" />
+          </div>
+
+          {/* ── Path B: Force remove (danger) ── */}
+          <div className="rounded-lg border border-red-200 bg-red-50/50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+              <p className="text-sm font-semibold text-red-800">{t('roles.ctConflict.forceRemoveTitle')}</p>
+            </div>
+            <p className="text-xs text-red-700/80 leading-relaxed">
+              <strong>{classLabel}</strong> will have no class teacher until one is manually reassigned.
+            </p>
+            <Button
+              variant="destructive"
+              onClick={handleForce}
+              disabled={acting}
+              className="w-full gap-2"
+            >
+              {forceRemoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              {t('roles.ctConflict.forceRemoveButton')}
+            </Button>
+          </div>
+        </div>
+
+        <DialogFooter className="pt-1">
+          <Button variant="ghost" onClick={onCancel} disabled={acting} className="w-full">
+            {t('roles.ctConflict.cancel')}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -441,16 +644,29 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
 }) {
   const [roleId, setRoleId] = useState("");
   const [saving, setSaving] = useState(false);
-  const assignedIds = new Set(user.assignedRoles.map(r => r.id));
+  // Keep local copy of assigned roles so optimistic removal updates the list immediately
+  const [localRoles, setLocalRoles] = useState(user.assignedRoles);
+
+  // Class teacher removal flow
+  const [ctCheck, setCtCheck] = useState<{
+    roleId: string;
+    assignment: TeacherAssignmentResponse;
+  } | null>(null);
+
+  const assignedIds = new Set(localRoles.map(r => r.id));
   const available = roles.filter(r => r.isActive && !assignedIds.has(r.id));
   const selectedRole = roles.find(r => r.id === roleId);
   const selectedCfg = selectedRole ? getRoleConfig(selectedRole.name) : null;
+  const { t } = useLanguage();
 
   async function handleAssign() {
     if (!roleId) { toast.error("Select a role"); return; }
     setSaving(true);
     try {
       await roleApi.assignRoleToUser(user.id, roleId);
+      const newRole = roles.find(r => r.id === roleId);
+      if (newRole) setLocalRoles(prev => [...prev, { id: newRole.id, name: newRole.name, displayName: newRole.displayName, isActive: true }]);
+      setRoleId("");
       toast.success(`Role assigned to ${user.firstName} ${user.lastName}`);
       onSaved(); onClose();
     } catch { toast.error("Failed to assign role"); }
@@ -458,16 +674,92 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
   }
 
   async function handleRemove(rid: string) {
+    const role = localRoles.find(r => r.id === rid);
+    const isClassTeacherRole = role?.name?.toLowerCase() === "class teacher";
+
+    // If removing "Class Teacher" role and we have a staffId, check for existing assignment
+    if (isClassTeacherRole && user.staffId) {
+      setSaving(true);
+      try {
+        const result = await academicApi.getTeacherAssignmentsForStaff(user.staffId);
+        const ctAssignment = (result?.assignments ?? []).find((a: TeacherAssignmentResponse) => a.isClassTeacher);
+        if (ctAssignment) {
+          // Show the class teacher conflict dialog
+          setCtCheck({ roleId: rid, assignment: ctAssignment });
+          return;
+        }
+        // No active class teacher assignment — remove role directly
+      } catch {
+        toast.error("Failed to check class teacher assignment");
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    // Standard role removal
     setSaving(true);
     try {
       await roleApi.removeRoleFromUser(user.id, rid);
+      setLocalRoles(prev => prev.filter(r => r.id !== rid));
       toast.success("Role removed");
       onSaved();
     } catch { toast.error("Failed to remove role"); }
     finally { setSaving(false); }
   }
 
+  async function handleClassTeacherForceRemove() {
+    if (!ctCheck) return;
+    setSaving(true);
+    try {
+      // Clear the class teacher assignment first (preserves subject assignments if any)
+      await academicApi.unsetClassTeacher(ctCheck.assignment.id);
+      // Then remove the role from the user
+      await roleApi.removeRoleFromUser(user.id, ctCheck.roleId);
+      setLocalRoles(prev => prev.filter(r => r.id !== ctCheck.roleId));
+      toast.success("Class Teacher role removed. No replacement assigned.");
+      onSaved();
+    } catch { toast.error("Failed to remove class teacher role"); }
+    finally { setSaving(false); setCtCheck(null); }
+  }
+
+  async function handleClassTeacherReplaceAndRemove(newStaffId: string) {
+    if (!ctCheck) return;
+    setSaving(true);
+    try {
+      const a = ctCheck.assignment;
+      // 1. Assign the replacement teacher as class teacher for the same class/section
+      await academicApi.assignTeacher({
+        schoolId: a.schoolId,
+        staffId: newStaffId,
+        classId: a.classId,
+        sectionId: a.sectionId,
+        isClassTeacher: true,
+        academicYear: a.academicYear ?? "",
+      });
+      // 2. Clear the class teacher flag on the old assignment
+      //    (deletes pure class-teacher records, preserves subject-teacher records)
+      await academicApi.unsetClassTeacher(a.id);
+      // 3. Remove the role from this user
+      await roleApi.removeRoleFromUser(user.id, ctCheck.roleId);
+      setLocalRoles(prev => prev.filter(r => r.id !== ctCheck.roleId));
+      toast.success("Class teacher replaced and role removed.");
+      onSaved();
+    } catch { toast.error("Failed to replace class teacher"); }
+    finally { setSaving(false); setCtCheck(null); }
+  }
+
   return (
+    <>
+    {ctCheck && (
+      <ClassTeacherRemovalDialog
+        user={user}
+        assignment={ctCheck.assignment}
+        onForceRemove={handleClassTeacherForceRemove}
+        onReplaceAndRemove={handleClassTeacherReplaceAndRemove}
+        onCancel={() => setCtCheck(null)}
+      />
+    )}
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -479,12 +771,12 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
 
         <div className="space-y-5">
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Currently assigned</p>
-            {user.assignedRoles.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">No roles assigned yet</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('roles.assignDialog.currentlyAssigned')}</p>
+            {localRoles.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">{t('roles.assignDialog.noRolesAssigned')}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {user.assignedRoles.map(r => {
+                {localRoles.map(r => {
                   const c = getRoleConfig(r.name ?? "");
                   return (
                     <Badge key={r.id} variant="outline" className={`gap-1.5 pr-1 ${c.badge}`}>
@@ -500,11 +792,11 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Add role</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('roles.assignDialog.addRole')}</p>
             <div className="flex gap-2">
               <Select value={roleId} onValueChange={setRoleId} disabled={available.length === 0}>
                 <SelectTrigger>
-                  <SelectValue placeholder={available.length === 0 ? "All roles already assigned" : "Select role..."} />
+                  <SelectValue placeholder={available.length === 0 ? t('roles.assignDialog.allRolesAlreadyAssigned') : t('roles.assignDialog.selectRole')} />
                 </SelectTrigger>
                 <SelectContent>
                   {available.map(r => {
@@ -513,7 +805,7 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
                       <SelectItem key={r.id} value={r.id}>
                         <div className="flex items-center gap-2">
                           <span>{r.displayName ?? r.name}</span>
-                          <Badge variant="outline" className={`text-xs ${c.scopeBadge} border-current/30`}>{c.scope}</Badge>
+                          <Badge variant="outline" className={`text-xs ${c.scopeBadge} border-current/30`}>{t(`roles.scope.${c.scope}`)}</Badge>
                         </div>
                       </SelectItem>
                     );
@@ -522,7 +814,7 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
               </Select>
               <Button onClick={handleAssign} disabled={!roleId || saving} className="shrink-0 gap-1">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                Assign
+                {t('roles.assignDialog.assign')}
               </Button>
             </div>
 
@@ -530,7 +822,7 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
             {selectedRole && selectedCfg && (
               <div className={`mt-2 p-3 rounded-lg bg-gradient-to-br ${selectedCfg.bg} border ${selectedCfg.border}`}>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <Badge variant="outline" className={`text-xs ${SCOPE_COLORS[selectedCfg.scope]} border-current/30`}>{selectedCfg.scope} access</Badge>
+                  <Badge variant="outline" className={`text-xs ${SCOPE_COLORS[selectedCfg.scope]} border-current/30`}>{t(`roles.scope.${selectedCfg.scope}`)} {t('roles.scope.accessSuffix')}</Badge>
                   <span className="text-xs text-muted-foreground">{selectedCfg.tier}</span>
                 </div>
                 {selectedRole.description && <p className="text-xs text-muted-foreground">{selectedRole.description}</p>}
@@ -546,9 +838,10 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
           </div>
         </div>
 
-        <DialogFooter><Button variant="outline" onClick={onClose}>Done</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>{t('roles.assignDialog.done')}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 
@@ -556,6 +849,7 @@ function AssignRoleDialog({ user, roles, onClose, onSaved }: {
 
 function DeleteRoleDialog({ role, onClose, onDeleted }: { role: RoleResponse; onClose: () => void; onDeleted: () => void }) {
   const [loading, setLoading] = useState(false);
+  const { t } = useLanguage();
   async function confirm() {
     setLoading(true);
     try {
@@ -569,15 +863,15 @@ function DeleteRoleDialog({ role, onClose, onDeleted }: { role: RoleResponse; on
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive"><AlertCircle className="h-5 w-5" />Delete Role</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-destructive"><AlertCircle className="h-5 w-5" />{t('roles.deleteDialog.deleteTitle')}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Delete <strong>{role.displayName ?? role.name}</strong>? Roles with active user assignments cannot be deleted.
+          Delete <strong>{role.displayName ?? role.name}</strong>? {t('roles.deleteDialog.cannotDeleteMsg')}
         </p>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('roles.deleteDialog.cancel')}</Button>
           <Button variant="destructive" onClick={confirm} disabled={loading} className="gap-2">
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />} Delete
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />} {t('roles.deleteDialog.delete')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -594,6 +888,7 @@ function RoleCard({ role, onEdit, onDelete, onPermissions }: {
   const RoleIcon = cfg.icon;
   const label = role.displayName ?? role.name;
   const [showDesc, setShowDesc] = useState(false);
+  const { t } = useLanguage();
 
   return (
     <Card className={`bg-gradient-to-br ${cfg.bg} border ${cfg.border} transition-all hover:shadow-md group`}>
@@ -611,17 +906,17 @@ function RoleCard({ role, onEdit, onDelete, onPermissions }: {
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             {role.isSystemRole
-              ? <Badge variant="outline" className="text-xs gap-1 border-current/30 text-muted-foreground"><Lock className="h-2.5 w-2.5" />System</Badge>
-              : <Badge variant="outline" className="text-xs text-muted-foreground">Custom</Badge>
+              ? <Badge variant="outline" className="text-xs gap-1 border-current/30 text-muted-foreground"><Lock className="h-2.5 w-2.5" />{t('roles.card.systemBadge')}</Badge>
+              : <Badge variant="outline" className="text-xs text-muted-foreground">{t('roles.card.customBadge')}</Badge>
             }
           </div>
         </div>
 
         {/* Tier + Scope row */}
         <div className="flex items-center gap-2 mb-3">
-          <span className={`text-xs font-medium ${cfg.tierColor}`}>{cfg.tier}</span>
+          <span className={`text-xs font-medium ${cfg.tierColor}`}>{t(`roles.tier.${TIER_I18N_KEY[cfg.tier]}`)}</span>
           <span className="text-muted-foreground/40">•</span>
-          <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[cfg.scope]}`}>{cfg.scope} access</Badge>
+          <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[cfg.scope]}`}>{t(`roles.scope.${cfg.scope.toLowerCase()}`)} {t('roles.scope.accessSuffix')}</Badge>
         </div>
 
         {/* Key modules */}
@@ -640,7 +935,7 @@ function RoleCard({ role, onEdit, onDelete, onPermissions }: {
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
           >
             <Info className="h-3 w-3" />
-            {showDesc ? "Hide description" : "What can this role do?"}
+            {showDesc ? t('roles.card.hideDescription') : t('roles.card.whatCanThisRoleDo')}
           </button>
         )}
         {showDesc && role.description && (
@@ -649,14 +944,14 @@ function RoleCard({ role, onEdit, onDelete, onPermissions }: {
 
         {/* Stats */}
         <div className="flex items-center gap-4 text-xs text-muted-foreground mb-4">
-          <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{role.userCount} users</span>
-          <span className="flex items-center gap-1"><Key className="h-3.5 w-3.5" />{role.permissionCount} permissions</span>
+          <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{role.userCount} {t('roles.card.usersCount')}</span>
+          <span className="flex items-center gap-1"><Key className="h-3.5 w-3.5" />{role.permissionCount} {t('roles.card.permissionsCount')}</span>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" className="flex-1 text-xs gap-1 h-8" onClick={onPermissions}>
-            <LayoutGrid className="h-3.5 w-3.5" /> Permission Matrix
+            <LayoutGrid className="h-3.5 w-3.5" /> {t('roles.card.permissionMatrixButton')}
           </Button>
           {!role.isSystemRole && (
             <>
@@ -688,13 +983,14 @@ function RoleTierSection({ tier, roles, onEdit, onDelete, onPermissions }: {
   onDelete: (r: RoleResponse) => void;
   onPermissions: (r: RoleResponse) => void;
 }) {
+  const { t } = useLanguage();
   if (roles.length === 0) return null;
   const TierIcon = TIER_ICONS[tier];
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
         <TierIcon className="h-4 w-4 text-muted-foreground" />
-        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">{tier}</h2>
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">{t(`roles.tier.${tier.replace(' & ', '')}`)}</h2>
         <Badge variant="secondary" className="text-xs">{roles.length}</Badge>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -714,6 +1010,7 @@ function RoleTierSection({ tier, roles, onEdit, onDelete, onPermissions }: {
 
 export default function RoleManagement() {
   const { user: currentUser } = useAuth();
+  const { t } = useLanguage();
   const isCurrentUserSuperAdmin = currentUser?.role === "super_admin";
   const [roles, setRoles] = useState<RoleResponse[]>([]);
   const [stats, setStats] = useState<RoleStatsResponse | null>(null);
@@ -815,16 +1112,16 @@ export default function RoleManagement() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Settings2 className="h-6 w-6 text-muted-foreground" />Role Management
+            <Settings2 className="h-6 w-6 text-muted-foreground" />{t('roles.title')}
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Define roles and control what each staff member can access</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('roles.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={loadRoles} disabled={rolesLoading} className="gap-1">
-            <RefreshCw className={`h-4 w-4 ${rolesLoading ? "animate-spin" : ""}`} />Refresh
+            <RefreshCw className={`h-4 w-4 ${rolesLoading ? "animate-spin" : ""}`} />{t('roles.refresh')}
           </Button>
           <Button size="sm" onClick={() => setShowCreateRole(true)} className="gap-1">
-            <Plus className="h-4 w-4" />New Custom Role
+            <Plus className="h-4 w-4" />{t('roles.newCustomRole')}
           </Button>
         </div>
       </div>
@@ -835,10 +1132,10 @@ export default function RoleManagement() {
           Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)
         ) : (
           <>
-            <StatCard icon={<Shield className="h-5 w-5 text-blue-500" />} label="Total Roles" value={stats?.totalRoles ?? 0} sub={`${stats?.systemRoles ?? 0} system · ${stats?.customRoles ?? 0} custom`} />
-            <StatCard icon={<GraduationCap className="h-5 w-5 text-purple-500" />} label="Leadership" value={(scopeCounts["Full"] ?? 0) + (scopeCounts["Broad"] ?? 0)} sub="Admin + Principal + VP" />
-            <StatCard icon={<BookOpen className="h-5 w-5 text-sky-500" />} label="Academic Staff" value={scopeCounts["Standard"] ?? 0} sub="HOD + Class + Subject Teachers" />
-            <StatCard icon={<Users className="h-5 w-5 text-emerald-500" />} label="Users with Roles" value={stats?.totalUsersWithRoles ?? 0} sub="Active assignments" />
+            <StatCard icon={<Shield className="h-5 w-5 text-blue-500" />} label={t('roles.stats.totalRoles')} value={stats?.totalRoles ?? 0} sub={`${stats?.systemRoles ?? 0} system · ${stats?.customRoles ?? 0} custom`} />
+            <StatCard icon={<GraduationCap className="h-5 w-5 text-purple-500" />} label={t('roles.stats.leadership')} value={(scopeCounts["Full"] ?? 0) + (scopeCounts["Broad"] ?? 0)} sub="Admin + Principal + VP" />
+            <StatCard icon={<BookOpen className="h-5 w-5 text-sky-500" />} label={t('roles.stats.academicStaff')} value={scopeCounts["Standard"] ?? 0} sub="HOD + Class + Subject Teachers" />
+            <StatCard icon={<Users className="h-5 w-5 text-emerald-500" />} label={t('roles.stats.usersWithRoles')} value={stats?.totalUsersWithRoles ?? 0} sub={t('roles.stats.usersWithRolesSub')} />
           </>
         )}
       </div>
@@ -846,8 +1143,8 @@ export default function RoleManagement() {
       {/* Tabs */}
       <Tabs defaultValue="roles" onValueChange={v => v === "users" && handleUsersTabOpen()}>
         <TabsList>
-          <TabsTrigger value="roles" className="gap-1.5"><Shield className="h-4 w-4" />Roles & Permissions</TabsTrigger>
-          <TabsTrigger value="users" className="gap-1.5"><Users className="h-4 w-4" />Staff & Access</TabsTrigger>
+          <TabsTrigger value="roles" className="gap-1.5"><Shield className="h-4 w-4" />{t('roles.tabs.rolesPermissions')}</TabsTrigger>
+          <TabsTrigger value="users" className="gap-1.5"><Users className="h-4 w-4" />{t('roles.tabs.staffAccess')}</TabsTrigger>
         </TabsList>
 
         {/* ── Roles Tab ── */}
@@ -855,11 +1152,11 @@ export default function RoleManagement() {
           <div className="flex items-center gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search roles..." value={search} onChange={e => setSearch(e.target.value)} />
+              <Input className="pl-9" placeholder={t('roles.search.placeholder')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {search && (
               <Button size="sm" variant="ghost" onClick={() => setSearch("")} className="gap-1 text-muted-foreground">
-                <X className="h-3.5 w-3.5" />Clear
+                <X className="h-3.5 w-3.5" />{t('roles.search.clear')}
               </Button>
             )}
             <p className="text-sm text-muted-foreground ml-auto hidden md:block">
@@ -874,9 +1171,9 @@ export default function RoleManagement() {
           ) : filteredRoles.length === 0 ? (
             <EmptyState
               icon={<Shield className="h-8 w-8 text-muted-foreground" />}
-              title="No roles found"
-              description={search ? "Try a different search term" : "No roles have been created yet"}
-              action={!search ? <Button size="sm" onClick={() => setShowCreateRole(true)} className="gap-1"><Plus className="h-4 w-4" />New Role</Button> : undefined}
+              title={t('roles.emptyState.noRolesFound')}
+              description={search ? t('roles.emptyState.tryDifferentSearch') : t('roles.emptyState.noRolesYet')}
+              action={!search ? <Button size="sm" onClick={() => setShowCreateRole(true)} className="gap-1"><Plus className="h-4 w-4" />{t('roles.emptyState.newRoleButton')}</Button> : undefined}
             />
           ) : (
             <div className="space-y-8">
@@ -894,7 +1191,7 @@ export default function RoleManagement() {
                 <section>
                   <div className="flex items-center gap-2 mb-3">
                     <Settings2 className="h-4 w-4 text-muted-foreground" />
-                    <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Custom Roles</h2>
+                    <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">{t('roles.section.customRoles')}</h2>
                     <Badge variant="secondary" className="text-xs">{customRoles.length}</Badge>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -913,10 +1210,10 @@ export default function RoleManagement() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />Staff & Role Assignments
+                <Users className="h-4 w-4 text-muted-foreground" />{t('roles.staffTable.cardTitle')}
               </CardTitle>
               <Button size="sm" variant="outline" onClick={() => loadUsers(usersPage)} disabled={usersLoading} className="gap-1">
-                <RefreshCw className={`h-3.5 w-3.5 ${usersLoading ? "animate-spin" : ""}`} />Refresh
+                <RefreshCw className={`h-3.5 w-3.5 ${usersLoading ? "animate-spin" : ""}`} />{t('roles.staffTable.refresh')}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
@@ -925,20 +1222,20 @@ export default function RoleManagement() {
               ) : users.length === 0 ? (
                 <EmptyState
                   icon={<Users className="h-8 w-8 text-muted-foreground" />}
-                  title="No staff users found"
-                  description="Staff with login accounts will appear here"
+                  title={t('roles.staffTable.emptyTitle')}
+                  description={t('roles.staffTable.emptyDescription')}
                 />
               ) : (
                 <>
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/40">
-                        <TableHead className="font-semibold">Staff Member</TableHead>
-                        <TableHead className="font-semibold">Email</TableHead>
-                        <TableHead className="font-semibold">Assigned Roles</TableHead>
-                        <TableHead className="font-semibold">Access Scope</TableHead>
-                        <TableHead className="font-semibold">Status</TableHead>
-                        <TableHead className="text-right font-semibold">Action</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colStaffMember')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colEmail')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colAssignedRoles')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colAccessScope')}</TableHead>
+                        <TableHead className="font-semibold">{t('roles.staffTable.colStatus')}</TableHead>
+                        <TableHead className="text-right font-semibold">{t('roles.staffTable.colAction')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -967,7 +1264,7 @@ export default function RoleManagement() {
                             <TableCell>
                               <div className="flex flex-wrap gap-1 max-w-xs">
                                 {user.assignedRoles.length === 0 ? (
-                                  <span className="text-xs text-muted-foreground italic">Unassigned</span>
+                                  <span className="text-xs text-muted-foreground italic">{t('roles.staffTable.unassigned')}</span>
                                 ) : user.assignedRoles.slice(0, 2).map(r => {
                                   const c = getRoleConfig(r.name ?? "");
                                   return (
@@ -983,7 +1280,7 @@ export default function RoleManagement() {
                             </TableCell>
                             <TableCell>
                               {highestScope ? (
-                                <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[highestScope]}`}>{highestScope}</Badge>
+                                <Badge variant="outline" className={`text-xs border-current/30 ${SCOPE_COLORS[highestScope]}`}>{t(`roles.scope.${highestScope.toLowerCase()}`)} {t('roles.scope.accessSuffix')}</Badge>
                               ) : (
                                 <span className="text-xs text-muted-foreground italic">—</span>
                               )}
@@ -1000,11 +1297,11 @@ export default function RoleManagement() {
                                 // Admin row: greyed out — no role changes needed for the system admin
                                 (user.primaryRole ?? "").toLowerCase() === "admin" ? (
                                   <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 opacity-40 cursor-not-allowed" disabled>
-                                    <UserCog className="h-3 w-3" />Manage
+                                    <UserCog className="h-3 w-3" />{t('roles.staffTable.manageButton')}
                                   </Button>
                                 ) : (
                                   <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1" onClick={() => setAssignUser(user)}>
-                                    <UserCog className="h-3 w-3" />Manage
+                                    <UserCog className="h-3 w-3" />{t('roles.staffTable.manageButton')}
                                   </Button>
                                 )
                               ) : (
@@ -1018,7 +1315,7 @@ export default function RoleManagement() {
                                     ? <Loader2 className="h-3 w-3 animate-spin" />
                                     : <Key className="h-3 w-3" />
                                   }
-                                  Create Login
+                                  {t('roles.staffTable.createLoginButton')}
                                 </Button>
                               )}
                             </TableCell>

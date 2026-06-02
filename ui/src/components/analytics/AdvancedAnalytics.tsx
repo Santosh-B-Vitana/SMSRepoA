@@ -54,10 +54,10 @@ function StatCard({
 }
 
 function formatCurrency(n: number): string {
-  if (n >= 10_000_000) return `â‚¹${(n / 10_000_000).toFixed(1)}Cr`;
-  if (n >= 100_000)    return `â‚¹${(n / 100_000).toFixed(1)}L`;
-  if (n >= 1_000)      return `â‚¹${(n / 1_000).toFixed(0)}K`;
-  return `â‚¹${n.toFixed(0)}`;
+  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1)}Cr`;
+  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1)}L`;
+  if (n >= 1_000)      return `₹${(n / 1_000).toFixed(0)}K`;
+  return `₹${n.toFixed(0)}`;
 }
 
 export function AdvancedAnalytics() {
@@ -148,7 +148,7 @@ export function AdvancedAnalytics() {
         </div>
       </div>
 
-      {/* Top KPI cards â€” live data */}
+      {/* Top KPI cards - live data */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Active Students"

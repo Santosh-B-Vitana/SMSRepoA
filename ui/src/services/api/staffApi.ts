@@ -1,7 +1,7 @@
 /**
  * Real Staff API — connects to sms-api backend at /api/staff
  */
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/apiClient';
+import { apiGet, apiPost, apiPut, apiDelete, apiClient } from '@/lib/apiClient';
 
 // ---------------------------------------------------------------------------
 // Types — match backend StaffBasicResponse / StaffResponse (camelCase JSON)
@@ -107,6 +107,10 @@ export interface StaffFilters {
   pageSize?: number;
   search?: string;
   status?: string;
+  department?: string;
+  designation?: string;
+  sortBy?: string;
+  sortOrder?: string;
 }
 
 export interface CreateStaffRequest {
@@ -188,4 +192,45 @@ export const staffApi = {
   /** Returns students who have this staff member as their parent/guardian */
   getChildren: (staffId: string) =>
     apiGet<import('./studentApi').StaffChildDto[]>(`/staff/${staffId}/children`),
+
+  /** Deactivate staff: process class assignment actions then revoke login */
+  deactivate: (id: string, assignments: DeactivateStaffAssignmentAction[]) =>
+    apiPost<{ message: string }>(`/staff/${id}/deactivate`, { assignments }),
+
+  /** Reactivate a previously deactivated staff member */
+  reactivate: (id: string) =>
+    apiPost<{ message: string }>(`/staff/${id}/reactivate`, {}),
+
+  /** Upload or replace a staff member's profile photo (stored in S3) */
+  uploadPhoto: async (id: string, file: File): Promise<{ photoUrl: string }> => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiClient.post<{ photoUrl: string }>(`/staff/${id}/photo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
+
+  /** Get documents for a staff member */
+  getDocuments: (staffId: string) =>
+    apiGet<StaffDocumentDto[]>(`/staff/${staffId}/documents`),
+
+  /** Upload a staff document */
+  uploadDocument: async (staffId: string, documentType: string, file: File): Promise<StaffDocumentDto> => {
+    const form = new FormData();
+    form.append('documentType', documentType);
+    form.append('file', file);
+    return apiClient.post<StaffDocumentDto>(`/staff/${staffId}/documents`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
+
+  /** Delete a staff document */
+  deleteDocument: (documentId: string) =>
+    apiDelete<void>(`/staff/documents/${documentId}`),
 };
+
+export interface DeactivateStaffAssignmentAction {
+  assignmentId: string;
+  action: 'remove' | 'reassign';
+  newStaffId?: string;
+}

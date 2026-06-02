@@ -1,4 +1,4 @@
-using SmsApi.Models.Constants;
+﻿using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmsApi.Models.DTOs;
@@ -23,7 +23,7 @@ namespace SmsApi.Controllers
             _tenant = tenant;
         }
 
-        // ── Books ───────────────────────────────────────────────────────
+        // ΓöÇΓöÇ Books ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
         [HttpGet("books")]
         public async Task<ActionResult<LibraryListResponse>> GetBooks(
@@ -105,7 +105,7 @@ namespace SmsApi.Controllers
             }
         }
 
-        // ── Issues ──────────────────────────────────────────────────────
+        // ΓöÇΓöÇ Issues ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
         [HttpGet("issues")]
         public async Task<ActionResult<BookIssueListResponse>> GetBookIssues(
@@ -130,7 +130,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("issues")]
-        [Authorize(Roles = "Admin,Principal,Librarian,Staff")]
+        [Authorize(Roles = "Admin,Principal,Librarian,Staff,Teacher")]
         public async Task<ActionResult<BookIssueResponse>> IssueBook([FromBody] CreateBookIssueRequest request)
         {
             request.SchoolId = _tenant.GetEffectiveSchoolId();
@@ -150,7 +150,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("issues/{id}/return")]
-        [Authorize(Roles = "Admin,Principal,Librarian,Staff")]
+        [Authorize(Roles = "Admin,Principal,Librarian,Staff,Teacher")]
         public async Task<ActionResult<BookIssueResponse>> ReturnBook(Guid id)
         {
             var schoolId = _tenant.GetEffectiveSchoolId();
@@ -176,7 +176,7 @@ namespace SmsApi.Controllers
             return Ok(issue);
         }
 
-        // ── Stats ───────────────────────────────────────────────────────
+        // ΓöÇΓöÇ Stats ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
         [HttpGet("stats")]
         public async Task<ActionResult<LibraryStatsResponse>> GetStats()
@@ -185,5 +185,140 @@ namespace SmsApi.Controllers
             var stats = await _libraryService.GetStatsAsync(schoolId);
             return Ok(stats);
         }
+
+        // ── P1: Reservations ─────────────────────────────────────────────────────
+
+        [HttpGet("reservations")]
+        public async Task<IActionResult> GetReservations([FromQuery] Guid? bookId, [FromQuery] string? status)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _libraryService.GetReservationsAsync(schoolId, bookId, status));
+        }
+
+        [HttpPost("reservations")]
+        public async Task<IActionResult> ReserveBook([FromBody] CreateBookReservationRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _libraryService.ReserveBookAsync(schoolId, request);
+                return StatusCode(201, result);
+            }
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("reservations/{id:guid}/cancel")]
+        public async Task<IActionResult> CancelReservation(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _libraryService.CancelReservationAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        [HttpPut("reservations/{id:guid}/fulfill")]
+        public async Task<IActionResult> FulfillReservation(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _libraryService.FulfillReservationAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        // ── P1: Periodicals ──────────────────────────────────────────────────────
+
+        [HttpGet("periodicals")]
+        public async Task<IActionResult> GetPeriodicals([FromQuery] string? type)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _libraryService.GetPeriodicalsAsync(schoolId, type));
+        }
+
+        [HttpPost("periodicals")]
+        public async Task<IActionResult> CreatePeriodical([FromBody] CreatePeriodicalRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _libraryService.CreatePeriodicalAsync(schoolId, request);
+                return StatusCode(201, result);
+            }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("periodicals/{id:guid}")]
+        public async Task<IActionResult> UpdatePeriodical(Guid id, [FromBody] CreatePeriodicalRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _libraryService.UpdatePeriodicalAsync(id, schoolId, request);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        [HttpDelete("periodicals/{id:guid}")]
+        public async Task<IActionResult> DeletePeriodical(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return await _libraryService.DeletePeriodicalAsync(id, schoolId) ? NoContent() : NotFound();
+        }
+
+        // ── P1: Library Members ──────────────────────────────────────────────────
+
+        [HttpGet("members")]
+        public async Task<IActionResult> GetMembers([FromQuery] string? memberType)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _libraryService.GetMembersAsync(schoolId, memberType));
+        }
+
+        [HttpGet("members/{id:guid}")]
+        public async Task<IActionResult> GetMember(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _libraryService.GetMemberByIdAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        [HttpPost("members")]
+        public async Task<IActionResult> CreateMember([FromBody] CreateLibraryMemberRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var result = await _libraryService.CreateMemberAsync(schoolId, request);
+                return CreatedAtAction(nameof(GetMember), new { id = result.Id }, result);
+            }
+            catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
+        }
+
+        [HttpPut("members/{id:guid}")]
+        public async Task<IActionResult> UpdateMember(Guid id, [FromBody] UpdateLibraryMemberRequest request)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _libraryService.UpdateMemberAsync(id, schoolId, request);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        [HttpPut("members/{id:guid}/revoke")]
+        public async Task<IActionResult> RevokeMember(Guid id)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var result = await _libraryService.RevokeMemberAsync(id, schoolId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
+        // ── P1: Overdue Items ────────────────────────────────────────────────────
+
+        [HttpGet("overdue")]
+        public async Task<IActionResult> GetOverdueItems()
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            return Ok(await _libraryService.GetOverdueItemsAsync(schoolId));
+        }
     }
 }
+

@@ -1,9 +1,11 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SmsApi.Models.Entities
 {
+    // ========== BOOK ==========
     public class Book : BaseEntity
     {
         [Required]
@@ -47,8 +49,11 @@ namespace SmsApi.Models.Entities
         
         [ForeignKey("SchoolId")]
         public virtual School? School { get; set; }
+
+        public virtual ICollection<BookReservation> Reservations { get; set; } = new List<BookReservation>();
     }
 
+    // ========== BOOK ISSUE ==========
     public class BookIssue : BaseEntity
     {
         [Required]
@@ -89,5 +94,116 @@ namespace SmsApi.Models.Entities
         
         [ForeignKey("StudentId")]
         public virtual Student? Student { get; set; }
+    }
+
+    // ========== BOOK RESERVATION ==========
+    public class BookReservation : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        public Guid BookId { get; set; }
+
+        [Required]
+        public Guid MemberId { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string MemberType { get; set; } = "student"; // student / staff
+
+        [Required]
+        public DateTime ReservedAt { get; set; }
+
+        [Required]
+        public DateTime ExpiresAt { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = "pending"; // pending / fulfilled / cancelled / expired
+
+        [MaxLength(500)]
+        public string? Notes { get; set; }
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+
+        [ForeignKey("BookId")]
+        public virtual Book? Book { get; set; }
+    }
+
+    // ========== PERIODICAL ==========
+    public class Periodical : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        [MaxLength(300)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(50)]
+        public string Type { get; set; } = "magazine"; // magazine / newspaper / journal
+
+        [MaxLength(50)]
+        public string? Frequency { get; set; } // daily / weekly / monthly / quarterly
+
+        [MaxLength(255)]
+        public string? Publisher { get; set; }
+
+        [MaxLength(20)]
+        public string? ISSN { get; set; }
+
+        public DateTime? SubscriptionStart { get; set; }
+
+        public DateTime? SubscriptionEnd { get; set; }
+
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal? AnnualCost { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = "active"; // active / expired / cancelled
+
+        public string? Notes { get; set; }
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
+    }
+
+    // ========== LIBRARY MEMBER ==========
+    public class LibraryMember : BaseEntity
+    {
+        [Required]
+        public Guid SchoolId { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string MemberType { get; set; } = "student"; // student / staff
+
+        [Required]
+        public Guid MemberId { get; set; } // StudentId or StaffMemberId
+
+        [Required]
+        [MaxLength(50)]
+        public string CardNumber { get; set; } = string.Empty;
+
+        [Required]
+        public DateTime ValidFrom { get; set; }
+
+        [Required]
+        public DateTime ValidTo { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = "active"; // active / expired / suspended
+
+        public int MaxBooksAllowed { get; set; } = 3;
+
+        public int LoanDays { get; set; } = 14;
+
+        [ForeignKey("SchoolId")]
+        public virtual School? School { get; set; }
     }
 }

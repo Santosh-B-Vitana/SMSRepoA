@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -53,6 +53,11 @@ import {
   RefreshCw,
   Hash,
   Eye,
+  Upload,
+  FileText,
+  ZoomIn,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -63,6 +68,7 @@ import {
   CreatePostDto,
   AnalyticsResponse,
 } from "@/services/api/schoolConnectApi";
+import { academicApi } from "@/services/api/academicApi";
 import {
   BarChart,
   Bar,
@@ -272,6 +278,7 @@ function PostCard({
   const [editContent, setEditContent] = useState(post.content);
   const [editTags, setEditTags] = useState(post.tags.join(", "));
   const [savingEdit, setSavingEdit] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const isAdminRole = ["super_admin", "admin", "Principal", "Admin"].includes(currentUserRole);
   const canEdit = post.authorId === currentUserId;
@@ -367,6 +374,8 @@ function PostCard({
       const updated = await schoolConnectApi.updatePost(post.id, {
         content: editContent,
         visibility: post.visibility,
+        mediaType: post.mediaType,
+        mediaUrl: post.mediaUrl,
         tags: editTags
           ? editTags
               .split(",")
@@ -494,13 +503,45 @@ function PostCard({
         {!editing && post.mediaUrl && (
           <div className="mb-3 rounded-lg overflow-hidden border bg-muted/30">
             {post.mediaType === "image" ? (
-              <img
+              <>
+                <div
+                  className="relative group cursor-zoom-in"
+                  onClick={() => setLightboxOpen(true)}
+                >
+                  <img
+                    src={post.mediaUrl}
+                    alt="Post media"
+                    className="w-full max-h-80 object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                    <ZoomIn className="h-8 w-8 text-white opacity-0 group-hover:opacity-80 transition-opacity duration-200 drop-shadow-lg" />
+                  </div>
+                </div>
+                {/* Lightbox */}
+                <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+                  <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/95 border-0 overflow-hidden flex items-center justify-center">
+                    <button
+                      onClick={() => setLightboxOpen(false)}
+                      className="absolute top-3 right-3 z-50 h-9 w-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <img
+                      src={post.mediaUrl}
+                      alt="Post media"
+                      className="max-w-[93vw] max-h-[90vh] object-contain rounded"
+                    />
+                  </DialogContent>
+                </Dialog>
+              </>
+            ) : post.mediaType === "video" ? (
+              <video
                 src={post.mediaUrl}
-                alt="Post media"
-                className="w-full max-h-80 object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
+                controls
+                className="w-full max-h-80"
               />
             ) : post.mediaType === "link" ? (
               <a
@@ -513,10 +554,32 @@ function PostCard({
                 <span className="truncate">{post.mediaUrl}</span>
               </a>
             ) : (
-              <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
-                <Image className="h-4 w-4" />
-                <span className="truncate">{post.mediaUrl}</span>
-              </div>
+              /* document / pdf / any other uploaded file */
+              (() => {
+                const rawUrl = post.mediaUrl;
+                // Resolve legacy relative /files/ paths to the API server origin
+                const resolvedUrl = rawUrl.startsWith("/")
+                  ? `${(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/api$/, "")}${rawUrl}`
+                  : rawUrl;
+                const filename = decodeURIComponent(resolvedUrl.split("/").pop()?.split("?")[0] ?? "file");
+                const isPdf = filename.toLowerCase().endsWith(".pdf");
+                return (
+                  <a
+                    href={resolvedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-3 hover:bg-muted/60 transition-colors group"
+                  >
+                    <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate text-foreground group-hover:text-primary transition-colors">{filename}</p>
+                      <p className="text-xs text-muted-foreground">{isPdf ? "PDF Document" : "File"} · Click to open</p>
+                    </div>
+                  </a>
+                );
+              })()
             )}
           </div>
         )}
@@ -706,35 +769,110 @@ function ComposeBox({
   const [content, setContent] = useState("");
   const visOpts = VISIBILITY_OPTIONS[authorRole] ?? VISIBILITY_OPTIONS["staff"];
   const [visibility, setVisibility] = useState<string>(() => defaultVisibility(authorRole));
-  const [mediaUrl, setMediaUrl] = useState("");
-  const [mediaType, setMediaType] = useState<"image" | "link">("image");
+
+  // File upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string | null>(null);
+
+  // Link URL state
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+
+  // Class selector state
+  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [targetClassId, setTargetClassId] = useState<string>("");
+
   const [tags, setTags] = useState("");
-  const [showMedia, setShowMedia] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Load classes when visibility switches to "class"
+  useEffect(() => {
+    if (visibility === "class" && classes.length === 0) {
+      setLoadingClasses(true);
+      academicApi
+        .listClasses(1, 200)
+        .then((res) => setClasses(res.classes.map((c) => ({ id: c.id, name: c.name }))))
+        .catch(() => toast.error("Failed to load classes"))
+        .finally(() => setLoadingClasses(false));
+    }
+    // Reset class selection when switching away
+    if (visibility !== "class") setTargetClassId("");
+  }, [visibility]);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Clear link when a file is chosen
+    setShowLinkInput(false);
+    setLinkUrl("");
+    setSelectedFile(file);
+    setImagePreview(null);
+    setVideoPreview(null);
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    } else if (file.type.startsWith("video/")) {
+      setVideoPreview(URL.createObjectURL(file));
+    }
+  }
+
+  function clearFile() {
+    if (videoPreview) URL.revokeObjectURL(videoPreview);
+    setSelectedFile(null);
+    setImagePreview(null);
+    setVideoPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   async function submit() {
     const text = content.trim();
-    if (!text) return;
+    const hasMedia = !!selectedFile || (showLinkInput && !!linkUrl.trim());
+    if (!text && !hasMedia) return;
     setSubmitting(true);
     try {
+      let mediaUrl: string | undefined;
+      let mediaType: "image" | "video" | "link" | "document" | undefined;
+
+      if (selectedFile) {
+        try {
+          const result = await schoolConnectApi.uploadMedia(selectedFile);
+          mediaUrl = result.url;
+          mediaType = result.mediaType;
+        } catch (uploadErr: unknown) {
+          const msg = (uploadErr as { response?: { data?: { message?: string } } })?.response?.data?.message;
+          toast.error(msg ?? "Failed to upload media. Please try again.");
+          return;
+        }
+      } else if (showLinkInput && linkUrl.trim()) {
+        mediaUrl = linkUrl.trim();
+        mediaType = "link";
+      }
+
       await onPost({
         content: text,
         authorName,
         authorRole,
         visibility,
-        mediaUrl: mediaUrl.trim() || undefined,
-        mediaType: mediaUrl.trim() ? mediaType : undefined,
+        mediaUrl,
+        mediaType,
+        targetClassId:
+          visibility === "class" && targetClassId ? targetClassId : undefined,
         tags: tags
-          ? tags
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean)
+          ? tags.split(",").map((t) => t.trim()).filter(Boolean)
           : undefined,
       });
+
+      // Reset
       setContent("");
-      setMediaUrl("");
+      clearFile();
+      setLinkUrl("");
+      setShowLinkInput(false);
       setTags("");
-      setShowMedia(false);
+      setTargetClassId("");
       setOpen(false);
     } finally {
       setSubmitting(false);
@@ -759,20 +897,18 @@ function ComposeBox({
           </div>
         ) : (
           <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+            {/* Author row + visibility selector */}
             <div className="flex items-center gap-2">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={authorAvatar} />
                 <AvatarFallback className="text-xs">{getInitials(authorName)}</AvatarFallback>
               </Avatar>
-              <Select
-                value={visibility}
-                onValueChange={setVisibility}
-              >
+              <Select value={visibility} onValueChange={setVisibility}>
                 <SelectTrigger className="h-7 w-[150px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {visOpts.map(opt => (
+                  {visOpts.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       <span className="flex items-center gap-1">
                         {opt.icon} {opt.label}
@@ -781,69 +917,140 @@ function ComposeBox({
                   ))}
                 </SelectContent>
               </Select>
+
+              {/* Class selector — shown only when visibility === "class" */}
+              {visibility === "class" && (
+                <Select
+                  value={targetClassId}
+                  onValueChange={setTargetClassId}
+                  disabled={loadingClasses}
+                >
+                  <SelectTrigger className="h-7 flex-1 text-xs">
+                    <SelectValue
+                      placeholder={loadingClasses ? "Loading classes..." : "Select class…"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classes.map((cls) => (
+                      <SelectItem key={cls.id} value={cls.id}>
+                        {cls.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
+            {/* File preview / selected file display */}
+            {selectedFile && (
+              <div className="relative rounded-md border bg-muted/30 p-2">
+                {imagePreview ? (
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="max-h-48 rounded object-contain w-full"
+                  />
+                ) : videoPreview ? (
+                  <video
+                    src={videoPreview}
+                    controls
+                    className="max-h-48 rounded w-full"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <FileText className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{selectedFile.name}</span>
+                    <span className="shrink-0">
+                      ({(selectedFile.size / 1024).toFixed(0)} KB)
+                    </span>
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 h-5 w-5"
+                  onClick={clearFile}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+
+            {/* Post textarea */}
             <Textarea
               autoFocus
               placeholder="What is on your mind?"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="resize-none min-h-[100px] text-sm"
+              className="resize-none min-h-[80px] text-sm"
               maxLength={5000}
             />
-            {showMedia && (
+
+            {/* Link URL input */}
+            {showLinkInput && !selectedFile && (
               <div className="flex gap-2">
-                <Select
-                  value={mediaType}
-                  onValueChange={(v) => setMediaType(v as "image" | "link")}
-                >
-                  <SelectTrigger className="h-8 w-[90px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="image">Image</SelectItem>
-                    <SelectItem value="link">Link</SelectItem>
-                  </SelectContent>
-                </Select>
                 <Input
                   className="text-xs h-8 flex-1"
-                  placeholder={mediaType === "image" ? "Image URL..." : "Link URL..."}
-                  value={mediaUrl}
-                  onChange={(e) => setMediaUrl(e.target.value)}
+                  placeholder="Paste a link URL..."
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
                 />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </div>
             )}
+
+            {/* Tags */}
             <Input
               className="text-xs h-8"
               placeholder="Tags: announcement, class-10, science  (comma separated)"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
             />
+
+            {/* Action bar */}
             <div className="flex items-center justify-between">
               <div className="flex gap-1">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.avi,.pdf,.doc,.docx,.txt,.csv"
+                  onChange={handleFileChange}
+                />
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs gap-1"
-                  onClick={() => setShowMedia(!showMedia)}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={showLinkInput}
+                  title="Attach image or file"
                 >
-                  <Image className="h-3.5 w-3.5" />
-                  Media
+                  <Upload className="h-3.5 w-3.5" />
+                  {selectedFile ? "Change" : "Attach"}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs gap-1"
-                  onClick={() => {
-                    setShowMedia(true);
-                    setMediaType("link");
-                  }}
+                  onClick={() => { setShowLinkInput(!showLinkInput); clearFile(); }}
+                  title="Add a link"
                 >
                   <LinkIcon className="h-3.5 w-3.5" />
                   Link
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted-foreground">{content.length}/5000</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {content.length}/5000
+                </span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -856,7 +1063,11 @@ function ComposeBox({
                   size="sm"
                   className="h-7 px-3 text-xs"
                   onClick={submit}
-                  disabled={!content.trim() || submitting}
+                  disabled={
+                    (!content.trim() && !selectedFile && !(showLinkInput && linkUrl.trim())) ||
+                    submitting ||
+                    (visibility === "class" && !targetClassId)
+                  }
                 >
                   {submitting ? "Posting..." : "Post"}
                 </Button>

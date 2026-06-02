@@ -8,8 +8,8 @@
  *  4. All chart tabs are navigable and renderable
  *
  * Auth strategy: Reads stored token from .auth/admin.json (global.setup.ts)
- * Backend:       http://localhost:5092/api
- * Frontend:      http://localhost:8080
+ * Backend:       VITE_API_BASE_URL
+ * Frontend:      PLAYWRIGHT_BASE_URL
  *
  * Run: npx playwright test e2e/security-analytics.spec.ts
  */
@@ -23,8 +23,8 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 
-const UI_BASE   = 'http://localhost:8080';
-const API_BASE  = 'http://localhost:5092/api';
+const UI_BASE   = '';
+const API_BASE  = process.env.VITE_API_BASE_URL ?? '';
 const AUTH_FILE = path.join(__dirname, '.auth/admin.json');
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────

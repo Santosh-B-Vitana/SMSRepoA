@@ -12,8 +12,8 @@
  * PHASE 7 — Balance:   Leave balance reflects used days
  *
  * Auth strategy:   Reads stored token from .auth/admin.json (global.setup.ts)
- * Backend target:  http://localhost:5092/api
- * Frontend target: http://localhost:8080
+ * Backend target:  VITE_API_BASE_URL
+ * Frontend target: PLAYWRIGHT_BASE_URL
  *
  * Run: npx playwright test e2e/staff-leave-management.spec.ts
  */
@@ -29,8 +29,8 @@ const __dirname = dirname(__filename);
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const API_BASE  = 'http://localhost:5092/api';
-const UI_BASE   = 'http://localhost:8080';
+const API_BASE  = process.env.VITE_API_BASE_URL ?? '';
+const UI_BASE   = '';
 const AUTH_FILE = path.join(__dirname, '.auth/admin.json');
 
 // ── Auth helpers ───────────────────────────────────────────────────────────

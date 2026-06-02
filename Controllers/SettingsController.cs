@@ -77,12 +77,155 @@ namespace SmsApi.Controllers
                 if (school == null)
                     return NotFound(new { message = "School not found" });
 
-                return Ok(school);
+                // Fallback for deployments where logo is stored in SchoolSettings.Appearance/logo_url
+                var resolvedLogoUrl = school.logoUrl;
+                if (string.IsNullOrWhiteSpace(resolvedLogoUrl))
+                {
+                    resolvedLogoUrl = await _db.SchoolSettings
+                        .AsNoTracking()
+                        .IgnoreQueryFilters()
+                        .Where(ss => ss.SchoolId == schoolId
+                                     && !ss.IsDeleted
+                                     && (ss.SettingKey == "logo_url" || ss.SettingKey == "school_logo_url"))
+                        .OrderByDescending(ss => ss.UpdatedAt)
+                        .Select(ss => ss.SettingValue)
+                        .FirstOrDefaultAsync();
+                }
+
+                return Ok(new {
+                    school.id,
+                    school.name,
+                    logoUrl = resolvedLogoUrl,
+                    school.address,
+                    school.phone,
+                    school.email,
+                    school.status
+                });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// Returns school branding for public login pages without authentication.
+        /// Resolution order:
+        /// 1) query.schoolCode
+        /// 2) query.host
+        /// 3) request host subdomain (e.g. schoolcode.example.org -> schoolcode)
+        /// </summary>
+        [HttpGet("public-branding")]
+        [AllowAnonymous]
+        public async Task<ActionResult> GetPublicSchoolBranding([FromQuery] string? schoolCode = null, [FromQuery] string? host = null)
+        {
+            try
+            {
+                var resolvedCode = NormalizeSchoolCode(schoolCode);
+                if (string.IsNullOrWhiteSpace(resolvedCode))
+                {
+                    resolvedCode = ExtractSchoolCodeFromHost(host);
+                }
+
+                if (string.IsNullOrWhiteSpace(resolvedCode))
+                {
+                    resolvedCode = ExtractSchoolCodeFromHost(HttpContext?.Request?.Host.Host);
+                }
+
+                if (string.IsNullOrWhiteSpace(resolvedCode))
+                {
+                    return Ok(new
+                    {
+                        id = (Guid?)null,
+                        name = "VEDA",
+                        logoUrl = (string?)null,
+                        schoolCode = (string?)null,
+                        status = "active"
+                    });
+                }
+
+                var school = await _db.Schools
+                    .AsNoTracking()
+                    .IgnoreQueryFilters()
+                    .Where(s => !s.IsDeleted && s.SchoolCode.ToLower() == resolvedCode)
+                    .Select(s => new
+                    {
+                        id = (Guid?)s.Id,
+                        name = s.Name,
+                        logoUrl = s.Logo,
+                        schoolCode = s.SchoolCode,
+                        status = s.IsActive ? "active" : "inactive"
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (school == null)
+                {
+                    return Ok(new
+                    {
+                        id = (Guid?)null,
+                        name = "VEDA",
+                        logoUrl = (string?)null,
+                        schoolCode = resolvedCode,
+                        status = "active"
+                    });
+                }
+
+                var resolvedLogoUrl = school.logoUrl;
+                if (string.IsNullOrWhiteSpace(resolvedLogoUrl) && school.id.HasValue)
+                {
+                    resolvedLogoUrl = await _db.SchoolSettings
+                        .AsNoTracking()
+                        .IgnoreQueryFilters()
+                        .Where(ss => ss.SchoolId == school.id.Value
+                                     && !ss.IsDeleted
+                                     && (ss.SettingKey == "logo_url" || ss.SettingKey == "school_logo_url"))
+                        .OrderByDescending(ss => ss.UpdatedAt)
+                        .Select(ss => ss.SettingValue)
+                        .FirstOrDefaultAsync();
+                }
+
+                return Ok(new
+                {
+                    school.id,
+                    school.name,
+                    logoUrl = resolvedLogoUrl,
+                    school.schoolCode,
+                    school.status
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        private static string? NormalizeSchoolCode(string? code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return null;
+            return code.Trim().ToLowerInvariant();
+        }
+
+        private static string? ExtractSchoolCodeFromHost(string? host)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return null;
+
+            var cleanHost = host.Trim().ToLowerInvariant();
+            var colonIndex = cleanHost.IndexOf(':');
+            if (colonIndex > 0)
+                cleanHost = cleanHost.Substring(0, colonIndex);
+
+            if (string.IsNullOrWhiteSpace(cleanHost) || cleanHost == "localhost")
+                return null;
+
+            var segments = cleanHost.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 3)
+                return null;
+
+            var subdomain = segments[0];
+            if (subdomain == "www" || subdomain == "app")
+                return null;
+
+            return NormalizeSchoolCode(subdomain);
         }
 
 
@@ -302,8 +445,10 @@ namespace SmsApi.Controllers
                     return NotFound(new { message = "School not found" });
 
                 // Only update fields that were explicitly provided (null = skip)
-                if (request.Phone != null) school.Phone = request.Phone.Trim();
-                if (request.Email != null) school.Email = request.Email.Trim();
+                if (request.Name    != null) school.Name    = request.Name.Trim();
+                if (request.Logo    != null) school.Logo    = request.Logo.Trim();
+                if (request.Phone   != null) school.Phone   = request.Phone.Trim();
+                if (request.Email   != null) school.Email   = request.Email.Trim();
                 if (request.Address != null) school.Address = request.Address.Trim();
 
                 await _db.SaveChangesAsync();

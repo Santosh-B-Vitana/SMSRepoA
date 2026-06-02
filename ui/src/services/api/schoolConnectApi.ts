@@ -37,7 +37,7 @@ export interface PostResponse {
   content: string;
   mediaType?: 'image' | 'video' | 'document' | 'link';
   mediaUrl?: string;
-  visibility: 'public' | 'class' | 'group' | 'private';
+  visibility: 'public' | 'class' | 'group' | 'staff' | 'parent' | 'private';
   targetClassId?: string;
   targetGroupId?: string;
   likesCount: number;
@@ -73,11 +73,18 @@ export interface CreatePostDto {
   authorAvatar?: string;
   mediaType?: 'image' | 'video' | 'document' | 'link';
   mediaUrl?: string;
-  visibility: 'public' | 'class' | 'group' | 'private';
+  visibility: 'public' | 'class' | 'group' | 'staff' | 'parent' | 'private';
   targetClassId?: string;
   tags?: string[];
   isScheduled?: boolean;
   scheduledPublishAt?: string;
+}
+
+export interface UploadMediaResponse {
+  url: string;
+  mediaType: 'image' | 'video' | 'document';
+  fileName: string;
+  fileSizeBytes: number;
 }
 
 export interface UpdatePostDto {
@@ -203,4 +210,13 @@ export const schoolConnectApi = {
 
   reviewReport: (reportId: string, status: string, hidePost?: boolean) =>
     apiClient.post(`${BASE}/moderation/${reportId}/review`, { status, hidePost }).then(r => r.data),
+
+  // Media upload
+  uploadMedia: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return apiClient.post<UploadMediaResponse>(`${BASE}/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
 };

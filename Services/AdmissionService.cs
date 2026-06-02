@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -27,7 +28,7 @@ namespace SmsApi.Services
         Task<bool> ScheduleInterviewAsync(Guid schoolId, Guid id, DateTime interviewDate, string? notes);
         Task<bool> ApproveApplicationAsync(Guid schoolId, Guid id, Guid userId);
         Task<bool> RejectApplicationAsync(Guid schoolId, Guid id, string reason, Guid userId);
-        Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId);
+        Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId, string? section = null);
 
         // Statistics
         Task<AdmissionStatsDto> GetApplicationStatsAsync(Guid schoolId);
@@ -35,12 +36,14 @@ namespace SmsApi.Services
         // Documents
         Task<List<AdmissionDocumentDto>> GetDocumentsAsync(Guid schoolId, Guid admissionId);
         Task<AdmissionDocumentDto> UploadDocumentAsync(Guid schoolId, Guid admissionId, CreateAdmissionDocumentDto dto);
+        Task<string> UploadPhotoAsync(Guid schoolId, Guid id, string fileName, byte[] fileData);
     }
 
     public class AdmissionService : IAdmissionService
     {
         private readonly AppDbContext _context;
         private readonly ILogger<AdmissionService> _logger;
+        private readonly IFileStorageService _fileStorage;
 
         // Valid admission status values and their allowed transitions
         private static readonly string[] ValidStatuses = { "pending", "approved", "rejected", "waitlisted", "enrolled", "interviewed" };
@@ -68,10 +71,11 @@ namespace SmsApi.Services
             ["11"] = 16, ["12"] = 17
         };
 
-        public AdmissionService(AppDbContext context, ILogger<AdmissionService> logger)
+        public AdmissionService(AppDbContext context, ILogger<AdmissionService> logger, IFileStorageService fileStorage)
         {
             _context = context;
             _logger = logger;
+            _fileStorage = fileStorage;
         }
 
         // ========== APPLICATION MANAGEMENT ==========
@@ -555,7 +559,9 @@ namespace SmsApi.Services
             var additionalData = ParseAdditionalData(admission.Remarks);
 
             admission.Status = normalizedStatus;
-            admission.ProcessedBy = userId;
+            // ProcessedBy would require userId to be a valid Staff ID (foreign key constraint)
+            // Since the JWT token contains User IDs, not Staff IDs, we skip setting this to avoid FK violation
+            // admission.ProcessedBy = userId;
             admission.ProcessedAt = DateTime.UtcNow;
             admission.UpdatedAt = DateTime.UtcNow;
 
@@ -628,7 +634,7 @@ namespace SmsApi.Services
             return await UpdateStatusAsync(schoolId, id, "rejected", reason, userId);
         }
 
-        public async Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId)
+        public async Task<bool> EnrollStudentAsync(Guid schoolId, Guid id, string admissionNumber, Guid userId, string? section = null)
         {
             // ===== UPFRONT VALIDATION (before transaction) =====
             if (string.IsNullOrWhiteSpace(admissionNumber))
@@ -672,6 +678,10 @@ namespace SmsApi.Services
                     // Generate roll number
                     var rollNumber = await GetNextRollNumberAsync(schoolId, admissionInTx.ApplyingForClass);
 
+                    // Extract photo URL stored in Remarks JSON by UploadPhotoAsync
+                    var enrollAdditionalData = ParseAdditionalData(admissionInTx.Remarks);
+                    var admissionPhotoUrl = GetStringValue(enrollAdditionalData, "PhotoUrl");
+
                     var student = new Student
                     {
                         Id = Guid.NewGuid(),
@@ -683,11 +693,13 @@ namespace SmsApi.Services
                         DateOfBirth = admissionInTx.DateOfBirth,
                         Gender = admissionInTx.Gender,
                         Class = admissionInTx.ApplyingForClass,
-                        Section = "A",
+                        Section = !string.IsNullOrWhiteSpace(section) ? section.Trim() : "A",
                         RollNumber = rollNumber,
-                        Status = "Active",
+                        Status = "active",  // Lowercase to match queries
+                        IsActive = true,
                         GuardianName = admissionInTx.ParentName,
                         Address = admissionInTx.Address,
+                        PhotoUrl = !string.IsNullOrWhiteSpace(admissionPhotoUrl) ? admissionPhotoUrl : null,
                         AdmissionDate = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
@@ -696,6 +708,9 @@ namespace SmsApi.Services
                     _context.Students.Add(student);
                     await _context.SaveChangesAsync();
 
+                    // AUTO-CREATE FEE RECORD: find the class fee structure and assign it
+                    await CreateInitialFeeRecordForEnrolledStudentAsync(student, admissionInTx.AcademicYear);
+
                     // Update admission record
                     var additionalData = ParseAdditionalData(admissionInTx.Remarks);
                     additionalData["AdmissionNumber"] = admissionNumber.Trim();
@@ -703,7 +718,7 @@ namespace SmsApi.Services
                     additionalData["StudentId"] = student.Id.ToString();
 
                     admissionInTx.Status = "enrolled";
-                    admissionInTx.ProcessedBy = userId;
+                    // admissionInTx.ProcessedBy = userId;  // Avoid FK constraint: userId is not a valid Staff ID
                     admissionInTx.ProcessedAt = DateTime.UtcNow;
                     admissionInTx.Remarks = JsonSerializer.Serialize(additionalData);
                     admissionInTx.UpdatedAt = DateTime.UtcNow;
@@ -750,7 +765,145 @@ namespace SmsApi.Services
             return age;
         }
 
-        // ========== STATISTICS ==========
+        // ========== FEE AUTO-ENROLLMENT ==========
+
+        /// <summary>
+        /// After a student is enrolled from an admission application, find the matching
+        /// fee structure for the student's class and academic year, then create a pending
+        /// fee record.  Runs inside the enrollment transaction via the shared DbContext.
+        /// Failures are logged but do not abort the enrollment.
+        /// </summary>
+        private async Task CreateInitialFeeRecordForEnrolledStudentAsync(Student student, string admissionAcademicYear)
+        {
+            try
+            {
+                // Resolve academic year: prefer the one from the admission form;
+                // fall back to the currently active year if it is empty/null.
+                var academicYear = !string.IsNullOrWhiteSpace(admissionAcademicYear)
+                    ? admissionAcademicYear
+                    : await ResolveActiveAcademicYearAsync(student.SchoolId);
+
+                // Skip if a fee record already exists for this student + year (idempotent)
+                var alreadyExists = await _context.FeeRecords
+                    .AnyAsync(f => f.SchoolId == student.SchoolId &&
+                                   f.StudentId == student.Id &&
+                                   f.AcademicYear == academicYear);
+                if (alreadyExists) return;
+
+                // Load all fee structures for this school and find the best class match
+                var structures = await _context.FeeStructures
+                    .Where(f => f.SchoolId == student.SchoolId)
+                    .ToListAsync();
+
+                var feeStructure = structures
+                    .Where(f => f.AcademicYear == academicYear &&
+                                IsFeeClassMatch(f.Class, student.Class))
+                    .OrderByDescending(f => f.CreatedAt)
+                    .FirstOrDefault()
+                    ?? structures
+                        .Where(f => IsFeeClassMatch(f.Class, student.Class))
+                        .OrderByDescending(f => f.AcademicYear)
+                        .ThenByDescending(f => f.CreatedAt)
+                        .FirstOrDefault();
+
+                if (feeStructure == null)
+                {
+                    _logger.LogWarning(
+                        "No fee structure found for class {Class}, year {Year}. Fee record not auto-created for admission-enrolled student {StudentId}.",
+                        student.Class, academicYear, student.Id);
+                    return;
+                }
+
+                // The admission form does not capture hostel/transport requirements;
+                // use the full structure total (recomputed from components) so no charges
+                // are silently omitted. Adjustments can be made later via fee management.
+                var admissionTotal = feeStructure.ComputeTotalFromComponents();
+
+                var feeRecord = new FeeRecord
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = student.SchoolId,
+                    StudentId = student.Id,
+                    FeeStructureId = feeStructure.Id,
+                    AcademicYear = academicYear,
+                    TotalAmount = admissionTotal,
+                    PaidAmount = 0,
+                    DiscountAmount = 0,
+                    LateFeeAmount = 0,
+                    PendingAmount = admissionTotal,
+                    BalanceAmount = admissionTotal,
+                    DueDate = DateTime.UtcNow.AddDays(30),
+                    Status = "pending",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.FeeRecords.Add(feeRecord);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Fee record auto-created for admission-enrolled student {StudentId} | Class: {Class} | Structure: '{Structure}' | Amount: {Amount}",
+                    student.Id, student.Class, feeStructure.Name, feeStructure.TotalAmount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to auto-create fee record for enrolled student {StudentId}. Enrollment will continue.", student.Id);
+                // Do NOT rethrow — fee record failure must not abort the enrollment transaction.
+            }
+        }
+
+        /// <summary>
+        /// Returns the name of the currently active academic year for the school,
+        /// falling back to the most recent year or a calendar-derived value.
+        /// </summary>
+        private async Task<string> ResolveActiveAcademicYearAsync(Guid schoolId)
+        {
+            var now = DateTime.UtcNow;
+            var active = await _context.AcademicYears
+                .Where(a => a.SchoolId == schoolId && a.StartDate <= now && a.EndDate >= now)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => a.Name)
+                .FirstOrDefaultAsync();
+
+            if (!string.IsNullOrWhiteSpace(active)) return active;
+
+            var latest = await _context.AcademicYears
+                .Where(a => a.SchoolId == schoolId)
+                .OrderByDescending(a => a.StartDate)
+                .Select(a => a.Name)
+                .FirstOrDefaultAsync();
+
+            return !string.IsNullOrWhiteSpace(latest)
+                ? latest
+                : (now.Month >= 4 ? $"{now.Year}-{now.Year + 1}" : $"{now.Year - 1}-{now.Year}");
+        }
+
+        /// <summary>
+        /// Flexible class-name matching so that a fee structure for "Class 10" (or "10")
+        /// matches students in "Class 10-A", "Class 10 A", etc.
+        /// </summary>
+        private static bool IsFeeClassMatch(string structureClass, string studentClass)
+        {
+            if (string.IsNullOrWhiteSpace(structureClass) || string.IsNullOrWhiteSpace(studentClass))
+                return false;
+
+            var sc = structureClass.Trim();
+            var st = studentClass.Trim();
+
+            if (string.Equals(sc, st, StringComparison.OrdinalIgnoreCase)) return true;
+            if (st.StartsWith(sc + "-", StringComparison.OrdinalIgnoreCase)) return true;
+            if (st.StartsWith(sc + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // Strip "Class " prefix from both and compare
+            var scN = sc.StartsWith("Class ", StringComparison.OrdinalIgnoreCase) ? sc.Substring(6).Trim() : sc;
+            var stN = st.StartsWith("Class ", StringComparison.OrdinalIgnoreCase) ? st.Substring(6).Trim() : st;
+
+            if (string.Equals(scN, stN, StringComparison.OrdinalIgnoreCase)) return true;
+            if (stN.StartsWith(scN + "-", StringComparison.OrdinalIgnoreCase)) return true;
+            if (stN.StartsWith(scN + " ", StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
+        }
 
         public async Task<AdmissionStatsDto> GetApplicationStatsAsync(Guid schoolId)
         {
@@ -881,6 +1034,37 @@ namespace SmsApi.Services
                 _logger.LogError(ex, "Error uploading document for admission {AdmissionId}", admissionId);
                 throw;
             }
+        }
+
+        // ========== PHOTO UPLOAD ==========
+
+        public async Task<string> UploadPhotoAsync(Guid schoolId, Guid id, string fileName, byte[] fileData)
+        {
+            var admission = await _context.Admissions
+                .FirstOrDefaultAsync(a => a.SchoolId == schoolId && a.Id == id);
+
+            if (admission == null)
+                throw new InvalidOperationException("Admission application not found.");
+
+            var ext = Path.GetExtension(fileName).ToLowerInvariant();
+            var key = _fileStorage.BuildAssetKey($"schools/{schoolId}/admissions/{id}/photos/{Guid.NewGuid()}{ext}");
+
+            using var stream = new MemoryStream(fileData);
+            var saved = await _fileStorage.SaveFileAsync(key, stream);
+            if (!saved)
+                throw new InvalidOperationException("Failed to upload photo to cloud storage.");
+
+            var photoUrl = _fileStorage.GetPublicUrl(key);
+
+            // Store photo URL in the JSON remarks blob
+            var additionalData = ParseAdditionalData(admission.Remarks);
+            additionalData["PhotoUrl"] = photoUrl;
+            admission.Remarks = JsonSerializer.Serialize(additionalData);
+            admission.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Admission photo uploaded: admissionId={Id}, key={Key}", id, key);
+            return photoUrl;
         }
 
         // ========== HELPER METHODS ==========

@@ -1,6 +1,7 @@
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { cn } from "@/lib/utils";
 import {
@@ -39,6 +40,8 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  Camera,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -49,14 +52,17 @@ import {
   type AdmissionFormData,
 } from "@/schemas/admissionSchema";
 import { admissionService, type Admission } from "@/services/admissionService";
+import { useAcademicYear } from "@/contexts/AcademicYearContext";
+import { academicApi, type ClassResponse } from "@/services/api/academicApi";
+import { boardApi, type SchoolBoardConfigResponse } from "@/services/api/boardApi";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STEP_ICONS = [User, Phone, BookOpen, Users, ClipboardList];
 
-const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"] as const;
+const GENDER_OPTIONS = ["Male", "Female", "Other"] as const;
 const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"] as const;
-const CATEGORY_OPTIONS = ["General", "OBC", "SC", "ST", "EWS", "Other"] as const;
+const CATEGORY_OPTIONS = ["General", "OBC", "SC", "ST", "EWS"] as const;
 const CLASS_OPTIONS = [
   "Nursery", "LKG", "UKG",
   ...Array.from({ length: 12 }, (_, i) => `Class ${i + 1}`),
@@ -139,9 +145,57 @@ function StepIndicator({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormProps) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [submitting, setSubmitting]   = useState(false);
+  const { availableYears, currentYear } = useAcademicYear();
+  const queryClient = useQueryClient();
+  const [currentStep, setCurrentStep]   = useState(0);
+  const [submitting, setSubmitting]     = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [submittedInfo, setSubmittedInfo] = useState<{ appNumber: string; studentName: string; academicYear: string } | null>(null);
   const isEditMode = !!admission;
+  // Photo upload state
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Classes & Boards (Academic step) ─────────────────────────────────────
+  const [schoolClasses, setSchoolClasses] = useState<ClassResponse[]>([]);
+  const [schoolBoards, setSchoolBoards]   = useState<SchoolBoardConfigResponse[]>([]);
+  const [selectedBoardId, setSelectedBoardId] = useState<string>("");
+
+  useEffect(() => {
+    academicApi.listClasses(1, 500).then(r => setSchoolClasses(r.classes || [])).catch(() => {});
+    boardApi.getSchoolBoards().then(r => setSchoolBoards(r.boards || [])).catch(() => {});
+  }, []);
+
+  // When board selection changes, clear classAppliedFor if it's no longer available
+  const handleBoardChange = (boardId: string) => {
+    setSelectedBoardId(boardId);
+    form.setValue("classAppliedFor", "", { shouldValidate: false });
+  };
+
+  // Unique sorted standards filtered by selected board
+  const filteredClassOptions = useMemo(() => {
+    let classes = schoolClasses;
+    if (selectedBoardId) {
+      classes = schoolClasses.filter(c => c.boardConfigurationId === selectedBoardId);
+    } else if (schoolBoards.length > 0) {
+      // Show classes with no explicit board when "All / No Board" is selected
+      const noBoardClasses = schoolClasses.filter(c => !c.boardConfigurationId);
+      classes = noBoardClasses.length > 0 ? noBoardClasses : schoolClasses;
+    }
+    const standards = Array.from(
+      new Set(classes.map(c => (c.standard || c.name || "").trim()).filter(Boolean))
+    );
+    return standards.sort((a, b) => {
+      const aNum = parseInt(a.replace(/\D/g, "")) || 0;
+      const bNum = parseInt(b.replace(/\D/g, "")) || 0;
+      return aNum !== bNum ? aNum - bNum : a.localeCompare(b);
+    });
+  }, [schoolClasses, selectedBoardId, schoolBoards.length]);
+
+  // Display label: pure numbers get "Class N" prefix, others shown as-is
+  const formatClassLabel = (standard: string) =>
+    /^\d+$/.test(standard) ? `Class ${standard}` : standard;
 
   const form = useForm<AdmissionFormData>({
     resolver:      zodResolver(admissionSchema),
@@ -163,7 +217,7 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
       state:              (admission as any)?.state ?? "",
       pincode:            (admission as any)?.pincode ?? "",
       classAppliedFor:    admission?.appliedClass ?? "",
-      academicYearId:     "",
+      academicYearId:     admission?.academicYear ?? currentYear?.name ?? "",
       previousSchool:     admission?.previousSchool ?? "",
       previousClass:      (admission as any)?.previousClass ?? "",
       previousPercentage: "",
@@ -185,6 +239,13 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
   });
 
   const { formState: { errors } } = form;
+
+  // Sync academic year from context when it loads (context reads from localStorage)
+  useEffect(() => {
+    if (currentYear?.name && !form.getValues('academicYearId')) {
+      form.setValue('academicYearId', currentYear.name, { shouldValidate: false });
+    }
+  }, [currentYear?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stepErrorCount = () => {
     const stepKeys = Object.keys((STEP_SCHEMAS[currentStep] as any).shape ?? {});
@@ -243,19 +304,39 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
         previousMarks:   data.previousPercentage ? Number(data.previousPercentage) : undefined,
         guardianName:    data.fatherName,
         guardianRelation: "Father",
-        guardianPhone:   data.fatherPhone ?? data.guardianPhone ?? "",
+        guardianPhone:   data.fatherPhone?.trim() || data.guardianPhone?.trim() || data.phone?.trim() || "",
         fatherName:      data.fatherName,
         motherName:      data.motherName,
         remarks:         data.remarks,
       };
       if (isEditMode) {
         await admissionService.updateAdmission(admission!.id, payload as any);
-        toast.success("Application updated successfully");
+        setSubmittedInfo({
+          appNumber: admission!.applicationNumber,
+          studentName: `${data.firstName} ${data.lastName}`,
+          academicYear: data.academicYearId,
+        });
       } else {
-        await admissionService.createAdmission(payload as any);
-        toast.success("Application submitted successfully");
+        const result = await admissionService.createAdmission(payload as any);
+        // Upload photo if selected
+        if (photoFile && result?.id) {
+          try {
+            await admissionService.uploadPhoto(result.id, photoFile);
+          } catch {
+            // Non-fatal: admission created, photo upload failed silently
+          }
+        }
+        // Invalidate the admissions list immediately so it refreshes when the dialog closes
+        queryClient.invalidateQueries({ queryKey: ['admissions'] });
+        queryClient.invalidateQueries({ queryKey: ['admission-stats'] });
+        const appNumber = result.applicationNumber || (result as any).ApplicationNumber || '';
+        setSubmittedInfo({
+          appNumber,
+          studentName: `${data.firstName} ${data.lastName}`,
+          academicYear: data.academicYearId,
+        });
       }
-      onSuccess();
+      setShowSuccessDialog(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message ?? "Submission failed.";
       toast.error(msg);
@@ -266,6 +347,49 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
 
   const progress = ((currentStep + 1) / STEPS_COUNT) * 100;
 
+  if (showSuccessDialog && submittedInfo) {
+    return (
+      <Card className="w-full max-w-3xl mx-auto">
+        <CardContent className="flex flex-col items-center justify-center py-14 space-y-6">
+          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+            <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
+          </div>
+          <div className="text-center space-y-2">
+            <h2 className="text-xl font-semibold">
+              {isEditMode ? "Application Updated!" : "Application Submitted!"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {isEditMode
+                ? "The application has been saved successfully."
+                : "Application received and is pending review."}
+            </p>
+          </div>
+          <div className="w-full max-w-sm bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Application No.</span>
+              <span className="font-mono font-semibold text-primary">
+                {submittedInfo.appNumber || <span className="text-muted-foreground italic text-xs">Generating…</span>}
+              </span>
+            </div>
+            <Separator />
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Student Name</span>
+              <span className="font-medium">{submittedInfo.studentName}</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Academic Year</span>
+              <span className="font-medium">{submittedInfo.academicYear}</span>
+            </div>
+          </div>
+          <Button onClick={onSuccess} size="lg" className="min-w-[160px]">
+            Done
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="w-full max-w-3xl mx-auto">
       <CardHeader className="pb-4">
@@ -273,9 +397,6 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
           <CardTitle className="text-xl">
             {isEditMode ? "Edit Application" : "New Admission Application"}
           </CardTitle>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
         </div>
         <div className="space-y-2 mt-3">
           <div className="flex justify-between text-xs text-muted-foreground">
@@ -308,6 +429,62 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
             {currentStep === 0 && (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">Basic student identification details</p>
+
+                {/* Photo upload */}
+                {!isEditMode && (
+                  <div className="flex flex-col items-center gap-3 py-2">
+                    <div
+                      className="relative w-28 h-28 rounded-full border-2 border-dashed border-muted-foreground/30 bg-muted/40 flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/60 transition-colors"
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      {photoPreview ? (
+                        <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                          <Camera className="h-8 w-8" />
+                          <span className="text-xs">Photo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => photoInputRef.current?.click()}
+                      >
+                        <Upload className="h-3.5 w-3.5 mr-1" />
+                        {photoPreview ? "Change" : "Upload Photo"}
+                      </Button>
+                      {photoPreview && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" />Remove
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        setPhotoFile(f);
+                        const reader = new FileReader();
+                        reader.onloadend = () => setPhotoPreview(reader.result as string);
+                        reader.readAsDataURL(f);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">Optional — JPG/PNG, max 5 MB</p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField control={form.control} name="firstName" render={({ field }) => (
                     <FormItem>
@@ -469,16 +646,65 @@ export function AdmissionForm({ admission, onClose, onSuccess }: AdmissionFormPr
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">Class applied for and academic background</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                  {/* Board selector — shown only when the school has multiple boards configured */}
+                  {schoolBoards.length > 1 && (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Board</FormLabel>
+                      <Select
+                        value={selectedBoardId || "__all__"}
+                        onValueChange={v => handleBoardChange(v === "__all__" ? "" : v)}
+                      >
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select board" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__all__">All / School Default</SelectItem>
+                          {schoolBoards.map(b => (
+                            <SelectItem key={b.boardConfigurationId} value={b.boardConfigurationId}>
+                              {b.boardName}{b.isDefault ? " (Default)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+
                   <FormField control={form.control} name="classAppliedFor" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Class Applied For <span className="text-destructive">*</span></FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {CLASS_OPTIONS.map((c) => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          {filteredClassOptions.length > 0
+                            ? filteredClassOptions.map(std => (
+                                <SelectItem key={std} value={std}>
+                                  {formatClassLabel(std)}
+                                </SelectItem>
+                              ))
+                            : CLASS_OPTIONS.map(c => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))
+                          }
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="academicYearId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Academic Year <span className="text-destructive">*</span></FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select academic year" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableYears.map((y) => (
+                            <SelectItem key={y.id} value={y.name}>
+                              {y.name}{y.isCurrent ? " (Current)" : ""}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

@@ -30,6 +30,12 @@ namespace SmsApi.Services
         Task ResetUserPasswordAsync(Guid userId, string newPassword);
         // Stats
         Task<PlatformStatsDto> GetPlatformStatsAsync();
+        // Onboarding
+        Task<SchoolOnboardingResult> OnboardSchoolAsync(SchoolOnboardingRequest request);
+        // Billing
+        Task<SchoolBillingDto> GetSchoolBillingAsync(Guid schoolId);
+        Task<SchoolBillingDto> UpdateSchoolBillingAsync(Guid schoolId, UpdateSchoolBillingRequest request);
+        Task<BillingNotificationDto> GetBillingNotificationAsync(Guid schoolId);
     }
 
     public class SchoolFeaturePermissionService : ISchoolFeaturePermissionService
@@ -53,18 +59,24 @@ namespace SmsApi.Services
         public async Task<List<SchoolListDto>> GetAllSchoolsAsync()
         {
             var schools = await _context.Schools
-                .Where(s => s.IsActive)
                 .Select(s => new SchoolListDto
                 {
                     Id = s.Id,
                     Name = s.Name,
                     SchoolCode = s.SchoolCode,
+                    Address = s.Address,
+                    Phone = s.Phone,
+                    Email = s.Email,
+                    Logo = s.Logo,
                     IsActive = s.IsActive,
                     EnabledModulesCount = _context.SchoolFeaturePermissions
                         .Count(p => p.SchoolId == s.Id && p.IsEnabled),
-                    TotalModulesCount = _defaultModules.Length
+                    TotalModulesCount = _defaultModules.Length,
+                    IsOnboarded = _context.UserLogins
+                        .Any(u => u.SchoolId == s.Id && u.Role.ToLower() == "admin")
                 })
-                .OrderBy(s => s.Name)
+                .OrderByDescending(s => s.IsActive)
+                .ThenBy(s => s.Name)
                 .ToListAsync();
 
             return schools;
@@ -73,7 +85,7 @@ namespace SmsApi.Services
         public async Task<SchoolPermissionsResponse> GetSchoolPermissionsAsync(Guid schoolId)
         {
             var school = await _context.Schools
-                .FirstOrDefaultAsync(s => s.Id == schoolId && s.IsActive);
+                .FirstOrDefaultAsync(s => s.Id == schoolId);
 
             if (school == null)
                 throw new KeyNotFoundException($"School with ID {schoolId} not found");
@@ -119,7 +131,7 @@ namespace SmsApi.Services
                 throw new ArgumentException("School ID is required.", nameof(request.SchoolId));
 
             var school = await _context.Schools
-                .FirstOrDefaultAsync(s => s.Id == request.SchoolId && s.IsActive);
+                .FirstOrDefaultAsync(s => s.Id == request.SchoolId);
 
             if (school == null)
                 throw new KeyNotFoundException($"School with ID {request.SchoolId} not found");
@@ -176,7 +188,7 @@ namespace SmsApi.Services
                 throw new ArgumentException("At least one module must be provided.", nameof(request.Modules));
 
             var school = await _context.Schools
-                .FirstOrDefaultAsync(s => s.Id == request.SchoolId && s.IsActive);
+                .FirstOrDefaultAsync(s => s.Id == request.SchoolId);
 
             if (school == null)
                 throw new KeyNotFoundException($"School with ID {request.SchoolId} not found");
@@ -321,6 +333,29 @@ namespace SmsApi.Services
                 throw new KeyNotFoundException($"School {schoolId} not found.");
 
             school.IsActive = !school.IsActive;
+
+            var schoolAdmins = await _context.UserLogins
+                .Where(u => !u.IsDeleted
+                            && u.SchoolId == schoolId
+                            && (u.Role.ToLower() == "admin" || u.Role.ToLower() == "administrator"))
+                .ToListAsync();
+
+            foreach (var admin in schoolAdmins)
+            {
+                if (!school.IsActive)
+                {
+                    admin.Status = StatusConstants.UserStatus.Inactive;
+                    admin.RefreshTokenHash = null;
+                    admin.RefreshTokenExpiry = null;
+                }
+                else if (admin.Status == StatusConstants.UserStatus.Inactive)
+                {
+                    admin.Status = StatusConstants.UserStatus.Active;
+                }
+
+                admin.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _context.SaveChangesAsync();
             return school.IsActive;
         }
@@ -459,6 +494,225 @@ namespace SmsApi.Services
                 ActiveUsers = activeUsers,
                 TotalStudents = totalStudents,
                 TotalStaff = totalStaff
+            };
+        }
+
+        // ─── Onboarding ───────────────────────────────────────────────────────────
+
+        public async Task<SchoolOnboardingResult> OnboardSchoolAsync(SchoolOnboardingRequest request)
+        {
+            // Step 1: Create school + auto-initialize default module permissions
+            var school = await CreateSchoolAsync(new CreateSchoolRequest
+            {
+                Name = request.Name,
+                SchoolCode = request.SchoolCode,
+                Address = request.Address,
+                Phone = request.Phone,
+                Email = request.Email,
+                Logo = request.Logo,
+            });
+
+            var schoolId = school.Id;
+
+            // Step 2: Apply module overrides (disable/enable specific modules)
+            if (request.ModuleOverrides != null && request.ModuleOverrides.Count > 0)
+            {
+                foreach (var (moduleName, isEnabled) in request.ModuleOverrides)
+                {
+                    var perm = await _context.SchoolFeaturePermissions
+                        .FirstOrDefaultAsync(p => p.SchoolId == schoolId && p.ModuleName == moduleName);
+                    if (perm != null)
+                    {
+                        perm.IsEnabled = isEnabled;
+                        perm.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            // Step 3: Create the first academic year for this school
+            var academicYear = new AcademicYear
+            {
+                Id = Guid.NewGuid(),
+                SchoolId = schoolId,
+                Name = request.AcademicYearName,
+                StartDate = request.AcademicYearStart,
+                EndDate = request.AcademicYearEnd,
+                IsCurrent = request.AcademicYearIsCurrent,
+                Status = "active",
+            };
+            _context.AcademicYears.Add(academicYear);
+            await _context.SaveChangesAsync();
+
+            // Step 4: Create the school's first admin user
+            var adminUser = await CreatePlatformUserAsync(new CreatePlatformUserRequest
+            {
+                Username = request.AdminUsername,
+                Email = request.AdminEmail,
+                Password = request.AdminPassword,
+                Role = StatusConstants.Roles.Admin,
+                SchoolId = schoolId,
+            });
+
+            var enabledModules = await GetEnabledModulesAsync(schoolId);
+
+            // Step 5: Attach board configurations if supplied
+            if (request.BoardConfigurationIds != null && request.BoardConfigurationIds.Count > 0)
+            {
+                for (int i = 0; i < request.BoardConfigurationIds.Count; i++)
+                {
+                    var boardId = request.BoardConfigurationIds[i];
+                    var isDefault = request.DefaultBoardConfigurationId.HasValue
+                        ? boardId == request.DefaultBoardConfigurationId.Value
+                        : i == 0; // first one is default if no explicit default given
+                    try
+                    {
+                        var boardExists = await _context.BoardConfigurations
+                            .AnyAsync(b => b.Id == boardId && b.IsActive);
+                        if (!boardExists) continue; // skip invalid ids silently
+
+                        // Unset prior defaults when this one is being set as default
+                        if (isDefault)
+                        {
+                            var priorDefaults = await _context.SchoolBoardConfigs
+                                .Where(s => s.SchoolId == schoolId && s.IsActive && s.IsDefault)
+                                .ToListAsync();
+                            foreach (var d in priorDefaults) d.IsDefault = false;
+                        }
+
+                        _context.SchoolBoardConfigs.Add(new SmsApi.Models.Entities.SchoolBoardConfig
+                        {
+                            Id = Guid.NewGuid(),
+                            SchoolId = schoolId,
+                            BoardConfigurationId = boardId,
+                            IsDefault = isDefault,
+                            IsActive = true,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                    }
+                    catch { /* skip any individual board failures */ }
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            return new SchoolOnboardingResult
+            {
+                SchoolId = schoolId,
+                SchoolName = school.Name,
+                SchoolCode = school.SchoolCode,
+                AdminUserId = adminUser.Id,
+                AdminEmail = adminUser.Email,
+                AcademicYearId = academicYear.Id,
+                AcademicYearName = academicYear.Name,
+                EnabledModules = enabledModules,
+            };
+        }
+
+        // ── Billing ──────────────────────────────────────────────────────────
+
+        public async Task<SchoolBillingDto> GetSchoolBillingAsync(Guid schoolId)
+        {
+            var school = await _context.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                throw new KeyNotFoundException($"School {schoolId} not found");
+
+            return BuildBillingDto(school);
+        }
+
+        public async Task<SchoolBillingDto> UpdateSchoolBillingAsync(Guid schoolId, UpdateSchoolBillingRequest request)
+        {
+            var school = await _context.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                throw new KeyNotFoundException($"School {schoolId} not found");
+
+            if (request.BillingPlan   != null) school.BillingPlan          = request.BillingPlan;
+            if (request.BillingStatus != null) school.BillingStatus        = request.BillingStatus;
+            if (request.BillingExpiryDate.HasValue) school.BillingExpiryDate = request.BillingExpiryDate;
+            if (request.RenewalReminderDays.HasValue) school.RenewalReminderDays = request.RenewalReminderDays.Value;
+
+            await _context.SaveChangesAsync();
+            return BuildBillingDto(school);
+        }
+
+        public async Task<BillingNotificationDto> GetBillingNotificationAsync(Guid schoolId)
+        {
+            var school = await _context.Schools.FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null)
+                return new BillingNotificationDto { HasWarning = false };
+
+            if (school.BillingExpiryDate == null)
+                return new BillingNotificationDto
+                {
+                    HasWarning = false,
+                    BillingPlan = school.BillingPlan,
+                    BillingStatus = school.BillingStatus,
+                };
+
+            var today = DateTime.UtcNow.Date;
+            var expiry = school.BillingExpiryDate.Value.Date;
+            var daysLeft = (expiry - today).Days;
+
+            string severity, message;
+            bool hasWarning = false;
+
+            if (daysLeft < 0)
+            {
+                hasWarning = true; severity = "critical";
+                message = $"Your subscription has expired {Math.Abs(daysLeft)} day(s) ago. Please renew immediately to avoid service interruption.";
+            }
+            else if (daysLeft == 0)
+            {
+                hasWarning = true; severity = "critical";
+                message = "Your subscription expires today. Please renew immediately.";
+            }
+            else if (daysLeft <= school.RenewalReminderDays)
+            {
+                hasWarning = true;
+                severity = daysLeft <= 7 ? "critical" : "warning";
+                message = $"Your {school.BillingPlan} subscription expires in {daysLeft} day(s) on {expiry:dd MMM yyyy}. Please renew to continue uninterrupted access.";
+            }
+            else
+            {
+                severity = "info";
+                message = $"Your {school.BillingPlan} plan is active until {expiry:dd MMM yyyy}.";
+            }
+
+            return new BillingNotificationDto
+            {
+                HasWarning    = hasWarning,
+                Message       = message,
+                Severity      = severity,
+                DaysUntilExpiry = daysLeft,
+                BillingPlan   = school.BillingPlan,
+                BillingStatus = school.BillingStatus,
+                BillingExpiryDate = school.BillingExpiryDate,
+            };
+        }
+
+        private static SchoolBillingDto BuildBillingDto(School school)
+        {
+            int? daysLeft = null;
+            bool expiringSoon = false, isExpired = false;
+
+            if (school.BillingExpiryDate.HasValue)
+            {
+                daysLeft = (school.BillingExpiryDate.Value.Date - DateTime.UtcNow.Date).Days;
+                isExpired    = daysLeft < 0;
+                expiringSoon = !isExpired && daysLeft <= school.RenewalReminderDays;
+            }
+
+            return new SchoolBillingDto
+            {
+                SchoolId            = school.Id,
+                SchoolName          = school.Name,
+                BillingPlan         = school.BillingPlan,
+                BillingStatus       = school.BillingStatus,
+                BillingExpiryDate   = school.BillingExpiryDate,
+                RenewalReminderDays = school.RenewalReminderDays,
+                DaysUntilExpiry     = daysLeft,
+                IsExpiringSoon      = expiringSoon,
+                IsExpired           = isExpired,
             };
         }
     }

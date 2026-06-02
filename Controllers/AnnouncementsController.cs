@@ -1,6 +1,9 @@
 using SmsApi.Models.Constants;
+using SmsApi.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
@@ -15,16 +18,35 @@ namespace SmsApi.Controllers
     {
         private readonly IAnnouncementService _svc;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
         private readonly ILogger<AnnouncementsController> _logger;
 
         public AnnouncementsController(
             IAnnouncementService svc,
             ITenantContext tenant,
+            AppDbContext db,
             ILogger<AnnouncementsController> logger)
         {
             _svc    = svc;
             _tenant = tenant;
+            _db     = db;
             _logger = logger;
+        }
+
+        /// <summary>Resolves Staff.Id from the current JWT (UserLogin.LinkedEntityId or email fallback).</summary>
+        private async Task<Guid?> ResolveStaffIdAsync()
+        {
+            var userLogin = await _db.Set<UserLogin>().FirstOrDefaultAsync(u => u.Id == _tenant.UserId);
+            if (userLogin?.LinkedEntityId != null) return userLogin.LinkedEntityId;
+            var email = _tenant.UserEmail;
+            if (!string.IsNullOrEmpty(email))
+            {
+                var schoolId = _tenant.SchoolId;
+                var staff = await _db.StaffMembers
+                    .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == email);
+                return staff?.Id;
+            }
+            return null;
         }
 
         // ──────────────────────────────────────────────────
@@ -70,16 +92,40 @@ namespace SmsApi.Controllers
 
         // ──────────────────────────────────────────────────
         // GET /api/announcements/my
+        // Returns announcements relevant to the authenticated staff member:
+        // targeted at "all", targeted at "staff" (recipient record exists),
+        // or class/section-targeted for classes the staff member teaches.
         // ──────────────────────────────────────────────────
         [HttpGet("my")]
         [Authorize]
         [ProducesResponseType(200)]
-        public async Task<ActionResult> GetMyAnnouncements(
-            [FromQuery] Guid   recipientId,
-            [FromQuery] string recipientType = "Staff")
+        public async Task<ActionResult> GetMyAnnouncements()
         {
             var schoolId = _tenant.GetEffectiveSchoolId();
-            var list = await _svc.GetMyAnnouncementsAsync(recipientId, recipientType, schoolId);
+            // Guid.Empty fallback: school-wide announcements ("all" / "staff" audience)
+            // still display even when we cannot resolve the Staff.Id.
+            var staffId  = await ResolveStaffIdAsync() ?? Guid.Empty;
+
+            var list = await _svc.GetMyAnnouncementsAsync(staffId, "Staff", schoolId);
+            return Ok(list);
+        }
+
+        // ──────────────────────────────────────────────────
+        // GET /api/announcements/for-parent
+        // Returns announcements visible to the authenticated parent:
+        // targeted at "all", "parents", or class/section for their children.
+        // ──────────────────────────────────────────────────
+        [HttpGet("for-parent")]
+        [Authorize(Roles = "Parent")]
+        [ProducesResponseType(200)]
+        public async Task<ActionResult> GetAnnouncementsForParent()
+        {
+            var schoolId    = _tenant.GetEffectiveSchoolId();
+            var parentEmail = _tenant.UserEmail;
+            if (string.IsNullOrWhiteSpace(parentEmail))
+                return Unauthorized(new { message = "Parent email not found in token." });
+
+            var list = await _svc.GetParentAnnouncementsAsync(parentEmail, schoolId);
             return Ok(list);
         }
 
@@ -112,7 +158,15 @@ namespace SmsApi.Controllers
         {
             try
             {
-                var schoolId     = _tenant.GetEffectiveSchoolId();
+                var schoolId = _tenant.GetEffectiveSchoolId();
+
+                // Always resolve the author from the JWT — never trust a client-supplied ID.
+                var staffId = await ResolveStaffIdAsync();
+                if (staffId == null || staffId == Guid.Empty)
+                    return Unauthorized(new { message = "Could not resolve your staff profile. Ensure your account is linked to a staff record." });
+
+                request.CreatedByStaffId = staffId.Value;
+
                 var announcement = await _svc.CreateAnnouncementAsync(schoolId, request);
                 return CreatedAtAction(
                     nameof(GetAnnouncementById),

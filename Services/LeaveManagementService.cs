@@ -15,12 +15,14 @@ namespace SmsApi.Services
         Task<List<LeaveTypeResponse>> GetLeaveTypesAsync(Guid schoolId, string? applicableTo = null);
         Task<LeaveTypeResponse> CreateLeaveTypeAsync(CreateLeaveTypeRequest request);
         Task<LeaveTypeResponse?> UpdateLeaveTypeAsync(Guid id, UpdateLeaveTypeRequest request, Guid schoolId);
+        Task DeleteLeaveTypeAsync(Guid id, Guid schoolId);
         Task<LeaveRequestListResponse> GetLeaveRequestsAsync(Guid schoolId, int page = 1, int pageSize = 10, Guid? applicantId = null, string? status = null, string? staffEmail = null);
         Task<LeaveRequestResponse?> GetLeaveRequestByIdAsync(Guid id, Guid schoolId);
         Task<LeaveRequestResponse> CreateLeaveRequestAsync(CreateLeaveRequestRequest request);
         Task<LeaveRequestResponse?> ApproveLeaveAsync(Guid id, ApproveLeaveRequest request, Guid schoolId);
         Task<LeaveRequestResponse?> RejectLeaveAsync(Guid id, RejectLeaveRequest request, Guid schoolId);
         Task<List<LeaveBalanceResponse>> GetLeaveBalanceAsync(Guid userId, string userType, Guid schoolId);
+        Task<List<LeaveBalanceResponse>> GetMyLeaveBalanceAsync(string callerEmail, Guid schoolId);
         // Student leave (parent-initiated)
         Task<StudentLeaveResponse> CreateStudentLeaveAsync(string parentEmail, CreateStudentLeaveRequest request, Guid schoolId);
         Task<StudentLeaveListResponse> GetStudentLeaveRequestsAsync(Guid schoolId, int page, int pageSize, Guid? studentId, string? status, Guid? callerUserId = null, string? callerRole = null);
@@ -31,6 +33,7 @@ namespace SmsApi.Services
     public class LeaveManagementService : ILeaveManagementService
     {
         private readonly AppDbContext _context;
+        private readonly IParentAuthorizationService _parentAuth;
         private static readonly HashSet<string> AllowedApplicableTo = new(StringComparer.OrdinalIgnoreCase)
         {
             "All", "Staff", "Teacher", "Student"
@@ -40,9 +43,10 @@ namespace SmsApi.Services
             "Staff", "Student"
         };
 
-        public LeaveManagementService(AppDbContext context)
+        public LeaveManagementService(AppDbContext context, IParentAuthorizationService parentAuth)
         {
             _context = context;
+            _parentAuth = parentAuth;
         }
 
         public async Task<List<LeaveTypeResponse>> GetLeaveTypesAsync(Guid schoolId, string? applicableTo = null)
@@ -124,6 +128,8 @@ namespace SmsApi.Services
                 throw new InvalidOperationException("A leave type with the same name already exists for this scope.");
             }
 
+            var oldMax = leaveType.MaxDaysPerYear;
+
             leaveType.Name = normalizedName;
             leaveType.Description = request.Description;
             leaveType.MaxDaysPerYear = request.MaxDaysPerYear;
@@ -134,6 +140,26 @@ namespace SmsApi.Services
             leaveType.IsPaid = request.IsPaid;
             leaveType.IsActive = request.IsActive;
             leaveType.UpdatedAt = DateTime.UtcNow;
+
+            // Propagate the new quota to all existing LeaveBalance records for the current academic year
+            // that still hold the old default (i.e. haven't been individually overridden).
+            if (request.MaxDaysPerYear != oldMax)
+            {
+                var currentYear = DateTime.UtcNow.Year.ToString();
+                var affectedBalances = await _context.LeaveBalances
+                    .Where(lb => lb.LeaveTypeId == id
+                              && lb.SchoolId == schoolId
+                              && lb.AcademicYear == currentYear
+                              && lb.TotalAllowed == oldMax)
+                    .ToListAsync();
+
+                foreach (var bal in affectedBalances)
+                {
+                    bal.TotalAllowed = request.MaxDaysPerYear;
+                    bal.Available = Math.Max(0, request.MaxDaysPerYear - bal.Used);
+                    bal.UpdatedAt = DateTime.UtcNow;
+                }
+            }
 
             await _context.SaveChangesAsync();
 
@@ -162,7 +188,17 @@ namespace SmsApi.Services
 
             if (applicantId.HasValue)
             {
-                query = query.Where(lr => lr.ApplicantId == applicantId.Value);
+                // Also include admin-created leave records where ApplicantId == Staff.Id (LinkedEntityId)
+                // This happens when no UserLogin was found for the staff at the time of admin marking.
+                var linkedEntityId = await _context.UserLogins
+                    .Where(u => u.Id == applicantId.Value && u.SchoolId == schoolId && !u.IsDeleted)
+                    .Select(u => u.LinkedEntityId)
+                    .FirstOrDefaultAsync();
+
+                if (linkedEntityId.HasValue)
+                    query = query.Where(lr => lr.ApplicantId == applicantId.Value || lr.ApplicantId == linkedEntityId.Value);
+                else
+                    query = query.Where(lr => lr.ApplicantId == applicantId.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(status))
@@ -540,6 +576,19 @@ namespace SmsApi.Services
             return MapToLeaveRequestResponse(leaveRequest, null);
         }
 
+        public async Task DeleteLeaveTypeAsync(Guid id, Guid schoolId)
+        {
+            var leaveType = await _context.LeaveTypes
+                .FirstOrDefaultAsync(lt => lt.Id == id && lt.SchoolId == schoolId && !lt.IsDeleted);
+            if (leaveType == null)
+                throw new KeyNotFoundException($"Leave type with ID {id} not found");
+
+            leaveType.IsDeleted = true;
+            leaveType.IsActive = false;
+            leaveType.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<List<LeaveBalanceResponse>> GetLeaveBalanceAsync(Guid userId, string userType, Guid schoolId)
         {
             if (!AllowedUserTypes.Contains(userType))
@@ -549,7 +598,13 @@ namespace SmsApi.Services
 
             var currentYear = DateTime.UtcNow.Year.ToString();
 
-            var balances = await _context.LeaveBalances
+            // Fetch all active leave types applicable to this user
+            var allLeaveTypes = await _context.LeaveTypes
+                .Where(lt => lt.SchoolId == schoolId && lt.IsActive && !lt.IsDeleted
+                          && (lt.ApplicableTo == "All" || lt.ApplicableTo.ToLower() == userType.ToLower()))
+                .ToListAsync();
+
+            var existingBalances = await _context.LeaveBalances
                 .Include(lb => lb.LeaveType)
                 .Where(lb => lb.UserId == userId &&
                             lb.UserType.ToLower() == userType.ToLower() &&
@@ -557,7 +612,54 @@ namespace SmsApi.Services
                             lb.AcademicYear == currentYear)
                 .ToListAsync();
 
-            return balances.Select(MapToLeaveBalanceResponse).ToList();
+            // Auto-initialize missing balance records from LeaveType quota
+            var newBalances = new List<LeaveBalance>();
+            foreach (var lt in allLeaveTypes)
+            {
+                if (!existingBalances.Any(b => b.LeaveTypeId == lt.Id))
+                {
+                    var bal = new LeaveBalance
+                    {
+                        Id = Guid.NewGuid(),
+                        SchoolId = schoolId,
+                        UserId = userId,
+                        UserType = userType,
+                        LeaveTypeId = lt.Id,
+                        LeaveType = lt,
+                        AcademicYear = currentYear,
+                        TotalAllowed = lt.MaxDaysPerYear,
+                        Used = 0,
+                        Available = lt.MaxDaysPerYear,
+                        CarriedForward = 0,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    newBalances.Add(bal);
+                }
+            }
+
+            if (newBalances.Count > 0)
+            {
+                _context.LeaveBalances.AddRange(newBalances);
+                await _context.SaveChangesAsync();
+                existingBalances.AddRange(newBalances);
+            }
+
+            return existingBalances.Select(MapToLeaveBalanceResponse).ToList();
+        }
+
+        public async Task<List<LeaveBalanceResponse>> GetMyLeaveBalanceAsync(string callerEmail, Guid schoolId)
+        {
+            // Resolve the staff entity ID from the caller's email, so staff without LinkedEntityId in JWT can still access their balance
+            var staffId = await _context.StaffMembers
+                .Where(s => s.Email == callerEmail && s.SchoolId == schoolId && !s.IsDeleted)
+                .Select(s => (Guid?)s.Id)
+                .FirstOrDefaultAsync();
+
+            if (staffId == null)
+                return new List<LeaveBalanceResponse>();
+
+            return await GetLeaveBalanceAsync(staffId.Value, "Staff", schoolId);
         }
 
         private LeaveTypeResponse MapToLeaveTypeResponse(LeaveType leaveType)
@@ -585,15 +687,18 @@ namespace SmsApi.Services
 
         public async Task<StudentLeaveResponse> CreateStudentLeaveAsync(string parentEmail, CreateStudentLeaveRequest request, Guid schoolId)
         {
-            // Validate the parent is a guardian of the student
+            // Validate the parent is a guardian or sibling-guardian of the student
+            var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, request.StudentId);
+            if (!canAccess)
+                throw new InvalidOperationException("You are not authorised to request leave for this student.");
+
+            // Fetch guardian record for response mapping (may be null if accessing via sibling link)
             var guardian = await _context.StudentGuardians
                 .FirstOrDefaultAsync(g => g.StudentId == request.StudentId
                                        && g.SchoolId == schoolId
                                        && g.Email != null
                                        && g.Email.ToLower() == parentEmail.ToLower()
                                        && !g.IsDeleted);
-            if (guardian == null)
-                throw new InvalidOperationException("You are not authorised to request leave for this student.");
 
             // Load student
             var student = await _context.Students

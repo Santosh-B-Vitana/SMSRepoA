@@ -1,7 +1,6 @@
-import { UserCheck, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { UserCheck, Clock, ChevronDown, ChevronUp, ChevronRight, CheckCircle2, XCircle, CalendarOff, TrendingUp, Loader2, CalendarDays } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { StaffIdCardTemplate } from "@/components/id-cards/StaffIdCardTemplate";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,13 +23,24 @@ import {
   GraduationCap,
   RotateCcw
 } from "lucide-react";
-import { staffApi, Staff as RealStaff } from "@/services/api/staffApi";
+import { staffApi, Staff as RealStaff, StaffBasic } from "@/services/api/staffApi";
+import { StaffDeactivateDialog } from "@/components/staff/StaffDeactivateDialog";
 import { StaffChildDto } from "@/services/api/studentApi";
 import { academicApi, MyClassAssignment, TeacherAssignmentResponse } from "@/services/api/academicApi";
-import { attendanceApi, StaffAttendanceResponse } from "@/services/api/attendanceApi";
+import { attendanceApi, StaffAttendanceResponse, CreateStaffAttendanceRequest, StaffAttendanceStatus, UpdateStaffAttendanceRequest } from "@/services/api/attendanceApi";
 import { StaffLeaveSection } from "@/components/leave-management/StaffLeaveSection";
+import leaveManagementApi, { LeaveType } from "@/services/api/leaveManagementApi";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StaffPortalAccountSection } from "@/components/staff/StaffPortalAccountSection";
+import { Form16Manager } from "@/components/staff/Form16Manager";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSchool } from "@/contexts/SchoolContext";
 
 // Extended type that merges real API Staff with legacy mockApi fields still rendered in the template
 type Staff = RealStaff & {
@@ -51,15 +61,57 @@ type Staff = RealStaff & {
   personalEmail?: string;
   accountHolderName?: string;
 };
-import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
-import { ExperienceCertificateTemplate } from "@/components/certificates/ExperienceCertificateTemplate";
-import { SalaryCertificateTemplate } from "@/components/certificates/SalaryCertificateTemplate";
+import { ProfessionalCertificateDialog } from "@/components/documents/ProfessionalCertificateDialog";
+import { ProfessionalIdCardDialog } from "@/components/documents/ProfessionalIdCardDialog";
 import { useToast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
 import placeholderImg from '/placeholder.svg';
 import { useLanguage } from "@/contexts/LanguageContext";
 
+const STAFF_DOCUMENT_TYPES: Array<{ value: string; label: string }> = [
+  { value: "appointment_letter", label: "Appointment Letter" },
+  { value: "contract", label: "Contract" },
+  { value: "resume", label: "Resume" },
+  { value: "id_proof", label: "ID Proof" },
+  { value: "address_proof", label: "Address Proof" },
+  { value: "aadhar", label: "Aadhar" },
+  { value: "pan", label: "PAN" },
+  { value: "passport", label: "Passport" },
+  { value: "degree_certificate", label: "Degree Certificate" },
+  { value: "experience_certificate", label: "Experience Certificate" },
+  { value: "salary_slip", label: "Salary Slip" },
+  { value: "joining_report", label: "Joining Report" },
+  { value: "medical_certificate", label: "Medical Certificate" },
+  { value: "background_check", label: "Background Check" },
+  { value: "other", label: "Other" },
+];
+
+const STAFF_CERTIFICATE_TYPES: Array<{ value: string; label: string }> = [
+  { value: "degree_certificate", label: "Degree Certificate" },
+  { value: "experience_certificate", label: "Experience Certificate" },
+  { value: "medical_certificate", label: "Medical Certificate" },
+  { value: "background_check", label: "Background Check Certificate" },
+  { value: "other", label: "Other Certificate" },
+];
+
+const CERTIFICATE_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  STAFF_CERTIFICATE_TYPES.map((t) => [t.value, t.label])
+);
+
+const isCertificateType = (type?: string) => {
+  if (!type) return false;
+  const certificateTypes = new Set([
+    "degree_certificate",
+    "experience_certificate",
+    "medical_certificate",
+    "background_check",
+  ]);
+  return certificateTypes.has(type) || type.includes("certificate");
+};
+
 export default function StaffProfile() {
   const { user } = useAuth();
+  const { schoolInfo } = useSchool();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   // Late dialog state
   const [lateDialog, setLateDialog] = useState<{ open: boolean; index?: number }>({ open: false });
@@ -76,12 +128,21 @@ export default function StaffProfile() {
   const [calendarDate, setCalendarDate] = useState("");
   const [staffAttendance, setStaffAttendance] = useState<StaffAttendanceResponse[]>([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | StaffAttendanceStatus>('all');
+  const [collapsedAttMonths, setCollapsedAttMonths] = useState<Set<string>>(new Set());
+  // Mark today's attendance dialog
+  const [markTodayOpen, setMarkTodayOpen] = useState(false);
+  const [markTodayStatus, setMarkTodayStatus] = useState<StaffAttendanceStatus>('present');
+  const [markTodaySaving, setMarkTodaySaving] = useState(false);
+  const [markTodayLeaveTypeId, setMarkTodayLeaveTypeId] = useState<string>("");
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   
   const { id } = useParams();
   const navigate = useNavigate();
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [deactivateTarget, setDeactivateTarget] = useState<StaffBasic | null>(null);
   const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
   const [childrenInSchool, setChildrenInSchool] = useState<StaffChildDto[]>([]);
   const [showChildrenExpanded, setShowChildrenExpanded] = useState(false);
@@ -94,14 +155,9 @@ export default function StaffProfile() {
     const file = e.target.files?.[0];
     if (!file || !staff) return;
     try {
-      // Convert to base64 for local preview; backend upload not yet implemented
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        setStaff({ ...staff, photoUrl: dataUrl, profilePhoto: dataUrl });
-        toast({ title: t('staffProfilePage.photoUpdated'), description: t('staffProfilePage.photoSavedSuccess') });
-      };
-      reader.readAsDataURL(file);
+      const result = await staffApi.uploadPhoto(staff.id, file);
+      setStaff({ ...staff, photoUrl: result.photoUrl, profilePhoto: result.photoUrl });
+      toast({ title: t('staffProfilePage.photoUpdated'), description: t('staffProfilePage.photoSavedSuccess') });
     } catch (err) {
       console.error(err);
       toast({ title: t('staffProfilePage.uploadFailed'), description: t('staffProfilePage.couldNotSavePhoto'), variant: "destructive" });
@@ -112,6 +168,12 @@ export default function StaffProfile() {
   const [showIdCardDialog, setShowIdCardDialog] = useState(false);
   const [showExperienceCertDialog, setShowExperienceCertDialog] = useState(false);
   const [showSalaryCertDialog, setShowSalaryCertDialog] = useState(false);
+  const [staffDocuments, setStaffDocuments] = useState<RealStaff["documents"]>([]);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>("other");
+  const [selectedCertificateType, setSelectedCertificateType] = useState<string>("degree_certificate");
 
   const handleDocumentGeneration = (type: string) => {
     if (type === "ID Card") {
@@ -126,10 +188,13 @@ export default function StaffProfile() {
   useEffect(() => {
     if (id) {
       fetchStaff();
+      fetchStaffDocuments();
       fetchAssignedClasses();
       fetchStaffAttendance();
       fetchChildrenInSchool();
     }
+    // Load leave types once
+    leaveManagementApi.getLeaveTypes("Staff").then(types => setLeaveTypes(types ?? [])).catch(() => {});
   }, [id]);
 
   const fetchStaffAttendance = async () => {
@@ -142,6 +207,37 @@ export default function StaffProfile() {
       setStaffAttendance([]);
     } finally {
       setAttendanceLoading(false);
+    }
+  };
+
+  const handleMarkToday = async () => {
+    if (!id || !user?.schoolId) return;
+    setMarkTodaySaving(true);
+    const today = new Date().toISOString().split('T')[0];
+    const todayRecord = staffAttendance.find(r => r.date?.startsWith(today));
+    try {
+      if (todayRecord) {
+        await attendanceApi.updateStaffAttendance(todayRecord.id, {
+          status: markTodayStatus,
+          leaveTypeId: markTodayStatus === 'leave' ? markTodayLeaveTypeId || undefined : undefined,
+        } as UpdateStaffAttendanceRequest);
+        toast({ title: "Attendance updated", description: `Updated to ${markTodayStatus} for ${today}` });
+      } else {
+        await attendanceApi.createStaffAttendance({
+          schoolId: user.schoolId,
+          staffId: id,
+          date: today,
+          status: markTodayStatus,
+          leaveTypeId: markTodayStatus === 'leave' ? markTodayLeaveTypeId || undefined : undefined,
+        } as CreateStaffAttendanceRequest);
+        toast({ title: "Attendance marked", description: `Marked as ${markTodayStatus} for ${today}` });
+      }
+      setMarkTodayOpen(false);
+      fetchStaffAttendance();
+    } catch {
+      toast({ title: "Failed to save attendance", description: "Could not save the attendance record.", variant: "destructive" });
+    } finally {
+      setMarkTodaySaving(false);
     }
   };
 
@@ -212,6 +308,62 @@ export default function StaffProfile() {
       setStaff(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStaffDocuments = async () => {
+    if (!id) return;
+    try {
+      const docs = await staffApi.getDocuments(id);
+      setStaffDocuments(Array.isArray(docs) ? docs : []);
+    } catch {
+      setStaffDocuments([]);
+    }
+  };
+
+  const handleStaffDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    setUploadingDocument(true);
+    try {
+      const uploaded = await staffApi.uploadDocument(id, selectedDocumentType, file);
+      setStaffDocuments((prev) => [uploaded, ...(prev ?? [])]);
+      toast({ title: "Document uploaded", description: "Staff document saved to S3 successfully." });
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload staff document.", variant: "destructive" });
+    } finally {
+      setUploadingDocument(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleStaffDocumentDelete = async (documentId: string) => {
+    if (!confirm("Delete this document?")) return;
+    setDeletingDocumentId(documentId);
+    try {
+      await staffApi.deleteDocument(documentId);
+      setStaffDocuments((prev) => (prev ?? []).filter((d) => d.id !== documentId));
+      toast({ title: "Document deleted" });
+    } catch {
+      toast({ title: "Delete failed", description: "Could not delete document.", variant: "destructive" });
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  };
+
+  const handleCertificateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+    setUploadingCertificate(true);
+    try {
+      const uploaded = await staffApi.uploadDocument(id, selectedCertificateType, file);
+      setStaffDocuments((prev) => [uploaded, ...(prev ?? [])]);
+      toast({ title: "Certificate uploaded", description: "Staff certificate saved to S3 successfully." });
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload certificate.", variant: "destructive" });
+    } finally {
+      setUploadingCertificate(false);
+      e.target.value = "";
     }
   };
 
@@ -292,8 +444,7 @@ export default function StaffProfile() {
             <Button
               variant="destructive"
               size="sm"
-              disabled={actionLoading}
-              onClick={() => handleStatusChange('inactive')}
+              onClick={() => setDeactivateTarget(staff as StaffBasic)}
             >
               {t('staffProfilePage.deactivate')}
             </Button>
@@ -817,13 +968,14 @@ export default function StaffProfile() {
       {/* Tabs for detailed information */}
       <Tabs defaultValue="classes" className="space-y-4">
         <div className="tabs-list-container overflow-x-auto">
-            <TabsList className="tabs-list grid w-full min-w-[700px] md:min-w-[840px]" style={{ gridTemplateColumns: isAdmin ? 'repeat(7, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))' }}>
+            <TabsList className="tabs-list grid w-full min-w-[840px] md:min-w-[1000px]" style={{ gridTemplateColumns: isAdmin ? 'repeat(8, minmax(0, 1fr))' : 'repeat(7, minmax(0, 1fr))' }}>
             <TabsTrigger value="classes" className="tabs-trigger">{t('staffProfilePage.classes')}</TabsTrigger>
             <TabsTrigger value="attendance" className="tabs-trigger">{t('staffProfilePage.attendance')}</TabsTrigger>
             <TabsTrigger value="payroll" className="tabs-trigger">{t('staffProfilePage.payroll')}</TabsTrigger>
             <TabsTrigger value="leaves" className="tabs-trigger">Leaves</TabsTrigger>
             <TabsTrigger value="documents" className="tabs-trigger">{t('staffProfilePage.documents')}</TabsTrigger>
             <TabsTrigger value="certificates" className="tabs-trigger">{t('staffProfilePage.certificates')}</TabsTrigger>
+            <TabsTrigger value="form16" className="tabs-trigger">Form 16 / Tax</TabsTrigger>
             {isAdmin && <TabsTrigger value="portal" className="tabs-trigger">Portal</TabsTrigger>}
           </TabsList>
         </div>
@@ -876,137 +1028,400 @@ export default function StaffProfile() {
         </TabsContent>
 
         <TabsContent value="attendance">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <UserCheck className="h-5 w-5" />
-                Attendance Record
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {attendanceLoading ? (
-                <div className="text-center py-6 text-muted-foreground">Loading attendance…</div>
-              ) : staffAttendance.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground">No attendance records found.</div>
-              ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Check In</TableHead>
-                      <TableHead>Check Out</TableHead>
-                      <TableHead>Remarks</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {staffAttendance.map((record) => (
-                      <TableRow key={record.id}>
-                        <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <Badge variant={
-                            record.status === 'present' ? 'default' :
-                            record.status === 'late' ? 'secondary' :
-                            'destructive'
-                          } className="capitalize">
-                            {record.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{record.checkInTime ?? '—'}</TableCell>
-                        <TableCell>{record.checkOutTime ?? '—'}</TableCell>
-                        <TableCell>{record.remarks ?? '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+          {(() => {
+            // ── Derived stats ────────────────────────────────────────────
+            const total = staffAttendance.length;
+            const presentCount = staffAttendance.filter(r => r.status === 'present').length;
+            const absentCount  = staffAttendance.filter(r => r.status === 'absent').length;
+            const lateCount    = staffAttendance.filter(r => r.status === 'late').length;
+            const leaveCount   = staffAttendance.filter(r => r.status === 'leave').length;
+            const pct = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+            const pctColor = pct >= 90 ? 'text-emerald-600' : pct >= 75 ? 'text-amber-600' : 'text-rose-600';
+
+            // ── Filter + grouping ────────────────────────────────────────
+            const filtered = attendanceFilter === 'all'
+              ? staffAttendance
+              : staffAttendance.filter(r => r.status === attendanceFilter);
+
+            const monthGroups: [string, StaffAttendanceResponse[]][] = (() => {
+              const map = new Map<string, StaffAttendanceResponse[]>();
+              [...filtered]
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .forEach(r => {
+                  const key = new Date(r.date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                  if (!map.has(key)) map.set(key, []);
+                  map.get(key)!.push(r);
+                });
+              return Array.from(map.entries());
+            })();
+
+            const toggleMonth = (key: string) => {
+              setCollapsedAttMonths(prev => {
+                const next = new Set(prev);
+                next.has(key) ? next.delete(key) : next.add(key);
+                return next;
+              });
+            };
+
+            const STATUS_STYLES: Record<string, { badge: string; row: string; label: string }> = {
+              present: { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400', row: 'border-l-emerald-400', label: 'Present' },
+              absent:  { badge: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-400',           row: 'border-l-rose-400',    label: 'Absent'  },
+              late:    { badge: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400',      row: 'border-l-amber-400',   label: 'Late'    },
+              leave:   { badge: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-400',           row: 'border-l-blue-400',    label: 'On Leave'},
+            };
+
+            const statusIcons: Record<string, React.ReactNode> = {
+              present: <CheckCircle2 className="h-3 w-3 mr-1" />,
+              absent:  <XCircle     className="h-3 w-3 mr-1" />,
+              late:    <Clock       className="h-3 w-3 mr-1" />,
+              leave:   <CalendarOff className="h-3 w-3 mr-1" />,
+            };
+
+            return (
+              <div className="space-y-4">
+                {/* Stats header */}
+                <Card>
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Attendance Overview
+                      </p>
+                      <span className={`text-2xl font-bold ${pctColor}`}>{pct}%</span>
+                    </div>
+                    {!attendanceLoading && <Progress value={pct} className="h-2 mb-4" />}
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+                        <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{attendanceLoading ? '…' : presentCount}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">Present</p>
+                      </div>
+                      <div className="text-center p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30">
+                        <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{attendanceLoading ? '…' : absentCount}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-600">Absent</p>
+                      </div>
+                      <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+                        <p className="text-xl font-bold text-amber-700 dark:text-amber-400">{attendanceLoading ? '…' : lateCount}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">Late</p>
+                      </div>
+                      <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+                        <p className="text-xl font-bold text-blue-700 dark:text-blue-400">{attendanceLoading ? '…' : leaveCount}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">On Leave</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* History card */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <CalendarDays className="h-4 w-4" />
+                        Attendance History
+                      </CardTitle>
+                      {isAdmin && (() => {
+                        const todayISO = new Date().toISOString().split('T')[0];
+                        const todayRecord = staffAttendance.find(r => r.date?.startsWith(todayISO));
+                        return (
+                          <Button
+                            size="sm"
+                            className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                            onClick={() => {
+                              setMarkTodayStatus((todayRecord?.status as StaffAttendanceStatus) ?? 'present');
+                              setMarkTodayOpen(true);
+                            }}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {todayRecord ? "Edit Today's" : "Mark Today"}
+                          </Button>
+                        );
+                      })()}
+                    </div>
+                    {/* Status filter pills */}
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {(['all', 'present', 'absent', 'late', 'leave'] as const).map(f => {
+                        const active = attendanceFilter === f;
+                        const cfg = f !== 'all' ? STATUS_STYLES[f] : null;
+                        const count = f === 'all' ? total
+                          : f === 'present' ? presentCount
+                          : f === 'absent'  ? absentCount
+                          : f === 'late'    ? lateCount
+                          : leaveCount;
+                        return (
+                          <button
+                            key={f}
+                            onClick={() => setAttendanceFilter(f)}
+                            className={[
+                              'px-3 py-1 rounded-full text-xs font-medium border transition-all capitalize',
+                              active
+                                ? f === 'all'
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : `${cfg!.badge} border-current`
+                                : 'bg-background text-muted-foreground border-border hover:bg-muted',
+                            ].join(' ')}
+                          >
+                            {f === 'all' ? `All (${total})` : `${STATUS_STYLES[f].label} (${count})`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="pt-0">
+                    {attendanceLoading ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">Loading attendance…</div>
+                    ) : filtered.length === 0 ? (
+                      <div className="text-center py-10 space-y-3">
+                        <UserCheck className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+                        <p className="text-sm text-muted-foreground">
+                          {attendanceFilter === 'all' ? 'No attendance records found.' : 'No records for this filter.'}
+                        </p>
+                        {attendanceFilter !== 'all' && (
+                          <button onClick={() => setAttendanceFilter('all')} className="text-xs text-primary hover:underline">
+                            Clear filter
+                          </button>
+                        )}
+                        {isAdmin && attendanceFilter === 'all' && (
+                          <Button
+                            size="sm"
+                            className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                            onClick={() => { setMarkTodayStatus('present'); setMarkTodayOpen(true); }}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Mark Attendance
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        {monthGroups.map(([month, monthRecords]) => {
+                          const collapsed = collapsedAttMonths.has(month);
+                          const mPresent = monthRecords.filter(r => r.status === 'present').length;
+                          const mAbsent  = monthRecords.filter(r => r.status === 'absent').length;
+                          const mLate    = monthRecords.filter(r => r.status === 'late').length;
+                          const mLeave   = monthRecords.filter(r => r.status === 'leave').length;
+                          const mPct = monthRecords.length > 0 ? Math.round((mPresent / monthRecords.length) * 100) : 0;
+                          return (
+                            <div key={month}>
+                              <button
+                                onClick={() => toggleMonth(month)}
+                                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted/60 hover:bg-muted transition-colors mb-2"
+                              >
+                                <div className="flex items-center gap-2">
+                                  {collapsed
+                                    ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                    : <ChevronDown  className="h-3.5 w-3.5 text-muted-foreground" />}
+                                  <span className="text-sm font-semibold text-foreground">{month}</span>
+                                  <span className="text-xs text-muted-foreground">({monthRecords.length} day{monthRecords.length !== 1 ? 's' : ''})</span>
+                                </div>
+                                <div className="flex gap-2 text-xs">
+                                  {mPresent > 0 && <span className="text-emerald-600 font-medium">{mPresent}P</span>}
+                                  {mAbsent  > 0 && <span className="text-rose-600 font-medium">{mAbsent}A</span>}
+                                  {mLate    > 0 && <span className="text-amber-600 font-medium">{mLate}L</span>}
+                                  {mLeave   > 0 && <span className="text-blue-600 font-medium">{mLeave}Lv</span>}
+                                  <span className="text-muted-foreground font-medium">{mPct}%</span>
+                                </div>
+                              </button>
+                              {!collapsed && (
+                                <div className="space-y-1 pl-1">
+                                  {monthRecords.map(record => {
+                                    const s = STATUS_STYLES[record.status] ?? STATUS_STYLES.absent;
+                                    const d = new Date(record.date);
+                                    const dayName = d.toLocaleDateString('en-IN', { weekday: 'short' });
+                                    const dayNum  = d.getDate();
+                                    return (
+                                      <div
+                                        key={record.id}
+                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-[3px] bg-background hover:bg-muted/40 transition-colors ${s.row}`}
+                                      >
+                                        <div className="w-10 shrink-0 text-center">
+                                          <p className="text-[10px] font-semibold uppercase text-muted-foreground leading-none">{dayName}</p>
+                                          <p className="text-lg font-bold text-foreground leading-tight">{dayNum}</p>
+                                        </div>
+                                        <Badge variant="outline" className={`flex items-center text-xs ${s.badge} shrink-0`}>
+                                          {statusIcons[record.status]}
+                                          {s.label}
+                                        </Badge>
+                                        {record.leaveTypeName && (
+                                          <span className="text-xs text-muted-foreground shrink-0">{record.leaveTypeName}</span>
+                                        )}
+                                        <span className="text-xs text-muted-foreground flex-1 truncate">
+                                          {record.remarks || ''}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-              )}
-            </CardContent>
-          </Card>
+            );
+          })()}
+
+          {/* ── Mark Today Dialog ──────────────────────────────────────── */}
+          <Dialog open={markTodayOpen} onOpenChange={setMarkTodayOpen}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-violet-600" />
+                  Mark Attendance — Today
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1 font-medium">
+                    {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                  <p className="text-sm font-semibold text-foreground">{staff?.name}</p>
+                  <p className="text-xs text-muted-foreground">{staff?.designation} · {staff?.department}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {((['present', 'late', 'leave'] as StaffAttendanceStatus[]).map(s => {
+                    const icons: Record<StaffAttendanceStatus, ReactNode> = {
+                      present: <CheckCircle2 className="h-4 w-4" />,
+                      absent:  <XCircle className="h-4 w-4" />,
+                      late:    <Clock className="h-4 w-4" />,
+                      leave:   <CalendarOff className="h-4 w-4" />,
+                    };
+                    const colors: Record<StaffAttendanceStatus, string> = {
+                      present: 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
+                      absent:  'border-rose-400 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400',
+                      late:    'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400',
+                      leave:   'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400',
+                    };
+                    const active = markTodayStatus === s;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => setMarkTodayStatus(s)}
+                        className={[
+                          'flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all capitalize',
+                          active ? `${colors[s]} shadow-sm` : 'border-border text-muted-foreground hover:bg-muted',
+                        ].join(' ')}
+                      >
+                        {icons[s]}
+                        {s}
+                      </button>
+                    );
+                  }))}
+                </div>
+                {markTodayStatus === 'leave' && leaveTypes.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Leave Type</p>
+                    <Select value={markTodayLeaveTypeId} onValueChange={setMarkTodayLeaveTypeId}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Select leave type…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {leaveTypes.map(lt => (
+                          <SelectItem key={lt.id} value={lt.id}>{lt.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button variant="outline" size="sm" onClick={() => setMarkTodayOpen(false)} disabled={markTodaySaving}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                    onClick={handleMarkToday}
+                    disabled={markTodaySaving}
+                  >
+                    {markTodaySaving ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
+                    ) : (
+                      <><CheckCircle2 className="h-3.5 w-3.5" /> Save</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="documents">
-          {/* ID Card Dialog */}
+          {/* Professional Staff ID Card Dialog */}
           {showIdCardDialog && staff && (
-            <Dialog open={showIdCardDialog} onOpenChange={setShowIdCardDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Staff ID Card Preview</DialogTitle>
-                </DialogHeader>
-                <div className="print-container">
-                  <IdCardTemplate 
-                    person={staff}
-                    type="staff"
-                  />
-                </div>
-                <div className="flex justify-end gap-2 mt-4 print:hidden">
-                  <Button variant="outline" onClick={() => setShowIdCardDialog(false)}>
-                    Close
-                  </Button>
-                  <Button onClick={() => window.print()}>
-                    <CreditCard className="h-4 w-4 mr-2" />
-                    Print
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalIdCardDialog
+              open={showIdCardDialog}
+              onOpenChange={setShowIdCardDialog}
+              personType="staff"
+              personData={{
+                name: staff.name,
+                employeeId: staff.id,
+                designation: staff.designation,
+                department: staff.department,
+                phone: staff.phone,
+                email: staff.email,
+                bloodGroup: staff.bloodGroup,
+                photoUrl: staff.profilePhoto,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logoUrl,
+              }}
+            />
           )}
 
-          {/* Experience Certificate Dialog */}
+          {/* Professional Experience Certificate Dialog */}
           {showExperienceCertDialog && staff && (
-            <Dialog open={showExperienceCertDialog} onOpenChange={setShowExperienceCertDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Experience Certificate</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <ExperienceCertificateTemplate
-                    staffName={staff.name}
-                    designation={staff.designation}
-                    department={staff.department}
-                    employeeId={staff.id}
-                    joiningDate="01/04/2020"
-                    relievingDate={new Date().toLocaleDateString()}
-                    workDuration="5 years"
-                    responsibilities={[
-                      "Teaching assigned subjects to students",
-                      "Conducting regular assessments and evaluations",
-                      "Maintaining student records and progress reports",
-                      "Participating in school events and activities"
-                    ]}
-                    performance="Excellent"
-                    issueDate={new Date().toLocaleDateString()}
-                    certificateNumber={`EXP${Date.now().toString().slice(-6)}`}
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalCertificateDialog
+              open={showExperienceCertDialog}
+              onOpenChange={setShowExperienceCertDialog}
+              certType="experience"
+              personData={{
+                staffName: staff.name,
+                employeeId: staff.id,
+                designation: staff.designation,
+                department: staff.department,
+                joiningDate: staff.joiningDate,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logoUrl,
+                principalName: schoolInfo?.principalName,
+              }}
+            />
           )}
 
-          {/* Salary Certificate Dialog */}
+          {/* Professional Salary Certificate Dialog */}
           {showSalaryCertDialog && staff && (
-            <Dialog open={showSalaryCertDialog} onOpenChange={setShowSalaryCertDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Salary Certificate</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <SalaryCertificateTemplate
-                    staffName={staff.name}
-                    designation={staff.designation}
-                    department={staff.department}
-                    employeeId={staff.id}
-                    joiningDate="01/04/2020"
-                    basicSalary="45,000"
-                    allowances="8,000"
-                    totalSalary="53,000"
-                    issueDate={new Date().toLocaleDateString()}
-                    certificateNumber={`SAL${Date.now().toString().slice(-6)}`}
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalCertificateDialog
+              open={showSalaryCertDialog}
+              onOpenChange={setShowSalaryCertDialog}
+              certType="salary"
+              personData={{
+                staffName: staff.name,
+                employeeId: staff.id,
+                designation: staff.designation,
+                department: staff.department,
+                joiningDate: staff.joiningDate,
+                grossSalary: staff.salary != null ? String(staff.salary) : undefined,
+                bankName: staff.bankName,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logoUrl,
+                principalName: schoolInfo?.principalName,
+              }}
+            />
           )}
 
           <Card>
@@ -1047,12 +1462,35 @@ export default function StaffProfile() {
 
               {/* Uploaded Documents Section */}
               <div className="border-t pt-4">
-                <h4 className="font-medium mb-3">Uploaded Documents</h4>
-                {(staff.documents ?? []).length === 0 ? (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                  <h4 className="font-medium">Uploaded Documents</h4>
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedDocumentType} onValueChange={setSelectedDocumentType}>
+                      <SelectTrigger className="w-[190px] h-8 text-xs">
+                        <SelectValue placeholder="Document type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STAFF_DOCUMENT_TYPES.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <label className="cursor-pointer inline-flex items-center px-3 h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90">
+                      {uploadingDocument ? "Uploading..." : "Upload"}
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleStaffDocumentUpload}
+                        disabled={uploadingDocument}
+                      />
+                    </label>
+                  </div>
+                </div>
+                {(staffDocuments ?? []).length === 0 ? (
                   <div className="text-center py-4 text-muted-foreground text-sm">No documents uploaded yet.</div>
                 ) : (
                 <div className="space-y-2">
-                  {(staff.documents ?? []).map((doc) => (
+                  {(staffDocuments ?? []).map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         <FileText className="h-4 w-4 text-muted-foreground" />
@@ -1061,13 +1499,28 @@ export default function StaffProfile() {
                           <p className="text-xs text-muted-foreground">{doc.type} • {new Date(doc.uploadedAt).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      {doc.url && (
-                        <Button size="sm" variant="ghost" asChild>
-                          <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                            <Download className="h-4 w-4" />
-                          </a>
+                      <div className="flex items-center gap-1">
+                        {doc.url && (
+                          <Button size="sm" variant="ghost" asChild>
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" title="Download">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={deletingDocumentId === doc.id}
+                          onClick={() => handleStaffDocumentDelete(doc.id)}
+                          title="Delete"
+                        >
+                          {deletingDocumentId === doc.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-destructive" />
+                          )}
                         </Button>
-                      )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1085,12 +1538,81 @@ export default function StaffProfile() {
                 Certificates & Achievements
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No certificates available</p>
-                <p className="text-sm">Teaching certificates and achievements will appear here</p>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Upload and manage staff certificates (stored in S3).
+                </p>
+                <div className="flex items-center gap-2">
+                  <Select value={selectedCertificateType} onValueChange={setSelectedCertificateType}>
+                    <SelectTrigger className="w-[220px] h-8 text-xs">
+                      <SelectValue placeholder="Certificate type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STAFF_CERTIFICATE_TYPES.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label className="cursor-pointer inline-flex items-center px-3 h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90">
+                    {uploadingCertificate ? "Uploading..." : "Upload"}
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={handleCertificateUpload}
+                      disabled={uploadingCertificate}
+                    />
+                  </label>
+                </div>
               </div>
+
+              {(staffDocuments ?? []).filter((d) => isCertificateType(d.type)).length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No certificates uploaded yet</p>
+                  <p className="text-sm">Use the upload option above to add certificates</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(staffDocuments ?? [])
+                    .filter((d) => isCertificateType(d.type))
+                    .map((doc) => (
+                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium text-sm">{doc.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {CERTIFICATE_TYPE_LABEL[doc.type] ?? doc.type} • {new Date(doc.uploadedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {doc.url && (
+                            <Button size="sm" variant="ghost" asChild>
+                              <a href={doc.url} target="_blank" rel="noopener noreferrer" title="Download">
+                                <Download className="h-4 w-4" />
+                              </a>
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={deletingDocumentId === doc.id}
+                            onClick={() => handleStaffDocumentDelete(doc.id)}
+                            title="Delete"
+                          >
+                            {deletingDocumentId === doc.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-destructive" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1103,6 +1625,12 @@ export default function StaffProfile() {
           <StaffLeaveSection staffId={staff?.id || ""} staffName={staff?.name || ""} userLoginId={staff?.userLoginId} canApprove={true} />
         </TabsContent>
 
+        <TabsContent value="form16">
+          <div className="space-y-4">
+            {staff?.id && <Form16Manager staffId={staff.id} />}
+          </div>
+        </TabsContent>
+
         {isAdmin && (
           <TabsContent value="portal">
             <div className="space-y-4">
@@ -1112,7 +1640,15 @@ export default function StaffProfile() {
         )}
       </Tabs>
 
-
+      {/* Deactivate dialog — shows class reassignment flow before deactivating */}
+      <StaffDeactivateDialog
+        staff={deactivateTarget}
+        onClose={() => setDeactivateTarget(null)}
+        onSuccess={() => {
+          setDeactivateTarget(null);
+          fetchStaff();
+        }}
+      />
     </div>
   );
 }

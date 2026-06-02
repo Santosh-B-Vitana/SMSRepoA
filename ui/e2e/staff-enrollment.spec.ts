@@ -39,8 +39,8 @@ const TEST_STAFF = {
 };
 
 let createdStaffId: string | null = null;
-const API_BASE = 'http://localhost:5092/api';
-const UI_BASE = 'http://localhost:8081';
+const API_BASE = process.env.VITE_API_BASE_URL ?? '';
+const UI_BASE = '';
 
 // Helper functions
 async function getStoredAuthSession() {
@@ -288,10 +288,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
   test('5. Staff is searchable in staff list', async ({ page }) => {
     // Go back to staff list if needed
     if (!page.url().includes('/staff')) {
-      await page.goto('http://localhost:8081/staff');
-    }
-
-    // Search by last name
+      await page.goto('/staff');
     await page.fill('input[placeholder*="Search"]', TEST_STAFF.lastName);
     await page.waitForTimeout(500);
 
@@ -341,7 +338,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('7. Staff appears in header search', async ({ page }) => {
     // Go to any page and use header search
-    await page.goto('http://localhost:8081/admin-dashboard');
+    await page.goto('/admin-dashboard');
     await page.waitForTimeout(1000);
 
     // Search in header
@@ -364,7 +361,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('8. Staff is visible in Academics/Classes module', async ({ page }) => {
     // Navigate to academics/classes
-    await page.goto('http://localhost:8081/academics');
+    await page.goto('/academics');
     await page.waitForSelector('h1, [class*="heading"]', { timeout: 10000 });
 
     // Search for a class to see teachers
@@ -389,7 +386,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('9. Staff is visible in Attendance module', async ({ page }) => {
     // Navigate to attendance
-    await page.goto('http://localhost:8081/attendance');
+    await page.goto('/attendance');
     await page.waitForSelector('h1, [class*="heading"]', { timeout: 10000 });
 
     // Look for staff in attendance records
@@ -409,7 +406,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('10. Staff is visible in Examinations module', async ({ page }) => {
     // Navigate to examinations
-    await page.goto('http://localhost:8081/examinations');
+    await page.goto('/examinations');
     await page.waitForSelector('h1, [class*="heading"]', { timeout: 10000 });
 
     // Verify page loaded
@@ -421,7 +418,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('11. Staff is visible in Leave Management', async ({ page }) => {
     // Navigate to leave management
-    await page.goto('http://localhost:8081/leave-management');
+    await page.goto('/leave-management');
     
     // Wait for page or check if it redirects
     await page.waitForTimeout(1000);
@@ -437,7 +434,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('12. Staff is visible in Communication module', async ({ page }) => {
     // Navigate to communication
-    await page.goto('http://localhost:8081/communication');
+    await page.goto('/communication');
     await page.waitForTimeout(1000);
 
     // Verify communication page loaded
@@ -453,7 +450,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('13. Staff can be deactivated and reactivated', async ({ page }) => {
     // Navigate to staff
-    await page.goto('http://localhost:8081/staff');
+    await page.goto('/staff');
     await page.waitForTimeout(500);
 
     // Search for staff
@@ -476,7 +473,7 @@ test.describe('Staff Enrollment & Cross-Module Visibility', () => {
 
   test('14. Staff displays in reports/analytics', async ({ page }) => {
     // Navigate to reports
-    await page.goto('http://localhost:8081/reports');
+    await page.goto('/reports');
     await page.waitForTimeout(1000);
 
     // Verify reports page loaded

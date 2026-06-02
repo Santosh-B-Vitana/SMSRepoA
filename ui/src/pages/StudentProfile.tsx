@@ -4,8 +4,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAcademicYear } from "@/contexts/AcademicYearContext";
 import { ParentPortalAccountSection } from "@/components/parent/ParentPortalAccountSection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,11 +25,32 @@ import {
   GraduationCap,
   RotateCcw,
   Award,
-  ArrowUp
+  ArrowUp,
+  MoreVertical,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  BarChart3,
+  AlertTriangle,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import { ParentFeePayment } from "@/components/fees/ParentFeePayment";
 import { SiblingFeeInfoPanel } from "@/components/students/SiblingFeeInfoPanel";
-import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto } from "@/services/api/studentApi";
+import { Student, StudentBasic, StudentProfileSummary, studentApi, GuardianStaffDto, StudentExitResponse } from "@/services/api/studentApi";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { StudentExitDialog } from "@/components/students/StudentExitDialog";
+import { StudentDetainDialog } from "@/components/students/StudentDetainDialog";
 import { gradesApi, type StudentGradeResponse } from "@/services/api/gradesApi";
 import StudentAttendanceView from "@/components/attendance/StudentAttendanceView";
 import { StudentLeaveRequests } from "@/components/leave-management/StudentLeaveRequests";
@@ -35,11 +58,8 @@ import { getIssues, type BookIssue } from "@/services/api/libraryApi";
 import { applyStaffDiscount } from "@/services/api/feeApi";
 
 import { Input } from "@/components/ui/input";
-import { IdCardTemplate } from "@/components/id-cards/IdCardTemplate";
-import { BonafideCertificateTemplate } from "@/components/documents/BonafideCertificateTemplate";
-import { ConductCertificateTemplate } from "@/components/documents/ConductCertificateTemplate";
-import { TransferCertificateTemplate } from "@/components/documents/TransferCertificateTemplate";
-import { CertificateTemplate } from "@/components/documents/CertificateTemplate";
+import { ProfessionalCertificateDialog, CertificateType } from "@/components/documents/ProfessionalCertificateDialog";
+import { ProfessionalIdCardDialog } from "@/components/documents/ProfessionalIdCardDialog";
 import { ReportCardTemplate } from "@/components/examinations/ReportCardTemplate";
 import { useToast } from "@/hooks/use-toast";
 import placeholderImg from '/placeholder.svg';
@@ -48,6 +68,8 @@ import { PdfPreviewModal } from "@/components/common/PdfPreviewModal";
 import { generateProfessionalReportCard, SchoolInfo } from "@/utils/professionalPdfGenerator";
 import { useSchool } from "@/contexts/SchoolContext";
 import { StudentDocumentUpload } from "@/components/students/StudentDocumentUpload";
+import { getExamSetups, getStudentExamSetupResult, type ExamSetupBasicDto, type StudentExamResultSummaryDto } from "@/services/api/examSetupApi";
+import { DisciplineTab } from "@/components/students/DisciplineTab";
 
 export default function StudentProfile() {
   const { user } = useAuth();
@@ -133,6 +155,13 @@ export default function StudentProfile() {
   const [actionLoading, setActionLoading] = useState(false);
   const [showAllDetailsExpanded, setShowAllDetailsExpanded] = useState(false);
   const [showPromoteDialog, setShowPromoteDialog] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  const [exitType, setExitType] = useState<'dropout' | 'passout'>('dropout');
+  const [showDetainDialog, setShowDetainDialog] = useState(false);
+  // Deactivation dialog state
+  const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [deactivateDate, setDeactivateDate] = useState(new Date().toISOString().slice(0, 10));
   const [promoteData, setPromoteData] = useState({
     newClass: student?.class || '',
     newSection: student?.section || '',
@@ -141,6 +170,81 @@ export default function StudentProfile() {
   });
   const { toast } = useToast();
   const { t } = useLanguage();
+
+  // Published exam setup results (new exam workflow)
+  const [publishedExamResults, setPublishedExamResults] = useState<Array<{ setup: ExamSetupBasicDto; result: StudentExamResultSummaryDto }>>([]);
+  const [examResultsLoading, setExamResultsLoading] = useState(false);
+  const [expandedExamId, setExpandedExamId] = useState<string | null>(null);
+  const [downloadingExamId, setDownloadingExamId] = useState<string | null>(null);
+
+  const loadPublishedExamResults = async (studentId: string) => {
+    setExamResultsLoading(true);
+    try {
+      // Admin view: fetch ALL exam setups regardless of status, then try to get results for each
+      const page = await getExamSetups({ pageSize: 100, page: 1 });
+      const setups: ExamSetupBasicDto[] = page.items ?? [];
+
+      const entries: Array<{ setup: ExamSetupBasicDto; result: StudentExamResultSummaryDto }> = [];
+      await Promise.allSettled(setups.map(async (setup) => {
+        try {
+          const result = await getStudentExamSetupResult(setup.id, studentId);
+          if (result) entries.push({ setup, result });
+        } catch { /* student might not be in every exam */ }
+      }));
+      entries.sort((a, b) => new Date(b.setup.createdAt ?? 0).getTime() - new Date(a.setup.createdAt ?? 0).getTime());
+      setPublishedExamResults(entries);
+    } catch (e) {
+      console.error('Failed to load exam results', e);
+    } finally {
+      setExamResultsLoading(false);
+    }
+  };
+
+  const handleDownloadExamReportCard = async (setup: ExamSetupBasicDto, result: StudentExamResultSummaryDto) => {
+    if (!schoolInfo) { toast({ title: "Error", description: "School info not loaded", variant: "destructive" }); return; }
+    setDownloadingExamId(setup.id);
+    try {
+      const schoolData: SchoolInfo = {
+        name: schoolInfo.name,
+        address: schoolInfo.address ?? '',
+        phone: schoolInfo.phone ?? '',
+        email: schoolInfo.email ?? '',
+        principalName: schoolInfo.principalName ?? undefined,
+      };
+      const reportCardData = {
+        studentName: result.studentName,
+        studentId: result.studentId,
+        class: setup.className,
+        section: setup.sectionName ?? '',
+        academicYear: setup.academicYear,
+        examName: setup.name,
+        rollNo: result.rollNumber ?? '',
+        subjects: (result.subjects ?? []).map(s => ({
+          name: s.subjectName,
+          marks: Number(s.obtainedMarks),
+          maxMarks: Number(s.maxMarks),
+          grade: s.grade ?? '',
+        })),
+        totalMarks: Number(result.totalObtained),
+        totalMaxMarks: Number(result.totalMax),
+        percentage: Number(result.percentage),
+        overallGrade: result.overallGrade ?? '',
+        rank: result.rank,
+        remarks: result.isPass ? 'Pass' : 'Fail',
+      };
+      const doc = generateProfessionalReportCard(schoolData, reportCardData);
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const fileName = `ReportCard_${result.studentName.replace(/\s+/g, '_')}_${setup.name.replace(/\s+/g, '_')}.pdf`;
+      setPdfUrl(blobUrl);
+      setPdfFileName(fileName);
+      setPdfPreviewOpen(true);
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to generate report card", variant: "destructive" });
+    } finally {
+      setDownloadingExamId(null);
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -185,6 +289,8 @@ export default function StudentProfile() {
       } catch {
         // Grades are supplementary
       }
+      // Load published exam setup results
+      loadPublishedExamResults(id);
     } catch (error) {
       console.error("Failed to fetch student:", error);
       toast({
@@ -210,8 +316,19 @@ export default function StudentProfile() {
     if (!student) return;
     setActionLoading(true);
     try {
-      await studentApi.update(student.id, { status: newStatus });
-      setStudent({ ...student, status: newStatus });
+      if (newStatus === 'inactive') {
+        const isoDate = deactivateDate ? new Date(deactivateDate).toISOString() : new Date().toISOString();
+        await studentApi.update(student.id, {
+          status: 'inactive',
+          inactiveReason: deactivateReason || undefined,
+          inactiveDate: isoDate,
+        });
+        setStudent({ ...student, status: 'inactive', inactiveReason: deactivateReason || undefined, inactiveDate: isoDate });
+      } else {
+        await studentApi.update(student.id, { status: 'active', inactiveReason: '', inactiveDate: undefined });
+        setStudent({ ...student, status: 'active', inactiveReason: undefined, inactiveDate: undefined });
+      }
+      setShowDeactivateDialog(false);
       toast({
         title: t('studentProfilePage.successTitle'),
         description: newStatus === 'active' ? t('studentProfilePage.reactivatedSuccess') : t('studentProfilePage.deactivatedSuccess'),
@@ -372,30 +489,9 @@ export default function StudentProfile() {
           </div>
         </div>
         
-        <div className="flex flex-wrap gap-2">
-          {student.status === 'active' && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={actionLoading}
-              onClick={() => {
-                setPromoteData({
-                  newClass: '',
-                  newSection: student.section || '',
-                  resetRollNumber: false,
-                  remarks: ''
-                });
-                setShowPromoteDialog(true);
-              }}
-              className="whitespace-nowrap"
-              title="Promote student to next class/section"
-            >
-              <ArrowUp className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span className="truncate">Promote</span>
-            </Button>
-          )}
-
-          <Button 
+        <div className="flex items-center gap-2">
+          {/* Edit Profile — always visible */}
+          <Button
             onClick={() => navigate(`/students/${student.id}/edit`)}
             variant="default"
             size="sm"
@@ -404,31 +500,125 @@ export default function StudentProfile() {
             <Edit className="h-4 w-4 mr-2 flex-shrink-0" />
             <span className="truncate">{t('studentProfilePage.editProfile')}</span>
           </Button>
-          
-          {student.status === 'active' ? (
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={actionLoading}
-              onClick={() => handleStatusChange('inactive')}
-              className="whitespace-nowrap"
-            >
-              {t('studentProfilePage.deactivate')}
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={actionLoading}
-              onClick={() => handleStatusChange('active')}
-              className="whitespace-nowrap"
-            >
-              <RotateCcw className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span className="truncate">{t('studentProfilePage.reactivate')}</span>
-            </Button>
-          )}
+
+          {/* Three-dot menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" aria-label="More actions">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {student.status === 'active' && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setPromoteData({
+                        newClass: '',
+                        newSection: student.section || '',
+                        resetRollNumber: false,
+                        remarks: ''
+                      });
+                      setShowPromoteDialog(true);
+                    }}
+                  >
+                    <ArrowUp className="h-4 w-4 mr-2" />
+                    Promote
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    className="text-orange-600 focus:text-orange-600"
+                    onSelect={() => { setExitType('dropout'); setShowExitDialog(true); }}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Drop Out (Transfer)
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    className="text-amber-600 focus:text-amber-600"
+                    onSelect={() => setShowDetainDialog(true)}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Detain in Same Class
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    className="text-blue-600 focus:text-blue-600"
+                    onSelect={() => { setExitType('passout'); setShowExitDialog(true); }}
+                  >
+                    <GraduationCap className="h-4 w-4 mr-2" />
+                    Passed Out
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    disabled={actionLoading}
+                    onSelect={() => {
+                      setDeactivateReason('');
+                      setDeactivateDate(new Date().toISOString().slice(0, 10));
+                      setShowDeactivateDialog(true);
+                    }}
+                  >
+                    {t('studentProfilePage.deactivate')}
+                  </DropdownMenuItem>
+                </>
+              )}
+
+              {student.status !== 'active' && (
+                <DropdownMenuItem
+                  disabled={actionLoading}
+                  onSelect={() => handleStatusChange('active')}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  {t('studentProfilePage.reactivate')}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      {/* Inactive student banner */}
+      {student.status !== 'active' && (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+          <div className="flex items-start gap-2 text-orange-800">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-medium">This student is currently <span className="font-bold capitalize">{student.status}</span>. They are hidden from all class lists and their parent portal access is revoked.</span>
+              {(student.inactiveReason || student.inactiveDate) && (
+                <div className="mt-1 text-sm text-orange-700 flex flex-wrap gap-3">
+                  {student.inactiveReason && (
+                    <span><span className="font-medium">Reason:</span> {{
+                      passed_out: 'Passed Out',
+                      dropped_out: 'Dropped Out',
+                      transferred: 'Transferred',
+                      admin_deactivation: 'Admin Deactivation',
+                      other: 'Other',
+                    }[student.inactiveReason] ?? student.inactiveReason}</span>
+                  )}
+                  {student.inactiveDate && (
+                    <span><span className="font-medium">Since:</span> {new Date(student.inactiveDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-orange-400 text-orange-700 hover:bg-orange-100"
+            disabled={actionLoading}
+            onClick={() => handleStatusChange('active')}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reactivate Student
+          </Button>
+        </div>
+      )}
 
       {/* Student Basic Info Card */}
       <Card className="mb-6">
@@ -455,9 +645,21 @@ export default function StudentProfile() {
                   onChange={handlePhotoUpload}
                 />
               </label>
-              <Badge variant={student.status === 'active' ? 'default' : 'secondary'} className="mt-2 mb-2">
+              <Badge variant={student.status === 'active' ? 'default' : 'secondary'} className="mt-2 mb-1">
                 {student.status === 'active' ? t('common.active') : t('common.inactive')}
               </Badge>
+              {student.status !== 'active' && student.inactiveReason && (
+                <div className="text-xs text-orange-600 text-center max-w-[8rem]">{{
+                  passed_out: 'Passed Out',
+                  dropped_out: 'Dropped Out',
+                  transferred: 'Transferred',
+                  admin_deactivation: 'Admin Deactivation',
+                  other: 'Other',
+                }[student.inactiveReason] ?? student.inactiveReason}</div>
+              )}
+              {student.status !== 'active' && student.inactiveDate && (
+                <div className="text-xs text-muted-foreground text-center">{new Date(student.inactiveDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+              )}
             </div>
             
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -765,17 +967,23 @@ export default function StudentProfile() {
             <TabsTrigger value="visitors" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Visitors</TabsTrigger>
             <TabsTrigger value="communication" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">{t('studentProfilePage.communication')}</TabsTrigger>
             <TabsTrigger value="documents" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Documents</TabsTrigger>
+            <TabsTrigger value="discipline" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Discipline</TabsTrigger>
             {isAdmin && <TabsTrigger value="portal" className="whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium">Portal</TabsTrigger>}
           </TabsList>
         </div>
 
         <TabsContent value="fee">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <CreditCard className="h-5 w-5" />
                 Fee Information & Payment
               </CardTitle>
+              {id && (
+                <Button size="sm" onClick={() => navigate(`/fees/collect/${id}`)}>
+                  Pay Now
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {profileSummary?.fee && (
@@ -1158,195 +1366,240 @@ export default function StudentProfile() {
         </TabsContent>
 
   <TabsContent value="academic">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5" />
-                Academic Performance
+          <div className="space-y-6">
+          {/* ── Summary Stats ── */}
+          {!examResultsLoading && publishedExamResults.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-primary">{publishedExamResults.length}</p>
+                <p className="text-xs text-muted-foreground mt-1">Exams Taken</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-blue-600">
+                  {(publishedExamResults.reduce((s, e) => s + e.result.percentage, 0) / publishedExamResults.length).toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Average Score</p>
+              </div>
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-green-600">
+                  {publishedExamResults.filter(e => e.result.isPass).length}/{publishedExamResults.length}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Passed</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-amber-600">
+                  {publishedExamResults.reduce((best, e) => e.result.percentage > best ? e.result.percentage : best, 0).toFixed(0)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Best Score</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Unified Academic Card ── */}
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b bg-muted/20 py-4">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <GraduationCap className="h-5 w-5 text-primary" />
+                Academic Profile
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-4 mb-4 justify-between items-center">
-                <div className="flex gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Academic Year</label>
-                    <select className="border rounded px-2 py-1" value={selectedYear} onChange={e => setSelectedYear(e.target.value)}>
-                      <option value="">All years</option>
-                      {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examDate?.substring(0, 4)).filter(Boolean))).sort().reverse().map(year => (
-                        <option key={year} value={year as string}>{year}</option>
-                      ))}
-                    </select>
+            <CardContent className="p-0 divide-y">
+
+              {/* ── Section 1: Exam Results (new workflow) ── */}
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold flex items-center gap-2 text-sm">
+                    <Trophy className="h-4 w-4 text-amber-500" />
+                    Exam Results &amp; Report Cards
+                  </h3>
+                </div>
+                {examResultsLoading ? (
+                  <div className="space-y-2">{[1,2].map(i => <div key={i} className="h-12 rounded bg-muted animate-pulse" />)}</div>
+                ) : publishedExamResults.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8 text-sm">No exam results found for this student.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {publishedExamResults.map(({ setup, result }) => (
+                      <div key={setup.id} className="border rounded-lg overflow-hidden">
+                        <div
+                          className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors bg-muted/20"
+                          onClick={() => setExpandedExamId(expandedExamId === setup.id ? null : setup.id)}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                              result.percentage >= 75 ? 'bg-green-100 text-green-700' :
+                              result.percentage >= 50 ? 'bg-blue-100 text-blue-700' :
+                              result.percentage >= 33 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {result.overallGrade ?? (result.isPass ? '✓' : '✗')}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm truncate">{setup.name}</p>
+                              <p className="text-xs text-muted-foreground">{setup.academicYear} · {setup.className}{setup.sectionName ? ` ${setup.sectionName}` : ''}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              <p className={`font-bold text-sm ${result.isPass ? 'text-green-600' : 'text-red-600'}`}>{Number(result.percentage).toFixed(1)}%</p>
+                              <p className="text-xs text-muted-foreground">{Number(result.totalObtained)}/{Number(result.totalMax)}</p>
+                            </div>
+                            <Badge variant={result.isPass ? "default" : "destructive"} className="text-xs hidden sm:flex">{result.isPass ? 'Pass' : 'Fail'}</Badge>
+                            <Button
+                              size="sm" variant="outline" className="gap-1 text-xs h-7 shrink-0"
+                              onClick={(e) => { e.stopPropagation(); handleDownloadExamReportCard(setup, result); }}
+                              disabled={downloadingExamId === setup.id}
+                            >
+                              {downloadingExamId === setup.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                              <span className="hidden sm:inline">Report Card</span>
+                            </Button>
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expandedExamId === setup.id ? 'rotate-180' : ''}`} />
+                          </div>
+                        </div>
+                        {expandedExamId === setup.id && (
+                          <div className="px-4 py-3 border-t bg-muted/10 overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-xs">Subject</TableHead>
+                                  <TableHead className="text-xs text-right">Marks</TableHead>
+                                  <TableHead className="text-xs text-right">%</TableHead>
+                                  <TableHead className="text-xs text-center">Grade</TableHead>
+                                  <TableHead className="text-xs text-center">Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {(result.subjects ?? []).map((s, i) => (
+                                  <TableRow key={i}>
+                                    <TableCell className="text-sm py-1.5 font-medium">
+                                      {s.subjectName}
+                                      {s.isElective && <Badge variant="outline" className="ml-2 text-xs">Elective</Badge>}
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm py-1.5">
+                                      {s.isAbsent ? <span className="text-red-500">Absent</span> : `${Number(s.obtainedMarks)}/${Number(s.maxMarks)}`}
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm py-1.5">{s.isAbsent ? '—' : `${Number(s.percentage).toFixed(1)}%`}</TableCell>
+                                    <TableCell className="text-center py-1.5">{s.grade ? <Badge variant="outline" className="text-xs">{s.grade}</Badge> : '—'}</TableCell>
+                                    <TableCell className="text-center py-1.5">
+                                      <Badge variant={s.isPass ? "default" : "destructive"} className="text-xs">{s.isAbsent ? 'Absent' : s.isPass ? 'Pass' : 'Fail'}</Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Exam</label>
-                    <select className="border rounded px-2 py-1" value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
-                      <option value="">All exams</option>
-                      {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examName))).map(exam => (
-                        <option key={exam} value={exam}>{exam}</option>
-                      ))}
-                    </select>
+                )}
+              </div>
+
+              {/* ── Section 2: Assessment History (legacy) — only shown when data exists ── */}
+              {(profileSummary?.exams?.results ?? []).length > 0 && (
+                <div className="p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h3 className="font-semibold flex items-center gap-2 text-sm">
+                      <Award className="h-4 w-4 text-blue-500" />
+                      Assessment History
+                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select className="border rounded px-2 py-1 text-sm" value={selectedYear} onChange={e => setSelectedYear(e.target.value)}>
+                        <option value="">All years</option>
+                        {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examDate?.substring(0, 4)).filter(Boolean))).sort().reverse().map(year => (
+                          <option key={year} value={year as string}>{year}</option>
+                        ))}
+                      </select>
+                      <select className="border rounded px-2 py-1 text-sm" value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
+                        <option value="">All exams</option>
+                        {Array.from(new Set((profileSummary?.exams?.results ?? []).map(r => r.examName))).map(exam => (
+                          <option key={exam} value={exam}>{exam}</option>
+                        ))}
+                      </select>
+                      <Button variant="outline" size="sm" className="gap-1.5 h-8"
+                        onClick={() => {
+                          if (!student) return;
+                          const results = profileSummary?.exams?.results ?? [];
+                          const marksData = selectedExam ? results.filter(r => r.examName === selectedExam) : results;
+                          if (marksData.length === 0) { toast({ title: "No Data", description: "No marks available.", variant: "destructive" }); return; }
+                          const schoolData: SchoolInfo = { name: schoolInfo?.name ?? "School", address: schoolInfo?.address ?? "", phone: schoolInfo?.phone ?? "", email: schoolInfo?.email ?? "", principalName: schoolInfo?.principalName ?? undefined };
+                          const pdfDoc = generateProfessionalReportCard(schoolData, { reportCardNumber: `RC${Date.now().toString().slice(-6)}`, studentId: student.id, studentName: student.name, class: student.class, section: student.section, rollNo: student.rollNumber, admissionNo: student.admissionNumber, examName: selectedExam || "All Exams", term: selectedExam || "All", academicYear: selectedYear || new Date().getFullYear().toString(), subjects: marksData.map(r => ({ name: r.subject, marks: r.marksObtained, maxMarks: r.totalMarks, grade: r.grade ?? '' })), totalMaxMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0), totalMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0), marksObtained: marksData.reduce((sum, r) => sum + r.marksObtained, 0), percentage: marksData.length > 0 ? Math.round(marksData.reduce((sum, r) => sum + r.percentage, 0) / marksData.length * 10) / 10 : 0, overallGrade: "A", grade: "A", attendance: profileSummary?.attendance ? `${profileSummary.attendance.attendancePercent}%` : "—", remarks: "Generated from live exam data.", issueDate: new Date().toLocaleDateString() });
+                          const blobUrl = URL.createObjectURL(pdfDoc.output('blob'));
+                          setPdfUrl(blobUrl); setPdfFileName(`ReportCard_${student.name.replace(/\s+/g, '_')}_${selectedExam || 'All'}.pdf`); setPdfPreviewOpen(true);
+                          toast({ title: "Report Card Generated" });
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" />Report Card
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead>Marks</TableHead>
+                          <TableHead>Total</TableHead><TableHead>%</TableHead><TableHead>Grade</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(() => {
+                          const results = profileSummary?.exams?.results ?? [];
+                          const filtered = selectedExam ? results.filter(r => r.examName === selectedExam) : selectedYear ? results.filter(r => r.examDate?.startsWith(selectedYear)) : results;
+                          if (filtered.length === 0) return <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No exam results found</TableCell></TableRow>;
+                          return filtered.map((result, index) => (
+                            <TableRow key={index}>
+                              <TableCell className="font-medium">{result.examName}</TableCell>
+                              <TableCell>{result.subject}</TableCell>
+                              <TableCell>{result.isAbsent ? <span className="text-red-500">Absent</span> : result.marksObtained}</TableCell>
+                              <TableCell>{result.totalMarks}</TableCell>
+                              <TableCell>{result.isAbsent ? '—' : `${result.percentage.toFixed(1)}%`}</TableCell>
+                              <TableCell>{result.grade ? <Badge variant="outline">{result.grade}</Badge> : '—'}</TableCell>
+                            </TableRow>
+                          ));
+                        })()}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
-                  className="h-10 flex items-center gap-2"
-                  onClick={() => {
-                    if (!student) return;
-                    const results = profileSummary?.exams?.results ?? [];
-                    const marksData = selectedExam
-                      ? results.filter(r => r.examName === selectedExam)
-                      : results;
-                    if (marksData.length === 0) {
-                      toast({ title: "No Data", description: "No marks available for this selection.", variant: "destructive" });
-                      return;
-                    }
-                    
-                    const schoolInfo: SchoolInfo = {
-                      name: "Vitana Schools",
-                      address: "123 Education Street, Delhi 110001",
-                      phone: "+91-11-12345678",
-                      email: "info@vitanaSchools.edu",
-                      affiliationNo: "DL001234",
-                      schoolCode: "VIT001",
-                      principalName: "Dr. John Smith"
-                    };
-                    
-                    const reportCardData = {
-                      reportCardNumber: `RC${Date.now().toString().slice(-6)}`,
-                      studentId: student.id,
-                      studentName: student.name,
-                      class: student.class,
-                      section: student.section,
-                      rollNo: student.rollNumber,
-                      admissionNo: student.admissionNumber,
-                      examName: selectedExam || "All Exams",
-                      term: selectedExam || "All",
-                      academicYear: selectedYear || new Date().getFullYear().toString(),
-                      subjects: marksData.map(r => ({
-                        name: r.subject,
-                        marks: r.marksObtained,
-                        maxMarks: r.totalMarks,
-                        grade: r.grade ?? ''
-                      })),
-                      totalMaxMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0),
-                      totalMarks: marksData.reduce((sum, r) => sum + r.totalMarks, 0),
-                      marksObtained: marksData.reduce((sum, r) => sum + r.marksObtained, 0),
-                      percentage: marksData.length > 0
-                        ? Math.round(marksData.reduce((sum, r) => sum + r.percentage, 0) / marksData.length * 10) / 10
-                        : 0,
-                      overallGrade: "A",
-                      grade: "A",
-                      attendance: profileSummary?.attendance
-                        ? `${profileSummary.attendance.attendancePercent}%`
-                        : "—",
-                      remarks: "Generated from live exam data.",
-                      issueDate: new Date().toLocaleDateString()
-                    };
-                    
-                    const pdfDoc = generateProfessionalReportCard(schoolInfo, reportCardData);
-                    const blob = pdfDoc.output('blob');
-                    const blobUrl = URL.createObjectURL(blob);
-                    const fileName = `ReportCard_${student.name.replace(/\s+/g, '_')}_${selectedExam || 'All'}_${selectedYear || 'All'}.pdf`;
-                    
-                    setPdfUrl(blobUrl);
-                    setPdfFileName(fileName);
-                    setPdfPreviewOpen(true);
-                    
-                    toast({ title: "Report Card Generated", description: `Report card for ${student.name} is ready` });
-                  }}
-                >
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Generate Report Card</span>
-                  <span className="sm:hidden">Report Card</span>
-                </Button>
-              </div>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Exam</TableHead>
-                      <TableHead>Subject</TableHead>
-                      <TableHead>Marks</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>%</TableHead>
-                      <TableHead>Grade</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(() => {
-                      const results = profileSummary?.exams?.results ?? [];
-                      const filtered = selectedExam
-                        ? results.filter(r => r.examName === selectedExam)
-                        : selectedYear
-                        ? results.filter(r => r.examDate?.startsWith(selectedYear))
-                        : results;
-                      if (filtered.length === 0) {
-                        return (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                              No exam results found
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }
-                      return filtered.map((result, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{result.examName}</TableCell>
-                          <TableCell>{result.subject}</TableCell>
-                          <TableCell>{result.isAbsent ? <span className="text-red-500">Absent</span> : result.marksObtained}</TableCell>
-                          <TableCell>{result.totalMarks}</TableCell>
-                          <TableCell>{result.isAbsent ? '—' : `${result.percentage.toFixed(1)}%`}</TableCell>
-                          <TableCell>
-                            {result.grade ? <Badge variant="outline">{result.grade}</Badge> : '—'}
-                          </TableCell>
+              )}
+
+              {/* ── Section 4: Formative Grades — only shown when data exists ── */}
+              {studentGrades.length > 0 && (
+                <div className="p-5">
+                  <h3 className="font-semibold flex items-center gap-2 text-sm mb-4">
+                    <BarChart3 className="h-4 w-4 text-purple-500" />
+                    Formative Grades
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Assessment</TableHead><TableHead>Marks</TableHead><TableHead>Grade</TableHead>
+                          <TableHead>Status</TableHead><TableHead>Remarks</TableHead><TableHead>Date</TableHead>
                         </TableRow>
-                      ));
-                    })()}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {studentGrades.map(g => (
+                          <TableRow key={g.id}>
+                            <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
+                            <TableCell>{g.marksObtained}{g.maxMarks ? <span className="text-muted-foreground text-xs"> / {g.maxMarks}</span> : ""}</TableCell>
+                            <TableCell>{g.grade ? <Badge variant="outline">{g.grade}</Badge> : "—"}</TableCell>
+                            <TableCell><Badge variant={g.status === "pass" ? "default" : g.status === "fail" ? "destructive" : "secondary"}>{g.status}</Badge></TableCell>
+                            <TableCell className="max-w-xs truncate">{g.remarks ?? "—"}</TableCell>
+                            <TableCell>{new Date(g.createdAt).toLocaleDateString()}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
+          </div>
+        </TabsContent>
 
-          {/* Teacher-Entered Formative Grades */}
-          {studentGrades.length > 0 && (
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Award className="h-5 w-5" />
-                  Formative Grades (Teacher-Entered)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Assessment</TableHead>
-                        <TableHead>Marks</TableHead>
-                        <TableHead>Grade</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Remarks</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {studentGrades.map(g => (
-                        <TableRow key={g.id}>
-                          <TableCell className="font-medium">{g.gradeItemName ?? "—"}</TableCell>
-                          <TableCell>{g.marksObtained}{g.maxMarks ? <span className="text-muted-foreground text-xs"> / {g.maxMarks}</span> : ""}</TableCell>
-                          <TableCell>{g.grade ? <Badge variant="outline">{g.grade}</Badge> : "—"}</TableCell>
-                          <TableCell><Badge variant={g.status === "pass" ? "default" : g.status === "fail" ? "destructive" : "secondary"}>{g.status}</Badge></TableCell>
-                          <TableCell className="max-w-xs truncate">{g.remarks ?? "—"}</TableCell>
-                          <TableCell>{new Date(g.createdAt).toLocaleDateString()}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+        {/* ── Communication Tab ── */}
+        <TabsContent value="communication">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1356,59 +1609,19 @@ export default function StudentProfile() {
             </CardHeader>
             <CardContent>
               <div className="flex gap-2 justify-end mb-4">
-                <Button variant="default" onClick={() => setShowCommDialog(true)}>
-                  Reach Parent
-                </Button>
+                <Button variant="default" onClick={() => setShowCommDialog(true)}>Reach Parent</Button>
               </div>
-              {/* Manual Add Dialog */}
-              {typeof showManualDialog !== 'undefined' && showManualDialog && (
+              {showManualDialog && (
                 <Dialog open={showManualDialog} onOpenChange={setShowManualDialog}>
                   <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Manual Add Communication</DialogTitle>
-                    </DialogHeader>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Date</label>
-                      <input type="date" className="border rounded px-2 py-1 w-full" value={manualDate} onChange={e => setManualDate(e.target.value)} />
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Type</label>
-                      <select className="border rounded px-2 py-1 w-full" value={manualType} onChange={e => setManualType(e.target.value)}>
-                        <option value="SMS">SMS</option>
-                        <option value="Email">Email</option>
-                        <option value="Phone">Phone</option>
-                      </select>
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Message</label>
-                      <textarea className="border rounded px-2 py-1 w-full" rows={3} value={manualMessage} onChange={e => setManualMessage(e.target.value)} placeholder="Enter your message..." />
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Status</label>
-                      <select className="border rounded px-2 py-1 w-full" value={manualStatus} onChange={e => setManualStatus(e.target.value)}>
-                        <option value="Sent">Sent</option>
-                        <option value="Delivered">Delivered</option>
-                        <option value="Completed">Completed</option>
-                      </select>
-                    </div>
+                    <DialogHeader><DialogTitle>Manual Add Communication</DialogTitle></DialogHeader>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Date</label><input type="date" className="border rounded px-2 py-1 w-full" value={manualDate} onChange={e => setManualDate(e.target.value)} /></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Type</label><select className="border rounded px-2 py-1 w-full" value={manualType} onChange={e => setManualType(e.target.value)}><option>SMS</option><option>Email</option><option>Phone</option></select></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Message</label><textarea className="border rounded px-2 py-1 w-full" rows={3} value={manualMessage} onChange={e => setManualMessage(e.target.value)} placeholder="Enter your message..." /></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Status</label><select className="border rounded px-2 py-1 w-full" value={manualStatus} onChange={e => setManualStatus(e.target.value)}><option>Sent</option><option>Delivered</option><option>Completed</option></select></div>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowManualDialog(false)}>Cancel</Button>
-                      <Button onClick={() => {
-                        setCommunications(prev => [
-                          ...prev,
-                          {
-                            date: manualDate || new Date().toISOString().split('T')[0],
-                            type: manualType,
-                            message: manualMessage,
-                            status: manualStatus
-                          }
-                        ]);
-                        setManualDate("");
-                        setManualType("SMS");
-                        setManualMessage("");
-                        setManualStatus("Sent");
-                        setShowManualDialog(false);
-                      }}>Add</Button>
+                      <Button onClick={() => { setCommunications(prev => [...prev, { date: manualDate || new Date().toISOString().split('T')[0], type: manualType, message: manualMessage, status: manualStatus }]); setManualDate(""); setManualType("SMS"); setManualMessage(""); setManualStatus("Sent"); setShowManualDialog(false); }}>Add</Button>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -1417,64 +1630,30 @@ export default function StudentProfile() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Message</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Message</TableHead><TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {communications.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-6">No communications logged yet.</TableCell>
-                      </TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-6">No communications logged yet.</TableCell></TableRow>
                     ) : communications.map((comm, index) => (
                       <TableRow key={index}>
-                        <TableCell>{comm.date}</TableCell>
-                        <TableCell>{comm.type}</TableCell>
-                        <TableCell>{comm.message}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{comm.status}</Badge>
-                        </TableCell>
+                        <TableCell>{comm.date}</TableCell><TableCell>{comm.type}</TableCell>
+                        <TableCell>{comm.message}</TableCell><TableCell><Badge variant="outline">{comm.status}</Badge></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-              {/* Communication Dialog */}
               {showCommDialog && (
                 <Dialog open={showCommDialog} onOpenChange={setShowCommDialog}>
                   <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Reach Parent</DialogTitle>
-                    </DialogHeader>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Type</label>
-                      <select className="border rounded px-2 py-1 w-full" value={commType} onChange={e => setCommType(e.target.value)}>
-                        <option value="SMS">SMS</option>
-                        <option value="Email">Email</option>
-                      </select>
-                    </div>
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">Message</label>
-                      <textarea className="border rounded px-2 py-1 w-full" rows={3} value={commMessage} onChange={e => setCommMessage(e.target.value)} placeholder="Enter your message..." />
-                    </div>
+                    <DialogHeader><DialogTitle>Reach Parent</DialogTitle></DialogHeader>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Type</label><select className="border rounded px-2 py-1 w-full" value={commType} onChange={e => setCommType(e.target.value)}><option>SMS</option><option>Email</option></select></div>
+                    <div className="mb-2"><label className="block text-sm font-medium mb-1">Message</label><textarea className="border rounded px-2 py-1 w-full" rows={3} value={commMessage} onChange={e => setCommMessage(e.target.value)} placeholder="Enter your message..." /></div>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setShowCommDialog(false)}>Cancel</Button>
-                      <Button onClick={() => {
-                        setCommunications(prev => [
-                          ...prev,
-                          {
-                            date: new Date().toISOString().split('T')[0],
-                            type: commType,
-                            message: commMessage,
-                            status: 'Sent'
-                          }
-                        ]);
-                        setCommMessage("");
-                        setCommType("SMS");
-                        setShowCommDialog(false);
-                      }}>Send</Button>
+                      <Button onClick={() => { setCommunications(prev => [...prev, { date: new Date().toISOString().split('T')[0], type: commType, message: commMessage, status: 'Sent' }]); setCommMessage(""); setCommType("SMS"); setShowCommDialog(false); }}>Send</Button>
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -1483,102 +1662,67 @@ export default function StudentProfile() {
           </Card>
         </TabsContent>
 
+
         <TabsContent value="documents">
-          {/* Document Generation Dialogs */}
+          {/* Professional ID Card Dialog */}
           {showIdCardDialog && student && (
-            <Dialog open={showIdCardDialog} onOpenChange={setShowIdCardDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Printable Student ID Card</DialogTitle>
-                  <DialogDescription>Preview below and use your browser print.</DialogDescription>
-                </DialogHeader>
-                <div className="print-container">
-                  <IdCardTemplate person={student} type="student" />
-                </div>
-                <div className="flex justify-end gap-2 mt-4 print:hidden">
-                  <Button variant="outline" onClick={() => setShowIdCardDialog(false)}>Close</Button>
-                  <Button variant="default" onClick={() => {
-                    window.print();
-                  }}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Print
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalIdCardDialog
+              open={showIdCardDialog}
+              onOpenChange={setShowIdCardDialog}
+              personType="student"
+              personData={{
+                name: student.name,
+                admissionNumber: student.admissionNumber,
+                rollNumber: student.rollNumber,
+                className: student.class,
+                section: student.section,
+                dateOfBirth: student.dateOfBirth?.split('T')[0],
+                bloodGroup: student.bloodGroup,
+                parentName: student.guardianName,
+                parentPhone: student.guardianPhone,
+                photoUrl: student.photoUrl,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logoUrl,
+              }}
+            />
           )}
 
-          {/* Certificate Generation Dialog */}
+          {/* Certificate Generation Dialog — professional multi-template */}
           {showCertificateDialog && student && (
-            <Dialog open={showCertificateDialog} onOpenChange={setShowCertificateDialog}>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>{certificateType}</DialogTitle>
-                  <DialogDescription>Use the Preview & Print button inside the certificate.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  {certificateType === "Bonafide Certificate" && (
-                    <BonafideCertificateTemplate
-                      studentName={student.name}
-                      fatherName={student.guardianName}
-                      className={`${student.class}-${student.section}`}
-                      schoolName={schoolInfo?.name || ""}
-                      principalName={schoolInfo?.principalName || ""}
-                      academicYear={contextYear || "2024-25"}
-                      rollNumber={student.rollNumber}
-                      purpose="Higher Education"
-                      certificateNumber={`BC${Date.now().toString().slice(-6)}`}
-                      issueDate={new Date().toLocaleDateString()}
-                    />
-                  )}
-                  {certificateType === "Conduct Certificate" && (
-                    <ConductCertificateTemplate
-                      studentName={student.name}
-                      className={`${student.class}-${student.section}`}
-                      schoolName={schoolInfo?.name || ""}
-                      principalName={schoolInfo?.principalName || ""}
-                      academicYear={contextYear || "2024-25"}
-                      conduct="Excellent"
-                      issueDate={new Date().toLocaleDateString()}
-                      certificateNumber={`CC${Date.now().toString().slice(-6)}`}
-                    />
-                  )}
-                  {certificateType === "Character Certificate" && student && (
-                    <CertificateTemplate
-                      type="character"
-                      studentName={student.name}
-                      studentId={student.id}
-                      class={`${student.class}-${student.section}`}
-                      issuedDate={new Date().toLocaleDateString()}
-                      certificateId={`CHC${Date.now().toString().slice(-6)}`}
-                    />
-                  )}
-                  {certificateType === "Transfer Certificate" && (
-                    <TransferCertificateTemplate
-                      studentName={student.name}
-                      fatherName={student.guardianName}
-                      motherName=""
-                      className={`${student.class}-${student.section}`}
-                      schoolName={schoolInfo?.name || ""}
-                      principalName={schoolInfo?.principalName || ""}
-                      academicYear={contextYear || "2024-25"}
-                      dateOfBirth={student.dateOfBirth?.split('T')[0]}
-                      dateOfAdmission={student.admissionDate}
-                      dateOfLeaving={new Date().toLocaleDateString()}
-                      reasonForLeaving="Higher Studies"
-                      conduct="Excellent"
-                      certificateNumber={`TC${Date.now().toString().slice(-6)}`}
-                      issueDate={new Date().toLocaleDateString()}
-                    />
-                  )}
-                </div>
-                <div className="flex justify-end gap-2 mt-4 print:hidden">
-                  <Button variant="outline" onClick={() => setShowCertificateDialog(false)}>
-                    Close
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ProfessionalCertificateDialog
+              open={showCertificateDialog}
+              onOpenChange={setShowCertificateDialog}
+              certType={
+                certificateType === "Bonafide Certificate" ? "bonafide"
+                : certificateType === "Conduct Certificate" ? "conduct"
+                : certificateType === "Character Certificate" ? "character"
+                : "transfer"
+              }
+              personData={{
+                studentName: student.name,
+                admissionNumber: student.admissionNumber,
+                rollNumber: student.rollNumber,
+                className: student.class,
+                section: student.section,
+                dateOfBirth: student.dateOfBirth?.split('T')[0],
+                fatherName: student.guardianName,
+                academicYear: contextYear || "2024-25",
+                gender: student.gender,
+              }}
+              schoolInfo={{
+                name: schoolInfo?.name || "",
+                address: schoolInfo?.address,
+                phone: schoolInfo?.phone,
+                email: schoolInfo?.email,
+                logoUrl: schoolInfo?.logoUrl,
+                principalName: schoolInfo?.principalName,
+              }}
+            />
           )}
 
           {/* Report Card Generation Dialog */}
@@ -1759,6 +1903,12 @@ export default function StudentProfile() {
           </Card>
         </TabsContent>
 
+        {student?.id && (
+          <TabsContent value="discipline">
+            <DisciplineTab studentId={student.id} isAdmin={isAdmin} />
+          </TabsContent>
+        )}
+
         {isAdmin && student?.id && (
           <TabsContent value="portal">
             <ParentPortalAccountSection
@@ -1878,6 +2028,83 @@ export default function StudentProfile() {
         pdfUrl={pdfUrl}
         fileName={pdfFileName}
       />
+
+      {/* Student Exit Dialog (Dropout / Passout) */}
+      {student && (
+        <StudentExitDialog
+          student={student}
+          exitType={exitType}
+          open={showExitDialog}
+          onClose={() => setShowExitDialog(false)}
+          onComplete={(_result: StudentExitResponse) => {
+            setShowExitDialog(false);
+            // Refresh student data so status badge updates
+            void studentApi.getById(student.id).then((s) => setStudent(s));
+          }}
+        />
+      )}
+
+      {/* Student Detain Dialog — student stays active in same class */}
+      {student && (
+        <StudentDetainDialog
+          student={student}
+          open={showDetainDialog}
+          onClose={() => setShowDetainDialog(false)}
+          onComplete={(_result: StudentExitResponse) => {
+            setShowDetainDialog(false);
+            // Refresh student data (status remains active)
+            void studentApi.getById(student.id).then((s) => setStudent(s));
+          }}
+        />
+      )}
+
+      {/* Deactivate Student Dialog */}
+      <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Deactivate Student</DialogTitle>
+            <DialogDescription>
+              This student will be hidden from class lists and their parent portal access will be revoked.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Reason for Deactivation</Label>
+              <Select value={deactivateReason} onValueChange={setDeactivateReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reason…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="passed_out">Passed Out</SelectItem>
+                  <SelectItem value="dropped_out">Dropped Out</SelectItem>
+                  <SelectItem value="transferred">Transferred to Another School</SelectItem>
+                  <SelectItem value="admin_deactivation">Admin Deactivation</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Effective Date</Label>
+              <Input
+                type="date"
+                value={deactivateDate}
+                onChange={e => setDeactivateDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeactivateDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={actionLoading || !deactivateReason}
+              onClick={() => handleStatusChange('inactive')}
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Deactivate Student
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

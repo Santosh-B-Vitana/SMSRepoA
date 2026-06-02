@@ -120,6 +120,7 @@ namespace SmsApi.Models.DTOs
         public bool HasCustomGradingScale { get; set; }
         public bool HasCustomExamStructure { get; set; }
         public bool IsActive { get; set; }
+        public bool IsDefault { get; set; }
         public BoardConfigurationResponse Board { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -144,6 +145,48 @@ namespace SmsApi.Models.DTOs
 
         /// <summary>Provide a custom exam structure to override the board's default. Pass null to use board default.</summary>
         public List<BoardExamStructureEntryDto>? CustomExamStructure { get; set; }
+    }
+
+    /// <summary>Add a board to school's supported boards.</summary>
+    public class AddSchoolBoardRequest
+    {
+        [Required]
+        public Guid BoardConfigurationId { get; set; }
+
+        /// <summary>Mark this board as the school default. First board added is always default.</summary>
+        public bool SetAsDefault { get; set; } = false;
+    }
+
+    /// <summary>
+    /// Update custom overrides on an existing school-board config without replacing it.
+    /// Send null for any field to revert it to the board default.
+    /// </summary>
+    public class UpdateSchoolBoardOverridesRequest
+    {
+        /// <summary>Override overall passing %. Null = use board default.</summary>
+        public decimal? CustomOverallPassingPercentage { get; set; }
+
+        /// <summary>Override theory component passing %. Null = use board default.</summary>
+        public decimal? CustomTheoryPassingPercentage { get; set; }
+
+        /// <summary>Override practical component passing %. Null = use board default.</summary>
+        public decimal? CustomPracticalPassingPercentage { get; set; }
+
+        /// <summary>
+        /// Override grading scale. Empty array or null = revert to board default.
+        /// Each entry: { grade, minPercentage, maxPercentage, gradePoint, description, isPassing }
+        /// </summary>
+        public List<GradeScaleEntryDto>? CustomGradingScale { get; set; }
+
+        /// <summary>Override exam structure. Null = use board default.</summary>
+        public List<BoardExamStructureEntryDto>? CustomExamStructure { get; set; }
+    }
+
+    /// <summary>List of all boards configured for a school.</summary>
+    public class SchoolBoardListResponse
+    {
+        public List<SchoolBoardConfigResponse> Boards { get; set; } = new();
+        public int Total { get; set; }
     }
 
     // ── Board-aware Grade Result ───────────────────────────────────────────────

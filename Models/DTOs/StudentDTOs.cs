@@ -84,6 +84,8 @@ namespace SmsApi.Models.DTOs
         public string? Gender { get; set; }
         public string? Nationality { get; set; } // JSON array
         public string Status { get; set; } = string.Empty;
+        public string? InactiveReason { get; set; }
+        public DateTime? InactiveDate { get; set; }
         public DateTime AdmissionDate { get; set; }
         public string? PhotoUrl { get; set; }
         
@@ -612,9 +614,11 @@ namespace SmsApi.Models.DTOs
         
         [MaxLength(20)]
         public string? Status { get; set; }
-    }
 
-    // Bulk Update Request
+        [MaxLength(100)]
+        public string? InactiveReason { get; set; }
+        public DateTime? InactiveDate { get; set; }
+    }
     public class BulkUpdateStudentsRequest
     {
         public List<Guid> StudentIds { get; set; } = new();
@@ -691,6 +695,13 @@ namespace SmsApi.Models.DTOs
         public List<Guid> SuccessfulIds { get; set; } = new();
         /// <summary>Admission numbers of successfully processed students.</summary>
         public List<string> SuccessfulAdmissionNumbers { get; set; } = new();
+    }
+
+    // Distinct classes and sections for filter dropdowns
+    public class StudentClassesSectionsResponse
+    {
+        public List<string> Classes { get; set; } = new();
+        public List<string> Sections { get; set; } = new();
     }
 
     // Student List Response
@@ -1293,5 +1304,165 @@ namespace SmsApi.Models.DTOs
         public string? RollNumber { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? PhotoUrl { get; set; }
+    }
+
+    // ============================================================
+    // STUDENT EXIT — Drop-Out & Pass-Out
+    // ============================================================
+
+    /// <summary>
+    /// Lightweight summary of a single pending fee record returned by the
+    /// exit-clearance check.
+    /// </summary>
+    public class ExitPendingFeeDto
+    {
+        public Guid FeeRecordId { get; set; }
+        public string FeeType { get; set; } = string.Empty;
+        public string AcademicYear { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal PendingAmount { get; set; }
+        public DateTime? DueDate { get; set; }
+    }
+
+    /// <summary>
+    /// Returned by GET /api/students/{id}/exit-clearance — tells the UI
+    /// exactly what is outstanding and what documents are available.
+    /// </summary>
+    public class ExitClearanceResponse
+    {
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string CurrentClass { get; set; } = string.Empty;
+        public string? CurrentSection { get; set; }
+        public string AcademicYear { get; set; } = string.Empty;
+
+        /// <summary>True when total pending == 0.</summary>
+        public bool IsFeeClear { get; set; }
+        public decimal TotalPendingAmount { get; set; }
+        public List<ExitPendingFeeDto> PendingFees { get; set; } = new();
+
+        /// <summary>
+        /// Documents that can be generated for this student.
+        /// Each entry is pre-populated with data the UI can display / edit.
+        /// </summary>
+        public List<ExitDocumentDto> AvailableDocuments { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Represents a single document that can be generated on exit.
+    /// The <see cref="Fields"/> dictionary holds auto-populated key→value pairs
+    /// that the user can edit before confirming.
+    /// </summary>
+    public class ExitDocumentDto
+    {
+        /// <summary>
+        /// Stable key used to reference this document in the exit request.
+        /// E.g. "transfer_certificate", "character_certificate", "bonafide_certificate".
+        /// </summary>
+        public string DocumentKey { get; set; } = string.Empty;
+
+        /// <summary>Human-readable display name.</summary>
+        public string Title { get; set; } = string.Empty;
+
+        /// <summary>Whether this document is mandatory for this exit type.</summary>
+        public bool IsMandatory { get; set; }
+
+        /// <summary>Auto-populated field values — can be overridden by the user.</summary>
+        public Dictionary<string, string> Fields { get; set; } = new();
+    }
+
+    /// <summary>Request body for POST /api/students/{id}/dropout</summary>
+    public class StudentDropoutRequest
+    {
+        /// <summary>
+        /// "transfer" — student moving to another school (TC issued, marks inactive).
+        /// "detain" — student fails / stays in same class (no TC needed, remains active).
+        /// </summary>
+        [Required]
+        [MaxLength(20)]
+        public string DropoutType { get; set; } = "transfer"; // transfer | detain
+
+        [MaxLength(200)]
+        public string? DestinationSchool { get; set; }
+
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+
+        [MaxLength(100)]
+        public string? Conduct { get; set; }
+
+        /// <summary>Whether the fee dues have been cleared (confirmed by admin).</summary>
+        public bool FeeClearanceConfirmed { get; set; }
+
+        /// <summary>Documents to generate on exit, with possibly edited field values.</summary>
+        public List<ExitDocumentRequest> DocumentsToGenerate { get; set; } = new();
+
+        [MaxLength(1000)]
+        public string? Remarks { get; set; }
+    }
+
+    /// <summary>Request body for POST /api/students/{id}/passout</summary>
+    public class StudentPassoutRequest
+    {
+        [Required]
+        [MaxLength(20)]
+        public string AcademicYear { get; set; } = string.Empty;
+
+        [MaxLength(100)]
+        public string? PassingClass { get; set; }
+
+        [MaxLength(200)]
+        public string? DestinationSchool { get; set; }
+
+        [MaxLength(500)]
+        public string? Reason { get; set; }
+
+        [MaxLength(100)]
+        public string? Conduct { get; set; }
+
+        public bool FeeClearanceConfirmed { get; set; }
+
+        public List<ExitDocumentRequest> DocumentsToGenerate { get; set; } = new();
+
+        [MaxLength(1000)]
+        public string? Remarks { get; set; }
+    }
+
+    /// <summary>
+    /// A document included in a dropout/passout request.
+    /// <see cref="Fields"/> contains values the user may have edited.
+    /// </summary>
+    public class ExitDocumentRequest
+    {
+        [Required]
+        public string DocumentKey { get; set; } = string.Empty;
+
+        /// <summary>Edited field values (overrides auto-population).</summary>
+        public Dictionary<string, string> Fields { get; set; } = new();
+    }
+
+    /// <summary>Returned by the dropout / passout endpoints.</summary>
+    public class StudentExitResponse
+    {
+        public Guid StudentId { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string ExitType { get; set; } = string.Empty;   // dropout | passout
+        public string SubType { get; set; } = string.Empty;    // transfer | detain | passout
+        public string NewStatus { get; set; } = string.Empty;  // inactive | active (detain)
+        public Guid? AlumniId { get; set; }
+        public string? AlumniMessage { get; set; }
+        public List<GeneratedDocumentDto> GeneratedDocuments { get; set; } = new();
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public class GeneratedDocumentDto
+    {
+        public string DocumentKey { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        /// <summary>Populated field values that were actually used.</summary>
+        public Dictionary<string, string> Fields { get; set; } = new();
+        /// <summary>Optional URL if the document was persisted to storage.</summary>
+        public string? FileUrl { get; set; }
     }
 }

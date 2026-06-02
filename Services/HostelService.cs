@@ -22,6 +22,22 @@ namespace SmsApi.Services
         Task<HostelStudentResponse> AssignStudentToRoomAsync(CreateHostelStudentRequest request);
         Task<HostelStudentResponse?> UpdateHostelStudentAsync(Guid id, Guid schoolId, UpdateHostelStudentRequest request);
         Task<bool> RemoveStudentFromRoomAsync(Guid id, Guid schoolId);
+
+        // ── P1: Enhanced Hostel ─────────────────────────────────────────────────
+        Task<List<HostelBlockResponse>> GetBlocksAsync(Guid schoolId);
+        Task<HostelBlockResponse?> GetBlockByIdAsync(Guid id, Guid schoolId);
+        Task<HostelBlockResponse> CreateBlockAsync(Guid schoolId, CreateHostelBlockRequest request);
+        Task<HostelBlockResponse?> UpdateBlockAsync(Guid id, Guid schoolId, CreateHostelBlockRequest request);
+        Task<bool> DeleteBlockAsync(Guid id, Guid schoolId);
+        Task<List<HostelMessBillingResponse>> GetMessBillingsAsync(Guid schoolId, Guid? hostelStudentId, string? month);
+        Task<HostelMessBillingResponse> CreateMessBillingAsync(Guid schoolId, CreateHostelMessBillingRequest request);
+        Task<HostelMessBillingResponse?> MarkMessBillingPaidAsync(Guid id, Guid schoolId);
+        Task<List<HostelVisitorLogResponse>> GetVisitorLogsAsync(Guid schoolId, Guid? hostelStudentId);
+        Task<HostelVisitorLogResponse> CreateVisitorLogAsync(Guid schoolId, CreateHostelVisitorLogRequest request);
+        Task<HostelVisitorLogResponse?> CheckOutVisitorAsync(Guid id, Guid schoolId);
+        Task<List<HostelLeaveResponse>> GetLeavesAsync(Guid schoolId, Guid? hostelStudentId, string? status);
+        Task<HostelLeaveResponse> CreateLeaveAsync(Guid schoolId, CreateHostelLeaveRequest request);
+        Task<HostelLeaveResponse?> ApproveLeaveAsync(Guid id, Guid schoolId, Guid approvedBy, string status, string? remarks);
     }
 
     public class HostelService : IHostelService
@@ -42,6 +58,7 @@ namespace SmsApi.Services
             pageSize = Math.Min(100, Math.Max(1, pageSize));
 
             var query = _context.HostelRooms
+                .Include(r => r.Block)
                 .Where(r => r.SchoolId == schoolId);
 
             var total = await query.CountAsync();
@@ -63,6 +80,7 @@ namespace SmsApi.Services
         public async Task<HostelRoomResponse?> GetRoomByIdAsync(Guid id, Guid schoolId)
         {
             var room = await _context.HostelRooms
+                .Include(r => r.Block)
                 .FirstOrDefaultAsync(r => r.Id == id && r.SchoolId == schoolId);
 
             return room == null ? null : MapToResponse(room);
@@ -100,6 +118,7 @@ namespace SmsApi.Services
             {
                 Id = Guid.NewGuid(),
                 SchoolId = request.SchoolId,
+                BlockId = request.BlockId,
                 RoomNumber = request.RoomNumber,
                 RoomType = request.RoomType,
                 Capacity = request.Capacity,
@@ -158,6 +177,7 @@ namespace SmsApi.Services
                 throw new InvalidOperationException(
                     $"Cannot reduce capacity to {request.Capacity}. Current occupancy is {room.Occupied}");
 
+            room.BlockId = request.BlockId;
             room.RoomNumber = request.RoomNumber;
             room.RoomType = request.RoomType;
             room.Capacity = request.Capacity;
@@ -190,6 +210,8 @@ namespace SmsApi.Services
         public async Task<List<HostelStudentResponse>> GetStudentsByRoomAsync(Guid roomId, Guid schoolId)
         {
             var students = await _context.HostelStudents
+                .Include(hs => hs.Student)
+                .Include(hs => hs.Room)
                 .Where(hs => hs.RoomId == roomId && hs.SchoolId == schoolId)
                 .ToListAsync();
 
@@ -208,7 +230,11 @@ namespace SmsApi.Services
             {
                 Id = hs.Id,
                 StudentId = hs.StudentId,
-                StudentName = hs.Student != null ? $"{hs.Student.FirstName} {hs.Student.LastName}" : "Unknown",
+                StudentName = hs.Student != null
+                    ? (!string.IsNullOrWhiteSpace(hs.Student.FirstName)
+                        ? $"{hs.Student.FirstName} {hs.Student.LastName}".Trim()
+                        : hs.Student.Name)
+                    : "Unknown",
                 StudentClass = hs.Student?.Class ?? "N/A",
                 StudentSection = hs.Student?.Section ?? "N/A",
                 Gender = hs.Student?.Gender ?? "Unknown",
@@ -364,6 +390,10 @@ namespace SmsApi.Services
             // ===== VALIDATION 8: Auto-Fee Deduction =====
             await AddFeesToStudentRecordAsync(request.SchoolId, request.StudentId, request.MonthlyFee);
 
+            // Load navigation properties for full response
+            await _context.Entry(hostelStudent).Reference(hs => hs.Student).LoadAsync();
+            await _context.Entry(hostelStudent).Reference(hs => hs.Room).LoadAsync();
+
             return MapToStudentResponse(hostelStudent);
         }
 
@@ -418,6 +448,39 @@ namespace SmsApi.Services
         }
 
         /// <summary>
+        /// Adds or accumulates <paramref name="addedAmount"/> into the named key of
+        /// <see cref="FeeRecord.FeeHeadOverrides"/>. When the fee structure has 0 for that head,
+        /// the stale-fix loop treats a positive override as a negative reduction (0 - X = -X,
+        /// correctTotal -= -X → correctTotal += X), preserving the per-student charge across GETs.
+        /// </summary>
+        private static void ApplyModuleFeeOverride(FeeRecord record, string key, decimal addedAmount)
+        {
+            var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(record.FeeHeadOverrides))
+                try { overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(record.FeeHeadOverrides) ?? overrides; } catch { }
+            overrides[key] = (overrides.TryGetValue(key, out var existing) ? existing : 0m) + addedAmount;
+            record.FeeHeadOverrides = System.Text.Json.JsonSerializer.Serialize(overrides);
+        }
+
+        /// <summary>
+        /// Adjusts (adds or subtracts) <paramref name="delta"/> on the named key in
+        /// <see cref="FeeRecord.FeeHeadOverrides"/>. Removes the key when the result reaches 0.
+        /// </summary>
+        private static void AdjustModuleFeeOverride(FeeRecord record, string key, decimal delta)
+        {
+            if (delta == 0) return;
+            var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(record.FeeHeadOverrides))
+                try { overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(record.FeeHeadOverrides) ?? overrides; } catch { }
+            var current = overrides.TryGetValue(key, out var ex) ? ex : 0m;
+            var updated = Math.Max(0, current + delta);
+            if (updated > 0) overrides[key] = updated;
+            else overrides.Remove(key);
+            record.FeeHeadOverrides = overrides.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(overrides) : null;
+        }
+
+        /// <summary>
         /// Adds the pro-rated hostel fee (from today to academic-year end) plus any pending
         /// library fines to the student's existing pending FeeRecord. Creates one if none exists.
         /// Library fines are marked FinePaid=true to prevent double-counting.
@@ -458,6 +521,11 @@ namespace SmsApi.Services
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.UpdatedAt = now;
+
+                    // Track pro-rata hostel fee in FeeHeadOverrides so the stale-fix loop
+                    // (which resets TotalAmount from the fee structure) preserves this per-student charge.
+                    if (prorataFee > 0)
+                        ApplyModuleFeeOverride(feeRecord, "hostelFee", prorataFee);
 
                     _logger.LogInformation(
                         "Added ₹{Amount} (pro-rata hostel ₹{Hostel} [{Days}d] + library fines ₹{Fines}) to fee record {RecordId} for student {StudentId}",
@@ -530,6 +598,10 @@ namespace SmsApi.Services
                     feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
                     feeRecord.BalanceAmount = feeRecord.PendingAmount;
                     feeRecord.UpdatedAt = now;
+
+                    // Keep the FeeHeadOverrides in sync so the stale-fix loop preserves the correct value.
+                    AdjustModuleFeeOverride(feeRecord, "hostelFee", prorataDiff);
+
                     await _context.SaveChangesAsync();
 
                     _logger.LogInformation(
@@ -626,6 +698,10 @@ namespace SmsApi.Services
             // Adjust student's fee record if monthly fee changed
             await AdjustStudentFeeRecordAsync(schoolId, hostelStudent.StudentId, oldFee, request.MonthlyFee);
 
+            // Load navigation properties for full response
+            await _context.Entry(hostelStudent).Reference(hs => hs.Student).LoadAsync();
+            await _context.Entry(hostelStudent).Reference(hs => hs.Room).LoadAsync();
+
             return MapToStudentResponse(hostelStudent);
         }
 
@@ -664,6 +740,8 @@ namespace SmsApi.Services
             {
                 Id = room.Id,
                 SchoolId = room.SchoolId,
+                BlockId = room.BlockId,
+                BlockName = room.Block?.Name,
                 RoomNumber = room.RoomNumber,
                 RoomType = room.RoomType,
                 Capacity = room.Capacity,
@@ -677,22 +755,425 @@ namespace SmsApi.Services
             };
         }
 
-        private static HostelStudentResponse MapToStudentResponse(HostelStudent student)
+        private static HostelStudentResponse MapToStudentResponse(HostelStudent hs)
         {
             return new HostelStudentResponse
             {
-                Id = student.Id,
-                SchoolId = student.SchoolId,
-                StudentId = student.StudentId,
-                RoomId = student.RoomId,
-                CheckInDate = student.CheckInDate,
-                CheckOutDate = student.CheckOutDate,
-                MonthlyFee = student.MonthlyFee,
-                Status = student.Status,
-                CreatedAt = student.CreatedAt,
-                UpdatedAt = student.UpdatedAt
+                Id = hs.Id,
+                SchoolId = hs.SchoolId,
+                StudentId = hs.StudentId,
+                StudentName = hs.Student != null
+                    ? (!string.IsNullOrWhiteSpace(hs.Student.FirstName)
+                        ? $"{hs.Student.FirstName} {hs.Student.LastName}".Trim()
+                        : hs.Student.Name)
+                    : string.Empty,
+                StudentClass = hs.Student?.Class ?? string.Empty,
+                StudentSection = hs.Student?.Section ?? string.Empty,
+                Gender = hs.Student?.Gender ?? string.Empty,
+                RoomId = hs.RoomId,
+                RoomNumber = hs.Room?.RoomNumber ?? string.Empty,
+                RoomType = hs.Room?.RoomType ?? string.Empty,
+                Floor = hs.Room?.Floor,
+                CheckInDate = hs.CheckInDate,
+                CheckOutDate = hs.CheckOutDate,
+                MonthlyFee = hs.MonthlyFee,
+                Status = hs.Status,
+                CreatedAt = hs.CreatedAt,
+                UpdatedAt = hs.UpdatedAt
             };
         }
+
+        // ── P1: Hostel Blocks ───────────────────────────────────────────────────
+
+        public async Task<List<HostelBlockResponse>> GetBlocksAsync(Guid schoolId)
+        {
+            var blocks = await _context.HostelBlocks
+                .Include(b => b.Rooms)
+                .Where(b => b.SchoolId == schoolId && !b.IsDeleted)
+                .OrderBy(b => b.Name)
+                .ToListAsync();
+            return blocks.Select(MapBlock).ToList();
+        }
+
+        public async Task<HostelBlockResponse?> GetBlockByIdAsync(Guid id, Guid schoolId)
+        {
+            var block = await _context.HostelBlocks
+                .Include(b => b.Rooms)
+                .FirstOrDefaultAsync(b => b.Id == id && b.SchoolId == schoolId && !b.IsDeleted);
+            return block == null ? null : MapBlock(block);
+        }
+
+        public async Task<HostelBlockResponse> CreateBlockAsync(Guid schoolId, CreateHostelBlockRequest request)
+        {
+            if (await _context.HostelBlocks.AnyAsync(b => b.SchoolId == schoolId && b.Name == request.Name && !b.IsDeleted))
+                throw new InvalidOperationException($"Block '{request.Name}' already exists.");
+
+            var block = new HostelBlock
+            {
+                Id = Guid.NewGuid(), SchoolId = schoolId,
+                Name = request.Name, Description = request.Description,
+                WardenName = request.WardenName, WardenContact = request.WardenContact,
+                WardenStaffId = request.WardenStaffId, Gender = request.Gender ?? "mixed",
+                Status = "active", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            };
+            _context.HostelBlocks.Add(block);
+            await _context.SaveChangesAsync();
+            return MapBlock(block);
+        }
+
+        public async Task<HostelBlockResponse?> UpdateBlockAsync(Guid id, Guid schoolId, CreateHostelBlockRequest request)
+        {
+            var block = await _context.HostelBlocks.FirstOrDefaultAsync(b => b.Id == id && b.SchoolId == schoolId && !b.IsDeleted);
+            if (block == null) return null;
+            if (await _context.HostelBlocks.AnyAsync(b => b.SchoolId == schoolId && b.Name == request.Name && b.Id != id && !b.IsDeleted))
+                throw new InvalidOperationException($"Block '{request.Name}' already exists.");
+            block.Name = request.Name; block.Description = request.Description;
+            block.WardenName = request.WardenName; block.WardenContact = request.WardenContact;
+            block.WardenStaffId = request.WardenStaffId; block.Gender = request.Gender ?? block.Gender;
+            block.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return MapBlock(block);
+        }
+
+        public async Task<bool> DeleteBlockAsync(Guid id, Guid schoolId)
+        {
+            var block = await _context.HostelBlocks.FirstOrDefaultAsync(b => b.Id == id && b.SchoolId == schoolId && !b.IsDeleted);
+            if (block == null) return false;
+            block.IsDeleted = true; block.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        private static HostelBlockResponse MapBlock(HostelBlock b) => new()
+        {
+            Id = b.Id, SchoolId = b.SchoolId, Name = b.Name, Description = b.Description,
+            WardenName = b.WardenName, WardenContact = b.WardenContact,
+            WardenStaffId = b.WardenStaffId, Gender = b.Gender, Status = b.Status,
+            TotalRooms = b.Rooms?.Count ?? 0,
+            TotalCapacity = b.Rooms?.Sum(r => r.Capacity) ?? 0,
+            TotalOccupied = b.Rooms?.Sum(r => r.Occupied) ?? 0,
+            CreatedAt = b.CreatedAt, UpdatedAt = b.UpdatedAt
+        };
+
+        // ── P1: Mess Billing ────────────────────────────────────────────────────
+
+        public async Task<List<HostelMessBillingResponse>> GetMessBillingsAsync(Guid schoolId, Guid? hostelStudentId, string? month)
+        {
+            var q = _context.HostelMessBillings
+                .Include(m => m.HostelStudent).ThenInclude(hs => hs!.Student)
+                .Where(m => m.SchoolId == schoolId && !m.IsDeleted);
+            if (hostelStudentId.HasValue) q = q.Where(m => m.HostelStudentId == hostelStudentId.Value);
+            if (!string.IsNullOrWhiteSpace(month)) q = q.Where(m => m.Month == month);
+            var list = await q.OrderByDescending(m => m.Month).ToListAsync();
+            return list.Select(MapMessBilling).ToList();
+        }
+
+        public async Task<HostelMessBillingResponse> CreateMessBillingAsync(Guid schoolId, CreateHostelMessBillingRequest request)
+        {
+            var hs = await _context.HostelStudents.FirstOrDefaultAsync(s => s.Id == request.HostelStudentId && s.SchoolId == schoolId && !s.IsDeleted);
+            if (hs == null) throw new KeyNotFoundException("Hostel student record not found.");
+            if (await _context.HostelMessBillings.AnyAsync(m => m.HostelStudentId == request.HostelStudentId && m.Month == request.Month && !m.IsDeleted))
+                throw new InvalidOperationException($"Mess billing for month {request.Month} already exists for this student.");
+            var billing = new HostelMessBilling
+            {
+                Id = Guid.NewGuid(), SchoolId = schoolId, HostelStudentId = request.HostelStudentId,
+                Month = request.Month, Amount = request.Amount, Description = request.Description,
+                IsPaid = false, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            };
+            _context.HostelMessBillings.Add(billing);
+            await _context.SaveChangesAsync();
+            await _context.Entry(billing).Reference(b => b.HostelStudent).LoadAsync();
+            if (billing.HostelStudent != null)
+                await _context.Entry(billing.HostelStudent).Reference(s => s.Student).LoadAsync();
+
+            // ── Sync mess charge to student's fee record ──────────────────────
+            await AddMessBillingToFeeRecordAsync(schoolId, hs.StudentId, request.Amount, request.Month, request.Description);
+
+            return MapMessBilling(billing);
+        }
+
+        public async Task<HostelMessBillingResponse?> MarkMessBillingPaidAsync(Guid id, Guid schoolId)
+        {
+            var billing = await _context.HostelMessBillings.Include(b => b.HostelStudent).ThenInclude(hs => hs!.Student)
+                .FirstOrDefaultAsync(m => m.Id == id && m.SchoolId == schoolId && !m.IsDeleted);
+            if (billing == null) return null;
+            billing.IsPaid = true; billing.PaidDate = DateTime.UtcNow; billing.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            // ── Create a PaymentTransaction so a receipt can be generated ──
+            Guid? paymentTransactionId = null;
+            if (billing.HostelStudent != null)
+                paymentTransactionId = await RecordMessBillingPaymentOnFeeRecordAsync(schoolId, billing.HostelStudent.StudentId, billing.Amount, billing.Month);
+
+            var response = MapMessBilling(billing);
+            response.PaymentTransactionId = paymentTransactionId;
+            return response;
+        }
+
+        /// <summary>
+        /// Creates a dedicated fee record for a hostel mess billing charge so it appears
+        /// as a separate "Hostel Fee" line in the fee module — independent of academic fees.
+        /// </summary>
+        private async Task AddMessBillingToFeeRecordAsync(Guid schoolId, Guid studentId, decimal amount, string month, string? description)
+        {
+            try
+            {
+                var (academicYear, _) = await GetCurrentAcademicYearInfoAsync(schoolId);
+                var now = DateTime.UtcNow;
+
+                // Avoid creating a duplicate if one already exists for this student+month
+                var existingRecord = await _context.FeeRecords
+                    .IgnoreQueryFilters()
+                    .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                 fr.FeeStructureId == null &&
+                                 fr.FeeHeadOverrides != null && fr.FeeHeadOverrides.Contains(month))
+                    .FirstOrDefaultAsync();
+
+                if (existingRecord != null)
+                {
+                    _logger.LogInformation("Mess fee record for student {StudentId} month {Month} already exists ({RecordId})", studentId, month, existingRecord.Id);
+                    return;
+                }
+
+                // Dedicated mess fee record — no FeeStructure; hostelFee stored in FeeHeadOverrides
+                var overrideJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    hostelFee  = amount,
+                    messMonth  = month,
+                    messLabel  = $"Hostel Mess – {month}"
+                });
+
+                var messRecord = new FeeRecord
+                {
+                    Id             = Guid.NewGuid(),
+                    SchoolId       = schoolId,
+                    StudentId      = studentId,
+                    FeeStructureId = null,
+                    TotalAmount    = amount,
+                    PaidAmount     = 0,
+                    DiscountAmount = 0,
+                    LateFeeAmount  = 0,
+                    PendingAmount  = amount,
+                    BalanceAmount  = amount,
+                    AcademicYear   = academicYear,
+                    DueDate        = new DateTime(now.Year, now.Month, 1).AddMonths(1),
+                    Status         = "pending",
+                    FeeHeadOverrides = overrideJson,
+                    CreatedAt      = now,
+                    UpdatedAt      = now
+                };
+                _context.FeeRecords.Add(messRecord);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Created dedicated mess fee record {RecordId} for student {StudentId} — ₹{Amount} ({Month})", messRecord.Id, studentId, amount, month);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding mess billing to fee record for student {StudentId}", studentId);
+            }
+        }
+
+        /// <summary>
+        /// Marks the dedicated mess fee record as paid and creates a PaymentTransaction so a
+        /// receipt can be generated. Targets the specific mess fee record created by
+        /// AddMessBillingToFeeRecordAsync (identified by FeeHeadOverrides containing the month).
+        /// Returns the new PaymentTransaction Id, or null if no matching fee record was found.
+        /// </summary>
+        private async Task<Guid?> RecordMessBillingPaymentOnFeeRecordAsync(Guid schoolId, Guid studentId, decimal amount, string month)
+        {
+            try
+            {
+                var (academicYear, _) = await GetCurrentAcademicYearInfoAsync(schoolId);
+
+                // Find the dedicated mess fee record for this specific month
+                var feeRecord = await _context.FeeRecords
+                    .IgnoreQueryFilters()
+                    .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                 fr.FeeStructureId == null &&
+                                 fr.FeeHeadOverrides != null && fr.FeeHeadOverrides.Contains(month) &&
+                                 fr.Status != "paid")
+                    .OrderByDescending(fr => fr.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                // Fallback: any unpaid fee record for this student (legacy / pre-migration data)
+                if (feeRecord == null)
+                {
+                    feeRecord = await _context.FeeRecords
+                        .IgnoreQueryFilters()
+                        .Where(fr => fr.StudentId == studentId && fr.SchoolId == schoolId && !fr.IsDeleted &&
+                                     (fr.AcademicYear == academicYear || string.IsNullOrEmpty(fr.AcademicYear)) &&
+                                     fr.Status != "paid")
+                        .OrderByDescending(fr => fr.CreatedAt)
+                        .FirstOrDefaultAsync();
+                }
+
+                if (feeRecord == null) return null;
+
+                var now = DateTime.UtcNow;
+                var receiptNumber = $"MESS-{month.Replace("-", "")}-{Guid.NewGuid().ToString().Substring(0, 6).ToUpper()}";
+
+                var payment = new Models.Entities.PaymentTransaction
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = schoolId,
+                    StudentId = studentId,
+                    FeeRecordId = feeRecord.Id,
+                    Amount = amount,
+                    Method = "cash",
+                    Status = "success",
+                    Date = now,
+                    TransactionDate = now,
+                    ReceiptNumber = receiptNumber,
+                    ProcessedBy = "Hostel Office",
+                    AcademicYear = string.IsNullOrEmpty(feeRecord.AcademicYear) ? academicYear : feeRecord.AcademicYear,
+                    Remarks = $"Mess bill payment for {month}",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                _context.PaymentTransactions.Add(payment);
+
+                feeRecord.PaidAmount += amount;
+                feeRecord.PendingAmount = Math.Max(0, feeRecord.TotalAmount - feeRecord.PaidAmount - feeRecord.DiscountAmount + feeRecord.LateFeeAmount);
+                feeRecord.BalanceAmount = feeRecord.PendingAmount;
+                if (feeRecord.PendingAmount <= 0) feeRecord.Status = "paid";
+                else if (feeRecord.PaidAmount > 0) feeRecord.Status = "partial";
+                feeRecord.LastPaymentDate = now;
+                feeRecord.UpdatedAt = now;
+
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Mess billing payment ₹{Amount} ({Month}) applied to fee record {RecordId} for student {StudentId}, receipt {Receipt}",
+                    amount, month, feeRecord.Id, studentId, receiptNumber);
+                return payment.Id;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error recording mess billing payment on fee record for student {StudentId}", studentId);
+                return null;
+            }
+        }
+
+        private static HostelMessBillingResponse MapMessBilling(HostelMessBilling m) => new()
+        {
+            Id = m.Id, SchoolId = m.SchoolId, HostelStudentId = m.HostelStudentId,
+            StudentName = m.HostelStudent?.Student != null
+                ? (!string.IsNullOrWhiteSpace(m.HostelStudent.Student.FirstName)
+                    ? $"{m.HostelStudent.Student.FirstName} {m.HostelStudent.Student.LastName}".Trim()
+                    : m.HostelStudent.Student.Name) : string.Empty,
+            Month = m.Month, Amount = m.Amount, Description = m.Description,
+            IsPaid = m.IsPaid, PaidDate = m.PaidDate,
+            PaymentTransactionId = null, // caller sets this after creating the transaction
+            CreatedAt = m.CreatedAt, UpdatedAt = m.UpdatedAt
+        };
+
+        // ── P1: Visitor Log ─────────────────────────────────────────────────────
+
+        public async Task<List<HostelVisitorLogResponse>> GetVisitorLogsAsync(Guid schoolId, Guid? hostelStudentId)
+        {
+            var q = _context.HostelVisitorLogs
+                .Include(v => v.HostelStudent).ThenInclude(hs => hs!.Student)
+                .Where(v => v.SchoolId == schoolId && !v.IsDeleted);
+            if (hostelStudentId.HasValue) q = q.Where(v => v.HostelStudentId == hostelStudentId.Value);
+            var list = await q.OrderByDescending(v => v.CheckInTime).ToListAsync();
+            return list.Select(MapVisitorLog).ToList();
+        }
+
+        public async Task<HostelVisitorLogResponse> CreateVisitorLogAsync(Guid schoolId, CreateHostelVisitorLogRequest request)
+        {
+            var hs = await _context.HostelStudents.FirstOrDefaultAsync(s => s.Id == request.HostelStudentId && s.SchoolId == schoolId && !s.IsDeleted);
+            if (hs == null) throw new KeyNotFoundException("Hostel student record not found.");
+            var log = new HostelVisitorLog
+            {
+                Id = Guid.NewGuid(), SchoolId = schoolId, HostelStudentId = request.HostelStudentId,
+                VisitorName = request.VisitorName, VisitorContact = request.VisitorContact,
+                Relationship = request.Relationship, Purpose = request.Purpose,
+                CheckInTime = request.CheckInTime ?? DateTime.UtcNow, Status = "checked_in",
+                Notes = request.Notes, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            };
+            _context.HostelVisitorLogs.Add(log);
+            await _context.SaveChangesAsync();
+            await _context.Entry(log).Reference(l => l.HostelStudent).LoadAsync();
+            if (log.HostelStudent != null) await _context.Entry(log.HostelStudent).Reference(s => s.Student).LoadAsync();
+            return MapVisitorLog(log);
+        }
+
+        public async Task<HostelVisitorLogResponse?> CheckOutVisitorAsync(Guid id, Guid schoolId)
+        {
+            var log = await _context.HostelVisitorLogs.Include(v => v.HostelStudent).ThenInclude(hs => hs!.Student)
+                .FirstOrDefaultAsync(v => v.Id == id && v.SchoolId == schoolId && !v.IsDeleted);
+            if (log == null) return null;
+            log.CheckOutTime = DateTime.UtcNow; log.Status = "checked_out"; log.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return MapVisitorLog(log);
+        }
+
+        private static HostelVisitorLogResponse MapVisitorLog(HostelVisitorLog v) => new()
+        {
+            Id = v.Id, SchoolId = v.SchoolId, HostelStudentId = v.HostelStudentId,
+            StudentName = v.HostelStudent?.Student != null
+                ? (!string.IsNullOrWhiteSpace(v.HostelStudent.Student.FirstName)
+                    ? $"{v.HostelStudent.Student.FirstName} {v.HostelStudent.Student.LastName}".Trim()
+                    : v.HostelStudent.Student.Name) : string.Empty,
+            VisitorName = v.VisitorName, VisitorContact = v.VisitorContact,
+            Relationship = v.Relationship, Purpose = v.Purpose,
+            CheckInTime = v.CheckInTime, CheckOutTime = v.CheckOutTime,
+            Status = v.Status, Notes = v.Notes, CreatedAt = v.CreatedAt, UpdatedAt = v.UpdatedAt
+        };
+
+        // ── P1: Hostel Leave ────────────────────────────────────────────────────
+
+        public async Task<List<HostelLeaveResponse>> GetLeavesAsync(Guid schoolId, Guid? hostelStudentId, string? status)
+        {
+            var q = _context.HostelLeaves
+                .Include(l => l.HostelStudent).ThenInclude(hs => hs!.Student)
+                .Where(l => l.SchoolId == schoolId && !l.IsDeleted);
+            if (hostelStudentId.HasValue) q = q.Where(l => l.HostelStudentId == hostelStudentId.Value);
+            if (!string.IsNullOrWhiteSpace(status)) q = q.Where(l => l.Status == status);
+            var list = await q.OrderByDescending(l => l.CreatedAt).ToListAsync();
+            return list.Select(MapLeave).ToList();
+        }
+
+        public async Task<HostelLeaveResponse> CreateLeaveAsync(Guid schoolId, CreateHostelLeaveRequest request)
+        {
+            var hs = await _context.HostelStudents.FirstOrDefaultAsync(s => s.Id == request.HostelStudentId && s.SchoolId == schoolId && !s.IsDeleted);
+            if (hs == null) throw new KeyNotFoundException("Hostel student record not found.");
+            if (request.ToDate < request.FromDate) throw new ArgumentException("ToDate must be on or after FromDate.");
+            var leave = new HostelLeave
+            {
+                Id = Guid.NewGuid(), SchoolId = schoolId, HostelStudentId = request.HostelStudentId,
+                FromDate = request.FromDate, ToDate = request.ToDate, Reason = request.Reason,
+                ContactDuringLeave = request.ContactDuringLeave, Status = "pending",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            };
+            _context.HostelLeaves.Add(leave);
+            await _context.SaveChangesAsync();
+            await _context.Entry(leave).Reference(l => l.HostelStudent).LoadAsync();
+            if (leave.HostelStudent != null) await _context.Entry(leave.HostelStudent).Reference(s => s.Student).LoadAsync();
+            return MapLeave(leave);
+        }
+
+        public async Task<HostelLeaveResponse?> ApproveLeaveAsync(Guid id, Guid schoolId, Guid approvedBy, string status, string? remarks)
+        {
+            var leave = await _context.HostelLeaves.Include(l => l.HostelStudent).ThenInclude(hs => hs!.Student)
+                .FirstOrDefaultAsync(l => l.Id == id && l.SchoolId == schoolId && !l.IsDeleted);
+            if (leave == null) return null;
+            if (status != "approved" && status != "rejected") throw new ArgumentException("Status must be 'approved' or 'rejected'.");
+            leave.Status = status; leave.ApprovedBy = approvedBy; leave.ApprovedAt = DateTime.UtcNow;
+            leave.ApprovalRemarks = remarks; leave.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return MapLeave(leave);
+        }
+
+        private static HostelLeaveResponse MapLeave(HostelLeave l) => new()
+        {
+            Id = l.Id, SchoolId = l.SchoolId, HostelStudentId = l.HostelStudentId,
+            StudentName = l.HostelStudent?.Student != null
+                ? (!string.IsNullOrWhiteSpace(l.HostelStudent.Student.FirstName)
+                    ? $"{l.HostelStudent.Student.FirstName} {l.HostelStudent.Student.LastName}".Trim()
+                    : l.HostelStudent.Student.Name) : string.Empty,
+            FromDate = l.FromDate, ToDate = l.ToDate, Reason = l.Reason,
+            ContactDuringLeave = l.ContactDuringLeave, Status = l.Status,
+            ApprovedBy = l.ApprovedBy, ApprovedAt = l.ApprovedAt,
+            ApprovalRemarks = l.ApprovalRemarks, CreatedAt = l.CreatedAt, UpdatedAt = l.UpdatedAt
+        };
     }
 }
 

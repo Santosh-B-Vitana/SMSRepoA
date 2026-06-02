@@ -257,6 +257,19 @@ namespace SmsApi.Models.DTOs
         public string NewPassword { get; set; } = string.Empty;
     }
 
+    public class DeactivateStaffAssignmentAction
+    {
+        public Guid AssignmentId { get; set; }
+        /// <summary>"reassign" or "remove"</summary>
+        public string Action { get; set; } = "remove";
+        public Guid? NewStaffId { get; set; }
+    }
+
+    public class DeactivateStaffRequest
+    {
+        public List<DeactivateStaffAssignmentAction>? Assignments { get; set; }
+    }
+
     // Response DTOs
     // Lightweight DTO for GET list endpoints - only essential fields for performance
     // Used by: GET /api/staff (list view)

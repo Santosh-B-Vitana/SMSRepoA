@@ -401,6 +401,9 @@ namespace SmsApi.Models.DTOs
         public TimeSpan? CheckInTime { get; set; }
         public TimeSpan? CheckOutTime { get; set; }
         public string? Remarks { get; set; }
+
+        /// <summary>Required when Status = "leave" to auto-deduct from the correct leave balance.</summary>
+        public Guid? LeaveTypeId { get; set; }
     }
 
     public class StaffAttendanceResponse
@@ -414,7 +417,24 @@ namespace SmsApi.Models.DTOs
         public TimeSpan? CheckInTime { get; set; }
         public TimeSpan? CheckOutTime { get; set; }
         public string? Remarks { get; set; }
+        public Guid? LeaveTypeId { get; set; }
+        public string? LeaveTypeName { get; set; }
+        public bool LeaveDeducted { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+    }
+
+    public class UpdateStaffAttendanceRequest
+    {
+        [Required]
+        [MaxLength(20)]
+        public string Status { get; set; } = string.Empty;
+
+        public TimeSpan? CheckInTime { get; set; }
+        public TimeSpan? CheckOutTime { get; set; }
+        public string? Remarks { get; set; }
+
+        /// <summary>Required when changing Status to "leave" to deduct from the correct leave balance.</summary>
+        public Guid? LeaveTypeId { get; set; }
     }
 }

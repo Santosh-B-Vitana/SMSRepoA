@@ -13,7 +13,8 @@ namespace SmsApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
+               Roles = StatusConstants.RoleGroups.FrontDeskAccess)]
     public class VisitorController : ControllerBase
     {
         private readonly IVisitorService _service;
