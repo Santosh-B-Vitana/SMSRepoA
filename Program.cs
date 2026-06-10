@@ -19,6 +19,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using SmsApi.Extensions;
 using SmsApi.Infrastructure.Performance;
 using SmsApi.Infrastructure.Resilience;
+using Hangfire;
 
 // ── Serilog bootstrap logger (captures startup/config errors) ──────────
 Log.Logger = new LoggerConfiguration()
@@ -128,6 +129,9 @@ builder.Services.AddProductionHttpsSecurity(builder.Environment);
 
 // ── Rate limiting (auth / global / uploads / reports / bulk / search / export) ───
 builder.Services.AddApiRateLimiting();
+
+// ── WhatsApp Communication Hub — Hangfire + services ──────────────────────────
+// (already included via AddApplicationServices → AddWhatsAppServices)
 
 // ── Controllers + ProblemDetails RFC 7807 ────────────────────────────────────────
 builder.Services.AddControllersInfrastructure();
@@ -255,6 +259,9 @@ app.UseMiddleware<SmsApi.Middleware.ApiResponseWrapperMiddleware>();
 app.MapHealthCheckEndpoints();
 
 app.MapControllers();
+
+// ── WhatsApp Communication Hub — Hangfire dashboard + recurring jobs ───────────
+app.UseWhatsAppHub();
 
 app.Run();
 

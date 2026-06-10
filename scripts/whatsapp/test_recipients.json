@@ -1,0 +1,150 @@
+{
+  "school_name": "Vitana Demo School",
+  "description": "Real test numbers — register all in Meta sandbox before sending",
+  "recipients": [
+    {
+      "phone": "919963497700",
+      "label": "Parent — 9963497700 (Aradhana Raj)",
+      "parent_name": "Parent",
+      "children": [
+        {
+          "name": "Aradhana Raj",
+          "class": "7",
+          "section": "A",
+          "scenario": "general",
+          "messages": [
+            {
+              "template": "fee_due_reminder",
+              "params": ["Parent", "12500", "Aradhana Raj", "7", "A", "30 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "exam_schedule",
+              "params": ["Parent", "Aradhana Raj", "7", "A", "15 Jul 2026", "Mid Term Exam", "Vitana Demo School"]
+            },
+            {
+              "template": "payment_received",
+              "params": ["Parent", "12500", "Aradhana Raj", "RCP-2026-1042", "Vitana Demo School"]
+            },
+            {
+              "template": "school_holiday_notice",
+              "params": ["Parent", "Vitana Demo School", "15 Aug 2026", "Independence Day", "16 Aug 2026", "Admin Office"]
+            },
+            {
+              "template": "school_admin_notice",
+              "params": ["Parent", "Vitana Demo School", "Submit updated address proof for Aradhana Raj by 18 Jun 2026 at the school office.", "Admin Office"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phone": "919810861740",
+      "label": "Parent — 9810861740 (Vedant Singh)",
+      "parent_name": "Parent",
+      "children": [
+        {
+          "name": "Vedant Singh",
+          "class": "6",
+          "section": "A",
+          "scenario": "normal",
+          "messages": [
+            {
+              "template": "fee_due_reminder",
+              "params": ["Parent", "9800", "Vedant Singh", "6", "A", "30 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "homework_reminder",
+              "params": ["Parent", "Vedant Singh", "Complete Science worksheet pages 12-15", "Science", "12 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "diary_posted",
+              "params": ["Parent", "Vedant Singh", "6", "A", "10 Jun 2026", "English", "Vitana Demo School"]
+            },
+            {
+              "template": "exam_schedule",
+              "params": ["Parent", "Vedant Singh", "6", "A", "20 Jul 2026", "Term 1 Assessment", "Vitana Demo School"]
+            },
+            {
+              "template": "online_payment_success",
+              "params": ["Parent", "9800", "Vedant Singh", "TXN-VED-20260610", "Vitana Demo School"]
+            },
+            {
+              "template": "school_admin_notice",
+              "params": ["Parent", "Vitana Demo School", "Parent-teacher meeting for Vedant Singh (Class 6-A) on 22 Jun 2026 at 10 AM. Attendance required.", "Class Teacher"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phone": "916202166502",
+      "label": "Parent — 6202166502 (Revanth Singh)",
+      "parent_name": "Parent",
+      "children": [
+        {
+          "name": "Revanth Singh",
+          "class": "8",
+          "section": "A",
+          "scenario": "mixed",
+          "messages": [
+            {
+              "template": "fee_due_reminder",
+              "params": ["Parent", "14200", "Revanth Singh", "8", "A", "30 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "student_absent",
+              "params": ["Parent", "Revanth Singh", "8", "A", "09 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "exam_schedule",
+              "params": ["Parent", "Revanth Singh", "8", "A", "18 Jul 2026", "Annual Examination", "Vitana Demo School"]
+            },
+            {
+              "template": "report_card_ready",
+              "params": ["Parent", "Revanth Singh", "8", "A", "Term 1 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "payment_received",
+              "params": ["Parent", "14200", "Revanth Singh", "RCP-REV-2026-088", "Vitana Demo School"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phone": "917984177071",
+      "label": "Parent — 7984177071 (Aradhana Raj)",
+      "parent_name": "Parent",
+      "children": [
+        {
+          "name": "Aradhana Raj",
+          "class": "7",
+          "section": "B",
+          "scenario": "general",
+          "messages": [
+            {
+              "template": "fee_due_reminder",
+              "params": ["Parent", "11000", "Aradhana Raj", "7", "B", "30 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "exam_schedule",
+              "params": ["Parent", "Aradhana Raj", "7", "B", "20 Jul 2026", "Term 1 Exam", "Vitana Demo School"]
+            },
+            {
+              "template": "homework_reminder",
+              "params": ["Parent", "Aradhana Raj", "Complete English comprehension worksheet", "English", "15 Jun 2026", "Vitana Demo School"]
+            },
+            {
+              "template": "payment_received",
+              "params": ["Parent", "11000", "Aradhana Raj", "RCP-2026-1107", "Vitana Demo School"]
+            },
+            {
+              "template": "school_admin_notice",
+              "params": ["Parent", "Vitana Demo School", "School ID card re-issue for Aradhana Raj on 16 Jun 2026. Bring passport-size photo to admin office.", "Admin Office"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

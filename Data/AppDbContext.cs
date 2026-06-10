@@ -278,7 +278,21 @@ namespace SmsApi.Data
         public DbSet<OfflineDevice> OfflineDevices { get; set; }
         public DbSet<SyncConflict> SyncConflicts { get; set; }
 
-
+        // ── WhatsApp Communication Hub (School-Level) ────────────────────────
+        public DbSet<WhatsappSettings> WhatsappSettings { get; set; }
+        public DbSet<WhatsappTemplate> WhatsappTemplates { get; set; }
+        public DbSet<WhatsappTemplateVersion> WhatsappTemplateVersions { get; set; }
+        public DbSet<WhatsappTemplateMapping> WhatsappTemplateMappings { get; set; }
+        public DbSet<WhatsappMessageQueue> WhatsappMessageQueues { get; set; }
+        public DbSet<WhatsappMessageLog> WhatsappMessageLogs { get; set; }
+        public DbSet<WhatsappWebhookEvent> WhatsappWebhookEvents { get; set; }
+        public DbSet<WhatsappUsage> WhatsappUsages { get; set; }
+        public DbSet<WhatsappUsageHistory> WhatsappUsageHistories { get; set; }
+        public DbSet<WhatsappContact> WhatsappContacts { get; set; }
+        public DbSet<WhatsappOptInEvent> WhatsappOptInEvents { get; set; }
+        public DbSet<WhatsappRetryQueue> WhatsappRetryQueues { get; set; }
+        public DbSet<WhatsappAuditLog> WhatsappAuditLogs { get; set; }
+        public DbSet<WhatsappConversation> WhatsappConversations { get; set; }
 
         /// <summary>
         /// Automatically populates audit fields (CreatedAt, UpdatedAt, CreatedBy, UpdatedBy)
@@ -398,6 +412,7 @@ namespace SmsApi.Data
             ConfigurePFESIManagement(modelBuilder);
             ConfigureOfflineAttendance(modelBuilder);
             ConfigureDiscipline(modelBuilder);
+            ConfigureWhatsApp(modelBuilder);
 
             // Apply IsDeleted = false soft-delete filter to ALL entities derived from BaseEntity.
             // This prevents soft-deleted records from ever appearing in queries unless the caller
@@ -3406,6 +3421,92 @@ namespace SmsApi.Data
             });
         }
 
+        private void ConfigureWhatsApp(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<WhatsappSettings>(entity =>
+            {
+                entity.HasIndex(e => e.SchoolId).IsUnique();
+            });
+
+            modelBuilder.Entity<WhatsappTemplate>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Name });
+                entity.HasIndex(e => new { e.SchoolId, e.Status });
+                entity.HasIndex(e => e.MetaTemplateId);
+            });
+
+            modelBuilder.Entity<WhatsappTemplateVersion>(entity =>
+            {
+                entity.HasIndex(e => new { e.TemplateId, e.Version });
+            });
+
+            modelBuilder.Entity<WhatsappTemplateMapping>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.EventKey }).IsUnique();
+            });
+
+            modelBuilder.Entity<WhatsappMessageQueue>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Status, e.Priority, e.ScheduledAt });
+                entity.HasIndex(e => new { e.SchoolId, e.EventKey, e.EntityId });
+                entity.Property(e => e.Priority).HasDefaultValue(2);
+            });
+
+            modelBuilder.Entity<WhatsappMessageLog>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Status });
+                entity.HasIndex(e => new { e.SchoolId, e.CreatedAt });
+                entity.HasIndex(e => e.MetaMessageId);
+                entity.HasIndex(e => new { e.SchoolId, e.RecipientPhone });
+                entity.HasIndex(e => new { e.SchoolId, e.EventKey });
+            });
+
+            modelBuilder.Entity<WhatsappWebhookEvent>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Processed, e.ReceivedAt });
+            });
+
+            modelBuilder.Entity<WhatsappUsage>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Period }).IsUnique();
+                entity.Property(e => e.EstimatedCostInr).HasColumnType("decimal(12,4)");
+            });
+
+            modelBuilder.Entity<WhatsappUsageHistory>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Period });
+            });
+
+            modelBuilder.Entity<WhatsappContact>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.EntityType, e.EntityId });
+                entity.HasIndex(e => new { e.SchoolId, e.Phone });
+                entity.HasIndex(e => new { e.SchoolId, e.IsOptedOut, e.IsBlacklisted });
+            });
+
+            modelBuilder.Entity<WhatsappOptInEvent>(entity =>
+            {
+                entity.HasIndex(e => new { e.ContactId, e.CreatedAt });
+            });
+
+            modelBuilder.Entity<WhatsappRetryQueue>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Status, e.NextRetryAt });
+            });
+
+            modelBuilder.Entity<WhatsappAuditLog>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.EntityType, e.CreatedAt });
+            });
+
+            modelBuilder.Entity<WhatsappConversation>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.ContactPhone, e.WindowStart });
+                entity.HasIndex(e => e.WaConversationId);
+            });
+        }
+
     }
 }
+
 

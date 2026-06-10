@@ -133,6 +133,482 @@ namespace SmsApi.Migrations.Crm
                     b.ToTable("SchoolConfig", (string)null);
                 });
 
+            modelBuilder.Entity("SmsApi.Models.CRM.SchoolWhatsappAccount", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AccessTokenEncrypted")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("BusinessName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeactivatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayPhoneNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(1)
+                        .HasColumnType("nvarchar(1)");
+
+                    b.Property<string>("PhoneNumberId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("ProviderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SchoolId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("WabaId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("WebhookSecretEncrypted")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderId");
+
+                    b.HasIndex("SchoolId");
+
+                    b.ToTable("SchoolWhatsappAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappBillingInvoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<decimal>("BaseAmountInr")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("GstInr")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<DateTime?>("IssuedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MessagesIncluded")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MessagesUsed")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("OverageAmountInr")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<int>("OverageMessages")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("PeriodEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("PeriodStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SchoolId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("SubscriptionId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TotalAmountInr")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubscriptionId");
+
+                    b.HasIndex("SchoolId", "Status");
+
+                    b.ToTable("WhatsappBillingInvoices", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappCostTracking", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("GrossMarginPct")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal>("GrossProfit")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("nvarchar(6)");
+
+                    b.Property<decimal>("PlatformChargedInr")
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<int>("ProviderConversations")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ProviderCostInr")
+                        .HasColumnType("decimal(12,4)");
+
+                    b.Property<int>("SchoolId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalMessagesDelivered")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId", "Period")
+                        .IsUnique();
+
+                    b.ToTable("WhatsappCostTrackings", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappPlan", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("BaseMonthlyPriceInr")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsCustom")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MonthlyQuota")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("OverageAllowed")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("OverageChargePerMessageInr")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<string>("PlanName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WhatsappPlans", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappPricingConfig", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("GstPct")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal>("MarkupPct")
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<int?>("PlanId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PlatformFeeInr")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("ServiceChargeInr")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UpdatedBy")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WhatsappPricingConfigs", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappProvider", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ApiBaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ApiVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("WebhookVerifyToken")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WhatsappProviders", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappProviderCost", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("AuthConversationCostInr")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("MarketingConversationCostInr")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<int>("ProviderId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ServiceConversationCostInr")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal>("UtilityConversationCostInr")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderId");
+
+                    b.ToTable("WhatsappProviderCosts", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappRenewalLedger", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AddedMessages")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ExpiredMessages")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NewBalance")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("PreviousBalance")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RenewalType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("SchoolId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SubscriptionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId", "ProcessedAt");
+
+                    b.ToTable("WhatsappRenewalLedgers", (string)null);
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappSubscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AccountId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("AutoRenew")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("CarryForwardMessages")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CarryForwardMonths")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CurrentPeriodEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CurrentPeriodStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MessagesQuota")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MessagesUsed")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("NextRenewalDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OveragePolicy")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("PlanId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RenewalPolicy")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("SchoolId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("SuspendedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SuspendedReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId")
+                        .IsUnique();
+
+                    b.HasIndex("NextRenewalDate");
+
+                    b.HasIndex("PlanId");
+
+                    b.HasIndex("SchoolId", "Status");
+
+                    b.ToTable("WhatsappSubscriptions", (string)null);
+                });
+
             modelBuilder.Entity("SmsApi.Models.CRM.SchoolBillPayment", b =>
                 {
                     b.HasOne("SmsApi.Models.CRM.SchoolBilling", "SchoolBilling")
@@ -155,6 +631,104 @@ namespace SmsApi.Migrations.Crm
                     b.Navigation("SchoolConfig");
                 });
 
+            modelBuilder.Entity("SmsApi.Models.CRM.SchoolWhatsappAccount", b =>
+                {
+                    b.HasOne("SmsApi.Models.CRM.WhatsappProvider", "Provider")
+                        .WithMany("SchoolAccounts")
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.CRM.SchoolConfig", "SchoolConfig")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
+
+                    b.Navigation("SchoolConfig");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappBillingInvoice", b =>
+                {
+                    b.HasOne("SmsApi.Models.CRM.SchoolConfig", "SchoolConfig")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.CRM.WhatsappSubscription", "Subscription")
+                        .WithMany("Invoices")
+                        .HasForeignKey("SubscriptionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("SchoolConfig");
+
+                    b.Navigation("Subscription");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappCostTracking", b =>
+                {
+                    b.HasOne("SmsApi.Models.CRM.SchoolConfig", "SchoolConfig")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("SchoolConfig");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappProviderCost", b =>
+                {
+                    b.HasOne("SmsApi.Models.CRM.WhatsappProvider", "Provider")
+                        .WithMany("Costs")
+                        .HasForeignKey("ProviderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Provider");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappRenewalLedger", b =>
+                {
+                    b.HasOne("SmsApi.Models.CRM.SchoolConfig", "SchoolConfig")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("SchoolConfig");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappSubscription", b =>
+                {
+                    b.HasOne("SmsApi.Models.CRM.SchoolWhatsappAccount", "Account")
+                        .WithOne("Subscription")
+                        .HasForeignKey("SmsApi.Models.CRM.WhatsappSubscription", "AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.CRM.WhatsappPlan", "Plan")
+                        .WithMany("Subscriptions")
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmsApi.Models.CRM.SchoolConfig", "SchoolConfig")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Plan");
+
+                    b.Navigation("SchoolConfig");
+                });
+
             modelBuilder.Entity("SmsApi.Models.CRM.SchoolBilling", b =>
                 {
                     b.Navigation("SchoolBillPayments");
@@ -163,6 +737,28 @@ namespace SmsApi.Migrations.Crm
             modelBuilder.Entity("SmsApi.Models.CRM.SchoolConfig", b =>
                 {
                     b.Navigation("SchoolBillings");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.SchoolWhatsappAccount", b =>
+                {
+                    b.Navigation("Subscription");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappPlan", b =>
+                {
+                    b.Navigation("Subscriptions");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappProvider", b =>
+                {
+                    b.Navigation("Costs");
+
+                    b.Navigation("SchoolAccounts");
+                });
+
+            modelBuilder.Entity("SmsApi.Models.CRM.WhatsappSubscription", b =>
+                {
+                    b.Navigation("Invoices");
                 });
 #pragma warning restore 612, 618
         }
