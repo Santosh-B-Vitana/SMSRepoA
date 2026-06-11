@@ -19,6 +19,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using SmsApi.Extensions;
 using SmsApi.Infrastructure.Performance;
 using SmsApi.Infrastructure.Resilience;
+using Hangfire;
 
 // ── Serilog bootstrap logger (captures startup/config errors) ──────────
 Log.Logger = new LoggerConfiguration()
@@ -113,6 +114,9 @@ builder.Services.AddApplicationServices(builder.Configuration, builder.Environme
 
 // ── Caching (Redis in prod, in-memory in dev) ─────────────────────────────────────
 builder.Services.AddCachingInfrastructure(builder.Configuration);
+
+// ── Firebase Admin SDK (FCM push notifications) ───────────────────────────────────
+builder.Services.AddFirebaseInfrastructure(builder.Configuration);
 // In-process memory cache (used by RBAC permission enforcement for short-TTL profile caching)
 builder.Services.AddMemoryCache();
 
@@ -128,6 +132,9 @@ builder.Services.AddProductionHttpsSecurity(builder.Environment);
 
 // ── Rate limiting (auth / global / uploads / reports / bulk / search / export) ───
 builder.Services.AddApiRateLimiting();
+
+// ── WhatsApp Communication Hub — Hangfire + services ──────────────────────────
+// (already included via AddApplicationServices → AddWhatsAppServices)
 
 // ── Controllers + ProblemDetails RFC 7807 ────────────────────────────────────────
 builder.Services.AddControllersInfrastructure();
@@ -255,6 +262,9 @@ app.UseMiddleware<SmsApi.Middleware.ApiResponseWrapperMiddleware>();
 app.MapHealthCheckEndpoints();
 
 app.MapControllers();
+
+// ── WhatsApp Communication Hub — Hangfire dashboard + recurring jobs ───────────
+app.UseWhatsAppHub();
 
 app.Run();
 

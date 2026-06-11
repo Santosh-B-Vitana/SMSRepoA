@@ -1,0 +1,31 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-01 · PROMPT-02  |  Parent Login (shared app)
+# Precondition: device has no stored tokens (fresh install / logout)
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+
+# ── School domain entry ─────────────────────────────────────
+- assertVisible: "Vitana SMS"
+- tapOn:
+    text: "yourschool.vitanasms.com"   # placeholder inside TextInput
+- inputText: "demo.vitanasms.com"
+- tapOn:
+    text: "Continue"
+
+# ── Login screen ────────────────────────────────────────────
+- assertVisible: "Sign in to your account"
+- tapOn:
+    id: "Username"
+- inputText: "demo.parent@demo.vitanasms.com"
+- tapOn:
+    id: "Password"
+- inputText: "Demo@12345"
+- tapOn:
+    text: "Sign In"
+
+# ── Post-login ───────────────────────────────────────────────
+- assertVisible: "Parent Dashboard"

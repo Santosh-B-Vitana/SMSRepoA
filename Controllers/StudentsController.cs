@@ -29,10 +29,11 @@ namespace SmsApi.Controllers
 
         /// <summary>
         /// Get all students for the authenticated user's school. Respects X-Academic-Year header for year-scoped filtering.
+        /// Use <c>?minimal=true</c> to get a lightweight projection (~200 bytes/student) for mobile attendance screens.
         /// </summary>
         [HttpGet]
         [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
-        public async Task<ActionResult<StudentListResponse>> GetStudents(
+        public async Task<ActionResult> GetStudents(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null,
@@ -41,15 +42,25 @@ namespace SmsApi.Controllers
             [FromQuery] string? status = null,
             [FromQuery] string? academicYear = null,
             [FromQuery] string? sortBy = null,
-            [FromQuery] string? sortOrder = null)
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] bool minimal = false)
         {
-            // Clamp pagination to safe bounds
             page = Math.Max(1, page);
-            pageSize = Math.Clamp(pageSize, 1, 2000);
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
-                // Resolve effective academic year from header or query param
+
+                // Minimal mode: lightweight projection for teacher attendance screens
+                if (minimal)
+                {
+                    pageSize = Math.Clamp(pageSize, 1, 200);
+                    var minimalResult = await _studentService.GetStudentsMinimalAsync(
+                        schoolId, classFilter, sectionFilter, page, pageSize);
+                    return Ok(minimalResult);
+                }
+
+                // Standard full-profile mode
+                pageSize = Math.Clamp(pageSize, 1, 2000);
                 var headerYear = HttpContext.Items["AcademicYearHeaderValue"] as string;
                 var effectiveYear = !string.IsNullOrWhiteSpace(academicYear) ? academicYear : headerYear;
                 var result = await _studentService.GetStudentsAsync(schoolId, page, pageSize, search, classFilter, sectionFilter, status, effectiveYear, sortBy, sortOrder);
@@ -59,7 +70,9 @@ namespace SmsApi.Controllers
             {
                 return Forbid(ex.Message);
             }
-            catch (Exception ex) { return StatusCode(500, new { message = "An error occurred while fetching students.", error = ex.Message });
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while fetching students.", error = ex.Message });
             }
         }
 

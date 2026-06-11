@@ -68,3 +68,39 @@ node_modules
 publish
 
 *.zip
+
+# Local secrets — never commit
+scripts/whatsapp/.env
+appsettings.Local.json
+
+# Production config with real credentials — use environment variables instead
+appsettings.Production.json
+appsettings.Staging.json
+
+# Frontend local environment files with API URLs / keys
+ui/.env.local
+ui/.env.production
+ui/.env.staging
+
+# Mobile app secrets
+mobile/.env
+mobile/.env.local
+mobile/.env.production
+mobile/google-services.json
+mobile/GoogleService-Info.plist
+*.p8
+
+# Firebase service account key (contains private key)
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
+
+# APNs private key
+*.p8
+
+# EAS secrets
+.eas/
+eas-secret.json
+
+# AWS credentials (should use IAM roles in production)
+.aws/credentials
+aws-credentials.json

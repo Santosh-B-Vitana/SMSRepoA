@@ -4,6 +4,7 @@ using SmsApi.Application.Common.Behaviors;
 using SmsApi.Infrastructure.Resilience;
 using SmsApi.Services;
 using SmsApi.Services.Cashfree;
+using SmsApi.Services.WhatsApp;
 
 namespace SmsApi.Extensions;
 
@@ -148,6 +149,15 @@ public static class ApplicationServicesExtensions
 
         // ── Performance monitoring helper ──────────────────────────────────
         services.AddScoped<SmsApi.Infrastructure.Performance.CachingStrategy>();
+
+        // ── WhatsApp Communication Hub ─────────────────────────────────────
+        services.AddWhatsAppServices(configuration);
+
+        // ── Mobile: app config, dashboard aggregation, push notifications ──
+        services.AddScoped<IMobileAppConfigService, MobileAppConfigService>();
+        services.AddScoped<IMobileDashboardService, MobileDashboardService>();
+        services.AddScoped<IFirebasePushService, FirebasePushService>();
+        services.AddTransient<SmsApi.BackgroundJobs.MobileDeviceTokenCleanupJob>();
 
         return services;
     }

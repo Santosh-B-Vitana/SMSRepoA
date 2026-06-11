@@ -1,0 +1,46 @@
+/**
+ * Maps push notification types to Expo Router routes.
+ * Kept in a separate module so it can be unit-tested without native module deps.
+ *
+ * Naming convention for role-scoped types:
+ *   <type>          — shared or single-role type
+ *   <type>_parent   — parent-specific variant (used when same logical event exists for multiple roles)
+ *   <type>_teacher  — teacher-specific variant
+ *
+ * new_message_parent / new_message_teacher: routes fall back to the notifications
+ * list until EP-15 (Communication & Messaging) ships the messages screens.
+ */
+export const DEEP_LINKS: Record<string, (data: Record<string, string>) => string> = {
+  // ── Parent ────────────────────────────────────────────────────────────────
+  fee_due: () => '/(parent)/fees',
+  fee_overdue: () => '/(parent)/fees',
+  fee_payment_confirmed: (d) => `/(parent)/fees/receipt/${d.paymentId}`,
+  attendance_absent: (d) => `/(parent)/attendance/${d.studentId}`,
+  attendance_shortage: (d) => `/(parent)/attendance/${d.studentId}`,
+  result_published: (d) => `/(parent)/results/${d.studentId}`,
+  report_card_ready: (d) => `/(parent)/results/${d.studentId}`,
+  new_announcement: (d) => `/(parent)/announcements/${d.announcementId}`,
+  new_diary_entry: (d) => `/(parent)/diary/${d.studentId}`,
+  leave_approved: () => '/(parent)/leaves',
+  leave_rejected: () => '/(parent)/leaves',
+  // TODO(EP-15): replace with /(parent)/messages/${d.conversationId} once messaging ships
+  new_message_parent: () => '/(parent)/notifications',
+
+  // ── Student ───────────────────────────────────────────────────────────────
+  assignment_graded: (d) => `/(student)/assignments/${d.assignmentId}`,
+  assignment_created: (d) => `/(student)/assignments/${d.assignmentId}`,
+
+  // ── Teacher ───────────────────────────────────────────────────────────────
+  leave_request_received: () => '/(teacher)/leaves',
+  timetable_change: () => '/(teacher)/timetable',
+  submission_received: (d) => `/(teacher)/assignments/${d.assignmentId}`,
+  // TODO(EP-15): replace with /(teacher)/messages/${d.conversationId} once messaging ships
+  new_message_teacher: () => '/(teacher)/notifications',
+
+  // ── Admin ─────────────────────────────────────────────────────────────────
+  billing_expiry_warning: () => '/(admin)/more',
+  billing_expired: () => '/(admin)/more',
+
+  // ── System ────────────────────────────────────────────────────────────────
+  silent_sync: () => '',
+};

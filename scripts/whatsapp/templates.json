@@ -1,0 +1,292 @@
+{
+  "language": "en",
+  "category": "UTILITY",
+  "footer": "Reply STOP to opt out",
+  "templates": [
+    {
+      "name": "student_absent",
+      "module": "attendance",
+      "body": "Dear {{1}}, this is an attendance notification from {{6}}. Your ward {{2}}, enrolled in class {{3}} section {{4}}, was marked absent on {{5}}. If your child attended school on this date, please contact the class teacher or school office immediately so we can update the records.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "10 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "late_arrival",
+      "module": "attendance",
+      "body": "Dear {{1}}, this is a notification from {{5}} regarding your ward {{2}}. The student arrived late to school on {{3}} at {{4}}. Regular punctuality helps maintain discipline and academic focus. Please ensure your child reaches school on time going forward.",
+      "sample": ["Parent Name", "Rahul Sharma", "10 Jun 2026", "9:45 AM", "Demo School"]
+    },
+    {
+      "name": "attendance_shortage",
+      "module": "attendance",
+      "body": "Dear {{1}}, this is an attendance advisory from {{7}}. The attendance percentage of {{2}}, class {{3}} section {{4}}, has fallen below the required {{5}}% threshold for {{6}}. Please ensure regular school attendance to avoid academic impact. Contact the school office for any concerns.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "75", "Jun 2026", "Demo School"]
+    },
+    {
+      "name": "monthly_attendance_report",
+      "module": "attendance",
+      "body": "Dear {{1}}, please find the monthly attendance summary from {{9}} for {{2}}, class {{3}} section {{4}}, for the period {{5}}. Days present: {{6}}, days absent: {{7}}, overall attendance: {{8}}%. For detailed records, please visit the parent portal or contact the class teacher.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "May 2026", "22", "3", "88", "Demo School"]
+    },
+    {
+      "name": "fee_due_reminder",
+      "module": "fees",
+      "body": "Dear {{1}}, this is a fee payment reminder from {{7}} for your ward {{3}}, class {{4}} section {{5}}. The outstanding school fee amount is Rs {{2}} and the payment due date is {{6}}. Kindly complete the payment at the earliest to avoid late charges. Contact the accounts office for payment assistance.",
+      "sample": ["Parent Name", "15000", "Rahul Sharma", "10", "A", "30 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "fee_overdue",
+      "module": "fees",
+      "body": "Dear {{1}}, this is an overdue fee notice from {{5}} regarding your ward {{3}}. The school fee of Rs {{2}} was due on {{4}} and remains unpaid. Please make the payment immediately to avoid further late fees or service restrictions. For payment options, contact the school accounts department.",
+      "sample": ["Parent Name", "15000", "Rahul Sharma", "15 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "payment_received",
+      "module": "fees",
+      "body": "Dear {{1}}, thank you for your payment to {{5}}. We confirm receipt of Rs {{2}} towards the school fee account of {{3}}. Your official receipt number is {{4}}. Please retain this message for your records. For any billing queries, contact the accounts office during school hours.",
+      "sample": ["Parent Name", "15000", "Rahul Sharma", "RCP-2026-001", "Demo School"]
+    },
+    {
+      "name": "online_payment_success",
+      "module": "fees",
+      "body": "Dear {{1}}, your online fee payment to {{5}} was processed successfully. Amount paid: Rs {{2}} for student {{3}}. Transaction reference number is {{4}}. The payment will reflect in the student fee ledger shortly. Please save this message as proof of payment.",
+      "sample": ["Parent Name", "15000", "Rahul Sharma", "TXN987654321", "Demo School"]
+    },
+    {
+      "name": "concession_applied",
+      "module": "fees",
+      "body": "Dear {{1}}, {{6}} has applied a fee concession of Rs {{2}} to the account of {{3}} for the billing period {{4}}. Your updated outstanding balance is Rs {{5}}. Please review the fee statement on the parent portal. Contact accounts office for any clarification.",
+      "sample": ["Parent Name", "2000", "Rahul Sharma", "Q2 2026-27", "13000", "Demo School"]
+    },
+    {
+      "name": "late_fee_applied",
+      "module": "fees",
+      "body": "Dear {{1}}, as per school fee policy, {{5}} has applied a late fee of Rs {{2}} to the outstanding balance for student {{3}}. The revised total amount due is now Rs {{4}}. Please clear the dues at the earliest to avoid additional charges. Contact accounts office for support.",
+      "sample": ["Parent Name", "500", "Rahul Sharma", "15500", "Demo School"]
+    },
+    {
+      "name": "exam_schedule",
+      "module": "exams",
+      "body": "Dear {{1}}, {{7}} has published the examination schedule for {{2}}, class {{3}} section {{4}}. Examinations begin on {{5}} under the assessment titled {{6}}. The complete subject-wise timetable is available on the parent portal. Please ensure your ward is prepared and arrives on time.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "20 Jul 2026", "Term 1", "Demo School"]
+    },
+    {
+      "name": "result_published",
+      "module": "exams",
+      "body": "Dear {{1}}, {{7}} has published academic results for {{2}}, class {{3}} section {{4}}, for {{5}}. Result summary: {{6}}. Detailed marks and teacher remarks are available on the parent portal. Please log in to review the complete report card with your child.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "Term 1 2026", "Passed with distinction", "Demo School"]
+    },
+    {
+      "name": "report_card_ready",
+      "module": "exams",
+      "body": "Dear {{1}}, the report card for {{2}}, class {{3}} section {{4}}, for the assessment period {{5}} is now ready for download on the parent portal at {{6}}. Please review the report with your ward and contact the class teacher if you need any clarification.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "Term 1 2026", "Demo School"]
+    },
+    {
+      "name": "online_exam_reminder",
+      "module": "exams",
+      "body": "Dear {{1}}, this is a reminder from {{6}} about the upcoming online examination {{2}} for student {{3}}. The exam starts at {{4}} on {{5}}. Please ensure a stable internet connection and a quiet environment. Join through the link provided on the student portal.",
+      "sample": ["Student Name", "Mathematics Unit Test", "Rahul Sharma", "10:00 AM", "12 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "assignment_graded",
+      "module": "exams",
+      "body": "Dear {{1}}, your assignment submission titled {{2}} for the subject {{3}} has been evaluated by the teacher at {{5}}. Your score for this assignment is {{4}}. Please review the feedback on the student portal and contact your subject teacher if you have questions.",
+      "sample": ["Student Name", "Science Project", "Science", "18/20", "Demo School"]
+    },
+    {
+      "name": "application_received",
+      "module": "admissions",
+      "body": "Dear {{1}}, thank you for applying to {{4}}. We have successfully received the admission application for student {{2}}. Your application reference number is {{3}}. Our admissions team will review your application and share the next steps shortly via this channel.",
+      "sample": ["Parent Name", "Ananya Sharma", "ADM-2026-042", "Demo School"]
+    },
+    {
+      "name": "interview_scheduled",
+      "module": "admissions",
+      "body": "Dear {{1}}, {{5}} has scheduled an admission interaction for applicant {{2}} on {{3}} at {{4}}. Please arrive at least fifteen minutes before the scheduled time with all required documents. For rescheduling, contact the admissions office during working hours.",
+      "sample": ["Parent Name", "Ananya Sharma", "18 Jun 2026", "10:30 AM", "Demo School"]
+    },
+    {
+      "name": "application_approved",
+      "module": "admissions",
+      "body": "Dear {{1}}, we are pleased to inform you that the admission application for {{2}} with reference {{3}} has been approved by {{5}}. Please complete the enrollment formalities and fee payment by {{4}} to secure the admission seat.",
+      "sample": ["Parent Name", "Ananya Sharma", "ADM-2026-042", "25 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "application_rejected",
+      "module": "admissions",
+      "body": "Dear {{1}}, thank you for your interest in {{4}}. After careful review, the admission application for {{2}} with reference number {{3}} was not successful in the current admission cycle. We appreciate your application and wish your family all the best.",
+      "sample": ["Parent Name", "Ananya Sharma", "ADM-2026-042", "Demo School"]
+    },
+    {
+      "name": "enrollment_confirmed",
+      "module": "admissions",
+      "body": "Dear {{1}}, enrollment is confirmed at {{7}} for student {{2}}. Admission number: {{3}}, assigned class {{4}} section {{5}}, academic year {{6}}. Welcome to our school community. Further orientation details will be shared through the parent portal.",
+      "sample": ["Parent Name", "Ananya Sharma", "2026-1042", "5", "B", "2026-27", "Demo School"]
+    },
+    {
+      "name": "leave_approved_staff",
+      "module": "leave",
+      "body": "Dear {{1}}, your {{2}} leave application from {{3}} to {{4}} has been reviewed and approved by the school administration at {{5}}. Please ensure your responsibilities are handed over as per department guidelines before your leave period begins.",
+      "sample": ["Staff Name", "Casual", "20 Jun 2026", "22 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "leave_rejected_staff",
+      "module": "leave",
+      "body": "Dear {{1}}, your {{2}} leave request from {{3}} to {{4}} could not be approved by {{6}} at this time. Reason provided: {{5}}. Please contact your reporting manager or HR office to discuss alternate arrangements or revised dates.",
+      "sample": ["Staff Name", "Casual", "20 Jun 2026", "22 Jun 2026", "Staff shortage", "Demo School"]
+    },
+    {
+      "name": "leave_approved_student",
+      "module": "leave",
+      "body": "Dear {{1}}, the leave request for student {{2}}, class {{3}} section {{4}}, from {{5}} to {{6}} has been approved by {{7}}. Please ensure your ward completes any missed classwork upon return. Contact the class teacher for academic catch-up support.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "20 Jun 2026", "22 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "leave_rejected_student",
+      "module": "leave",
+      "body": "Dear {{1}}, the leave request for student {{2}} from {{3}} to {{4}} was not approved by {{6}}. Reason: {{5}}. If you need to discuss this decision or submit a revised request, please contact the class teacher or school office.",
+      "sample": ["Parent Name", "Rahul Sharma", "20 Jun 2026", "22 Jun 2026", "Exam period", "Demo School"]
+    },
+    {
+      "name": "diary_posted",
+      "module": "diary",
+      "body": "Dear {{1}}, a new school diary entry has been posted by {{7}} for student {{2}}, class {{3}} section {{4}}, dated {{5}}. Subject area: {{6}}. Please review the entry on the parent portal and support your child with the noted activities or homework.",
+      "sample": ["Parent Name", "Rahul Sharma", "10", "A", "10 Jun 2026", "Mathematics", "Demo School"]
+    },
+    {
+      "name": "homework_reminder",
+      "module": "diary",
+      "body": "Dear {{1}}, this is a homework reminder from {{6}} for student {{2}}. Assignment details: {{3}} for subject {{4}}, submission due date is {{5}}. Please ensure the work is completed on time. Contact the subject teacher through the portal for any doubts.",
+      "sample": ["Parent Name", "Rahul Sharma", "Complete chapter 5 exercises", "Science", "12 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "urgent_announcement",
+      "module": "announcements",
+      "body": "Urgent notice from {{1}} dated {{3}}: {{2}}. This message requires your immediate attention. Please follow the instructions shared and contact the school office if you need clarification. Regards, {{4}}, school administration.",
+      "sample": ["Demo School", "School will close early today at 12 PM due to weather advisory", "10 Jun 2026", "Principal"]
+    },
+    {
+      "name": "general_announcement",
+      "module": "announcements",
+      "body": "Dear {{1}}, this is an official administrative notice from {{2}} for parents and guardians: {{3}}. This is a mandatory school communication regarding schedules, documents, or student records. Please review and take required action. For assistance, contact the school office during working hours. Notice issued by {{4}}, school administration.",
+      "sample": ["Parent", "Vitana Demo School", "Parent-teacher meeting for your ward is on 20 Jun 2026 at 9 AM. Attendance is required.", "Admin Office"]
+    },
+    {
+      "name": "school_admin_notice",
+      "module": "announcements",
+      "alias_of": "general_announcement",
+      "body": "Dear {{1}}, this is an official administrative notice from {{2}} for parents and guardians: {{3}}. This is a mandatory school communication regarding schedules, documents, or student records. Please review and take required action. For assistance, contact the school office during working hours. Notice issued by {{4}}, school administration.",
+      "sample": ["Parent", "Vitana Demo School", "Parent-teacher meeting for your ward is on 20 Jun 2026 at 9 AM. Attendance is required.", "Admin Office"]
+    },
+    {
+      "name": "holiday_notice",
+      "module": "announcements",
+      "deprecated": true,
+      "body": "Dear {{1}}, official closure notice from {{2}}: school operations are suspended on {{3}} due to {{4}}. Classes and transport resume on {{5}}. This is a mandatory schedule update for parents. Contact the school office for queries. Notice from {{6}}, administration.",
+      "sample": ["Parent", "Vitana Demo School", "15 Aug 2026", "scheduled public holiday per school calendar", "16 Aug 2026", "Admin Office"]
+    },
+    {
+      "name": "school_holiday_notice",
+      "module": "announcements",
+      "alias_of": "holiday_notice",
+      "body": "Dear {{1}}, official closure notice from {{2}}: school operations are suspended on {{3}} due to {{4}}. Classes and transport resume on {{5}}. This is a mandatory schedule update for parents. Contact the school office for queries. Notice from {{6}}, administration.",
+      "sample": ["Parent", "Vitana Demo School", "15 Aug 2026", "scheduled public holiday per school calendar", "16 Aug 2026", "Admin Office"]
+    },
+    {
+      "name": "school_closure",
+      "module": "emergency",
+      "body": "Important notice from {{5}}: {{1}} will remain closed on {{2}} due to {{3}}. All classes, activities, and transport services are cancelled for that day. The school is expected to resume normal operations on {{4}}. Please stay safe.",
+      "sample": ["Demo School", "11 Jun 2026", "heavy rainfall warning", "12 Jun 2026", "Principal"]
+    },
+    {
+      "name": "emergency_alert",
+      "module": "emergency",
+      "body": "Emergency alert from {{1}} issued at {{3}}: {{2}}. Please follow instructions from school authorities and avoid unnecessary visits to campus until further notice. Regards, {{4}}, school safety and administration team.",
+      "sample": ["Demo School", "Evacuation drill in progress. Please do not panic.", "10 Jun 2026 11:00 AM", "Principal"]
+    },
+    {
+      "name": "safety_notice",
+      "module": "emergency",
+      "body": "Safety notice from {{1}}, effective from {{3}}: {{2}}. This policy is issued for the wellbeing of all students and staff. Parents are requested to cooperate and contact the school office for any questions. Issued by {{4}}, school administration.",
+      "sample": ["Demo School", "Students must use designated entry gates only during morning hours", "10 Jun 2026", "Principal"]
+    },
+    {
+      "name": "bus_delayed",
+      "module": "transport",
+      "body": "Dear {{1}}, transport update from {{7}}: school bus {{2}} on route {{3}} carrying student {{4}} is running approximately {{5}} minutes late on {{6}}. We apologise for the inconvenience and are monitoring the situation. Contact transport desk for updates.",
+      "sample": ["Parent Name", "BUS-12", "Route 5", "Rahul Sharma", "20", "10 Jun 2026", "Demo School Transport"]
+    },
+    {
+      "name": "route_change",
+      "module": "transport",
+      "body": "Dear {{1}}, {{7}} has updated transport route {{2}} for bus {{3}}, effective from {{4}}. The revised pickup or drop timing for stop {{5}} is {{6}}. Please adjust your schedule accordingly. Contact the transport office for route maps.",
+      "sample": ["Parent Name", "Route 5", "BUS-12", "15 Jun 2026", "Main Gate Stop", "7:30 AM", "Demo School Transport"]
+    },
+    {
+      "name": "vehicle_breakdown",
+      "module": "transport",
+      "body": "Dear {{1}}, we regret to inform you that school bus {{2}} on route {{3}} has experienced a breakdown. Alternate transport arrangement is being organised for student {{4}}. The transport team at {{5}} will contact you with pickup details shortly.",
+      "sample": ["Parent Name", "BUS-12", "Route 5", "Rahul Sharma", "Demo School Transport"]
+    },
+    {
+      "name": "room_allotted",
+      "module": "hostel",
+      "body": "Dear {{1}}, {{6}} has allotted hostel room {{2}} to student {{3}} for academic year {{4}}. Scheduled check-in date is {{5}}. Please bring the required documents and belongings as per the hostel guidelines shared on the parent portal.",
+      "sample": ["Parent Name", "Block A - 204", "Rahul Sharma", "2026-27", "1 Jul 2026", "Demo School Hostel"]
+    },
+    {
+      "name": "hostel_fee_due",
+      "module": "hostel",
+      "body": "Dear {{1}}, this is a hostel fee reminder from {{5}} for student {{3}}. The outstanding hostel fee amount is Rs {{2}} and the payment due date is {{4}}. Please complete the payment promptly to keep the hostel account active.",
+      "sample": ["Parent Name", "45000", "Rahul Sharma", "30 Jun 2026", "Demo School Hostel"]
+    },
+    {
+      "name": "student_checkin",
+      "module": "hostel",
+      "body": "Dear {{1}}, this is a hostel update from {{6}}. Student {{2}} has checked {{3}} at the hostel premises on {{4}} at {{5}}. For any concerns regarding hostel stay, please contact the warden or hostel administration office.",
+      "sample": ["Parent Name", "Rahul Sharma", "in", "10 Jun 2026", "6:00 PM", "Demo School Hostel"]
+    },
+    {
+      "name": "salary_slip_ready",
+      "module": "payroll",
+      "body": "Dear {{1}}, your salary slip for the pay period {{2}} is now available on the staff portal at {{4}}. Net salary credited: Rs {{3}}. Please review the earnings and deductions details. Contact the HR accounts team for any payroll-related queries.",
+      "sample": ["Staff Name", "May 2026", "45000", "Demo School"]
+    },
+    {
+      "name": "payroll_processed",
+      "module": "payroll",
+      "body": "Dear {{1}}, payroll for {{2}} has been processed by {{5}}. Net amount Rs {{3}} will be credited to your registered bank account by {{4}}. Please verify the credit and report any discrepancy to the HR department within three working days.",
+      "sample": ["Staff Name", "May 2026", "45000", "5 Jun 2026", "Demo School"]
+    },
+    {
+      "name": "book_overdue",
+      "module": "library",
+      "body": "Dear {{1}}, library notice from {{6}}: the book titled {{2}} issued to student {{3}} is overdue by {{4}} days. Applicable fine amount is Rs {{5}}. Please return the book immediately to avoid further penalties and borrowing restrictions.",
+      "sample": ["Parent Name", "Science Fundamentals Vol 2", "Rahul Sharma", "7", "70", "Demo School Library"]
+    },
+    {
+      "name": "book_return_reminder",
+      "module": "library",
+      "body": "Dear {{1}}, friendly reminder from {{5}} to return the library book {{2}} borrowed by student {{3}}. The return due date is {{4}}. Timely return helps other students access library resources. Contact the librarian for renewal if needed.",
+      "sample": ["Student Name", "Science Fundamentals Vol 2", "Rahul Sharma", "15 Jun 2026", "Demo School Library"]
+    },
+    {
+      "name": "visitor_arrived",
+      "module": "visitor",
+      "body": "Dear {{1}}, visitor management update from {{5}}: visitor {{2}} has arrived at the school campus to meet student {{3}} at {{4}}. If you were not expecting this visit, please contact the school reception immediately for verification.",
+      "sample": ["Parent Name", "Mr. Sharma", "Rahul Sharma", "10 Jun 2026 2:30 PM", "Demo School"]
+    },
+    {
+      "name": "expected_visitor_checkin",
+      "module": "visitor",
+      "body": "Dear {{1}}, visitor management update from {{5}}: your expected visitor {{2}} has checked in at the school reception at {{3}} to meet student {{4}}. The visitor is being escorted as per school security protocol.",
+      "sample": ["Parent Name", "Mr. Sharma", "10 Jun 2026 2:30 PM", "Rahul Sharma", "Demo School"]
+    },
+    {
+      "name": "vitana_sms_test",
+      "module": "testing",
+      "body": "Dear {{1}}, this is a test message for Vitana SMS. We are verifying WhatsApp delivery for student {{2}} at {{3}}. If you received this message, the school notification system is working correctly. Regards, Vitana SMS Team.",
+      "sample": ["Parent", "Aradhana Raj", "Vitana Demo School"]
+    }
+  ]
+}

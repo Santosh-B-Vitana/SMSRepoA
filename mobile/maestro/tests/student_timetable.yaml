@@ -1,0 +1,37 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-05 · PROMPT-08  |  Student Timetable Navigation
+# Precondition: logged in as student
+# ────────────────────────────────────────────────────────────
+
+- runFlow: student_login.yaml
+
+# ── Navigate to Schedule tab ─────────────────────────────────
+- tapOn:
+    text: "Schedule"
+
+- assertVisible: "Timetable"
+
+# ── Day navigation ──────────────────────────────────────────
+- tapOn:
+    text: "Mon"
+- assertVisible: "Mon"
+
+- tapOn:
+    text: "Tue"
+- tapOn:
+    text: "Wed"
+- tapOn:
+    text: "Thu"
+- tapOn:
+    text: "Fri"
+
+# ── "View all" link from dashboard ──────────────────────────
+- tapOn:
+    text: "Home"
+
+- tapOn:
+    text: "Full →"
+
+- assertVisible: "Timetable"

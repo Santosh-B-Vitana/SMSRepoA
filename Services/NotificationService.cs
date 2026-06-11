@@ -71,10 +71,17 @@ namespace SmsApi.Services
     public class NotificationService : INotificationService
     {
         private readonly AppDbContext _db;
+        private readonly IFirebasePushService _push;
+        private readonly ILogger<NotificationService> _logger;
 
-        public NotificationService(AppDbContext db)
+        public NotificationService(
+            AppDbContext db,
+            IFirebasePushService push,
+            ILogger<NotificationService> logger)
         {
             _db = db;
+            _push = push;
+            _logger = logger;
         }
 
         // ── Helpers ─────────────────────────────
@@ -258,6 +265,12 @@ namespace SmsApi.Services
             _db.Notifications.Add(notification);
             await _db.SaveChangesAsync();
 
+            // Fire push delivery asynchronously — does not block the response
+            _ = DeliverPushAsync(
+                notification.Id, notification.SchoolId,
+                request.RecipientId, request.Type,
+                request.Title, request.Content);
+
             return ToResponse(notification);
         }
 
@@ -317,6 +330,15 @@ namespace SmsApi.Services
 
             _db.Notifications.AddRange(notifications);
             await _db.SaveChangesAsync();
+
+            // Fire push delivery for each recipient asynchronously
+            foreach (var notification in notifications)
+            {
+                _ = DeliverPushAsync(
+                    notification.Id, notification.SchoolId,
+                    notification.RecipientId, request.Type,
+                    request.Title, request.Content);
+            }
 
             return new BroadcastResult
             {
@@ -438,6 +460,68 @@ namespace SmsApi.Services
                 SentLast24Hours = last24h,
                 SentLast7Days = last7d
             };
+        }
+
+        // ── Push delivery (fire-and-forget) ──────────────────────────────────
+
+        private async Task DeliverPushAsync(
+            Guid notificationId, Guid schoolId, Guid recipientUserId,
+            string notificationType, string title, string content)
+        {
+            try
+            {
+                // Check if user has opted out of push for this notification type
+                var preference = await _db.UserNotificationPreferences
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.UserId == recipientUserId
+                                           && p.NotificationType == notificationType);
+
+                // Default: enabled. Only skip if explicitly disabled.
+                if (preference != null && !preference.PushEnabled)
+                    return;
+
+                // Get active device tokens for this user
+                var tokens = await _db.MobileDeviceTokens
+                    .AsNoTracking()
+                    .Where(t => t.UserId == recipientUserId && t.IsActive)
+                    .Select(t => new { t.NativeToken, t.Platform })
+                    .ToListAsync();
+
+                if (tokens.Count == 0)
+                    return;
+
+                var data = new Dictionary<string, string>
+                {
+                    ["notificationId"] = notificationId.ToString(),
+                    ["type"] = notificationType,
+                    ["schoolId"] = schoolId.ToString()
+                };
+
+                var (sent, failed) = await _push.SendMulticastAsync(
+                    tokens.Select(t => t.NativeToken), title, content, data);
+
+                // Log delivery results
+                var logs = tokens.Select((t, i) => new NotificationDeliveryLog
+                {
+                    NotificationId = notificationId,
+                    UserId = recipientUserId,
+                    Platform = t.Platform,
+                    DeliveryStatus = i < sent ? "Sent" : "Failed",
+                    AttemptedAt = DateTime.UtcNow
+                }).ToList();
+
+                _db.NotificationDeliveryLogs.AddRange(logs);
+                await _db.SaveChangesAsync();
+
+                _logger.LogDebug(
+                    "Push delivery for notification {Id}: {Sent} sent, {Failed} failed",
+                    notificationId, sent, failed);
+            }
+            catch (Exception ex)
+            {
+                // Never let push failure bubble up and affect the notification save
+                _logger.LogError(ex, "Push delivery error for notification {Id}", notificationId);
+            }
         }
     }
 }

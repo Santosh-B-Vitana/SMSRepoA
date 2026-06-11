@@ -90,6 +90,20 @@ const ParentDiaryView      = lazy(() => import("./pages/ParentDiaryView"));
 const SchoolManagement     = lazy(() => import("@/pages/superadmin/SchoolManagement"));
 const UserManagement       = lazy(() => import("@/pages/superadmin/UserManagement"));
 const SchoolOnboardingWizard = lazy(() => import("@/pages/superadmin/SchoolOnboardingWizard"));
+
+// ── WhatsApp Communication Hub — Super Admin ─────────────────────────────────
+const WhatsAppHubOverview    = lazy(() => import("@/pages/superadmin/WhatsAppHub/index"));
+const WhatsAppCostDashboard  = lazy(() => import("@/pages/superadmin/WhatsAppHub/CostDashboard"));
+const WhatsAppSubscriptions  = lazy(() => import("@/pages/superadmin/WhatsAppHub/Subscriptions"));
+const WhatsAppPricingConfig  = lazy(() => import("@/pages/superadmin/WhatsAppHub/PricingConfig"));
+const WhatsAppRenewalDashboard = lazy(() => import("@/pages/superadmin/WhatsAppHub/RenewalDashboard"));
+
+// ── WhatsApp Communication Hub — School Admin ─────────────────────────────────
+const WADashboard            = lazy(() => import("@/pages/admin/WhatsAppHub/index"));
+const WATemplates            = lazy(() => import("@/pages/admin/WhatsAppHub/Templates"));
+const WAMessageHistory       = lazy(() => import("@/pages/admin/WhatsAppHub/MessageHistory"));
+const WATestingConsole       = lazy(() => import("@/pages/admin/WhatsAppHub/TestingConsole"));
+const WASettings             = lazy(() => import("@/pages/admin/WhatsAppHub/Settings"));
 const ExamSummary          = lazy(() => import("@/pages/reports/ExamSummary"));
 const ExamPerformance      = lazy(() => import("@/pages/reports/ExamPerformance"));
 const StudentMarks         = lazy(() => import("@/pages/reports/StudentMarks"));
@@ -155,6 +169,20 @@ function App() {
                   <Route path="/superadmin/schools" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><SchoolManagement /></Layout></ProtectedRoute>} />
                   <Route path="/superadmin/users" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><UserManagement /></Layout></ProtectedRoute>} />
                   <Route path="/superadmin/onboard" element={<ProtectedRoute allowedRoles={['super_admin']}><SchoolOnboardingWizard /></ProtectedRoute>} />
+
+                  {/* ── WhatsApp Hub — Super Admin ────────────────────────── */}
+                  <Route path="/superadmin/whatsapp" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><WhatsAppHubOverview /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/whatsapp/costs" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><WhatsAppCostDashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/whatsapp/subscriptions" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><WhatsAppSubscriptions /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/whatsapp/pricing" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><WhatsAppPricingConfig /></Layout></ProtectedRoute>} />
+                  <Route path="/superadmin/whatsapp/renewals" element={<ProtectedRoute allowedRoles={['super_admin']}><Layout><WhatsAppRenewalDashboard /></Layout></ProtectedRoute>} />
+
+                  {/* ── WhatsApp Hub — School Admin ───────────────────────── */}
+                  <Route path="/whatsapp" element={<ProtectedRoute allowedRoles={['admin']}><Layout><WADashboard /></Layout></ProtectedRoute>} />
+                  <Route path="/whatsapp/templates" element={<ProtectedRoute allowedRoles={['admin']}><Layout><WATemplates /></Layout></ProtectedRoute>} />
+                  <Route path="/whatsapp/messages" element={<ProtectedRoute allowedRoles={['admin']}><Layout><WAMessageHistory /></Layout></ProtectedRoute>} />
+                  <Route path="/whatsapp/test" element={<ProtectedRoute allowedRoles={['admin']}><Layout><WATestingConsole /></Layout></ProtectedRoute>} />
+                  <Route path="/whatsapp/settings" element={<ProtectedRoute allowedRoles={['admin']}><Layout><WASettings /></Layout></ProtectedRoute>} />
 
                   {/* ── Protected: staff / admin (teacher-facing) ─────────── */}
                   <Route path="/staff-dashboard" element={<ProtectedRoute allowedRoles={['staff','admin']}><Layout><StaffDashboard /></Layout></ProtectedRoute>} />

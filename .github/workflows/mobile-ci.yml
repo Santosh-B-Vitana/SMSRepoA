@@ -1,0 +1,66 @@
+name: Mobile CI
+
+on:
+  push:
+    paths:
+      - 'mobile/**'
+      - 'packages/**'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'packages/**'
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared-types
+        run: pnpm --filter @vitana/shared-types build
+
+      - name: Build shared-utils
+        run: pnpm --filter @vitana/shared-utils build
+
+      - name: Lint mobile
+        run: pnpm --filter @vitana/mobile lint
+
+      - name: TypeScript check
+        run: pnpm --filter @vitana/mobile typecheck
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test shared-utils
+        run: pnpm --filter @vitana/shared-utils test --ci
+
+      - name: Test mobile
+        run: pnpm --filter @vitana/mobile test --ci

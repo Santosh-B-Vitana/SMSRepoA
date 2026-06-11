@@ -596,7 +596,7 @@ namespace SmsApi.Controllers
         // ========== LEGACY ENDPOINTS (backward compatibility) ==========
 
         [HttpGet("students")]
-        [Authorize(Roles = "Admin,Principal,Teacher,HRManager")]
+        [Authorize(Roles = "Admin,Principal,Teacher,HRManager,Student,Parent")]
         public async Task<ActionResult> GetStudentAttendances(
             [FromQuery] DateTime? date = null,
             [FromQuery] Guid? studentId = null,
@@ -605,6 +605,21 @@ namespace SmsApi.Controllers
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                // Student: restrict to own records only
+                if (userRole == "Student")
+                {
+                    var linkedId = _tenant.LinkedEntityId;
+                    if (linkedId.HasValue)
+                    {
+                        studentId = linkedId; // enforce own student only
+                    }
+                    else if (!studentId.HasValue)
+                    {
+                        return BadRequest(new { message = "studentId is required." });
+                    }
+                    // else: trust provided studentId (linkedEntityId not set in JWT)
+                }
                 var attendances = await _service.GetStudentAttendancesAsync(schoolId, date, studentId, classFilter);
                 return Ok(attendances);
             }

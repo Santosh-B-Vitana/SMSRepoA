@@ -1,0 +1,103 @@
+name: Build Dedicated School App
+
+on:
+  workflow_dispatch:
+    inputs:
+      school_id:
+        description: 'School ID (e.g. dps-rohini)'
+        required: true
+        type: string
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - android
+          - ios
+
+jobs:
+  prepare-school-assets:
+    name: Download & Inject School Assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: mobile
+
+      - name: Download and inject school assets
+        run: node scripts/inject-school-config.js ${{ inputs.school_id }}
+        working-directory: mobile
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Upload school assets as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-assets-${{ inputs.school_id }}
+          path: mobile/assets/school-assets/${{ inputs.school_id }}/
+
+  build-school-app:
+    name: EAS School App Build
+    needs: prepare-school-assets
+    runs-on: ubuntu-latest
+    environment: mobile-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download school assets
+        uses: actions/download-artifact@v4
+        with:
+          name: school-assets-${{ inputs.school_id }}
+          path: mobile/assets/school-assets/${{ inputs.school_id }}/
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: mobile
+
+      - name: Build school app
+        run: >
+          eas build
+          --platform ${{ inputs.platform }}
+          --profile school-production
+          --non-interactive
+        working-directory: mobile
+        env:
+          SCHOOL_ID: ${{ inputs.school_id }}
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          channel-id: mobile-builds
+          slack-message: "School app build ${{ job.status }}: ${{ inputs.school_id }} (${{ inputs.platform }})"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

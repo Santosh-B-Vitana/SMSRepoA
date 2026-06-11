@@ -1,0 +1,48 @@
+name: Mobile Staging Build
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'mobile/**'
+      - 'packages/**'
+
+jobs:
+  staging-build:
+    name: EAS Staging Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: mobile
+
+      - name: Build staging (both platforms)
+        run: eas build --platform all --profile staging --non-interactive --auto-submit
+        working-directory: mobile
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          channel-id: mobile-builds
+          slack-message: "Staging build ${{ job.status }}: ${{ github.sha }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

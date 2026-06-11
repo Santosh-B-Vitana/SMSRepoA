@@ -1,0 +1,38 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-05 · PROMPT-08  |  Student Login
+# Precondition: device has no stored tokens (fresh install / logout)
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+
+# ── School domain entry ─────────────────────────────────────
+- assertVisible: "Vitana SMS"
+- tapOn:
+    text: "yourschool.vitanasms.com"
+- inputText: "demo.vitanasms.com"
+- tapOn:
+    text: "Continue"
+
+# ── Login screen ────────────────────────────────────────────
+- assertVisible: "Sign in to your account"
+- tapOn:
+    id: "Username"
+- inputText: "demo.student"
+- tapOn:
+    id: "Password"
+- inputText: "Student@123"
+- tapOn:
+    text: "Sign In"
+
+# ── Post-login — Student Dashboard ─────────────────────────
+- assertVisible:
+    text: "Good"              # "Good morning" / "Good afternoon" / "Good evening"
+- assertVisible:
+    text: "Today's Schedule"
+- assertVisible:
+    text: "Schedule"         # bottom tab bar label
+- assertVisible:
+    text: "Assignments"      # bottom tab bar label

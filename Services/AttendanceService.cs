@@ -742,17 +742,17 @@ namespace SmsApi.Services
         public async Task<List<StudentAttendanceResponse>> GetStudentAttendancesAsync(
             Guid schoolId, DateTime? date, Guid? studentId, string? classFilter)
         {
-            var query = _context.StudentAttendances.Where(a => a.SchoolId == schoolId);
+            // Use AttendanceRecords (unified polymorphic table) with EntityType="Student"
+            var query = _context.AttendanceRecords
+                .AsNoTracking()
+                .Where(a => a.SchoolId == schoolId && a.EntityType == "Student");
 
             if (date.HasValue)
                 query = query.Where(a => a.Date.Date == date.Value.Date);
             if (studentId.HasValue)
                 query = query.Where(a => a.StudentId == studentId.Value);
 
-            // Deduplicate by (StudentId, Date) to get only the latest record for each student-date combo
             var attendances = await query
-                .GroupBy(a => new { a.StudentId, Date = a.Date.Date })
-                .Select(g => g.OrderByDescending(a => a.UpdatedAt).First())
                 .OrderByDescending(a => a.Date)
                 .Select(a => new StudentAttendanceResponse
                 {
