@@ -114,6 +114,9 @@ builder.Services.AddApplicationServices(builder.Configuration, builder.Environme
 
 // ── Caching (Redis in prod, in-memory in dev) ─────────────────────────────────────
 builder.Services.AddCachingInfrastructure(builder.Configuration);
+
+// ── Firebase Admin SDK (FCM push notifications) ───────────────────────────────────
+builder.Services.AddFirebaseInfrastructure(builder.Configuration);
 // In-process memory cache (used by RBAC permission enforcement for short-TTL profile caching)
 builder.Services.AddMemoryCache();
 

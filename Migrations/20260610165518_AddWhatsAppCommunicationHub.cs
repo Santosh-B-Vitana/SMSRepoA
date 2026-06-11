@@ -467,7 +467,7 @@ namespace SmsApi.Migrations
                         column: x => x.TemplateId,
                         principalTable: "WhatsappTemplates",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(

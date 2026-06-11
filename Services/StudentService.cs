@@ -96,6 +96,18 @@ namespace SmsApi.Services
         Task<ExitClearanceResponse> GetExitClearanceAsync(Guid studentId, Guid schoolId);
         Task<StudentExitResponse> ProcessDropoutAsync(Guid studentId, Guid schoolId, StudentDropoutRequest request, Guid processedBy);
         Task<StudentExitResponse> ProcessPassoutAsync(Guid studentId, Guid schoolId, StudentPassoutRequest request, Guid processedBy);
+
+        // ─── Mobile minimal list (teacher attendance screen) ─────────────────
+        /// <summary>
+        /// Returns a lightweight student list (~200 bytes/student) scoped to a class+section.
+        /// Used by the teacher's attendance screen where full profiles are unnecessary.
+        /// </summary>
+        Task<StudentMinimalListResponse> GetStudentsMinimalAsync(
+            Guid schoolId,
+            string? classFilter,
+            string? sectionFilter,
+            int page,
+            int pageSize);
     }
 
     public class StudentService : IStudentService
@@ -3744,6 +3756,60 @@ namespace SmsApi.Services
                 });
             }
             return result;
+        }
+
+        // ── Mobile minimal list ──────────────────────────────────────────────
+
+        public async Task<StudentMinimalListResponse> GetStudentsMinimalAsync(
+            Guid schoolId,
+            string? classFilter,
+            string? sectionFilter,
+            int page,
+            int pageSize)
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+#pragma warning disable CS0618
+            var query = _context.Students
+                .AsNoTracking()
+                .Where(s => s.SchoolId == schoolId && s.Status == "active");
+
+            if (!string.IsNullOrWhiteSpace(classFilter))
+                query = query.Where(s => s.Class == classFilter);
+
+            if (!string.IsNullOrWhiteSpace(sectionFilter))
+                query = query.Where(s => s.Section == sectionFilter);
+
+            var total = await query.CountAsync();
+
+            var students = await query
+                .OrderBy(s => s.RollNumber)
+                .ThenBy(s => s.FirstName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(s => new StudentMinimalDto
+                {
+                    Id = s.Id,
+                    FirstName = s.FirstName ?? s.Name,
+                    LastName = s.LastName ?? string.Empty,
+                    RollNumber = s.RollNumber,
+                    ProfilePhotoUrl = s.PhotoUrl,
+                    ClassName = s.Class,
+                    SectionName = s.Section,
+                    Gender = s.Gender
+                })
+                .ToListAsync();
+#pragma warning restore CS0618
+
+            return new StudentMinimalListResponse
+            {
+                Students = students,
+                Total = total,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+            };
         }
     }
 }

@@ -2,6 +2,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Asp.Versioning;
 using Microsoft.OpenApi.Models;
 using SmsApi.Data;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 
 namespace SmsApi.Extensions;
 
@@ -10,6 +12,51 @@ namespace SmsApi.Extensions;
 /// </summary>
 public static class InfrastructureExtensions
 {
+    /// <summary>
+    /// Initializes Firebase Admin SDK for FCM push delivery.
+    /// Skipped gracefully when credentials are not configured (dev/test environments).
+    /// </summary>
+    public static IServiceCollection AddFirebaseInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        try
+        {
+            // Accept service account JSON inline or as a file path
+            var serviceAccountJson = configuration["Firebase:ServiceAccountJson"];
+            var serviceAccountPath = configuration["Firebase:ServiceAccountPath"];
+
+            if (!string.IsNullOrWhiteSpace(serviceAccountJson))
+            {
+                FirebaseApp.Create(new AppOptions
+                {
+                    Credential = GoogleCredential.FromJson(serviceAccountJson)
+                });
+                Serilog.Log.Information("Firebase Admin SDK initialized from inline JSON");
+            }
+            else if (!string.IsNullOrWhiteSpace(serviceAccountPath)
+                     && System.IO.File.Exists(serviceAccountPath))
+            {
+                FirebaseApp.Create(new AppOptions
+                {
+                    Credential = GoogleCredential.FromFile(serviceAccountPath)
+                });
+                Serilog.Log.Information("Firebase Admin SDK initialized from file: {Path}", serviceAccountPath);
+            }
+            else
+            {
+                Serilog.Log.Warning("Firebase credentials not configured — push notifications will be skipped");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never prevent app startup due to Firebase configuration issues
+            Serilog.Log.Warning(ex, "Firebase Admin SDK initialization failed — push notifications will be skipped");
+        }
+
+        return services;
+    }
+
     /// <summary>
     /// Redis (production) or in-memory (dev) distributed cache.
     /// Used by: brute-force lockout, cache-aside queries, session data.

@@ -1,9 +1,12 @@
 ﻿using SmsApi.Models.Constants;
 using SmsApi.Models.DTOs;
+using SmsApi.Models.Entities;
 using SmsApi.Services;
+using SmsApi.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace SmsApi.Controllers
@@ -14,15 +17,20 @@ namespace SmsApi.Controllers
     public class NotificationsController : ControllerBase
     {
         private readonly INotificationService _notificationService;
+        private readonly AppDbContext _db;
         private readonly ITenantContext _tenant;
         private readonly ILogger<NotificationsController> _logger;
 
+        private const int MaxActiveDevicesPerUser = 2;
+
         public NotificationsController(
             INotificationService notificationService,
+            AppDbContext db,
             ITenantContext tenant,
             ILogger<NotificationsController> logger)
         {
             _notificationService = notificationService;
+            _db = db;
             _tenant = tenant;
             _logger = logger;
         }
@@ -242,34 +250,91 @@ namespace SmsApi.Controllers
         }
 
         /// <summary>
-        /// Registers a mobile device push notification token (FCM/APNs) for the current user.
-        /// Called by the React Native mobile app on first launch after login.
+        /// Registers or updates a mobile device push notification token (FCM/APNs).
+        /// Idempotent: calling twice with the same deviceId updates the token rather than duplicating.
+        /// A user may have at most 2 active devices; older excess tokens are deactivated.
         /// </summary>
         [HttpPost("register-device")]
-        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
-        public async Task<ActionResult> RegisterDeviceToken([FromBody] RegisterDeviceTokenRequest request)
+        [ProducesResponseType(typeof(RegisterDeviceTokenResponse), 200)]
+        public async Task<ActionResult<RegisterDeviceTokenResponse>> RegisterDeviceToken(
+            [FromBody] RegisterDeviceTokenRequest request)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(request.DeviceToken))
-                    return BadRequest(new { message = "Device token is required." });
+                if (string.IsNullOrWhiteSpace(request.NativeToken))
+                    return BadRequest(new { message = "NativeToken is required." });
 
                 if (request.Platform != "android" && request.Platform != "ios")
                     return BadRequest(new { message = "Platform must be 'android' or 'ios'." });
+
+                if (string.IsNullOrWhiteSpace(request.DeviceId))
+                    return BadRequest(new { message = "DeviceId is required." });
 
                 var userId = GetUserId();
                 if (userId == null) return Unauthorized(new { message = "User identity not found." });
 
                 var schoolId = GetSchoolId();
 
-                // Store the device token (best-effort — failures are non-critical)
-                _logger.LogInformation(
-                    "Device token registered: userId={UserId}, platform={Platform}, schoolId={SchoolId}",
-                    userId, request.Platform, schoolId);
+                // Upsert: update if (UserId, DeviceId) exists, else insert
+                var existing = await _db.MobileDeviceTokens
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.UserId == userId.Value && t.DeviceId == request.DeviceId);
 
-                // TODO: persist to a DeviceTokens table or pass to FCM/APNs service
-                // For now, log and acknowledge — implement persistence when push service is wired up
-                return Ok(new { message = "Device token registered successfully." });
+                bool isNew = existing == null;
+
+                if (existing != null)
+                {
+                    existing.NativeToken = request.NativeToken;
+                    existing.Platform = request.Platform;
+                    existing.AppVersion = request.AppVersion;
+                    existing.LastActiveAt = DateTime.UtcNow;
+                    existing.IsActive = true;
+                    existing.IsDeleted = false;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _db.MobileDeviceTokens.Add(new MobileDeviceToken
+                    {
+                        UserId = userId.Value,
+                        SchoolId = schoolId,
+                        DeviceId = request.DeviceId,
+                        NativeToken = request.NativeToken,
+                        Platform = request.Platform,
+                        AppVersion = request.AppVersion,
+                        IsActive = true,
+                        LastActiveAt = DateTime.UtcNow
+                    });
+                }
+
+                await _db.SaveChangesAsync();
+
+                // Enforce max 2 active devices: deactivate oldest excess tokens
+                var allActiveTokens = await _db.MobileDeviceTokens
+                    .Where(t => t.UserId == userId.Value && t.IsActive)
+                    .OrderByDescending(t => t.LastActiveAt)
+                    .ToListAsync();
+
+                if (allActiveTokens.Count > MaxActiveDevicesPerUser)
+                {
+                    var toDeactivate = allActiveTokens.Skip(MaxActiveDevicesPerUser).ToList();
+                    foreach (var token in toDeactivate)
+                    {
+                        token.IsActive = false;
+                        token.UpdatedAt = DateTime.UtcNow;
+                    }
+                    await _db.SaveChangesAsync();
+                }
+
+                _logger.LogInformation(
+                    "Device token {Action}: userId={UserId}, platform={Platform}, deviceId={DeviceId}",
+                    isNew ? "registered" : "updated", userId.Value, request.Platform, request.DeviceId);
+
+                return Ok(new RegisterDeviceTokenResponse
+                {
+                    Message = isNew ? "Device token registered successfully." : "Device token updated successfully.",
+                    IsNew = isNew
+                });
             }
             catch (Exception ex)
             {
@@ -277,13 +342,100 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { message = "An error occurred." });
             }
         }
+
+        /// <summary>
+        /// Returns all notification type preferences for the current user.
+        /// Notification types not listed here default to enabled.
+        /// </summary>
+        [HttpGet("preferences")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
+        [ProducesResponseType(typeof(NotificationPreferencesResponse), 200)]
+        public async Task<ActionResult<NotificationPreferencesResponse>> GetNotificationPreferences()
+        {
+            try
+            {
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+
+                var prefs = await _db.UserNotificationPreferences
+                    .AsNoTracking()
+                    .Where(p => p.UserId == userId.Value)
+                    .ToListAsync();
+
+                return Ok(new NotificationPreferencesResponse
+                {
+                    Preferences = prefs.Select(p => new NotificationPreferenceDto
+                    {
+                        NotificationType = p.NotificationType,
+                        PushEnabled = p.PushEnabled,
+                        EmailEnabled = p.EmailEnabled
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching notification preferences");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
+
+        /// <summary>
+        /// Creates or updates the push/email preference for a specific notification type.
+        /// Valid types: Fee, Attendance, Exam, Assignment, Announcement, Leave, General, etc.
+        /// </summary>
+        [HttpPut("preferences/{notificationType}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
+        [ProducesResponseType(typeof(NotificationPreferenceDto), 200)]
+        public async Task<ActionResult<NotificationPreferenceDto>> UpdateNotificationPreference(
+            string notificationType,
+            [FromBody] UpdateNotificationPreferenceRequest request)
+        {
+            try
+            {
+                if (!SmsApi.Services.NotificationConstants.ValidTypes.Contains(notificationType))
+                    return BadRequest(new { message = $"Invalid notification type '{notificationType}'." });
+
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+
+                var schoolId = GetSchoolId();
+
+                var existing = await _db.UserNotificationPreferences
+                    .FirstOrDefaultAsync(p => p.UserId == userId.Value
+                                           && p.NotificationType == notificationType);
+
+                if (existing != null)
+                {
+                    existing.PushEnabled = request.PushEnabled;
+                    existing.EmailEnabled = request.EmailEnabled;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _db.UserNotificationPreferences.Add(new UserNotificationPreference
+                    {
+                        UserId = userId.Value,
+                        SchoolId = schoolId,
+                        NotificationType = notificationType,
+                        PushEnabled = request.PushEnabled,
+                        EmailEnabled = request.EmailEnabled
+                    });
+                }
+
+                await _db.SaveChangesAsync();
+
+                return Ok(new NotificationPreferenceDto
+                {
+                    NotificationType = notificationType,
+                    PushEnabled = request.PushEnabled,
+                    EmailEnabled = request.EmailEnabled
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating notification preference for type {Type}", notificationType);
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
     }
 }
-
-/// <summary>
-/// Request DTO for mobile push notification device token registration.
-/// </summary>
-public record RegisterDeviceTokenRequest(
-    string DeviceToken,
-    string Platform  // "android" | "ios"
-);

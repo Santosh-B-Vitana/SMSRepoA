@@ -1,0 +1,49 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-05 · PROMPT-08  |  Student Leave Application
+# Precondition: logged in as student
+# ────────────────────────────────────────────────────────────
+
+- runFlow: student_login.yaml
+
+# ── Navigate to More → Leave ─────────────────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "Leave Applications"
+- tapOn:
+    text: "Leave Applications"
+
+# ── Leave status screen ─────────────────────────────────────
+- assertVisible: "Leave Applications"
+- tapOn:
+    text: "Apply"
+
+# ── Leave application form ──────────────────────────────────
+- assertVisible: "Apply Leave"
+
+- tapOn:
+    id: "fromDate"
+- inputText: "2026-08-01"
+
+- tapOn:
+    id: "toDate"
+- inputText: "2026-08-02"
+
+- tapOn:
+    id: "reason"
+- inputText: "Medical appointment — dental checkup"
+
+- tapOn:
+    text: "Submit Request"
+
+# ── Success ─────────────────────────────────────────────────
+- assertVisible:
+    text: "submitted"
+
+# ── Back to leave list — should show new Pending entry ──────
+- tapOn:
+    text: "OK"
+
+- assertVisible: "Pending"

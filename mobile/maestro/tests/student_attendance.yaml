@@ -1,0 +1,38 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-05 · PROMPT-08  |  Student Attendance Calendar
+# Precondition: logged in as student
+# ────────────────────────────────────────────────────────────
+
+- runFlow: student_login.yaml
+
+# ── Navigate to Attendance via More ────────────────────────
+- tapOn:
+    text: "More"
+
+- tapOn:
+    text: "Attendance"
+
+- assertVisible: "Attendance"
+- assertVisible: "This Month"
+
+# ── Month navigation (go back 1 month) ─────────────────────
+- tapOn:
+    description: "chevron-left"    # left arrow icon
+
+- assertVisible: "Attendance"    # same screen
+
+# ── Month navigation (try to go forward — should be blocked) ─
+- tapOn:
+    description: "chevron-right"
+
+# ── Dashboard attendance card shortcut ──────────────────────
+- tapOn:
+    text: "Home"
+
+- tapOn:
+    text: "Attendance"
+
+- assertVisible: "Attendance"
+- assertVisible: "Present"

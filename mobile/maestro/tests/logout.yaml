@@ -1,0 +1,25 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-01 · PROMPT-02  |  Logout
+# Precondition: user is already logged in as a Parent
+#   (run login_parent.yaml first, or set state via runFlow)
+# ────────────────────────────────────────────────────────────
+
+- runFlow: login_parent.yaml
+
+# ── Navigate to profile / more menu ─────────────────────────
+- tapOn:
+    text: "More"
+
+- tapOn:
+    text: "Sign Out"
+
+# ── Should land back on login screen ────────────────────────
+- assertVisible: "Sign in to your account"
+
+# ── Confirm tokens are cleared (re-open app should show login) ─
+- launchApp:
+    clearState: false
+
+- assertVisible: "Sign in to your account"

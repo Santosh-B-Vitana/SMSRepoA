@@ -53,7 +53,7 @@ namespace SmsApi.Controllers
         // GET /api/announcements
         // ──────────────────────────────────────────────────
         [HttpGet]
-        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         [ProducesResponseType(typeof(AnnouncementListResponse), 200)]
         public async Task<ActionResult<AnnouncementListResponse>> GetAnnouncements(
             [FromQuery] bool?   isActive      = null,

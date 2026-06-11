@@ -130,12 +130,10 @@ public class TokenService : ITokenService
 
         var validationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = false, // We're validating expired tokens for refresh
+            ValidateIssuer = false,       // Skip issuer check for refresh — token was already issued by us
+            ValidateAudience = false,     // Skip audience check for refresh — only extracting userId
+            ValidateLifetime = false,     // We're validating expired tokens for refresh
             ValidateIssuerSigningKey = true,
-            ValidIssuer = issuer,
-            ValidAudience = audience,
             IssuerSigningKey = new SymmetricSecurityKey(key),
             ClockSkew = TimeSpan.Zero
         };

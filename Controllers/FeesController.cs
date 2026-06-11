@@ -377,12 +377,28 @@ namespace SmsApi.Controllers
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
 
-                // Parent role: must provide a studentId and must be a linked guardian
                 var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
-                if (userRole == "Parent" || userRole == "Student")
+                if (userRole == "Student")
+                {
+                    // Student: restrict to a single studentId.
+                    // If linkedEntityId is available in JWT, enforce it; otherwise trust provided studentId.
+                    var linkedId = _tenant.LinkedEntityId;
+                    if (linkedId.HasValue)
+                    {
+                        if (!studentId.HasValue)
+                            studentId = linkedId;
+                        else if (linkedId != studentId.Value)
+                            return StatusCode(403, new { message = "Students can only access their own fee records." });
+                    }
+                    else if (!studentId.HasValue)
+                    {
+                        return BadRequest(new { message = "studentId is required for Student role." });
+                    }
+                }
+                else if (userRole == "Parent")
                 {
                     if (!studentId.HasValue)
-                        return BadRequest(new { message = "studentId is required for Parent/Student role." });
+                        return BadRequest(new { message = "studentId is required for Parent role." });
 
                     var parentEmail = _tenant.UserEmail ?? string.Empty;
                     var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId.Value);
@@ -3302,6 +3318,90 @@ namespace SmsApi.Controllers
                 payments  = results,
                 errors    = errors.Count > 0 ? errors : (object?)null,
             });
+        }
+
+        /// <summary>
+        /// Mobile-optimised Cashfree payment initiation.
+        /// Returns a paymentSessionId compatible with the Cashfree React Native SDK.
+        /// Parents may only pay for their own children (guardian-student link is verified).
+        /// Students may only initiate payments for their own account.
+        /// </summary>
+        [HttpPost("payments/mobile-initiate")]
+        [Authorize(Roles = "Parent,Student")]
+        [ProducesResponseType(typeof(MobilePaymentInitiateResponse), 200)]
+        public async Task<ActionResult<MobilePaymentInitiateResponse>> MobileInitiatePayment(
+            [FromBody] MobilePaymentInitiateRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+                var userEmail = _tenant.UserEmail ?? string.Empty;
+
+                // Ownership validation
+                if (userRole == "Parent")
+                {
+                    // Verify this guardian is linked to the requested student
+                    var isLinked = await _parentAuth.CanAccessStudentAsync(schoolId, userEmail, request.StudentId);
+                    if (!isLinked)
+                        return Forbid("You are not authorised to make payments for this student.");
+                }
+                else if (userRole == "Student")
+                {
+                    // Student may only pay for themselves
+                    var student = await _context.Students
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == userEmail);
+
+                    if (student == null || student.Id != request.StudentId)
+                        return Forbid("Students may only initiate payments for their own account.");
+                }
+
+                // Build the payment initiation request
+                var initReq = new InitiatePaymentRequest
+                {
+                    SchoolId = schoolId,
+                    PayerId = request.StudentId,
+                    PayerType = PaymentGatewayConstants.PayerStudent,
+                    Amount = request.Amount,
+                    Purpose = request.Purpose,
+                    ReferenceId = request.FeeRecordId,
+                    ReferenceType = request.FeeRecordId.HasValue ? "FeeRecord" : null,
+                    CustomerName = request.CustomerName,
+                    CustomerEmail = request.CustomerEmail,
+                    CustomerPhone = request.CustomerPhone
+                };
+
+                var result = await _paymentGatewayService.InitiatePaymentAsync(schoolId, initReq);
+
+                if (string.IsNullOrEmpty(result.PaymentSessionId))
+                    return StatusCode(502, new { message = "Payment gateway did not return a session ID. Please try again." });
+
+                return Ok(new MobilePaymentInitiateResponse
+                {
+                    CfOrderId = result.GatewayOrderId ?? string.Empty,
+                    PaymentSessionId = result.PaymentSessionId,
+                    Amount = result.Amount,
+                    Currency = result.Currency,
+                    TransactionId = result.Id
+                });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initiating mobile payment for student {StudentId}", request.StudentId);
+                return StatusCode(500, new { message = "An error occurred while initiating payment." });
+            }
         }
     }
 

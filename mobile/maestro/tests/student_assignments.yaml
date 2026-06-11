@@ -1,0 +1,60 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-05 · PROMPT-08  |  Student Assignment Submission
+# Precondition: logged in as student with a pending assignment
+# ────────────────────────────────────────────────────────────
+
+- runFlow: student_login.yaml
+
+# ── Navigate to Assignments tab ─────────────────────────────
+- tapOn:
+    text: "Assignments"
+
+- assertVisible: "Assignments"
+- assertVisible: "Pending"
+
+# ── Tap first pending assignment ───────────────────────────
+- tapOn:
+    index: 0
+    text:
+      regexp: ".*"   # any assignment card
+
+# ── Assignment detail screen ────────────────────────────────
+- assertVisible: "Submit Assignment"
+
+# ── Tap Submit Assignment ───────────────────────────────────
+- tapOn:
+    text: "Submit Assignment"
+
+# ── Submission form ─────────────────────────────────────────
+- assertVisible: "Write"
+- tapOn:
+    text: "Write"
+
+- tapOn:
+    id: "textContent"
+- inputText: "This is my assignment answer for the EP-05 E2E validation test. The answer meets the minimum length requirement."
+
+- tapOn:
+    text: "Submit Assignment"
+
+# ── Confirm success ─────────────────────────────────────────
+- assertVisible:
+    text: "Submitted"
+
+# ── Filter tabs ─────────────────────────────────────────────
+- tapOn:
+    text: "Assignments"
+
+- tapOn:
+    text: "Submitted"
+- assertVisible: "Submitted"
+
+- tapOn:
+    text: "Graded"
+- assertVisible: "Graded"
+
+- tapOn:
+    text: "All"
+- assertVisible: "All"

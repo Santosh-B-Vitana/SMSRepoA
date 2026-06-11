@@ -27,7 +27,7 @@ namespace SmsApi.Controllers
         /// Get timetables for the authenticated user's school. Respects X-Academic-Year header for year-scoped filtering.
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         [ProducesResponseType(200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(403)]

@@ -17,14 +17,21 @@ Every school using Vitana at the Enterprise tier can have its own dedicated mobi
 
 All of this comes from **one codebase** with build-time configuration injection.
 
+> **CRITICAL:** Each school gets **ONE white-label binary** — not three. Parents, teachers, students, and admins at that school all use the same branded app (`com.<school>.sms`). After login the JWT role routes them to the appropriate portal inside that one binary.
+>
+> Do NOT build separate parent/teacher/student binaries per school. The role-based portal routing (RBAC) already handles separating the experience.
+
 ---
 
 ## 2. App Variants
 
-| Variant | Package Name / Bundle ID | Branding | School | How Generated |
+| Variant | Package Name / Bundle ID | Branding | Users Served | How Generated |
 |---|---|---|---|---|
-| **Shared Vitana App** | `com.vitana.sms` | Vitana brand | Multi-school (user selects) | Static build |
-| **Dedicated School App** | `com.<schoolcode>.sms` | School brand | Single school (hardcoded) | EAS build with school profile |
+| **Shared Vitana App** | `com.vitana.sms` | Vitana brand | All schools, all roles | Static build |
+| **Dedicated School App** | `com.<schoolcode>.sms` | School brand | All roles at that school | EAS build with `SCHOOL_ID` |
+
+> Each variant is **one binary**. Role-based portal routing (RBAC) handles separating the parent, teacher, student, and admin experiences inside that binary.
+> There is no "parent binary", "teacher binary", or "student binary".
 
 ---
 

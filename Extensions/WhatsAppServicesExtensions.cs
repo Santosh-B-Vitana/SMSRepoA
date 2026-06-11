@@ -85,13 +85,22 @@ public static class WhatsAppServicesExtensions
     public static WebApplication UseWhatsAppHub(this WebApplication app)
     {
         // Hangfire dashboard — super_admin only
-        app.UseHangfireDashboard("/hangfire", new DashboardOptions
+        try
         {
-            Authorization = new[] { new HangfireSuperAdminAuthFilter() },
-            DashboardTitle = "Vitana SMS — Background Jobs"
-        });
+            app.UseHangfireDashboard("/hangfire", new DashboardOptions
+            {
+                Authorization = new[] { new HangfireSuperAdminAuthFilter() },
+                DashboardTitle = "Vitana SMS — Background Jobs"
+            });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Hangfire dashboard registration failed — skipping");
+        }
 
-        // Schedule recurring WhatsApp jobs
+        // Schedule recurring WhatsApp jobs (skip gracefully if Hangfire schema not ready)
+        try
+        {
         RecurringJob.AddOrUpdate<WhatsAppMessageProcessorJob>(
             "whatsapp-message-processor",
             job => job.ProcessBatchAsync(CancellationToken.None),
@@ -132,6 +141,18 @@ public static class WhatsAppServicesExtensions
             "whatsapp-invoice-generator",
             job => job.RunAsync(CancellationToken.None),
             "0 2 1 * *");
+
+        // ── Mobile: stale FCM/APNs token cleanup (NFR-5, EP-06) ──────────────
+        RecurringJob.AddOrUpdate<SmsApi.BackgroundJobs.MobileDeviceTokenCleanupJob>(
+            "mobile-token-cleanup",
+            job => job.RunAsync(CancellationToken.None),
+            Cron.Weekly(DayOfWeek.Sunday, 2, 0),
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Hangfire recurring job registration failed — WhatsApp Hub jobs not scheduled (Hangfire schema may not be set up)");
+        }
 
         return app;
     }

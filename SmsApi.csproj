@@ -104,6 +104,9 @@
 
     <!-- Swagger -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+
+    <!-- Firebase Admin SDK (FCM push notifications) -->
+    <PackageReference Include="FirebaseAdmin" Version="3.1.0" />
   </ItemGroup>
 
   <ItemGroup>
