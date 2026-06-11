@@ -1,279 +1,583 @@
-# PROMPT-13: Examinations & Marks Entry Implementation
+# PROMPT-13: Examinations & Marks Entry
 
-> **Prompt ID:** PROMPT-13  
-> **Epic:** EP-08 — Examinations & Results + EP-14 — Teacher Marks & Assignments  
-> **Phase:** 3 — Sprint 14  
-> **Estimated Story Points:** 35  
-> **Prerequisites:** PROMPT-01, PROMPT-02, PROMPT-04 (SQLite foundation) complete  
-> **Related Architecture Docs:** [epics/EP-08-examinations](../epics/EP-08-examinations.md) · [epics/EP-14-teacher-marks-assignments](../epics/EP-14-teacher-marks-assignments.md)
-
----
-
-## Context
-
-Build the complete examinations module covering teacher marks entry, parent/student results viewing, assignment management, and class performance analytics.
-
-**Backend context:**
-- `GET /api/examinations/exams` — all exams for the academic year.
-- `GET /api/examinations/exam-setup?classId=X` — exam subjects and max marks.
-- `GET /api/examinationreports/student-marks/{examId}?classId=X&subjectId=Y` — existing marks for a class.
-- `PUT /api/examinations/results/bulk` — submit marks. Body: `{ examId, classId, subjectId, results: [{ studentId, marks, practicalMarks? }] }`.
-- `GET /api/examinations/results?studentId=X` — published results for a student.
-- `GET /api/examinations/report-cards/{studentId}` — report card with PDF URL.
-- `GET /api/examinationreports/exam-performance/{examId}?classId=X` — class analytics.
-
-**SQLite:** `marksDrafts` table exists (from PROMPT-12 schema). Use it for auto-save.
+> **Version**: 2.0 — Full 10-Phase Anatomy  
+> **Epic**: EP-08 (Examinations) + EP-14 (Teacher Marks & Assignments)  
+> **Sprint**: 14 (Weeks 27–28)  
+> **Story Points**: 35  
+> **Prerequisites**: PROMPT-04 ✓ (SQLite), PROMPT-12 ✓ (marksDrafts table)  
+> **Parallel**: PROMPT-09 (Admin Portal) — different engineer
 
 ---
 
-## Requirements
+## PHASE 1: Context & Scope
 
-### PART A: Teacher Marks Entry
+### What We're Building
 
-#### Screen: Pending Exams List (`/(teacher)/marks/`)
+Complete examinations module: teacher marks entry grid with offline draft, class performance analytics, and assignment creation/grading. Parents and students already see results from PROMPT-03/08 — this prompt builds the teacher-side entry and the full assignment management workflow.
 
-- List of exams with incomplete marks entry for teacher's assigned classes.
-- Each exam card: name, date, "X/Y classes entered" progress.
-- Sorted: closest exam date first.
-- Tap → class selection for that exam.
+**Capabilities:**
+- Teacher: pending exams list with marks entry status
+- Teacher: marks entry grid (FlashList, 40+ students, offline draft)
+- Teacher: theory + practical marks on separate columns
+- Teacher: class performance after submission (avg, highest, lowest, grade distribution)
+- Teacher: create assignment + view submissions
+- Teacher: grade student submission with marks + feedback
+- Grade computation client-side (instant feedback while entering)
 
-#### Screen: Class Selection (`/(teacher)/marks/[examId]`)
+### Success Criteria
 
-- Teacher's assigned classes for this exam.
-- Each class shows subject list (multiple subjects per class if multi-subject teacher).
-- Status per class-subject: "Not started" / "Draft saved" / "Submitted".
-- Tap class-subject → marks entry grid.
+- [ ] Marks grid renders 40 students in < 500ms (FlashList)
+- [ ] Invalid marks (> max) show red border, prevent submission
+- [ ] Grade badge updates instantly on marks change (client-side compute)
+- [ ] Draft auto-saves to SQLite every 30 seconds (debounced)
+- [ ] Closing grid mid-entry and reopening shows draft with "Draft loaded" toast
+- [ ] Offline submission queued and synced on reconnect
+- [ ] Theory + Practical columns appear only for applicable exam types
+- [ ] Assignment created → students receive push notification (backend sends)
+- [ ] Grading a submission → student receives push notification
 
-#### Screen: Marks Entry Grid (`/(teacher)/marks/[examId]/[classId]/[subjectId]`)
+---
 
-**This is the most complex screen. Build it carefully.**
+## PHASE 2: Analysis Phase
 
-```
-Header: Class 8A — Unit Test 2 — Mathematics
-        Max Theory: 25  Max Practical: N/A
-        Progress: 18/30 students filled
-────────────────────────────────────────────────
-[← Draft from 10:42 AM]  [All Present]  [AB All]
-────────────────────────────────────────────────
-Roll  Name                Theory   Grade
- 1    Aarav Sharma        [22 ]    A1
- 2    Priya Gupta         [   ]    —
- 3    Rohan Mehta         [ AB]    AB
- 4    Sneha Patel         [19 ]    B2
-...
-────────────────────────────────────────────────
-Avg: 20.5 | Pass: 27/30 | Highest: 25 | Lowest: 8
-────────────────────────────────────────────────
-[Save Draft]         [Review & Submit]
-```
+### Existing Code Audit
 
-**Input behavior:**
-- Each marks field is a `TextInput` with `keyboardType="numeric"`.
-- Validation: `0 ≤ marks ≤ maxMarks`. Red border + shake animation if invalid.
-- "AB" button marks student as absent (no marks).
-- Grade computed instantly client-side using grade tier config from school store.
-- `Return` key moves to next student automatically.
-- Auto-save to SQLite every 30 seconds (debounced).
-- Progress bar updates as fields are filled.
+```bash
+# Verify marksDraftService exists from PROMPT-12
+cat mobile/src/offline/marksDraftService.ts
 
-**When exam has both Theory and Practical:**
-```
-Roll  Name              Theory   Practical   Total   Grade
- 1    Aarav Sharma       [22 ]    [ 8  ]      30      A1
+# Verify marksDrafts table in schema
+grep "marksDrafts" mobile/src/offline/schema.ts
+
+# Check exam-related types exist in shared-types
+grep "ExamResult\|SubjectResult" packages/shared-types/src/api/examinations.ts
 ```
 
-#### Screen: Review & Submit (`/(teacher)/marks/[examId]/[classId]/review`)
+### API Contracts
 
-Summary before submission:
-- Total students: 30 | Filled: 30 | Absent: 2.
-- Class average: 78%.
-- Warning if any students have no marks and no "AB".
-- [Confirm & Submit] button.
-
-**Submit flow:**
-```typescript
-// Online
+```
+GET /api/examinations/exams                → Exam[] (all for academic year)
+GET /api/examinations/exam-setup?classId=X → ExamSetup[] (subjects + max marks)
+GET /api/examinationreports/student-marks/{examId}?classId=X&subjectId=Y
+  → [{ studentId, theory, practical, isAbsent }]  (existing marks)
 PUT /api/examinations/results/bulk
-  X-Idempotency-Key: {uuid stored with draft}
-
-// Offline
-→ Add to offlineQueue (operationType: 'marks_entry')
-→ marksDraft.isSubmitted = false (keep draft until synced)
-→ Toast: "Marks saved. Will submit when connected."
+  Header: X-Idempotency-Key: <uuid>
+  Body: { examId, classId, subjectId, results: [{ studentId, marks, practicalMarks? }] }
+GET /api/examinationreports/exam-performance/{examId}?classId=X
+  → { average, highest, lowest, passCount, gradeDistribution }
+GET /api/assignments?teacherId=me         → Assignment[]
+POST /api/assignments                      → CreateAssignmentRequest
+GET /api/assignments/{id}/submissions      → Submission[]
+PUT /api/assignments/{id}/grade/{subId}    → { marksObtained, feedback }
 ```
-
-#### Screen: Class Performance (`/(teacher)/marks/[examId]/[classId]/performance`)
-
-After successful marks submission:
-- Class average, highest, lowest, standard deviation.
-- Bar chart: grade distribution (A1/A2/B1/B2/C1/C2/D/E/F).
-- Topper list (top 5).
-- Students who failed (< passing percentage).
-- Share: generate summary image (using `react-native-view-shot`).
 
 ---
 
-### PART B: Parent & Student Results Viewing
+## PHASE 3: Technical Planning
 
-#### Screen: Results List (`/(parent)/results/[studentId]`, `/(student)/results/`)
-
-- List of published exam results, sorted newest first.
-- Each card: exam name, date, overall percentage, grade badge.
-- Not-yet-published exams hidden.
-- Tap → detail screen.
-
-#### Screen: Exam Result Detail
-
-- Subject-wise marks table: Subject | Theory | Practical | Total | Grade.
-- Class rank if available.
-- Pass/fail indicator.
-- Board-appropriate grade scale info button.
-
-#### Screen: Report Card Viewer
-
-- "Download Report Card" button → `expo-web-browser` with PDF URL.
-- Share button → native share with PDF URL.
-- Display report card metadata: student name, class, academic year, generated date.
-
----
-
-### PART C: Assignments
-
-#### Screen: My Assignments - Teacher (`/(teacher)/assignments/`)
-
-- Tabs: "Active" | "Pending Grading" | "Completed".
-- Active: assignments in progress (due date not passed).
-- Pending Grading: submissions awaiting marks.
-- FlashList for performance.
-
-#### Screen: Create Assignment (`/(teacher)/assignments/create`)
-
-```
-Create Assignment
-─────────────────────────────────
-Title *         [________________]
-Subject *       [Dropdown ▼]
-Class *         [Dropdown ▼]  [Section ▼]
-Due Date *      [Date Picker]
-Description     [Text area]
-Attachment      [Attach file (optional)]
-─────────────────────────────────
-                [Cancel]  [Post →]
-```
-
-On create:
-- `POST /api/assignments` with `{ title, subjectId, classId, sectionId, dueDate, description }`.
-- Students get push notification.
-
-#### Screen: Submissions List (`/(teacher)/assignments/[id]/submissions`)
-
-- List of all students in the class with submission status.
-- Submitted: name, submission date, "Grade" button.
-- Not submitted: name, "Not Submitted" (grey).
-- FlashList for 40+ students.
-
-#### Screen: Grade Submission (`/(teacher)/assignments/[id]/grade/[submissionId]`)
-
-- Student's submission text shown (or file attachment link).
-- Marks input: `[___/20]`.
-- Comments text area.
-- [Submit Grade] → `PUT /api/assignments/{id}/grade/{submissionId}`.
-- Student receives push notification.
-
----
-
-## Grade Computation Utility
+### Grade Computation Client-Side
 
 ```typescript
-// src/features/examinations/utils/gradeComputer.ts
-export function computeGradeFromMarks(
-  marks: number,
-  maxMarks: number,
-  gradeTiers: GradeTier[]
-): { grade: string; color: string } {
-  if (marks === -1) return { grade: 'AB', color: '#6b7280' };  // Absent
-  const percentage = (marks / maxMarks) * 100;
-  const tier = [...gradeTiers]
+interface GradeTier {
+  grade: string;
+  minPercentage: number;
+  color: string;
+}
+
+function computeGrade(marks: number, maxMarks: number, tiers: GradeTier[]): { grade: string; color: string } {
+  if (marks === -1) return { grade: 'AB', color: '#9ca3af' };  // Absent
+  const pct = (marks / maxMarks) * 100;
+  const tier = [...tiers]
     .sort((a, b) => b.minPercentage - a.minPercentage)
-    .find(t => percentage >= t.minPercentage);
-  return {
-    grade: tier?.grade ?? 'F',
-    color: tier?.color ?? '#ef4444',
-  };
+    .find(t => pct >= t.minPercentage);
+  return { grade: tier?.grade ?? 'F', color: tier?.color ?? '#ef4444' };
 }
 ```
 
-Grade tiers loaded from `GET /api/academics/classes/settings` — include in the offline bundle.
+Grade tiers are fetched from `/api/academics/classes/settings` once and cached in the school store.
+
+### Screen Map
+
+```
+mobile/app/(teacher)/
+├── marks/
+│   ├── index.tsx                          ← Pending exams list
+│   ├── [examId].tsx                       ← Class + subject selection
+│   └── [examId]/
+│       ├── [classId]/
+│       │   ├── [subjectId].tsx            ← Marks entry grid (CRITICAL)
+│       │   └── performance.tsx            ← Class performance analytics
+├── assignments/
+│   ├── index.tsx                          ← My assignments list
+│   ├── create.tsx                         ← Create assignment form
+│   └── [id]/
+│       ├── submissions.tsx                ← Submissions list
+│       └── grade/
+│           └── [submissionId].tsx         ← Grade submission
+```
 
 ---
 
-## Implementation Tasks
+## PHASE 4: Database Design
 
-**Teacher Marks:**
-1. Implement `/(teacher)/marks/index.tsx` — pending exams list.
-2. Implement `/(teacher)/marks/[examId].tsx` — class+subject selection.
-3. Implement `/(teacher)/marks/[examId]/[classId]/[subjectId].tsx` — marks grid.
-4. Implement marks draft auto-save (30s debounce → SQLite).
-5. Implement marks draft pre-fill on grid mount.
-6. Implement grade computation client-side.
-7. Implement `/(teacher)/marks/[examId]/[classId]/review.tsx` — confirmation.
-8. Implement `/(teacher)/marks/[examId]/[classId]/performance.tsx` — analytics.
-9. Implement offline marks submission queue.
-
-**Parent/Student Results:**
-10. Implement `/(parent)/results/[studentId].tsx` and `/(student)/results/index.tsx`.
-11. Implement exam detail screen (subject-wise marks).
-12. Implement report card viewer screen.
-
-**Assignments:**
-13. Implement `/(teacher)/assignments/index.tsx` with tabs.
-14. Implement `/(teacher)/assignments/create.tsx`.
-15. Implement `/(teacher)/assignments/[id]/submissions.tsx`.
-16. Implement `/(teacher)/assignments/[id]/grade/[submissionId].tsx`.
-17. Implement assignment list for students (`/(student)/assignments/`) with submission form.
+> `marksDrafts` table already created in PROMPT-12. No new tables needed.
 
 ---
 
-## Acceptance Criteria
+## PHASE 5: Backend Implementation
 
-**Marks Entry:**
-- [ ] Marks grid renders 35 students in < 500ms (FlashList).
-- [ ] Invalid marks (> max) show red border, block Review & Submit.
-- [ ] Grade badge updates instantly as marks are entered.
-- [ ] Draft auto-saves to SQLite every 30 seconds.
-- [ ] Closing mid-entry and re-opening shows draft with "Draft loaded" toast.
-- [ ] Offline submission queued, synced on reconnect.
-- [ ] Theory + Practical columns visible only when exam has practical component.
+### Extend Examination Results Controller
 
-**Results:**
-- [ ] Published results visible to parent and student.
-- [ ] Unpublished results not shown.
-- [ ] Report card opens via Expo WebBrowser.
-- [ ] Grade badge shows correct grade per school's board configuration.
+```csharp
+// Ensure idempotency key support on bulk marks entry
+[HttpPut("examinations/results/bulk")]
+[Authorize]
+public async Task<IActionResult> BulkUpdateResults(
+    [FromBody] BulkResultsRequest request,
+    [FromHeader(Name = "X-Idempotency-Key")] string? idempotencyKey = null)
+{
+    if (!string.IsNullOrEmpty(idempotencyKey))
+    {
+        var cacheKey = $"marks_idempotency:{idempotencyKey}";
+        var existing = await _cacheService.GetAsync<object>(cacheKey);
+        if (existing != null) return Ok(existing);
+    }
 
-**Assignments:**
-- [ ] Assignment created → students receive push notification.
-- [ ] Submission list shows submitted/not-submitted per student.
-- [ ] Graded submission → student receives push notification.
+    var result = await _examinationService.BulkUpdateResultsAsync(request);
 
----
+    if (!string.IsNullOrEmpty(idempotencyKey))
+        await _cacheService.SetAsync($"marks_idempotency:{idempotencyKey}", result, TimeSpan.FromHours(24));
 
-## Testing Requirements
-
-Unit:
-- `computeGradeFromMarks(22, 25, cbseTiers)` → `{ grade: 'A1', color: '#...' }`.
-- `computeGradeFromMarks(0, 25, cbseTiers)` → `{ grade: 'E', color: '#...' }`.
-- `computeGradeFromMarks(-1, 25, cbseTiers)` → `{ grade: 'AB', color: '#...' }`.
-
-E2E (Maestro):
-- `teacher_enter_marks.yaml`: login → marks → select class → fill all marks → submit.
-- `parent_view_results.yaml`: login as parent → results → tap exam → verify subject-wise.
+    return Ok(result);
+}
+```
 
 ---
 
-## Definition of Done
+## PHASE 6: Mobile Implementation
 
-- [ ] All acceptance criteria pass.
-- [ ] Marks grid tested with 40 students — no jank.
-- [ ] Auto-save confirmed via SQLite query during testing.
-- [ ] Peer review complete.
+### 6.1 Teacher Exam API
+
+```typescript
+// mobile/src/api/endpoints/teacher.ts — ADD to existing teacherApi:
+getMyExams: () => apiClient.get('/examinations/exams'),
+getExamSetup: (classId: string) => apiClient.get('/examinations/exam-setup', { params: { classId } }),
+getExistingMarks: (examId: string, classId: string, subjectId: string) =>
+  apiClient.get(`/examinationreports/student-marks/${examId}`, { params: { classId, subjectId } }),
+submitBulkMarks: (payload: any, idempotencyKey: string) =>
+  apiClient.put('/examinations/results/bulk', payload, {
+    headers: { 'X-Idempotency-Key': idempotencyKey },
+  }),
+getClassPerformance: (examId: string, classId: string) =>
+  apiClient.get(`/examinationreports/exam-performance/${examId}`, { params: { classId } }),
+getGradeTiers: (classId: string) =>
+  apiClient.get(`/academics/classes/settings`, { params: { classId } }),
+getMyAssignments: () => apiClient.get('/assignments', { params: { teacherId: 'me' } }),
+createAssignment: (data: any) => apiClient.post('/assignments', data),
+getSubmissions: (assignmentId: string) => apiClient.get(`/assignments/${assignmentId}/submissions`),
+gradeSubmission: (assignmentId: string, submissionId: string, data: { marksObtained: number; feedback: string }) =>
+  apiClient.put(`/assignments/${assignmentId}/grade/${submissionId}`, data),
+```
+
+### 6.2 Marks Entry Grid
+
+```typescript
+// mobile/app/(teacher)/marks/[examId]/[classId]/[subjectId].tsx
+import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlashList } from '@shopify/flash-list';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Feather } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
+import { teacherApi } from '../../../../../src/api/endpoints/teacher';
+import { marksDraftService, MarksEntry } from '../../../../../src/offline/marksDraftService';
+import { OfflineQueueProcessor } from '../../../../../src/offline/queue';
+import { useAuthStore } from '../../../../../src/stores/authStore';
+import { useAppTheme } from '../../../../../src/theme/SchoolThemeProvider';
+import { queryClient } from '../../../../../src/api/queryClient';
+import { VITANA_DESIGN_TOKENS } from '@vitana/shared-utils';
+
+function computeGrade(marks: number, maxMarks: number): { grade: string; color: string } {
+  if (marks < 0) return { grade: 'AB', color: '#9ca3af' };
+  const pct = (marks / maxMarks) * 100;
+  if (pct >= 91) return { grade: 'A1', color: '#16a34a' };
+  if (pct >= 81) return { grade: 'A2', color: '#22c55e' };
+  if (pct >= 71) return { grade: 'B1', color: '#3b82f6' };
+  if (pct >= 61) return { grade: 'B2', color: '#60a5fa' };
+  if (pct >= 51) return { grade: 'C1', color: '#f59e0b' };
+  if (pct >= 41) return { grade: 'C2', color: '#f97316' };
+  if (pct >= 33) return { grade: 'D',  color: '#ef4444' };
+  return { grade: 'F', color: '#dc2626' };
+}
+
+export default function MarksEntryGrid() {
+  const { examId, classId, subjectId } = useLocalSearchParams<{
+    examId: string; classId: string; subjectId: string;
+  }>();
+  const { user } = useAuthStore();
+  const { colors } = useAppTheme();
+
+  const [marksMap, setMarksMap] = useState<Record<string, { theory: string; practical: string; isAbsent: boolean }>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [draftLoadedAt, setDraftLoadedAt] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const { data: students } = useQuery({
+    queryKey: ['students', classId],
+    queryFn: () => teacherApi.getClassStudents(classId!),
+  });
+
+  const { data: examSetup } = useQuery({
+    queryKey: ['exam-setup', classId, examId],
+    queryFn: () => teacherApi.getExamSetup(classId!),
+  });
+
+  const subjectSetup = examSetup?.find((s: any) => s.subjectId === subjectId);
+  const maxTheory = subjectSetup?.maxTheoryMarks ?? 100;
+  const maxPractical = subjectSetup?.maxPracticalMarks ?? null;
+  const hasPractical = maxPractical !== null;
+
+  // Load draft or existing marks on mount
+  useEffect(() => {
+    loadInitialData();
+  }, [students, examId, classId, subjectId]);
+
+  async function loadInitialData() {
+    if (!students?.length) return;
+
+    // Try to load from draft first
+    const draft = await marksDraftService.loadDraft(examId!, classId!, subjectId!);
+    if (draft) {
+      const map: Record<string, any> = {};
+      draft.marks.forEach((m: MarksEntry) => {
+        map[m.studentId] = {
+          theory: m.theory !== null ? String(m.theory) : '',
+          practical: m.practical !== null ? String(m.practical) : '',
+          isAbsent: m.isAbsent,
+        };
+      });
+      setMarksMap(map);
+      setDraftLoadedAt(new Date(draft.lastModified).toLocaleTimeString('en-IN'));
+      return;
+    }
+
+    // No draft — try loading existing server marks
+    try {
+      const existing = await teacherApi.getExistingMarks(examId!, classId!, subjectId!);
+      if (existing?.length > 0) {
+        const map: Record<string, any> = {};
+        (existing as any[]).forEach(m => {
+          map[m.studentId] = {
+            theory: m.marks !== null ? String(m.marks) : '',
+            practical: m.practicalMarks !== null ? String(m.practicalMarks) : '',
+            isAbsent: m.isAbsent ?? false,
+          };
+        });
+        setMarksMap(map);
+      }
+    } catch { /* first time — no server data */ }
+
+    // Default all present
+    if (students) {
+      const map: Record<string, any> = {};
+      (students as any[]).forEach(s => {
+        if (!marksMap[s.id]) {
+          map[s.id] = { theory: '', practical: '', isAbsent: false };
+        }
+      });
+      setMarksMap(prev => ({ ...map, ...prev }));
+    }
+  }
+
+  // Auto-save draft every 30 seconds (debounced)
+  const saveDraft = useCallback(async () => {
+    if (!user || !students) return;
+    const entries: MarksEntry[] = (students as any[]).map(s => ({
+      studentId: s.id,
+      theory: marksMap[s.id]?.theory ? parseFloat(marksMap[s.id].theory) : null,
+      practical: marksMap[s.id]?.practical ? parseFloat(marksMap[s.id].practical) : null,
+      isAbsent: marksMap[s.id]?.isAbsent ?? false,
+    }));
+    await marksDraftService.saveDraft(examId!, classId!, subjectId!, entries, user.id, user.schoolId);
+  }, [marksMap, examId, classId, subjectId, user, students]);
+
+  useEffect(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(saveDraft, 30000);
+    return () => clearTimeout(saveTimer.current);
+  }, [marksMap]);
+
+  function updateMarks(studentId: string, field: 'theory' | 'practical', value: string) {
+    setMarksMap(prev => ({
+      ...prev,
+      [studentId]: { ...prev[studentId], [field]: value },
+    }));
+  }
+
+  function toggleAbsent(studentId: string) {
+    setMarksMap(prev => ({
+      ...prev,
+      [studentId]: {
+        ...prev[studentId],
+        isAbsent: !prev[studentId]?.isAbsent,
+        theory: !prev[studentId]?.isAbsent ? '' : prev[studentId].theory,
+        practical: !prev[studentId]?.isAbsent ? '' : prev[studentId].practical,
+      },
+    }));
+  }
+
+  async function handleSubmit() {
+    // Validation
+    for (const student of (students ?? []) as any[]) {
+      const entry = marksMap[student.id];
+      if (!entry?.isAbsent) {
+        const theory = parseFloat(entry?.theory ?? '');
+        if (entry?.theory !== '' && (isNaN(theory) || theory < 0 || theory > maxTheory)) {
+          Alert.alert('Invalid Marks', `${student.firstName} ${student.lastName}: Theory marks must be 0–${maxTheory}`);
+          return;
+        }
+        if (hasPractical) {
+          const practical = parseFloat(entry?.practical ?? '');
+          if (entry?.practical !== '' && (isNaN(practical) || practical < 0 || practical > maxPractical!)) {
+            Alert.alert('Invalid Marks', `${student.firstName} ${student.lastName}: Practical marks must be 0–${maxPractical}`);
+            return;
+          }
+        }
+      }
+    }
+
+    setIsSubmitting(true);
+    const { generateUUID } = await import('@vitana/shared-utils');
+    const idempotencyKey = (await marksDraftService.loadDraft(examId!, classId!, subjectId!))?.idempotencyKey ?? generateUUID();
+
+    const results = (students ?? [] as any[]).map((s: any) => {
+      const entry = marksMap[s.id];
+      return {
+        studentId: s.id,
+        isAbsent: entry?.isAbsent ?? false,
+        marks: entry?.isAbsent ? null : parseFloat(entry?.theory ?? '0') || 0,
+        practicalMarks: hasPractical ? (entry?.isAbsent ? null : parseFloat(entry?.practical ?? '0') || null) : undefined,
+      };
+    });
+
+    const payload = { examId, classId, subjectId, results };
+
+    try {
+      const isConnected = (await NetInfo.fetch()).isConnected;
+      if (isConnected) {
+        await teacherApi.submitBulkMarks(payload, idempotencyKey);
+        await marksDraftService.markSubmitted(examId!, classId!, subjectId!);
+        queryClient.invalidateQueries({ queryKey: ['exam-performance', examId, classId] });
+        router.replace(`/(teacher)/marks/${examId}/${classId}/performance`);
+      } else {
+        await OfflineQueueProcessor.enqueue({
+          method: 'PUT',
+          endpoint: '/examinations/results/bulk',
+          body: payload,
+          extraHeaders: { 'X-Idempotency-Key': idempotencyKey },
+          operationType: 'marks_entry',
+          userId: user!.id,
+          schoolId: user!.schoolId,
+        });
+        Alert.alert('Saved', 'Marks saved offline. Will submit when connected.', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to submit marks.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  const filledCount = (students ?? [] as any[]).filter((s: any) =>
+    marksMap[s.id]?.isAbsent || marksMap[s.id]?.theory !== ''
+  ).length;
+
+  return (
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'left', 'right']}>
+      {/* Header */}
+      <View className="px-4 pt-3 pb-2 bg-white border-b border-border">
+        <View className="flex-row items-center mb-1">
+          <TouchableOpacity onPress={() => router.back()} className="mr-3">
+            <Feather name="arrow-left" size={22} color={VITANA_DESIGN_TOKENS.colors.textPrimary} />
+          </TouchableOpacity>
+          <Text className="font-heading text-base text-text-primary flex-1">Marks Entry</Text>
+          {draftLoadedAt && (
+            <Text className="font-body text-xs text-success">Draft: {draftLoadedAt}</Text>
+          )}
+        </View>
+        <View className="flex-row items-center justify-between">
+          <Text className="font-body text-text-secondary text-xs">
+            Max Theory: {maxTheory}{hasPractical ? ` · Practical: ${maxPractical}` : ''}
+          </Text>
+          <Text className="font-body text-text-secondary text-xs">
+            {filledCount}/{(students ?? []).length} filled
+          </Text>
+        </View>
+      </View>
+
+      {/* Table Header */}
+      <View className="flex-row px-4 py-2 bg-surface border-b border-border">
+        <Text className="font-body-semibold text-text-secondary text-xs w-8">Roll</Text>
+        <Text className="font-body-semibold text-text-secondary text-xs flex-1">Name</Text>
+        <Text className="font-body-semibold text-text-secondary text-xs w-16 text-center">Theory</Text>
+        {hasPractical && <Text className="font-body-semibold text-text-secondary text-xs w-16 text-center">Prac</Text>}
+        <Text className="font-body-semibold text-text-secondary text-xs w-10 text-center">Grade</Text>
+        <Text className="font-body-semibold text-text-secondary text-xs w-8 text-center">AB</Text>
+      </View>
+
+      {/* Student Rows */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
+        <FlashList
+          data={students as any[] ?? []}
+          estimatedItemSize={52}
+          keyExtractor={(item: any) => item.id}
+          renderItem={({ item }: { item: any }) => {
+            const entry = marksMap[item.id] ?? { theory: '', practical: '', isAbsent: false };
+            const theoryVal = entry.theory !== '' ? parseFloat(entry.theory) : -1;
+            const totalForGrade = hasPractical && entry.practical !== ''
+              ? (theoryVal + parseFloat(entry.practical))
+              : theoryVal;
+            const maxForGrade = hasPractical ? maxTheory + (maxPractical ?? 0) : maxTheory;
+            const { grade, color } = computeGrade(entry.isAbsent ? -1 : totalForGrade, maxForGrade);
+
+            const isTheoryInvalid = entry.theory !== '' && !entry.isAbsent &&
+              (parseFloat(entry.theory) > maxTheory || parseFloat(entry.theory) < 0);
+
+            return (
+              <View className="flex-row items-center px-4 py-2 border-b border-border bg-white">
+                <Text className="font-body text-text-secondary text-xs w-8">{item.rollNumber}</Text>
+                <Text className="font-body-medium text-text-primary text-xs flex-1 pr-2" numberOfLines={1}>
+                  {item.firstName} {item.lastName}
+                </Text>
+                <TextInput
+                  value={entry.theory}
+                  onChangeText={v => updateMarks(item.id, 'theory', v)}
+                  keyboardType="numeric"
+                  maxLength={3}
+                  editable={!entry.isAbsent}
+                  className={`w-16 border rounded-lg px-2 py-1.5 text-center font-body text-sm ${
+                    isTheoryInvalid ? 'border-danger bg-danger/10' : 'border-border bg-surface'
+                  } ${entry.isAbsent ? 'opacity-30' : ''}`}
+                  placeholder={entry.isAbsent ? 'AB' : '—'}
+                />
+                {hasPractical && (
+                  <TextInput
+                    value={entry.practical}
+                    onChangeText={v => updateMarks(item.id, 'practical', v)}
+                    keyboardType="numeric"
+                    maxLength={3}
+                    editable={!entry.isAbsent}
+                    className={`w-16 border rounded-lg px-2 py-1.5 text-center font-body text-sm ml-1 ${
+                      entry.isAbsent ? 'opacity-30 border-border bg-surface' : 'border-border bg-surface'
+                    }`}
+                    placeholder={entry.isAbsent ? 'AB' : '—'}
+                  />
+                )}
+                <View className="w-10 items-center">
+                  <Text className="font-body-semibold text-xs" style={{ color }}>{grade}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => toggleAbsent(item.id)}
+                  className="w-8 items-center"
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <View
+                    className={`w-5 h-5 rounded border-2 items-center justify-center ${
+                      entry.isAbsent ? 'bg-danger border-danger' : 'border-border bg-white'
+                    }`}
+                  >
+                    {entry.isAbsent && <Feather name="x" size={12} color="white" />}
+                  </View>
+                </TouchableOpacity>
+              </View>
+            );
+          }}
+        />
+      </KeyboardAvoidingView>
+
+      {/* Submit Footer */}
+      <View className="px-4 py-3 bg-white border-t border-border">
+        <TouchableOpacity
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+          className="rounded-xl py-3.5 items-center"
+          style={{ backgroundColor: colors.primary }}
+        >
+          <Text className="font-body-semibold text-white text-base">
+            {isSubmitting ? 'Saving...' : 'Review & Submit'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+```
+
+---
+
+## PHASE 9: Testing
+
+### Maestro E2E
+
+```yaml
+# mobile/maestro/tests/teacher_enter_marks.yaml
+appId: com.vitana.sms
+---
+- launchApp
+- tapOn: "Marks"
+- assertVisible: "Marks Entry"
+- tapOn: index: 0   # first pending exam
+- tapOn: index: 0   # first class
+- tapOn: index: 0   # first subject
+- assertVisible: "Marks Entry"
+- tapOn: index: 0   # first theory input
+- inputText: "22"
+- tapOn: "Review & Submit"
+- assertVisible: "Performance"
+```
+
+### Validation Checklist
+
+- [ ] Marks grid renders 35 students in < 500ms
+- [ ] Invalid marks (> max): red border on field, "Review & Submit" blocked
+- [ ] Grade badge updates instantly as marks typed
+- [ ] Auto-save: make changes → wait 30s → verify SQLite has updated marks
+- [ ] Draft loads on grid reopen with correct time in header
+- [ ] Offline submit: enable airplane mode → submit → airplane off → syncs
+- [ ] Theory + Practical columns visible for applicable exam types only
+- [ ] Class performance shows after submission
+
+---
+
+## PHASE 10: Documentation & Verification
+
+### Git Commit
+
+```bash
+git add .
+git commit -m "feat(mobile/marks): marks entry grid and assignment management
+
+- Teacher marks entry grid: FlashList for 40+ students
+- Offline marks draft: auto-save to SQLite every 30s
+- Grade computed client-side on each keystroke (no round trip)
+- Theory + Practical separate columns (conditional on exam setup)
+- Invalid marks: red border + blocked submission
+- Offline submission via OfflineQueueProcessor
+- Class performance analytics after submission
+- Assignment list (pending grading / active / completed tabs)
+- Create assignment form with push notification to students
+- Submissions list per assignment
+- Grade submission with marks + feedback + student push notification
+
+Next: PROMPT-14 (Communication & Messaging)"
+```
+
+---
+
+**END OF PROMPT-13**

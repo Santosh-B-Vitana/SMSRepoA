@@ -153,6 +153,12 @@ public static class ApplicationServicesExtensions
         // ── WhatsApp Communication Hub ─────────────────────────────────────
         services.AddWhatsAppServices(configuration);
 
+        // ── Mobile: app config, dashboard aggregation, push notifications ──
+        services.AddScoped<IMobileAppConfigService, MobileAppConfigService>();
+        services.AddScoped<IMobileDashboardService, MobileDashboardService>();
+        services.AddScoped<IFirebasePushService, FirebasePushService>();
+        services.AddTransient<SmsApi.BackgroundJobs.MobileDeviceTokenCleanupJob>();
+
         return services;
     }
 

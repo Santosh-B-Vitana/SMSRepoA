@@ -1,0 +1,55 @@
+name: Mobile Production Release
+
+on:
+  push:
+    tags:
+      - 'mobile-v*.*.*'
+
+jobs:
+  production-release:
+    name: EAS Production Build & Submit
+    runs-on: ubuntu-latest
+    environment: mobile-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: mobile
+
+      - name: Extract version from tag
+        run: echo "APP_VERSION=${GITHUB_REF#refs/tags/mobile-v}" >> $GITHUB_ENV
+
+      - name: Build production
+        run: eas build --platform all --profile production --non-interactive
+        working-directory: mobile
+        env:
+          APP_VERSION: ${{ env.APP_VERSION }}
+
+      - name: Submit to stores
+        run: eas submit --platform all --latest --non-interactive
+        working-directory: mobile
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          channel-id: mobile-builds
+          slack-message: "Production release ${{ env.APP_VERSION }} ${{ job.status }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

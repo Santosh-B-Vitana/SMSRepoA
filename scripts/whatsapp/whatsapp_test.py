@@ -26,7 +26,9 @@ import hmac
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -47,6 +49,22 @@ DEFAULT_API_BASE = "https://graph.facebook.com"
 META_BUILTIN_TEMPLATES = {
     "hello_world": {"language": "en_US", "category": "UTILITY"},
 }
+
+# Seconds between outbound messages — slow down to avoid spam/quality flags
+DEFAULT_SEND_DELAY = 10
+_print_lock = threading.Lock()
+
+
+def group_jobs_by_phone(jobs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for job in jobs:
+        grouped.setdefault(job["phone"], []).append(job)
+    return grouped
+
+
+def _safe_print(fn) -> None:
+    with _print_lock:
+        fn()
 
 
 class Colors:
@@ -70,6 +88,11 @@ def load_dotenv(path: Path) -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def default_send_delay() -> int:
+    load_dotenv(ENV_FILE)
+    return int(os.environ.get("WHATSAPP_SEND_DELAY", str(DEFAULT_SEND_DELAY)))
 
 
 def cfg() -> dict[str, str]:
@@ -668,7 +691,7 @@ def cmd_ping(args: argparse.Namespace) -> int:
             msg_id = result.get("messages", [{}])[0].get("id", "n/a")
             ok(f"hello_world sent — wamid: {msg_id}")
             sent += 1
-            time.sleep(2)
+            time.sleep(default_send_delay())
         except RuntimeError as e:
             fail(str(e))
             warn("Register this number in Meta: API Setup → Manage phone number list")
@@ -831,38 +854,41 @@ def cmd_send_samples(args: argparse.Namespace) -> int:
     for job in jobs:
         by_phone.setdefault(job["phone"], []).append(job)
 
+    delay = args.delay if args.delay is not None else default_send_delay()
+    mode = "PARALLEL" if getattr(args, "parallel", False) else "SEQUENTIAL"
     print(f"\n{Colors.BOLD}Sending samples to {len(by_phone)} number(s){Colors.RESET}")
+    info(f"Mode: {mode} | Delay within each number: {delay}s")
     if approved:
         info(f"{len(approved)} custom template(s) APPROVED")
     else:
         warn("No custom templates APPROVED yet — hello_world only until Meta approves")
 
-    for phone, phone_jobs in by_phone.items():
+    def send_samples_for_phone(phone: str, phone_jobs: list[dict[str, Any]]) -> tuple[int, int, int]:
+        local_sent = local_failed = local_skipped = 0
         label = phone_jobs[0]["phone_display"]
-        print(f"\n{Colors.BOLD}📱 {label} ({phone}){Colors.RESET}")
-
+        _safe_print(lambda: print(f"\n{Colors.BOLD}📱 {label} ({phone}){Colors.RESET}"))
         if not args.dry_run:
             try:
                 result = send_hello_world(c, phone)
                 msg_id = result.get("messages", [{}])[0].get("id", "n/a")
-                ok(f"hello_world — {msg_id}")
-                sent += 1
-                time.sleep(args.delay)
+                _safe_print(lambda: ok(f"hello_world — {msg_id}"))
+                local_sent += 1
+                time.sleep(delay)
             except RuntimeError as e:
-                fail(f"hello_world — {e}")
-                failed += 1
+                _safe_print(lambda: fail(f"hello_world — {e}"))
+                local_failed += 1
         else:
-            info(f"[dry-run] hello_world")
+            _safe_print(lambda: info("[dry-run] hello_world"))
 
         for job in phone_jobs:
             tpl_name = job["template"]
             job_label = f"{job['child']} → {tpl_name}"
             if tpl_name not in approved:
-                skipped += 1
+                local_skipped += 1
                 continue
             if args.dry_run:
-                info(f"[dry-run] {job_label}")
-                sent += 1
+                _safe_print(lambda jl=job_label: info(f"[dry-run] {jl}"))
+                local_sent += 1
                 continue
             try:
                 lang = meta["language"]
@@ -871,12 +897,28 @@ def cmd_send_samples(args: argparse.Namespace) -> int:
                     lang = meta_tpl.get("language", lang)
                 result = send_template_message(c, tpl_name, phone, job["params"], lang)
                 msg_id = result.get("messages", [{}])[0].get("id", "n/a")
-                ok(f"{job_label} — {msg_id}")
-                sent += 1
-                time.sleep(args.delay)
+                _safe_print(lambda jl=job_label, mid=msg_id: ok(f"{jl} — {mid}"))
+                local_sent += 1
+                time.sleep(delay)
             except RuntimeError as e:
-                fail(f"{job_label} — {e}")
-                failed += 1
+                _safe_print(lambda jl=job_label, err=e: fail(f"{jl} — {err}"))
+                local_failed += 1
+        return local_sent, local_failed, local_skipped
+
+    if getattr(args, "parallel", False):
+        with ThreadPoolExecutor(max_workers=min(len(by_phone), getattr(args, "workers", 4))) as pool:
+            futs = [pool.submit(send_samples_for_phone, p, pj) for p, pj in by_phone.items()]
+            for fut in as_completed(futs):
+                s, f, sk = fut.result()
+                sent += s
+                failed += f
+                skipped += sk
+    else:
+        for phone, phone_jobs in by_phone.items():
+            s, f, sk = send_samples_for_phone(phone, phone_jobs)
+            sent += s
+            failed += f
+            skipped += sk
 
     print(f"\nDone: {sent} sent, {skipped} skipped (PENDING templates), {failed} failed")
     if not approved:
@@ -979,6 +1021,68 @@ def cmd_list_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def send_jobs_for_phone(
+    c: dict[str, str],
+    phone_jobs: list[dict[str, Any]],
+    approved: set[str],
+    meta_lang: str,
+    delay: int,
+    *,
+    dry_run: bool,
+    force: bool,
+    stop_on_error: bool,
+) -> tuple[int, int, int]:
+    """Send all jobs for one phone sequentially. Returns (sent, failed, skipped)."""
+    sent = failed = skipped = 0
+    phone_label = phone_jobs[0]["phone_display"] if phone_jobs else "?"
+
+    def log_ok(msg: str) -> None:
+        _safe_print(lambda: ok(msg))
+
+    def log_fail(msg: str) -> None:
+        _safe_print(lambda: fail(msg))
+
+    def log_warn(msg: str) -> None:
+        _safe_print(lambda: warn(msg))
+
+    def log_info(msg: str) -> None:
+        _safe_print(lambda: info(msg))
+
+    _safe_print(lambda: print(f"\n{Colors.BOLD}📱 {phone_label}{Colors.RESET}"))
+
+    for job in phone_jobs:
+        label = f"{job['phone_display']} → {job['child']} → {job['template']}"
+        if not force and approved and job["template"] not in approved:
+            log_warn(f"SKIP (not APPROVED): {label}")
+            skipped += 1
+            continue
+
+        if dry_run:
+            log_info(f"[dry-run] {label}")
+            sent += 1
+            continue
+
+        try:
+            lang = meta_lang
+            meta_tpl = get_meta_template_status(c, job["template"])
+            if meta_tpl:
+                lang = meta_tpl.get("language", lang)
+            result = send_template_message(
+                c, job["template"], job["phone"], job["params"], lang
+            )
+            msg_id = result.get("messages", [{}])[0].get("id", "n/a")
+            log_ok(f"{label} — {msg_id}")
+            sent += 1
+            time.sleep(delay)
+        except RuntimeError as e:
+            log_fail(f"{label} — {e}")
+            failed += 1
+            if stop_on_error:
+                break
+
+    return sent, failed, skipped
+
+
 def cmd_send_demo(args: argparse.Namespace) -> int:
     c = cfg()
     if not args.dry_run and (not c["access_token"] or not c["phone_number_id"]):
@@ -1007,38 +1111,45 @@ def cmd_send_demo(args: argparse.Namespace) -> int:
         except RuntimeError as e:
             warn(f"Could not fetch approved templates: {e}")
 
-    print(f"\n{Colors.BOLD}Sending {len(jobs)} demo message(s){Colors.RESET}\n")
-    sent = 0
-    failed = 0
-    skipped = 0
+    delay = args.delay if args.delay else default_send_delay()
+    by_phone = group_jobs_by_phone(jobs)
+    mode = "PARALLEL (one thread per number)" if args.parallel else "SEQUENTIAL (one number at a time)"
+    print(f"\n{Colors.BOLD}Sending {len(jobs)} demo message(s) across {len(by_phone)} number(s){Colors.RESET}")
+    info(f"Mode: {mode}")
+    info(f"Delay within each number: {delay}s between messages\n")
 
-    for job in jobs:
-        label = (
-            f"{job['phone_display']} → {job['child']} → {job['template']}"
-        )
-        if not args.force and approved and job["template"] not in approved:
-            warn(f"SKIP (not APPROVED): {label}")
-            skipped += 1
-            continue
+    sent = failed = skipped = 0
 
-        if args.dry_run:
-            info(f"[dry-run] {label}")
-            print(f"       params: {job['params']}")
-            sent += 1
-            continue
-
-        try:
-            result = send_template_message(
-                c, job["template"], job["phone"], job["params"], meta["language"]
+    if args.parallel:
+        workers = min(len(by_phone), args.workers)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(
+                    send_jobs_for_phone,
+                    c, phone_jobs, approved, meta["language"], delay,
+                    dry_run=args.dry_run, force=args.force, stop_on_error=args.stop_on_error,
+                ): phone
+                for phone, phone_jobs in by_phone.items()
+            }
+            for fut in as_completed(futures):
+                s, f, sk = fut.result()
+                sent += s
+                failed += f
+                skipped += sk
+    else:
+        for i, (phone, phone_jobs) in enumerate(by_phone.items()):
+            if i > 0:
+                info(f"Pausing {delay * 2}s before next recipient...")
+                if not args.dry_run:
+                    time.sleep(delay * 2)
+            s, f, sk = send_jobs_for_phone(
+                c, phone_jobs, approved, meta["language"], delay,
+                dry_run=args.dry_run, force=args.force, stop_on_error=args.stop_on_error,
             )
-            msg_id = result.get("messages", [{}])[0].get("id", "n/a")
-            ok(f"{label} — {msg_id}")
-            sent += 1
-            time.sleep(args.delay)
-        except RuntimeError as e:
-            fail(f"{label} — {e}")
-            failed += 1
-            if args.stop_on_error:
+            sent += s
+            failed += f
+            skipped += sk
+            if args.stop_on_error and f > 0:
                 break
 
     print(f"\nDone: {sent} sent, {skipped} skipped, {failed} failed")
@@ -1178,7 +1289,7 @@ def main() -> int:
     )
     send_now.add_argument("--to", help="Single recipient")
     send_now.add_argument("--template", default="hello_world", help="Built-in template name")
-    send_now.add_argument("--delay", type=int, default=3)
+    send_now.add_argument("--delay", type=int, default=DEFAULT_SEND_DELAY)
     send_now.set_defaults(func=cmd_send_now)
 
     ping = sub.add_parser("ping", help="Send hello_world to verify API + recipient (works immediately)")
@@ -1193,7 +1304,7 @@ def main() -> int:
     vitana_test.add_argument("--to", help="Single recipient e.g. 9810861740")
     vitana_test.add_argument("--child", help="Student name for {{2}} e.g. 'Vedant Singh'")
     vitana_test.add_argument("--dry-run", action="store_true")
-    vitana_test.add_argument("--delay", type=int, default=3)
+    vitana_test.add_argument("--delay", type=int, default=DEFAULT_SEND_DELAY)
     vitana_test.add_argument("--skip-register", action="store_true")
     vitana_test.set_defaults(func=cmd_vitana_test)
 
@@ -1201,7 +1312,9 @@ def main() -> int:
     samples.add_argument("--phone", help="Limit to one phone e.g. 7984177071")
     samples.add_argument("--child", help="Limit to one child")
     samples.add_argument("--dry-run", action="store_true")
-    samples.add_argument("--delay", type=int, default=3)
+    samples.add_argument("--delay", type=int, default=DEFAULT_SEND_DELAY)
+    samples.add_argument("--parallel", action="store_true", help="Send to all numbers at the same time")
+    samples.add_argument("--workers", type=int, default=4, help="Parallel threads (default 4)")
     samples.set_defaults(func=cmd_send_samples)
 
     send = sub.add_parser("send", help="Send one approved template")
@@ -1230,7 +1343,9 @@ def main() -> int:
     add_demo_filters(demo_send)
     demo_send.add_argument("--dry-run", action="store_true")
     demo_send.add_argument("--force", action="store_true", help="Send even if template not APPROVED")
-    demo_send.add_argument("--delay", type=int, default=3, help="Seconds between messages (default 3)")
+    demo_send.add_argument("--delay", type=int, default=DEFAULT_SEND_DELAY, help=f"Seconds between messages (default {DEFAULT_SEND_DELAY})")
+    demo_send.add_argument("--parallel", action="store_true", help="All numbers in parallel (each number still sequential)")
+    demo_send.add_argument("--workers", type=int, default=4, help="Max parallel numbers (default 4)")
     demo_send.add_argument("--stop-on-error", action="store_true")
     demo_send.set_defaults(func=cmd_send_demo)
 
@@ -1242,7 +1357,9 @@ def main() -> int:
     add_demo_filters(send_demo)
     send_demo.add_argument("--dry-run", action="store_true")
     send_demo.add_argument("--force", action="store_true")
-    send_demo.add_argument("--delay", type=int, default=3)
+    send_demo.add_argument("--delay", type=int, default=DEFAULT_SEND_DELAY)
+    send_demo.add_argument("--parallel", action="store_true")
+    send_demo.add_argument("--workers", type=int, default=4)
     send_demo.add_argument("--stop-on-error", action="store_true")
     send_demo.set_defaults(func=cmd_send_demo)
 

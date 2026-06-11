@@ -1,0 +1,32 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-05 + PROMPT-05  |  Student Notification Center
+# Precondition: logged in as student
+# ────────────────────────────────────────────────────────────
+
+- runFlow: student_login.yaml
+
+# ── Tap bell icon in header ─────────────────────────────────
+- tapOn:
+    description: "bell"    # Feather bell icon in header
+
+# ── Notification center screen ──────────────────────────────
+- assertVisible: "Notifications"
+
+# ── If unread notifications exist: mark all read ────────────
+- optional:
+    - assertVisible: "Mark all read"
+    - tapOn:
+        text: "Mark all read"
+
+# ── Back to dashboard ────────────────────────────────────────
+- tapOn:
+    description: "arrow-left"
+
+# ── Navigate via More tab ───────────────────────────────────
+- tapOn:
+    text: "More"
+- tapOn:
+    text: "Notifications"
+- assertVisible: "Notifications"

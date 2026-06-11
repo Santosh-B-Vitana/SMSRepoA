@@ -8,6 +8,14 @@
 
 ---
 
+## Architecture Principle
+
+> **ONE APP. MULTIPLE ROLES. ONE BINARY PER SCHOOL.**
+>
+> - There is ONE app binary (`com.vitana.sms`). All roles — parent, teacher, student, admin — share it. After login the JWT `role` routes the user to their portal inside the same binary.
+> - "Parent App", "Teacher App", "Student App", "Admin App" in this document refer to the **portal** (route group) for that role. They are **not** separate apps.
+> - White-label: one school = ONE branded binary. Not three.
+
 ## The One Rule
 
 > **Never start a prompt if its listed prerequisites are not yet complete.**  
@@ -78,7 +86,7 @@ Execute in this exact order. Parallel tracks noted where applicable.
 | 9 | **PROMPT-10** | EP-09 mobile | 7–10 | Mobile | PROMPT-02 ✓, PROMPT-11A ✓ |
 | 10 | **PROMPT-05** | EP-06 | 10 | Mobile + Backend | PROMPT-01 ✓, PROMPT-02 ✓ |
 | 11 | **PROMPT-11 (Part D)** | Backend push + admin | 10 | Backend | PROMPT-11C ✓ |
-| 12 | **PROMPT-06** | EP-10 | 11–13 | Mobile | PROMPT-01 ✓ |
+| 12 | **PROMPT-06** ✅ | EP-10 | 11–13 | Mobile | PROMPT-01 ✓ — **Implemented June 2026** |
 | 13 | **PROMPT-07** | EP-11 | 12 | DevOps | PROMPT-01 ✓, PROMPT-06 ✓ |
 | 14 | **PROMPT-16** | EP-17 | 13–14 | DevOps | PROMPT-07 ✓ |
 | 15 | **PROMPT-09** | EP-13 | 14 | Mobile | PROMPT-01 ✓, PROMPT-02 ✓, PROMPT-10 ✓ |
@@ -720,11 +728,11 @@ Keep all mocks in `mobile/src/__mocks__/` and remove them as each handoff comple
 ║             PROMPT-11D (BE: Firebase + device tokens)       ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  PHASE 3 (Months 5–8)  [White Label + Admin + Build CI]     ║
-║  Sprint 11: PROMPT-06  (White Label System)                 ║
+║  Sprint 11: PROMPT-06  (White Label System) ✅ June 2026    ║
 ║  Sprint 12: PROMPT-07  (Build Automation CI/CD)             ║
 ║             PROMPT-12  (Advanced Offline start)             ║
 ║  Sprint 13: PROMPT-16  (Store Setup + First Submission)     ║
-║  Sprint 14: PROMPT-09  (Admin App)                          ║
+║  Sprint 14: PROMPT-09  (Admin App) ✅ June 2026             ║
 ║             PROMPT-13  (Marks Entry start)                  ║
 ║  Sprint 15: PROMPT-12  (Advanced Offline complete)          ║
 ║             PROMPT-13  (Marks + Assignments complete)       ║
@@ -738,3 +746,26 @@ Keep all mocks in `mobile/src/__mocks__/` and remove them as each handoff comple
 ---
 
 *This document is the authoritative execution order. When in doubt, check this file first.*
+
+---
+
+## Implementation Status Log
+
+| Prompt | Epic | Status | Date |
+|---|---|---|---|
+| PROMPT-01 | EP-02 Foundation | ✅ Complete | Sprint 1 |
+| PROMPT-02 | EP-01 Auth | ✅ Complete | Sprint 2 |
+| PROMPT-03 | EP-03, EP-07 Parent App | ✅ Complete | Sprints 3–6 |
+| PROMPT-08 | EP-05 Student App | ✅ Complete | Sprints 7–9 |
+| PROMPT-04 | EP-04, EP-12 Teacher App + Offline | ✅ Complete | Sprints 7–8 |
+| PROMPT-05 | EP-06 Push Notifications | ✅ Complete | Sprint 10 |
+| PROMPT-10 | EP-09 Feature Flags | ✅ Complete | Sprints 7–10 |
+| PROMPT-11 (A–D) | EP-09 Backend APIs | ✅ Complete | Sprints 2–10 |
+| **PROMPT-06** | **EP-10 White Label Architecture** | **✅ Complete** | **June 2026 (Sprint 11)** |
+| PROMPT-07 | EP-11 Build Automation | ⏳ Next | Sprint 12 |
+| **PROMPT-09** | **EP-13 Admin App** | **✅ Complete** | **June 2026 (Sprint 14)** |
+| PROMPT-12 | EP-12 Advanced Offline | ⏳ Pending | Sprints 12, 15 |
+| PROMPT-13 | EP-08, EP-14 Exams + Marks | ⏳ Pending | Sprint 14 |
+| PROMPT-14 | EP-15 Messaging | ⏳ Pending | Sprints 19–20 |
+| PROMPT-15 | EP-16 Analytics + Monitoring | ⏳ Pending | Sprints 17–18 |
+| PROMPT-16 | EP-17 Store Deployment | ⏳ Pending | Sprints 13–14 |

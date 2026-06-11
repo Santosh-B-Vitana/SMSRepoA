@@ -1,0 +1,46 @@
+{
+  "vitana": {
+    "schoolId": "vitana",
+    "appName": "Vitana SMS",
+    "slug": "vitana-sms",
+    "androidPackage": "com.vitana.sms",
+    "iosBundleId": "com.vitana.sms",
+    "apiDomain": "https://api.vitanasms.com/api",
+    "colors": {
+      "primary": "#1a6fd8",
+      "accent": "#17a2b8"
+    },
+    "isWhiteLabel": false,
+    "easProjectId": "YOUR_EAS_PROJECT_ID"
+  },
+  "dps-rohini": {
+    "schoolId": "dps-rohini",
+    "appName": "DPS Rohini Connect",
+    "slug": "dps-rohini-connect",
+    "androidPackage": "com.dpsrohini.sms",
+    "iosBundleId": "com.dpsrohini.sms",
+    "apiDomain": "https://api.vitanasms.com/api",
+    "schoolDomain": "dpsrohini.vitanasms.com",
+    "colors": {
+      "primary": "#003366",
+      "accent": "#ffd700"
+    },
+    "isWhiteLabel": true,
+    "easProjectId": "YOUR_EAS_PROJECT_ID_DPS"
+  },
+  "test-school": {
+    "schoolId": "test-school",
+    "appName": "Test School App",
+    "slug": "test-school-sms",
+    "androidPackage": "com.testschool.sms",
+    "iosBundleId": "com.testschool.sms",
+    "apiDomain": "https://api.vitanasms.com/api",
+    "schoolDomain": "testschool.vitanasms.com",
+    "colors": {
+      "primary": "#7c3aed",
+      "accent": "#10b981"
+    },
+    "isWhiteLabel": true,
+    "easProjectId": "YOUR_EAS_PROJECT_ID_TEST"
+  }
+}

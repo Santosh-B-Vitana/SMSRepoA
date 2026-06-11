@@ -1,204 +1,176 @@
-# PROMPT-15: Analytics & Observability Setup
+# PROMPT-15: Analytics & Observability
 
-> **Prompt ID:** PROMPT-15  
-> **Epic:** EP-16 — Analytics & Observability  
-> **Phase:** 3 — Sprint 17–18  
-> **Estimated Story Points:** 29  
-> **Prerequisites:** PROMPT-01 complete (Sentry stub from foundation setup)  
-> **Related Architecture Docs:** [epics/EP-16-analytics-observability](../epics/EP-16-analytics-observability.md)
-
----
-
-## Context
-
-The mobile app is in beta. Now instrument it properly for production monitoring. This covers Sentry crash reporting, Sentry Performance APM, Amplitude product analytics, source map uploads, and error boundaries around all feature modules.
-
-**Important:** No PII may appear in any analytics event or Sentry payload. The following are NEVER tracked:
-- Student or parent names.
-- Email addresses.
-- Phone numbers.
-- Aadhaar / PAN numbers.
-- Fee amounts as exact values (use buckets: `<5k`, `5k-20k`, `>20k`).
-- Message content.
+> **Version**: 2.0 — Full 10-Phase Anatomy  
+> **Epic**: EP-16 — Analytics & Observability  
+> **Sprint**: 17–18 (Weeks 33–36)  
+> **Story Points**: 29  
+> **Prerequisites**: PROMPT-01 ✓ (Sentry stub initialized)  
+> **Can start**: Any time after PROMPT-01 — runs in parallel with feature development
 
 ---
 
-## Requirements
+## PHASE 1: Context & Scope
 
-### 1. Sentry — Full Setup
+### What We're Building
 
-#### Initialization (`app/_layout.tsx`)
+Complete observability: crash reporting (Sentry), product analytics (Amplitude), performance monitoring, source map uploads, and error boundaries. This sprint makes the app production-ready from a monitoring perspective.
 
-```typescript
-import * as Sentry from '@sentry/react-native';
-import { useNavigationContainerRef } from 'expo-router';
+**Critical rule**: **No PII in any event**. Student names, parent emails, phone numbers, Aadhaar, PAN — never in analytics or Sentry.
 
-const routingInstrumentation = new Sentry.ReactNavigationInstrumentation();
+**Capabilities:**
+- Sentry crash reporting with user context (UUID only, never email)
+- Sentry Performance: screen load times, API latency
+- Source maps uploaded to Sentry in CI (readable stack traces)
+- Error boundaries on every feature module
+- Amplitude product analytics (screen views + feature events)
+- 25+ typed analytics events (no raw amounts — use buckets)
+- PII sanitization layer
 
-Sentry.init({
-  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-  environment: process.env.EXPO_PUBLIC_ENV ?? 'development',
-  release: `vitana-sms@${Application.nativeApplicationVersion}+${Application.nativeBuildVersion}`,
-  dist: Platform.OS,
-  
-  tracesSampleRate: process.env.EXPO_PUBLIC_ENV === 'production' ? 0.15 : 1.0,
-  profilesSampleRate: process.env.EXPO_PUBLIC_ENV === 'production' ? 0.05 : 0.3,
-  
-  integrations: [
-    new Sentry.ReactNativeTracing({
-      routingInstrumentation,
-      // Track navigation as transactions
-      enableStallTracking: true,
-      enableUserInteractionTracing: true,
-    }),
-  ],
-  
-  beforeSend: (event) => {
-    // Scrub all sensitive fields
-    if (event.request?.headers) {
-      delete event.request.headers['Authorization'];
-      delete event.request.headers['authorization'];
-    }
-    // Remove any student/parent name patterns from event message
-    if (event.extra) {
-      delete event.extra.refreshToken;
-      delete event.extra.accessToken;
-    }
-    return event;
-  },
-  
-  beforeSendTransaction: (transaction) => {
-    // Remove query parameters that might contain sensitive data
-    if (transaction.request?.url) {
-      transaction.request.url = stripSensitiveQueryParams(transaction.request.url);
-    }
-    return transaction;
-  },
-});
+### Current State
 
-// Set navigation ref
-const ref = useNavigationContainerRef();
-useEffect(() => { routingInstrumentation.registerNavigationContainer(ref); }, [ref]);
-```
+- ✅ Sentry initialized in `app/_layout.tsx` (basic stub from PROMPT-01)
+- ✅ `EXPO_PUBLIC_SENTRY_DSN` used in init
+- ❌ Error boundaries not placed on feature modules
+- ❌ Amplitude not installed
+- ❌ Source maps upload not in CI
+- ❌ Event taxonomy not implemented
+- ❌ API error capture not in Axios interceptor
 
-#### Post-Login User Context
+### Success Criteria
 
-```typescript
-// src/features/auth/hooks/useLogin.ts — after successful login
-Sentry.setUser({
-  id: user.id,   // internal UUID only
-  // NO email, NO name
-});
-Sentry.setTag('schoolId', user.schoolId);
-Sentry.setTag('role', user.role);
-Sentry.setTag('appVersion', Application.nativeApplicationVersion!);
-Sentry.setTag('platform', Platform.OS);
-```
+- [ ] Intentional crash → Sentry event within 30 seconds
+- [ ] Authorization header NOT in any Sentry event (scrubbed)
+- [ ] User ID in Sentry is UUID (not email)
+- [ ] Source maps: readable TypeScript filenames in Sentry stack traces
+- [ ] Screen view event for every navigation change (Amplitude)
+- [ ] `login_success` event has `role` property (no email, no name)
+- [ ] `fee_payment_initiated` uses `amount_bucket` (not raw amount)
+- [ ] Error boundary: crashing Fees module doesn't crash Attendance module
+- [ ] Cold start measured as Sentry transaction
+- [ ] All 25+ event types implemented
 
-#### On Logout
+---
 
-```typescript
-Sentry.setUser(null);  // Clear user context
-```
+## PHASE 2: Analysis Phase
 
-#### API Error Capture
-
-Extend the Axios error interceptor (in `src/api/client.ts`):
-
-```typescript
-// In the error interceptor (after 401 handling)
-if (error.response?.status && error.response.status >= 500) {
-  Sentry.withScope((scope) => {
-    scope.setTag('endpoint', error.config?.url ?? 'unknown');
-    scope.setTag('httpMethod', error.config?.method?.toUpperCase() ?? 'UNKNOWN');
-    scope.setTag('httpStatus', String(error.response!.status));
-    scope.setExtra('correlationId', error.response?.headers?.['x-correlation-id']);
-    scope.setExtra('responseData', JSON.stringify(error.response?.data)?.substring(0, 500));
-    Sentry.captureMessage(
-      `API Error ${error.response.status}: ${error.config?.method?.toUpperCase()} ${error.config?.url}`,
-      'error'
-    );
-  });
-}
-```
-
-#### Error Boundaries
-
-Create `src/components/common/FeatureErrorBoundary.tsx` as defined in EP-16.
-
-Wrap every role group and major feature in `app/_layout.tsx` and per-feature layout files:
-
-```typescript
-// app/(parent)/_layout.tsx
-<FeatureErrorBoundary featureName="Parent Portal">
-  <Tabs>...</Tabs>
-</FeatureErrorBoundary>
-```
-
-Features to wrap individually:
-- `FeatureErrorBoundary featureName="Fees"` around fees screens.
-- `FeatureErrorBoundary featureName="Results"` around results screens.
-- `FeatureErrorBoundary featureName="Attendance"` around attendance screens.
-- `FeatureErrorBoundary featureName="Marks Entry"` around marks entry grid.
-- `FeatureErrorBoundary featureName="Messaging"` around messaging screens.
-
-#### Performance Transactions
-
-Manual transaction for critical user flows:
-
-```typescript
-// In parent dashboard
-const transaction = Sentry.startTransaction({ name: 'parent_dashboard_load' });
-Sentry.getCurrentHub().configureScope(scope => scope.setSpan(transaction));
-
-// API calls automatically create child spans via the Axios integration
-const data = await mobileApi.getParentDashboard();
-
-transaction.finish();
-```
-
-### 2. Source Maps Upload
-
-Add to EAS post-build hook in all production workflows:
-
-```yaml
-# In mobile-eas-production.yml, after build:
-- name: Upload source maps to Sentry
-  run: |
-    npx @sentry/cli sourcemaps inject --org vitana --project vitana-mobile \
-      --release "$APP_VERSION+$BUILD_NUMBER" \
-      .expo/
-    npx @sentry/cli sourcemaps upload --org vitana --project vitana-mobile \
-      --release "$APP_VERSION+$BUILD_NUMBER" \
-      .expo/
-  env:
-    SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-```
-
-### 3. Amplitude — Full Setup
-
-#### Installation
+### Read First
 
 ```bash
-pnpm --filter @vitana/mobile add @amplitude/analytics-react-native
+docs/mobile_application_docs/epics/EP-16-analytics-observability.md
 ```
 
-#### Initialization (`src/lib/analytics.ts`)
+### Existing Code Audit
+
+```bash
+# Verify Sentry stub exists
+grep "Sentry.init" mobile/app/_layout.tsx
+
+# Check Amplitude not yet installed
+grep "amplitude" mobile/package.json  # Should NOT be there yet
+
+# Verify EXPO_PUBLIC_SENTRY_DSN in env
+grep "SENTRY_DSN" mobile/.env.example
+```
+
+### Privacy Rules (Enforce in Code)
 
 ```typescript
+// FORBIDDEN in any event property:
+const FORBIDDEN_KEYS = ['name', 'email', 'phone', 'aadhaar', 'pan', 'password', 'token'];
+// Amounts: never log raw INR amounts — use buckets: '<5k', '5k-20k', '20k-50k', '>50k'
+// Student IDs: hash before sending if needed as identifier
+// School domain: OK to send (not PII)
+// User role: OK to send
+// Class name: OK to send
+```
+
+---
+
+## PHASE 3: Technical Planning
+
+### Observability Stack
+
+```
+Crash / Error      → Sentry React Native SDK
+Performance APM    → Sentry Performance (transactions + spans)
+Product Analytics  → Amplitude React Native SDK
+Source Maps        → @sentry/cli in CI (GitHub Actions)
+```
+
+### Error Boundary Placement
+
+```
+app/_layout.tsx (root error boundary — catches anything)
+  └── (parent)/_layout.tsx (FeatureErrorBoundary: "Parent Portal")
+  │   ├── fees screens     (FeatureErrorBoundary: "Fees")
+  │   ├── results screens  (FeatureErrorBoundary: "Results")
+  │   └── attendance       (FeatureErrorBoundary: "Attendance")
+  └── (teacher)/_layout.tsx (FeatureErrorBoundary: "Teacher Portal")
+      ├── attendance screens (FeatureErrorBoundary: "Attendance Marking")
+      └── marks screens     (FeatureErrorBoundary: "Marks Entry")
+```
+
+---
+
+## PHASE 4: Database Design
+
+> No database changes. Analytics data goes to Amplitude + Sentry cloud services.
+
+---
+
+## PHASE 5: Backend Implementation
+
+> No backend changes. This prompt is purely mobile-side observability.
+
+---
+
+## PHASE 6: Mobile Implementation
+
+### 6.1 Install Amplitude
+
+```bash
+cd mobile
+pnpm add @amplitude/analytics-react-native
+```
+
+### 6.2 Analytics Module
+
+```typescript
+// mobile/src/lib/analytics.ts
 import * as amplitude from '@amplitude/analytics-react-native';
 import { Identify } from '@amplitude/analytics-react-native';
+import * as Application from 'expo-application';
+import { Platform } from 'react-native';
+import type { UserRole } from '@vitana/shared-types';
+
+// PII sanitization
+const FORBIDDEN_KEYS = ['name', 'email', 'phone', 'aadhaar', 'pan', 'password', 'token', 'refreshToken'];
+
+function sanitize(props?: Record<string, unknown>): Record<string, unknown> {
+  if (!props) return {};
+  return Object.fromEntries(
+    Object.entries(props).filter(([k]) =>
+      !FORBIDDEN_KEYS.some(fk => k.toLowerCase().includes(fk))
+    )
+  );
+}
+
+// Amount bucket — never log raw INR amounts
+export function getAmountBucket(amount: number): '<5k' | '5k-20k' | '20k-50k' | '>50k' {
+  if (amount < 5000)  return '<5k';
+  if (amount < 20000) return '5k-20k';
+  if (amount < 50000) return '20k-50k';
+  return '>50k';
+}
 
 export async function initAnalytics() {
-  await amplitude.init(process.env.EXPO_PUBLIC_AMPLITUDE_API_KEY!, undefined, {
-    serverZone: 'EU',  // EU server for GDPR compliance
+  if (!process.env.EXPO_PUBLIC_AMPLITUDE_API_KEY) return;
+  await amplitude.init(process.env.EXPO_PUBLIC_AMPLITUDE_API_KEY, undefined, {
     trackingOptions: {
-      ipAddress: false,         // Don't track IP
+      ipAddress: false,      // No IP tracking
       carrier: false,
       deviceManufacturer: true,
       deviceModel: true,
-      language: true,
-      osName: true,
       osVersion: true,
       platform: true,
       versionName: true,
@@ -206,82 +178,44 @@ export async function initAnalytics() {
   });
 }
 
-export function identifyUser(user: UserProfile) {
-  amplitude.setUserId(user.id);  // UUID only, never email
-  
+export function identifyUser(userId: string, role: UserRole, schoolId: string) {
+  amplitude.setUserId(userId);  // UUID only, never email
   const identify = new Identify();
-  identify.set('role', user.role);
-  identify.set('schoolId', user.schoolId);
-  identify.set('appVersion', Application.nativeApplicationVersion!);
+  identify.set('role', role);
+  identify.set('schoolId', schoolId);  // OK — not PII
+  identify.set('appVersion', Application.nativeApplicationVersion ?? '1.0.0');
   identify.set('platform', Platform.OS);
   amplitude.identify(identify);
 }
 
-export function resetUser() {
-  amplitude.reset();  // Call on logout
+export function resetAnalyticsUser() {
+  amplitude.reset();
 }
+
+export type AnalyticsEvent =
+  | 'login_success' | 'login_failed' | 'logout' | 'biometric_unlock'
+  | 'attendance_viewed' | 'attendance_submitted' | 'attendance_offline_queued'
+  | 'fee_payment_initiated' | 'fee_payment_completed' | 'fee_payment_failed'
+  | 'result_viewed' | 'report_card_viewed'
+  | 'assignment_viewed' | 'assignment_submitted' | 'assignment_graded'
+  | 'marks_entry_submitted' | 'marks_entry_offline_queued'
+  | 'leave_applied' | 'leave_approved' | 'leave_rejected'
+  | 'announcement_opened' | 'announcement_published'
+  | 'message_sent'
+  | 'push_notification_tapped'
+  | 'offline_queue_synced' | 'offline_conflict_resolved'
+  | 'feature_unavailable_shown'
+  | 'force_update_shown' | 'maintenance_mode_shown';
 
 export function track(event: AnalyticsEvent, properties?: Record<string, unknown>) {
-  const sanitized = sanitizeForAnalytics(properties);
-  amplitude.track(event, sanitized);
-}
-
-function sanitizeForAnalytics(props?: Record<string, unknown>): Record<string, unknown> {
-  if (!props) return {};
-  const FORBIDDEN_KEYS = ['name', 'email', 'phone', 'aadhaar', 'pan', 'password'];
-  return Object.fromEntries(
-    Object.entries(props).filter(([k]) => !FORBIDDEN_KEYS.some(fk => k.toLowerCase().includes(fk)))
-  );
+  amplitude.track(event, sanitize(properties));
 }
 ```
 
-#### Analytics Event Type System
+### 6.3 Screen Tracking Hook
 
 ```typescript
-// src/lib/analyticsEvents.ts
-export type AnalyticsEvent =
-  // Auth
-  | 'login_success'
-  | 'login_failed'
-  | 'logout'
-  | 'biometric_unlock_success'
-  | 'biometric_unlock_failed'
-  // Parent
-  | 'attendance_viewed'
-  | 'fee_payment_initiated'
-  | 'fee_payment_completed'
-  | 'fee_payment_failed'
-  | 'result_viewed'
-  | 'report_card_viewed'
-  | 'leave_applied'
-  | 'announcement_opened'
-  // Teacher
-  | 'attendance_submitted'
-  | 'marks_entry_submitted'
-  | 'assignment_created'
-  | 'assignment_graded'
-  | 'diary_posted'
-  | 'leave_approved'
-  | 'leave_rejected'
-  // Student
-  | 'assignment_submitted'
-  | 'timetable_viewed'
-  // Admin
-  | 'announcement_published'
-  | 'bulk_leave_approved'
-  // App
-  | 'offline_queue_synced'
-  | 'offline_conflict_resolved'
-  | 'push_notification_tapped'
-  | 'feature_unavailable_shown'
-  | 'force_update_shown'
-  | 'maintenance_mode_shown';
-```
-
-#### Auto Screen Tracking
-
-```typescript
-// src/hooks/useScreenTracking.ts
+// mobile/src/hooks/useScreenTracking.ts
 import { useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { track } from '../lib/analytics';
@@ -290,60 +224,181 @@ export function useScreenTracking() {
   const segments = useSegments();
   useEffect(() => {
     const screenName = segments.length > 0 ? segments.join('/') : 'home';
-    track('screen_viewed' as any, { screenName });
+    // Don't log sensitive screen names
+    const safeSegments = segments.filter(s => !s.startsWith('['));
+    const safeName = safeSegments.length > 0 ? safeSegments.join('/') : 'dashboard';
+    amplitude.track('screen_viewed', { screenName: safeName });
   }, [segments]);
 }
-// Called in root _layout.tsx
+
+import * as amplitude from '@amplitude/analytics-react-native';
 ```
 
-#### Key Event Implementations
-
-Implement `track()` calls at these points:
+### 6.4 Feature Error Boundary
 
 ```typescript
-// auth/useLogin.ts
-track('login_success', { role: user.role, method: 'password' });
-track('login_failed', { reason: 'invalid_credentials' });
+// mobile/src/components/common/FeatureErrorBoundary.tsx
+import React, { Component, ReactNode } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import * as Sentry from '@sentry/react-native';
+import { Feather } from '@expo/vector-icons';
+import { VITANA_DESIGN_TOKENS } from '@vitana/shared-utils';
 
-// fees/useFeePayment.ts
-track('fee_payment_initiated', {
-  amount_bucket: getAmountBucket(amount),  // '<5k' | '5k-20k' | '>20k' | '>50k'
-  school_id: user.schoolId,
-});
-track('fee_payment_completed', { payment_method: 'upi', success: true });
+interface Props { featureName: string; children: ReactNode; }
+interface State { hasError: boolean; error: Error | null; }
 
-// attendance/useMarkAttendance.ts
+export class FeatureErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    Sentry.withScope(scope => {
+      scope.setTag('feature', this.props.featureName);
+      scope.setExtra('componentStack', info.componentStack);
+      Sentry.captureException(error);
+    });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View className="flex-1 items-center justify-center px-6 py-12">
+          <Feather name="alert-circle" size={40} color={VITANA_DESIGN_TOKENS.colors.danger} />
+          <Text className="font-heading text-base text-text-primary mt-4 text-center">
+            {this.props.featureName} failed to load
+          </Text>
+          <Text className="font-body text-text-secondary text-center mt-2 text-sm">
+            We've been notified. Please try again.
+          </Text>
+          <TouchableOpacity
+            onPress={() => this.setState({ hasError: false, error: null })}
+            className="mt-6 px-6 py-3 rounded-xl"
+            style={{ backgroundColor: VITANA_DESIGN_TOKENS.colors.primary }}
+          >
+            <Text className="font-body-semibold text-white">Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+```
+
+### 6.5 Wrap Feature Layouts
+
+```typescript
+// Add to every role _layout.tsx:
+import { FeatureErrorBoundary } from '../../src/components/common/FeatureErrorBoundary';
+
+// Wrap Tabs:
+<FeatureErrorBoundary featureName="Parent Portal">
+  <Tabs ...>
+    ...
+  </Tabs>
+</FeatureErrorBoundary>
+```
+
+### 6.6 API Error Capture in Axios
+
+```typescript
+// mobile/src/api/client.ts — in error interceptor, ADD:
+import * as Sentry from '@sentry/react-native';
+
+// After 401/refresh handling, before throwing:
+if (error.response?.status && error.response.status >= 500) {
+  Sentry.withScope(scope => {
+    scope.setTag('endpoint', error.config?.url ?? 'unknown');
+    scope.setTag('httpMethod', error.config?.method?.toUpperCase() ?? 'UNKNOWN');
+    scope.setTag('httpStatus', String(error.response!.status));
+    scope.setExtra('correlationId', error.response?.headers?.['x-correlation-id']);
+    // NEVER log request body (may contain passwords)
+    Sentry.captureMessage(
+      `API Error ${error.response.status}: ${error.config?.method?.toUpperCase()} ${error.config?.url}`,
+      'error'
+    );
+  });
+}
+```
+
+### 6.7 Post-Login Tracking
+
+```typescript
+// In useLogin hook (mobile/src/features/auth/hooks/useLogin.ts) — after setAuth():
+import { identifyUser, track } from '../../../lib/analytics';
+import * as Sentry from '@sentry/react-native';
+
+// After successful login:
+identifyUser(response.user.id, response.user.role, response.user.schoolId);
+Sentry.setUser({ id: response.user.id });   // UUID only
+Sentry.setTag('schoolId', response.user.schoolId);
+Sentry.setTag('role', response.user.role);
+track('login_success', { role: response.user.role, method: 'password' });
+```
+
+### 6.8 Key Event Implementations
+
+Add these `track()` calls throughout the app:
+
+```typescript
+// In attendance marking (PROMPT-04):
 track('attendance_submitted', {
   class_size: records.length,
   absent_count: records.filter(r => r.status === 'Absent').length,
   was_offline: !isConnected,
 });
 
-// offline/queue.ts
+// In fee payment (PROMPT-03):
+track('fee_payment_initiated', {
+  amount_bucket: getAmountBucket(amount),  // NEVER log raw amount
+  school_id: user.schoolId,               // OK — not PII
+});
+track('fee_payment_completed', {
+  amount_bucket: getAmountBucket(amount),
+  payment_method: 'upi',
+  success: true,
+});
+
+// In logout (useLogout hook):
+resetAnalyticsUser();
+Sentry.setUser(null);
+
+// In results view (parent):
+track('result_viewed', { grade: result.grade, exam_type: result.examType });
+// NEVER: track('result_viewed', { student_name: ... })
+
+// In offline sync:
 track('offline_queue_synced', {
   operation_type: item.operationType,
   wait_minutes: Math.round((Date.now() - item.createdAt) / 60000),
-  success: true,
 });
+
+// In force update / maintenance:
+track('force_update_shown', { current_version: Application.nativeApplicationVersion });
+track('maintenance_mode_shown');
 ```
 
-### 4. Performance Monitoring Helpers
+### 6.9 Performance Measurement Helper
 
 ```typescript
-// src/lib/performance.ts
+// mobile/src/lib/performance.ts
+import * as Sentry from '@sentry/react-native';
+
 export function measureScreenLoad(screenName: string) {
   const startTime = Date.now();
+  const transaction = Sentry.startTransaction({ name: `screen_load_${screenName}` });
+  Sentry.getCurrentHub().configureScope(scope => scope.setSpan(transaction));
+
   return {
     complete: () => {
       const duration = Date.now() - startTime;
-      // Record as Sentry span
-      Sentry.addBreadcrumb({
-        category: 'performance',
-        message: `${screenName} loaded in ${duration}ms`,
-        level: duration > 2000 ? 'warning' : 'info',
-        data: { duration, screenName },
-      });
-      // Warn if too slow
+      transaction.finish();
       if (duration > 2000) {
         Sentry.captureMessage(`Slow screen load: ${screenName} (${duration}ms)`, 'warning');
       }
@@ -352,103 +407,133 @@ export function measureScreenLoad(screenName: string) {
 }
 ```
 
-Usage in screens:
-```typescript
-// In Parent Dashboard
-const perf = measureScreenLoad('parent_dashboard');
-const { data } = useQuery({ ... });
-useEffect(() => { if (data) perf.complete(); }, [data]);
-```
-
-### 5. App Health Checks
+### 6.10 Root Layout Integration
 
 ```typescript
-// src/lib/healthCheck.ts — run on app start
-export async function performHealthChecks() {
-  // 1. API reachability
-  try {
-    const start = Date.now();
-    await fetch(`${process.env.EXPO_PUBLIC_API_BASE_URL}/health/live`);
-    const latency = Date.now() - start;
-    track('api_health_check', { latency_ms: latency, status: 'ok' });
-  } catch {
-    track('api_health_check', { status: 'failed' });
-    Sentry.captureMessage('API health check failed on app start', 'warning');
-  }
-  
-  // 2. SQLite health
-  try {
-    await db.run(sql`SELECT 1`);
-  } catch (error) {
-    Sentry.captureException(error, { tags: { component: 'sqlite' } });
-  }
+// mobile/app/_layout.tsx — UPDATE existing Sentry init:
+import { initAnalytics } from '../src/lib/analytics';
+import { useScreenTracking } from '../src/hooks/useScreenTracking';
+
+// In RootLayout:
+useEffect(() => {
+  initAnalytics();
+}, []);
+
+// Inside a child component that uses the router:
+function AppAnalytics() {
+  useScreenTracking();
+  return null;
 }
+// Add <AppAnalytics /> inside QueryClientProvider
+```
+
+### 6.11 CI: Source Maps Upload
+
+```yaml
+# .github/workflows/mobile-eas-production.yml — ADD after EAS build:
+- name: Upload source maps to Sentry
+  run: |
+    npx @sentry/cli releases new "${{ steps.version.outputs.version }}+${{ needs.checks.outputs.build_number }}"
+    npx @sentry/cli sourcemaps inject --org vitana-technologies --project vitana-mobile .expo/
+    npx @sentry/cli sourcemaps upload \
+      --org vitana-technologies \
+      --project vitana-mobile \
+      --release "${{ steps.version.outputs.version }}+${{ needs.checks.outputs.build_number }}" \
+      .expo/
+    npx @sentry/cli releases finalize "${{ steps.version.outputs.version }}+${{ needs.checks.outputs.build_number }}"
+  working-directory: mobile
+  env:
+    SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 ```
 
 ---
 
-## Implementation Tasks
+## PHASE 9: Testing & Validation
 
-1. Complete Sentry initialization in `app/_layout.tsx` with all options.
-2. Implement post-login Sentry user context setting.
-3. Extend API client error interceptor with Sentry capture for 5xx errors.
-4. Create `FeatureErrorBoundary` component.
-5. Wrap all role groups and major features with `FeatureErrorBoundary`.
-6. Add source maps upload to all production CI workflows.
-7. Implement `analytics.ts` with Amplitude initialization.
-8. Implement `analyticsEvents.ts` type system.
-9. Implement `useScreenTracking()` hook.
-10. Add `useScreenTracking()` to root `_layout.tsx`.
-11. Implement `track()` calls for all 25+ events in the taxonomy.
-12. Implement `getAmountBucket()` utility (no raw amounts).
-13. Implement `sanitizeForAnalytics()` with forbidden key list.
-14. Implement `measureScreenLoad()` performance helper.
-15. Apply `measureScreenLoad()` to: Parent Dashboard, Teacher Dashboard, Attendance Grid, Marks Entry Grid, Fee Summary.
-16. Implement `performHealthChecks()` called on app start.
-17. Add Amplitude to EAS secrets: `EXPO_PUBLIC_AMPLITUDE_API_KEY`.
-18. Add Sentry DSN to EAS secrets: `EXPO_PUBLIC_SENTRY_DSN`.
-19. Verify Sentry events show clean TS stack traces (source maps working).
-20. Verify no PII in Amplitude events (audit 5 sample events).
+### 9.1 Tests
 
----
+```typescript
+// mobile/src/lib/__tests__/analytics.test.ts
+import { sanitize, getAmountBucket } from '../analytics';
 
-## Acceptance Criteria
+describe('sanitize', () => {
+  it('removes forbidden keys', () => {
+    const result = sanitize({ name: 'Aarav', role: 'Student', email: 'a@b.com' });
+    expect(result).toEqual({ role: 'Student' });
+    expect(result.name).toBeUndefined();
+    expect(result.email).toBeUndefined();
+  });
 
-- [ ] Intentional throw in Parent Dashboard → Sentry event appears within 30 seconds.
-- [ ] Authorization header NOT visible in Sentry event.
-- [ ] User ID visible in Sentry (UUID, not email).
-- [ ] `login_success` event appears in Amplitude with `role` property.
-- [ ] `attendance_submitted` event has `was_offline` property.
-- [ ] `fee_payment_initiated` uses `amount_bucket`, not raw amount.
-- [ ] Screen view events appear in Amplitude for Parent Dashboard, Attendance, and Results.
-- [ ] Source maps: Sentry stack trace shows TypeScript filenames (not `bundle.js`).
-- [ ] Error boundary: crashing `FeesModule` doesn't crash attendance or results screens.
-- [ ] Cold start performance captured as Sentry transaction.
-- [ ] API 500 error captured in Sentry with endpoint + correlationId.
-- [ ] `sanitizeForAnalytics` removes any key containing "name", "email", "phone".
+  it('keeps allowed keys', () => {
+    const result = sanitize({ role: 'Parent', schoolId: 'abc', was_offline: true });
+    expect(result).toEqual({ role: 'Parent', schoolId: 'abc', was_offline: true });
+  });
+});
 
----
+describe('getAmountBucket', () => {
+  it('buckets correctly', () => {
+    expect(getAmountBucket(3000)).toBe('<5k');
+    expect(getAmountBucket(10000)).toBe('5k-20k');
+    expect(getAmountBucket(30000)).toBe('20k-50k');
+    expect(getAmountBucket(100000)).toBe('>50k');
+  });
+});
+```
 
-## Testing Requirements
+### 9.2 Validation Checklist
 
-Unit:
-- `sanitizeForAnalytics({ name: 'Aarav', role: 'Student' })` → `{ role: 'Student' }`.
-- `getAmountBucket(3500)` → `'<5k'`.
-- `getAmountBucket(15000)` → `'5k-20k'`.
-- `getAmountBucket(75000)` → `'>50k'`.
-
-Manual:
-- Sentry: trigger a real crash on a test device → verify event in Sentry project.
-- Amplitude: login → navigate 3 screens → check Amplitude user activity stream.
-- Privacy audit: review 10 Amplitude events → zero PII.
+- [ ] Throw an error intentionally in ParentDashboard → Sentry event within 30s
+- [ ] Check Sentry event: no `Authorization` header visible
+- [ ] Check Sentry event: user.id is a UUID (not an email address)
+- [ ] Login with demo parent → check Amplitude user stream: `login_success` event with `role: "Parent"`
+- [ ] Pay fee → `fee_payment_initiated` event has `amount_bucket` (not raw amount)
+- [ ] Navigate 5 screens → 5 `screen_viewed` events in Amplitude
+- [ ] Crash in fees screen → Error boundary shows fallback; Attendance still works
+- [ ] Production build: check Sentry stack trace shows TypeScript filenames
+- [ ] `sanitize({ name: 'Aarav', role: 'Student' })` returns `{ role: 'Student' }`
 
 ---
 
-## Definition of Done
+## PHASE 10: Documentation & Verification
 
-- [ ] All acceptance criteria pass.
-- [ ] Zero PII in any analytics event or Sentry payload (reviewed by engineering lead).
-- [ ] Sentry DSN + Amplitude key stored as EAS secrets (not in code).
-- [ ] Source maps uploaded and verified (readable stack trace).
-- [ ] `EXPO_PUBLIC_SENTRY_DSN` present in all EAS build profiles.
-- [ ] Peer review complete.
+### Verification Commands
+
+```bash
+# Install Amplitude
+pnpm --filter @vitana/mobile add @amplitude/analytics-react-native
+
+# Type check
+pnpm --filter @vitana/mobile typecheck
+
+# Run analytics tests
+pnpm --filter @vitana/mobile test -- --testPathPattern=analytics
+
+# Verify no PII in 10 sample events (manual review in Amplitude dashboard)
+```
+
+### Git Commit
+
+```bash
+git add .
+git commit -m "feat(mobile/analytics): Sentry crash reporting + Amplitude analytics
+
+- Sentry: full initialization with PII scrubbing (no auth tokens in events)
+- Sentry Performance: screen load transactions, API error capture
+- FeatureErrorBoundary: wraps all role portals and feature modules
+- Error boundary: module crash doesn't crash other modules
+- Amplitude: 25+ typed events with PII sanitization layer
+- getAmountBucket: never log raw INR amounts
+- sanitize(): removes forbidden keys (name, email, phone, aadhaar, etc.)
+- useScreenTracking hook: auto screen view on every navigation
+- identifyUser: UUID only, role, schoolId, appVersion
+- Post-logout: reset analytics user + clear Sentry context
+- Source maps upload in production CI workflow
+- measureScreenLoad performance helper
+- analytics.test.ts with PII enforcement tests
+
+PRIVACY: Zero PII in any analytics event — enforced at sanitize() layer"
+```
+
+---
+
+**END OF PROMPT-15**

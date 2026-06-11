@@ -7,6 +7,16 @@
 
 ---
 
+> **CORE PRINCIPLE: ONE APP, MULTIPLE ROLES**
+>
+> Vitana SMS has **one mobile app binary** (`com.vitana.sms`). Parents, teachers, students, and admins all use the same app. After login, the JWT `role` claim routes the user to the appropriate portal (`/(parent)`, `/(teacher)`, `/(student)`, `/(admin)`).
+>
+> For white-label: each school gets **ONE branded binary** (`com.<school>.sms`). That single binary serves all roles at that school.
+>
+> The epics and prompts titled "Parent App", "Teacher App", "Student App", "Admin App" refer to the **portal** (route group) for that role inside the single binary — they are **not** separate apps.
+
+---
+
 ## Overview
 
 This directory contains the complete architecture blueprint, epic documentation, and Cursor implementation prompts for the Vitana Mobile Platform — a world-class enterprise-grade mobile platform supporting 1,000+ schools, white-label dedicated apps, offline-first operation, and real-time push notifications from a single React Native codebase.
@@ -92,13 +102,13 @@ These prompts are ready to be executed by Cursor agents. Each is self-contained 
 |---|---|---|---|
 | [PROMPT-01](./12-cursor-prompts/PROMPT-01-project-setup.md) | Mobile project setup, monorepo, shared packages, navigation skeleton | 1 | 27 |
 | [PROMPT-02](./12-cursor-prompts/PROMPT-02-authentication.md) | Login, token refresh, biometric unlock, school domain entry | 2 | 18 |
-| [PROMPT-03](./12-cursor-prompts/PROMPT-03-parent-app.md) | Complete Parent App: attendance, fees, results, announcements, diary | 3–6 | 42 |
-| [PROMPT-04](./12-cursor-prompts/PROMPT-04-teacher-app.md) | Teacher App: timetable, offline attendance, student list, leave management | 7–8 | 38 |
+| [PROMPT-03](./12-cursor-prompts/PROMPT-03-parent-app.md) | Parent Portal (within shared app): attendance, fees, results, announcements, diary | 3–6 | 42 |
+| [PROMPT-04](./12-cursor-prompts/PROMPT-04-teacher-app.md) | Teacher Portal (within shared app): timetable, offline attendance, student list, leave management | 7–8 | 38 |
 | [PROMPT-05](./12-cursor-prompts/PROMPT-05-push-notifications.md) | FCM/APNS push, device registration, deep links, notification center | 10 | 16 |
 | [PROMPT-06](./12-cursor-prompts/PROMPT-06-white-label.md) | White label system: app.config.js, asset injection, runtime branding | 11–13 | 34 |
 | [PROMPT-07](./12-cursor-prompts/PROMPT-07-build-automation.md) | GitHub Actions: PR preview, staging, production, OTA, school builds | 12 | 18 |
-| [PROMPT-08](./12-cursor-prompts/PROMPT-08-student-app.md) | Student App: timetable, results, assignments, submission, fees | 9 | 27 |
-| [PROMPT-09](./12-cursor-prompts/PROMPT-09-admin-app.md) | Admin App: dashboard, approvals, announcements, reports | 14 | 24 |
+| [PROMPT-08](./12-cursor-prompts/PROMPT-08-student-app.md) | Student Portal (within shared app): timetable, results, assignments, submission, fees | 9 | 27 |
+| [PROMPT-09](./12-cursor-prompts/PROMPT-09-admin-app.md) | Admin Portal (within shared app): dashboard, approvals, announcements, reports | 14 | 24 |
 | [PROMPT-10](./12-cursor-prompts/PROMPT-10-feature-flags.md) | Feature flag system: app-config endpoint, FeatureGuard, dynamic nav | 7–10 | 18 |
 | [PROMPT-11](./12-cursor-prompts/PROMPT-11-mobile-api-gaps.md) | Backend: all missing mobile APIs (dashboard aggregations, FCM, payment) | 3–14 | 28 |
 | [PROMPT-12](./12-cursor-prompts/PROMPT-12-offline-sync.md) | Advanced offline: marks drafts, diary queue, morning bundle, conflict resolution | 12 & 15 | 24 |

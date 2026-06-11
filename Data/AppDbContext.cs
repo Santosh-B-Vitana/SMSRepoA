@@ -294,6 +294,14 @@ namespace SmsApi.Data
         public DbSet<WhatsappAuditLog> WhatsappAuditLogs { get; set; }
         public DbSet<WhatsappConversation> WhatsappConversations { get; set; }
 
+        // ── Mobile Push Notifications & App Config ───────────────────────────
+        public DbSet<MobileDeviceToken> MobileDeviceTokens { get; set; }
+        public DbSet<UserNotificationPreference> UserNotificationPreferences { get; set; }
+        public DbSet<MobileAppConfiguration> MobileAppConfigurations { get; set; }
+        public DbSet<MobileFeatureFlag> MobileFeatureFlags { get; set; }
+        public DbSet<NotificationDeliveryLog> NotificationDeliveryLogs { get; set; }
+        public DbSet<MobileAppBranding> MobileAppBrandings { get; set; }
+
         /// <summary>
         /// Automatically populates audit fields (CreatedAt, UpdatedAt, CreatedBy, UpdatedBy)
         /// on all BaseEntity-derived entities before persisting changes.
@@ -413,6 +421,7 @@ namespace SmsApi.Data
             ConfigureOfflineAttendance(modelBuilder);
             ConfigureDiscipline(modelBuilder);
             ConfigureWhatsApp(modelBuilder);
+            ConfigureMobile(modelBuilder);
 
             // Apply IsDeleted = false soft-delete filter to ALL entities derived from BaseEntity.
             // This prevents soft-deleted records from ever appearing in queries unless the caller
@@ -3503,6 +3512,48 @@ namespace SmsApi.Data
             {
                 entity.HasIndex(e => new { e.SchoolId, e.ContactPhone, e.WindowStart });
                 entity.HasIndex(e => e.WaConversationId);
+            });
+        }
+
+        private void ConfigureMobile(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<MobileDeviceToken>(entity =>
+            {
+                // Unique constraint: one row per (UserId, DeviceId) — upsert target
+                entity.HasIndex(e => new { e.UserId, e.DeviceId }).IsUnique();
+                entity.HasIndex(e => new { e.UserId, e.IsActive });
+                entity.HasIndex(e => e.SchoolId);
+            });
+
+            modelBuilder.Entity<UserNotificationPreference>(entity =>
+            {
+                // Unique constraint: one preference row per (UserId, NotificationType)
+                entity.HasIndex(e => new { e.UserId, e.NotificationType }).IsUnique();
+                entity.HasIndex(e => e.UserId);
+            });
+
+            modelBuilder.Entity<MobileAppConfiguration>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.IsActive });
+            });
+
+            modelBuilder.Entity<MobileFeatureFlag>(entity =>
+            {
+                // Unique constraint: one flag per (SchoolId, FlagKey)
+                entity.HasIndex(e => new { e.SchoolId, e.FlagKey }).IsUnique();
+            });
+
+            modelBuilder.Entity<NotificationDeliveryLog>(entity =>
+            {
+                entity.HasIndex(e => new { e.NotificationId, e.UserId });
+                entity.HasIndex(e => new { e.UserId, e.AttemptedAt });
+                entity.HasIndex(e => e.DeliveryStatus);
+            });
+
+            modelBuilder.Entity<MobileAppBranding>(entity =>
+            {
+                // One branding record per school
+                entity.HasIndex(e => e.SchoolId).IsUnique();
             });
         }
 

@@ -1,0 +1,10 @@
+packages:
+  - 'ui'
+  - 'mobile'
+  - 'packages/*'
+
+allowBuilds:
+  '@swc/core': true
+  core-js: true
+  esbuild: true
+  unrs-resolver: true

@@ -7,6 +7,26 @@
 
 ---
 
+## 0. Single-App Architecture Principle
+
+> **One binary. All roles. RBAC routing.**
+>
+> Vitana SMS has **one mobile app**. Parents, teachers, students, and admins all download and use the same app binary. After login the JWT `role` claim determines which portal (route group) the user is taken to.
+>
+> | Role(s) | Portal route group | Store listing |
+> |---|---|---|
+> | `Parent` | `/(parent)` | Same app |
+> | `Teacher`, `Staff`, `Librarian`, `TransportManager`, `HostelWarden`, `Receptionist` | `/(teacher)` | Same app |
+> | `Student` | `/(student)` | Same app |
+> | `Admin`, `Principal`, `HRManager`, `Accountant` | `/(admin)` | Same app |
+> | `SuperAdmin` | `/(super-admin)` | Same app |
+>
+> **White-label:** A school that purchases a dedicated branded app receives **ONE binary** (`com.<school>.sms`) that still serves all roles inside it. Vitana does NOT build 3 separate role-specific binaries per school.
+>
+> PROMPT-03 ("Parent Portal"), PROMPT-04 ("Teacher Portal"), PROMPT-08 ("Student Portal"), and PROMPT-09 ("Admin Portal") each implement the route group for that role — they are **feature modules within one app**, not separate apps.
+
+---
+
 ## 1. Architecture Overview
 
 The Vitana mobile app is a **React Native (Expo SDK 52)** application using **Expo Router v4** for navigation. It follows a **feature-sliced architecture** where every domain (attendance, fees, exams, etc.) is a self-contained module with its own screens, components, hooks, and API bindings.
