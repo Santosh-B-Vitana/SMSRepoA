@@ -71,6 +71,22 @@ export function setupNotificationHandlers(): () => void {
     void queryClient.invalidateQueries({ queryKey: ['parent-dashboard'] });
     void queryClient.invalidateQueries({ queryKey: ['student-dashboard'] });
     void queryClient.invalidateQueries({ queryKey: ['teacher-dashboard'] });
+
+    // EP-15: invalidate messaging caches on new message push
+    const type = data?.type ?? data?.notificationType;
+    if (
+      type === 'new_message' ||
+      type === 'new_message_teacher' ||
+      type === 'new_message_parent'
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      void queryClient.invalidateQueries({ queryKey: ['messages-unread'] });
+      if (data?.conversationId) {
+        void queryClient.invalidateQueries({
+          queryKey: ['messages', data.conversationId],
+        });
+      }
+    }
   });
 
   const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {

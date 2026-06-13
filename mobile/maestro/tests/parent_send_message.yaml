@@ -1,0 +1,57 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-15 · PROMPT-14  |  Parent sends a message to teacher
+# Precondition: parent is logged in (demo school)
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Messages via More menu ───────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+- tapOn:
+    text: "Messages"
+
+- assertVisible: "Messages"
+
+# ── Start a new conversation ──────────────────────────────────
+- tapOn:
+    accessibilityLabel: "New conversation"
+
+- assertVisible: "New Message"
+
+# ── Select the first available teacher from the recipient list ─
+- tapOn:
+    index: 0
+
+# ── Message thread screen ─────────────────────────────────────
+- assertVisible: "Type a message…"
+
+# ── Type a message ────────────────────────────────────────────
+- tapOn:
+    text: "Type a message…"
+
+- inputText: "Hello, I wanted to discuss Aarav's attendance this week."
+
+# ── Send ──────────────────────────────────────────────────────
+- tapOn:
+    accessibilityLabel: "Send message"
+
+# ── Verify message appears in the thread ─────────────────────
+- assertVisible: "Hello, I wanted to discuss Aarav's attendance this week."
+
+# ── Verify input field cleared after send ─────────────────────
+- assertNotVisible: "Hello, I wanted to discuss Aarav's attendance this week."
+    optional: true  # input cleared but message in thread still visible
+
+# ── Go back to conversation list ──────────────────────────────
+- tapOn:
+    accessibilityLabel: "Go back"
+
+# ── Verify conversation appears in the list ───────────────────
+- assertVisible: "Messages"

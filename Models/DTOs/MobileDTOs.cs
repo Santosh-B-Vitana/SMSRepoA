@@ -178,12 +178,18 @@ namespace SmsApi.Models.DTOs
 
     public class AdminDashboardResponse
     {
-        public decimal TodayAttendanceRate { get; set; }
-        public decimal TodayFeeCollection { get; set; }
+        public decimal AttendanceRate { get; set; }
+        public FeeCollectionDto FeeCollection { get; set; } = new();
         public PendingApprovalsDto PendingApprovals { get; set; } = new();
         public BillingAlertDto? BillingAlert { get; set; }
         public List<AnnouncementSummaryDto> RecentAnnouncements { get; set; } = new();
         public int UnreadCount { get; set; }
+    }
+
+    public class FeeCollectionDto
+    {
+        public decimal CollectedToday { get; set; }
+        public decimal CollectedThisMonth { get; set; }
     }
 
     public class PendingApprovalsDto
@@ -376,4 +382,33 @@ namespace SmsApi.Models.DTOs
         [MaxLength(80)]
         public string? StoreShortDescription { get; set; }
     }
+
+    // ── Offline Bundle ────────────────────────────────────────────────────────
+
+    public record OfflineBundleStudentDto(
+        Guid StudentId,
+        string FullName,
+        string? RollNumber,
+        string? PhotoUrl
+    );
+
+    public record OfflineBundleClassDto(
+        string ClassId,
+        string ClassName,
+        string? Section,
+        List<OfflineBundleStudentDto> Students
+    );
+
+    /// <summary>
+    /// Pre-fetched offline data bundle — teacher's daily data for offline use.
+    /// Delivered only to authenticated Teacher/Staff roles and valid for 8 hours.
+    /// </summary>
+    public record OfflineBundleResponse(
+        DateTime BundledAt,
+        DateTime ExpiresAt,
+        List<OfflineBundleClassDto> MyClasses,
+        List<TimetableSlotDto> TodaysTimetable,
+        int PendingLeaveCount,
+        List<AnnouncementSummaryDto> Announcements
+    );
 }

@@ -3,17 +3,35 @@ import { View, ActivityIndicator } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import * as Application from 'expo-application';
+import * as Sentry from '@sentry/react-native';
 import { queryClient } from '@/api/queryClient';
 import { useAuthStore } from '@/stores/authStore';
 import { SchoolThemeProvider } from '@/theme/index';
 import { initDatabase } from '@/offline/db';
 import { initializeSyncEngine } from '@/offline/syncEngine';
+import { performDatabaseMaintenance } from '@/offline/maintenance';
+import { loadMorningBundle } from '@/offline/bundleLoader';
 import { setupNotificationHandlers, handleInitialNotification } from '@/notifications/handler';
 import { registerForPushNotifications } from '@/notifications/registration';
 import { PushPermissionRationale } from '@/components/notifications/PushPermissionRationale';
 import { useAppConfig } from '@/features/appConfig/hooks/useAppConfig';
+import { initAnalytics } from '@/lib/analytics';
+import { useScreenTracking } from '@/hooks/useScreenTracking';
 import { semverLt } from '@vitana/shared-utils';
 import type { UserRole } from '@vitana/shared-types';
+
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  environment: process.env.EXPO_PUBLIC_ENV ?? 'development',
+  tracesSampleRate: 0.1,
+  beforeSend(event) {
+    if (event.request?.headers) {
+      delete event.request.headers['Authorization'];
+      delete event.request.headers['authorization'];
+    }
+    return event;
+  },
+});
 
 /**
  * ONE APP — MULTIPLE ROLES
@@ -102,13 +120,28 @@ function AppConfigLoader() {
   return null;
 }
 
-export default function RootLayout() {
+/** Fires a screen_viewed Amplitude event on every navigation change. */
+function AppAnalytics() {
+  useScreenTracking();
+  return null;
+}
+
+function RootLayout() {
   const isHydrated = useAuthStore.persist?.hasHydrated?.() ?? true;
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
-    initDatabase().catch((err: unknown) => console.error('[DB] Init failed:', err));
+    void initAnalytics();
+  }, []);
+
+  useEffect(() => {
+    initDatabase()
+      .then(() => {
+        performDatabaseMaintenance().catch((err: unknown) => console.warn('[Maintenance]', err));
+        loadMorningBundle().catch((err: unknown) => console.warn('[Bundle]', err));
+      })
+      .catch((err: unknown) => console.error('[DB] Init failed:', err));
     const cleanup = initializeSyncEngine();
     return cleanup;
   }, []);
@@ -140,6 +173,7 @@ export default function RootLayout() {
       <SchoolThemeProvider>
         <AuthGuard />
         <AppConfigLoader />
+        <AppAnalytics />
         <PushPermissionRationale />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -155,3 +189,5 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

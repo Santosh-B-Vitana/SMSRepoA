@@ -24,6 +24,25 @@ jest.mock('../../../api/endpoints/auth', () => ({
   },
 }));
 
+jest.mock('@sentry/react-native', () => ({
+  setUser: jest.fn(),
+}));
+
+jest.mock('../../../lib/analytics', () => ({
+  track: jest.fn(),
+  resetAnalyticsUser: jest.fn(),
+}));
+
+jest.mock('@/offline/db', () => ({
+  clearDatabase: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@/stores/schoolStore', () => ({
+  useSchoolStore: {
+    getState: jest.fn(() => ({ resetBranding: jest.fn() })),
+  },
+}));
+
 const mockUser = {
   id: '1',
   username: 'test.parent',

@@ -1,11 +1,13 @@
 import { Tabs } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '@/theme';
+import { FeatureErrorBoundary } from '@/components/common/FeatureErrorBoundary';
 
 export default function StudentLayout() {
   const { colors } = useAppTheme();
 
   return (
+    <FeatureErrorBoundary featureName="Student Portal">
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -76,5 +78,6 @@ export default function StudentLayout() {
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
       <Tabs.Screen name="profile/index" options={{ href: null }} />
     </Tabs>
+    </FeatureErrorBoundary>
   );
 }

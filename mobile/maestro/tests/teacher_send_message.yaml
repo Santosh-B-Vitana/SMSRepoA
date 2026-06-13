@@ -1,0 +1,92 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-15 · PROMPT-14  |  Teacher sends a message to a parent
+# Precondition: teacher is logged in (demo school, demo credentials)
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Messages via More menu ──────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+- tapOn:
+    text: "Messages"
+
+- assertVisible: "Messages"
+
+# ── Start a new conversation ─────────────────────────────────
+- tapOn:
+    accessibilityLabel: "New conversation"
+
+- assertVisible: "New Message"
+
+# ── Select the first available parent ────────────────────────
+- tapOn:
+    index: 0
+
+# ── Thread screen opens ───────────────────────────────────────
+- assertVisible: "Type a message…"
+
+# ── Type a message ────────────────────────────────────────────
+- tapOn:
+    text: "Type a message…"
+
+- inputText: "Hello, I wanted to discuss Aarav's progress in class."
+
+# ── Send the message ─────────────────────────────────────────
+- tapOn:
+    accessibilityLabel: "Send message"
+
+# ── Verify message appears immediately (optimistic update) ────
+- assertVisible: "Hello, I wanted to discuss Aarav's progress in class."
+
+# ── Verify send status icon present (grey check) ─────────────
+# (status icon is rendered as Feather "check" or "check-circle")
+- assertNotVisible: "Type a message…"
+
+---
+# ────────────────────────────────────────────────────────────
+# EP-15 · PROMPT-14  |  Teacher creates an announcement
+# ────────────────────────────────────────────────────────────
+
+- tapOn:
+    text: "More"
+
+- tapOn:
+    text: "Announcements"
+
+- assertVisible: "Announcements"
+
+- tapOn:
+    accessibilityLabel: "Create announcement"
+
+- assertVisible: "Post Announcement"
+
+- tapOn:
+    text: "e.g. Parent-Teacher Meeting"
+
+- inputText: "Science Project Submission Deadline"
+
+- tapOn:
+    text: "Write your announcement..."
+
+- inputText: "Please ensure your child submits the science project by Friday."
+
+- tapOn:
+    text: "Normal"
+
+# Post
+- tapOn:
+    text: "Post Announcement"
+
+- assertVisible: "Posted!"
+
+- tapOn:
+    text: "OK"
+
+- assertVisible: "Science Project Submission Deadline"

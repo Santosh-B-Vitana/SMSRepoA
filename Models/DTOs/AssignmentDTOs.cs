@@ -119,6 +119,13 @@ namespace SmsApi.Models.DTOs
         public string? AttachmentUrl { get; set; }
     }
 
+    /// <summary>Mobile student self-submission payload (StudentId auto-resolved from JWT).</summary>
+    public class StudentSubmitRequest
+    {
+        public string? Content { get; set; }
+        public string? AttachmentUrl { get; set; }
+    }
+
     public class GradeSubmissionRequest
     {
         [Required]

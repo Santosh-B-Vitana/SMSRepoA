@@ -93,7 +93,7 @@ Execute in this exact order. Parallel tracks noted where applicable.
 | 16 | **PROMPT-12** | EP-12 advanced | 12 & 15 | Mobile | PROMPT-04 ✓ |
 | 17 | **PROMPT-13** | EP-08, EP-14 | 14 | Mobile | PROMPT-04 ✓, PROMPT-12 ✓ |
 | 18 | **PROMPT-14** | EP-15 | 19–20 | Mobile | PROMPT-05 ✓ |
-| 19 | **PROMPT-15** | EP-16 | 17–18 | Mobile | PROMPT-01 ✓ |
+| 19 | **PROMPT-15** ✅ | EP-16 | 17–18 | Mobile | PROMPT-01 ✓ — **Implemented June 2026** |
 
 ---
 
@@ -729,17 +729,16 @@ Keep all mocks in `mobile/src/__mocks__/` and remove them as each handoff comple
 ╠══════════════════════════════════════════════════════════════╣
 ║  PHASE 3 (Months 5–8)  [White Label + Admin + Build CI]     ║
 ║  Sprint 11: PROMPT-06  (White Label System) ✅ June 2026    ║
-║  Sprint 12: PROMPT-07  (Build Automation CI/CD)             ║
+║  Sprint 12: PROMPT-07  (Build Automation CI/CD) ✅ June 2026║
 ║             PROMPT-12  (Advanced Offline start)             ║
 ║  Sprint 13: PROMPT-16  (Store Setup + First Submission)     ║
 ║  Sprint 14: PROMPT-09  (Admin App) ✅ June 2026             ║
-║             PROMPT-13  (Marks Entry start)                  ║
-║  Sprint 15: PROMPT-12  (Advanced Offline complete)          ║
-║             PROMPT-13  (Marks + Assignments complete)       ║
+║             PROMPT-13  (Marks + Assignments) ✅ June 2026  ║
+║  Sprint 15: PROMPT-12  (Advanced Offline complete) ✅       ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  PHASE 4 (Months 8–11)  [Advanced Features]                 ║
 ║  Sprint 17: PROMPT-15  (Analytics + Sentry)                 ║
-║  Sprint 19: PROMPT-14  (Messaging)                          ║
+║  Sprint 19: PROMPT-14  (Messaging) ✅ June 2026             ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
@@ -762,10 +761,10 @@ Keep all mocks in `mobile/src/__mocks__/` and remove them as each handoff comple
 | PROMPT-10 | EP-09 Feature Flags | ✅ Complete | Sprints 7–10 |
 | PROMPT-11 (A–D) | EP-09 Backend APIs | ✅ Complete | Sprints 2–10 |
 | **PROMPT-06** | **EP-10 White Label Architecture** | **✅ Complete** | **June 2026 (Sprint 11)** |
-| PROMPT-07 | EP-11 Build Automation | ⏳ Next | Sprint 12 |
+| **PROMPT-07** | **EP-11 Build Automation** | **✅ Complete** | **June 2026 (Sprint 12)** |
 | **PROMPT-09** | **EP-13 Admin App** | **✅ Complete** | **June 2026 (Sprint 14)** |
-| PROMPT-12 | EP-12 Advanced Offline | ⏳ Pending | Sprints 12, 15 |
-| PROMPT-13 | EP-08, EP-14 Exams + Marks | ⏳ Pending | Sprint 14 |
-| PROMPT-14 | EP-15 Messaging | ⏳ Pending | Sprints 19–20 |
-| PROMPT-15 | EP-16 Analytics + Monitoring | ⏳ Pending | Sprints 17–18 |
-| PROMPT-16 | EP-17 Store Deployment | ⏳ Pending | Sprints 13–14 |
+| **PROMPT-12** | **EP-12 Advanced Offline** | **✅ Complete** | **June 2026 (Sprints 12, 15)** |
+| **PROMPT-13** | **EP-08, EP-14 Exams + Marks** | **✅ Complete** | **June 2026 (Sprint 14)** |
+| **PROMPT-14** | **EP-15 Messaging** | **✅ Complete** | **June 2026 (Sprints 19–20)** |
+| **PROMPT-15** | **EP-16 Analytics + Monitoring** | **✅ Complete** | **June 2026 (Sprints 17–18)** |
+| **PROMPT-16** | **EP-17 Store Deployment** | **✅ Complete** | **June 2026 (Sprints 13–14)** |

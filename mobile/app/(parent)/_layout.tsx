@@ -1,11 +1,13 @@
 import { Tabs } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '@/theme';
+import { FeatureErrorBoundary } from '@/components/common/FeatureErrorBoundary';
 
 export default function ParentLayout() {
   const { colors } = useAppTheme();
 
   return (
+    <FeatureErrorBoundary featureName="Parent Portal">
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -60,6 +62,10 @@ export default function ParentLayout() {
       <Tabs.Screen name="leaves/apply" options={{ href: null }} />
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
+      {/* EP-15: Messaging */}
+      <Tabs.Screen name="messages/index" options={{ href: null }} />
+      <Tabs.Screen name="messages/[conversationId]" options={{ href: null }} />
     </Tabs>
+    </FeatureErrorBoundary>
   );
 }

@@ -1,4 +1,6 @@
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
+import { useQuery } from '@tanstack/react-query';
+import { communicationApi } from '@/api/endpoints/communication';
 import type { Feather } from '@expo/vector-icons';
 
 export interface MoreMenuItem {
@@ -24,7 +26,22 @@ export function useParentMoreItems(): MoreMenuItem[] {
   const hasTransport = useFeatureFlag('transport');
   const hasHostel = useFeatureFlag('hostel');
 
+  const { data: unreadData } = useQuery({
+    queryKey: ['messages-unread'],
+    queryFn: communicationApi.getUnreadCount,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const messageUnreadCount = unreadData?.count ?? 0;
+
   const items: MoreMenuItem[] = [
+    {
+      key: 'messages',
+      label: 'Messages',
+      icon: 'message-square',
+      route: '/(parent)/messages/index',
+      badge: messageUnreadCount,
+    },
     {
       key: 'announcements',
       label: 'Announcements',

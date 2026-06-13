@@ -1,15 +1,13 @@
 import axios, { type AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
 import { router } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
+import * as Crypto from 'expo-crypto';
 import { useAuthStore } from '@/stores/authStore';
 import { useAcademicYearStore } from '@/stores/academicYearStore';
 import { API_TIMEOUT_MS } from '@/lib/constants';
 
 function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  return Crypto.randomUUID();
 }
 
 export const apiClient = axios.create({
@@ -74,12 +72,12 @@ async function handleTokenRefresh(originalError: AxiosError): Promise<unknown> {
   originalConfig._retry = true;
   isRefreshing = true;
 
-  const { refreshToken, updateTokens, clearAuth } = useAuthStore.getState();
+  const { accessToken: currentAccessToken, refreshToken, updateTokens, clearAuth } = useAuthStore.getState();
 
   try {
     const response = await axios.post<{ token: string; refreshToken: string }>(
       `${process.env.EXPO_PUBLIC_API_BASE_URL}/auth/refresh`,
-      { refreshToken },
+      { accessToken: currentAccessToken, refreshToken },
     );
 
     const { token: newAccessToken, refreshToken: newRefreshToken } = response.data;
@@ -114,6 +112,25 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       return handleTokenRefresh(error);
     }
+
+    const status = error.response?.status ?? 0;
+    if (status >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag('endpoint', error.config?.url ?? 'unknown');
+        scope.setTag('httpMethod', error.config?.method?.toUpperCase() ?? 'UNKNOWN');
+        scope.setTag('httpStatus', String(status));
+        scope.setExtra(
+          'correlationId',
+          (error.config?.headers?.['X-Correlation-ID'] as string | undefined) ??
+            (error.response?.headers?.['x-correlation-id'] as string | undefined),
+        );
+        Sentry.captureMessage(
+          `API Error ${status}: ${error.config?.method?.toUpperCase() ?? 'UNKNOWN'} ${error.config?.url ?? 'unknown'}`,
+          'error',
+        );
+      });
+    }
+
     return Promise.reject(normalizeApiError(error));
   },
 );

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAppTheme } from '@/theme';
 import { adminApi, type AdminDashboardResponse } from '@/api/endpoints/admin';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { FeatureErrorBoundary } from '@/components/common/FeatureErrorBoundary';
 
 function totalPendingApprovals(data: AdminDashboardResponse | undefined): number | undefined {
   if (!data) return undefined;
@@ -26,6 +27,7 @@ export default function AdminLayout() {
   const badgeCount = totalPendingApprovals(data);
 
   return (
+    <FeatureErrorBoundary featureName="Admin Portal">
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -92,5 +94,6 @@ export default function AdminLayout() {
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
       <Tabs.Screen name="announcements/create" options={{ href: null }} />
     </Tabs>
+    </FeatureErrorBoundary>
   );
 }

@@ -8,6 +8,18 @@ const sqliteDb = SQLite.openDatabaseSync('vitana_offline.db', {
 
 export const db = drizzle(sqliteDb, { schema });
 
+export async function clearDatabase(): Promise<void> {
+  await sqliteDb.execAsync(`
+    DELETE FROM diary_entry_queue;
+    DELETE FROM marks_drafts;
+    DELETE FROM attendance_drafts;
+    DELETE FROM cached_student_lists;
+    DELETE FROM cached_timetable;
+    DELETE FROM offline_bundle_cache;
+    DELETE FROM offline_queue;
+  `);
+}
+
 export async function initDatabase(): Promise<void> {
   await sqliteDb.execAsync('PRAGMA journal_mode = WAL;');
   await sqliteDb.execAsync('PRAGMA foreign_keys = ON;');
@@ -54,6 +66,42 @@ export async function initDatabase(): Promise<void> {
       cached_at INTEGER NOT NULL,
       academic_year TEXT NOT NULL,
       school_id TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS marks_drafts (
+      id TEXT PRIMARY KEY,
+      exam_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      marks TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      last_modified INTEGER NOT NULL,
+      is_submitted INTEGER DEFAULT 0,
+      school_id TEXT NOT NULL,
+      marked_by TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS diary_entry_queue (
+      id TEXT PRIMARY KEY,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      class_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      error_message TEXT,
+      school_id TEXT NOT NULL,
+      user_id TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS offline_bundle_cache (
+      id INTEGER PRIMARY KEY,
+      bundled_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      timetable_json TEXT NOT NULL,
+      announcements_json TEXT NOT NULL,
+      classes_json TEXT NOT NULL,
+      pending_leaves_json TEXT NOT NULL,
+      school_id TEXT NOT NULL,
+      academic_year TEXT NOT NULL
     );
   `);
 }

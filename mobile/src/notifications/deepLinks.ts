@@ -23,8 +23,10 @@ export const DEEP_LINKS: Record<string, (data: Record<string, string>) => string
   new_diary_entry: (d) => `/(parent)/diary/${d.studentId}`,
   leave_approved: () => '/(parent)/leaves',
   leave_rejected: () => '/(parent)/leaves',
-  // TODO(EP-15): replace with /(parent)/messages/${d.conversationId} once messaging ships
-  new_message_parent: () => '/(parent)/notifications',
+  new_message_parent: (d) =>
+    d.conversationId
+      ? `/(parent)/messages/${d.conversationId}`
+      : '/(parent)/messages/index',
 
   // ── Student ───────────────────────────────────────────────────────────────
   assignment_graded: (d) => `/(student)/assignments/${d.assignmentId}`,
@@ -34,8 +36,10 @@ export const DEEP_LINKS: Record<string, (data: Record<string, string>) => string
   leave_request_received: () => '/(teacher)/leaves',
   timetable_change: () => '/(teacher)/timetable',
   submission_received: (d) => `/(teacher)/assignments/${d.assignmentId}`,
-  // TODO(EP-15): replace with /(teacher)/messages/${d.conversationId} once messaging ships
-  new_message_teacher: () => '/(teacher)/notifications',
+  new_message_teacher: (d) =>
+    d.conversationId
+      ? `/(teacher)/messages/${d.conversationId}`
+      : '/(teacher)/messages/index',
 
   // ── Admin ─────────────────────────────────────────────────────────────────
   billing_expiry_warning: () => '/(admin)/more',

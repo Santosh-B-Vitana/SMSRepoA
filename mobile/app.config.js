@@ -25,6 +25,7 @@ module.exports = ({ config }) => {
     ...config,
     name: school.appName,
     slug: school.slug,
+    owner: 'laynaik',
     version: process.env.APP_VERSION || '1.0.0',
     orientation: 'portrait',
     userInterfaceStyle: 'automatic',
@@ -67,11 +68,14 @@ module.exports = ({ config }) => {
         NSCameraUsageDescription: 'Camera is used to upload photos.',
         NSFaceIDUsageDescription: 'Face ID is used to unlock the app securely.',
         NSPhotoLibraryUsageDescription: 'Photo library access is needed for uploading images.',
+        ITSAppUsesNonExemptEncryption: false,
       },
     },
 
     plugins: [
       'expo-router',
+      'expo-updates',
+      'react-native-reanimated',
       ['expo-secure-store', {}],
       [
         'expo-local-authentication',
@@ -89,7 +93,7 @@ module.exports = ({ config }) => {
         },
       ],
       'expo-sqlite',
-      '@react-native-firebase/app',
+      // '@react-native-firebase/app',  // not installed — enable only in production builds
     ],
 
     experiments: {
@@ -111,13 +115,13 @@ module.exports = ({ config }) => {
     },
 
     updates: {
-      url: `https://u.expo.dev/${school.easProjectId || process.env.EAS_PROJECT_ID || 'YOUR_EAS_PROJECT_ID'}`,
-      enabled: true,
+      url: `https://u.expo.dev/${school.easProjectId || process.env.EAS_PROJECT_ID}`,
+      enabled: process.env.EXPO_PUBLIC_ENV !== 'development',
       fallbackToCacheTimeout: 0,
     },
 
     runtimeVersion: {
-      policy: 'sdkVersion',
+      policy: 'appVersion',
     },
   };
 };

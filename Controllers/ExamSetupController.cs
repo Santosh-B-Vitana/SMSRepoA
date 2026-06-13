@@ -20,13 +20,16 @@ namespace SmsApi.Controllers
     public class ExamSetupController : ControllerBase
     {
         private readonly IExamSetupService _service;
+        private readonly ICacheService _cache;
         private readonly ILogger<ExamSetupController> _logger;
 
         public ExamSetupController(
             IExamSetupService service,
+            ICacheService cache,
             ILogger<ExamSetupController> logger)
         {
             _service = service;
+            _cache = cache;
             _logger = logger;
         }
 
@@ -294,18 +297,27 @@ namespace SmsApi.Controllers
         /// <summary>
         /// Save marks for all students in a subject (bulk).
         /// Staff can only save for assigned subjects; admins can save for any.
+        /// Supports idempotency: pass X-Idempotency-Key header to safely retry without double-saving.
         /// </summary>
         [HttpPost("{examSetupId:guid}/subjects/{examSetupSubjectId:guid}/marks")]
         [ProducesResponseType(typeof(BulkOperationResult), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
         public async Task<ActionResult<BulkOperationResult>> SaveMarks(
-            Guid examSetupId, Guid examSetupSubjectId, [FromBody] BulkMarksEntryDto dto)
+            Guid examSetupId, Guid examSetupSubjectId, [FromBody] BulkMarksEntryDto dto,
+            [FromHeader(Name = "X-Idempotency-Key")] string? idempotencyKey = null)
         {
             try
             {
                 if (dto.ExamSetupId != examSetupId || dto.ExamSetupSubjectId != examSetupSubjectId)
                     return BadRequest(new { message = "Route IDs must match body IDs." });
+
+                // Return cached result for duplicate submissions from offline queue
+                if (!string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    var cached = await _cache.GetAsync<BulkOperationResult>($"marks_idem:{idempotencyKey}");
+                    if (cached != null) return Ok(cached);
+                }
 
                 var schoolId = GetSchoolId();
                 var userId = GetUserId();
@@ -314,6 +326,10 @@ namespace SmsApi.Controllers
                 var staffEmail = User.FindFirst(ClaimTypes.Email)?.Value;
 
                 var result = await _service.SaveBulkMarksAsync(schoolId, dto, userId, staffEmail, isAdmin);
+
+                if (!string.IsNullOrWhiteSpace(idempotencyKey))
+                    await _cache.SetAsync($"marks_idem:{idempotencyKey}", result, CacheDurations.VeryLong);
+
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex)

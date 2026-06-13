@@ -522,5 +522,63 @@ namespace SmsApi.Controllers
                 return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
             }
         }
+
+        /// <summary>
+        /// [Mobile/Student] Submit an assignment. StudentId is auto-resolved from the JWT.
+        /// Accepts { content: string } for text submissions or multipart/form-data for file submissions.
+        /// </summary>
+        [HttpPost("{id}/submit")]
+        [Authorize(Roles = StatusConstants.Roles.Student)]
+        public async Task<ActionResult<SubmissionResponse>> StudentSubmitAssignment(
+            Guid id,
+            [FromBody] StudentSubmitRequest request)
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId = _tenant.UserId;
+
+                // Resolve Student.Id from JWT LinkedEntityId or email
+                Guid? studentId = _tenant.LinkedEntityId;
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                {
+                    var userEmail = _tenant.UserEmail;
+                    studentId = await _context.Students
+                        .Where(s => s.SchoolId == schoolId && !s.IsDeleted &&
+                                    _context.UserLogins.Any(u => u.Id == userId && u.Email == s.Email))
+                        .Select(s => (Guid?)s.Id)
+                        .FirstOrDefaultAsync();
+                }
+
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                    return Unauthorized(new { error = "Student record not found for current user." });
+
+                var submission = await _assignmentService.CreateSubmissionAsync(new CreateSubmissionRequest
+                {
+                    AssignmentId = id,
+                    StudentId = studentId.Value,
+                    Content = request.Content ?? string.Empty,
+                    AttachmentUrl = request.AttachmentUrl,
+                });
+
+                return CreatedAtAction(nameof(GetSubmissionById), new { id = submission.Id }, submission);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
+        }
     }
 }

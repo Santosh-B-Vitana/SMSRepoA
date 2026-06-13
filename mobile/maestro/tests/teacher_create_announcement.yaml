@@ -1,0 +1,60 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-15 · PROMPT-14  |  Teacher creates and publishes an announcement
+# Precondition: teacher is logged in (demo school)
+# Note: This flow is also exercised at the end of teacher_send_message.yaml
+# This file runs it as a standalone verifiable flow.
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Announcements ─────────────────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+- tapOn:
+    text: "Announcements"
+
+- assertVisible: "Announcements"
+
+# ── Tap create ───────────────────────────────────────────────
+- tapOn:
+    accessibilityLabel: "Create announcement"
+
+- assertVisible: "Post Announcement"
+
+# ── Fill title ───────────────────────────────────────────────
+- tapOn:
+    text: "e.g. Parent-Teacher Meeting"
+
+- inputText: "Mid-Term Exam Schedule"
+
+# ── Fill body ────────────────────────────────────────────────
+- tapOn:
+    text: "Write your announcement..."
+
+- inputText: "Mid-term exams will be held from July 14th to July 18th. Students are advised to complete their revision."
+
+# ── Set priority to High ──────────────────────────────────────
+- tapOn:
+    text: "Normal"
+
+- tapOn:
+    text: "High"
+
+# ── Submit ────────────────────────────────────────────────────
+- tapOn:
+    text: "Post Announcement"
+
+# ── Verify posted confirmation ────────────────────────────────
+- assertVisible: "Posted!"
+
+- tapOn:
+    text: "OK"
+
+# ── Verify announcement appears in the list ───────────────────
+- assertVisible: "Mid-Term Exam Schedule"

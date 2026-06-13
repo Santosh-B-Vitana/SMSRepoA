@@ -1,4 +1,4 @@
-name: Mobile Staging Build
+name: Mobile — Staging Build
 
 on:
   push:
@@ -9,8 +9,13 @@ on:
       - 'packages/**'
 
 jobs:
+  checks:
+    uses: ./.github/workflows/mobile-checks.yml
+    secrets: inherit
+
   staging-build:
     name: EAS Staging Build
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,18 +36,37 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
         working-directory: mobile
 
-      - name: Build staging (both platforms)
-        run: eas build --platform all --profile staging --non-interactive --auto-submit
+      - name: Build shared packages
+        run: |
+          pnpm --filter @vitana/shared-types build
+          pnpm --filter @vitana/shared-utils build
+
+      - name: EAS Staging Build (both platforms)
+        run: |
+          eas build \
+            --platform all \
+            --profile staging \
+            --non-interactive \
+            --auto-submit
         working-directory: mobile
+        env:
+          SCHOOL_ID: vitana
+          BUILD_NUMBER: ${{ needs.checks.outputs.build_number }}
+          EXPO_APPLE_ID: ops@vitanasms.com
 
       - name: Notify Slack
         if: always()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v1.27
         with:
-          channel-id: mobile-builds
-          slack-message: "Staging build ${{ job.status }}: ${{ github.sha }}"
+          channel-id: 'mobile-builds'
+          slack-message: |
+            *Mobile Staging Build* ${{ job.status == 'success' && '✅' || '❌' }}
+            Branch: `develop`
+            Commit: `${{ github.sha && github.sha || '' }}`
+            Build: #${{ needs.checks.outputs.build_number }}
+            <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

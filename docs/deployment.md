@@ -258,6 +258,8 @@ eas update:republish --channel production --group <previous-group-id>
 ```bash
 EXPO_PUBLIC_API_BASE_URL=http://localhost:5092/api
 EXPO_PUBLIC_ENV=development
+# Optional: web portal URL for "Forgot Password" link
+# EXPO_PUBLIC_WEB_BASE_URL=http://localhost:3000
 ```
 
 ### 7.2 EAS build profile environments
@@ -1359,3 +1361,871 @@ eas update --branch production \
 ```
 
 No database migration rollback needed — no new tables were added in this sprint.
+
+---
+
+## Section 8: EP-12 Advanced Offline Sync Engine (PROMPT-12)
+
+> Sprint 12 & 15 · Story Points: 24
+
+### 8.1 Pre-Deployment Validation
+
+```bash
+# TypeScript check
+pnpm --filter @vitana/mobile typecheck
+# Expected: 0 errors
+
+# Lint
+pnpm --filter @vitana/mobile lint
+# Expected: 0 warnings
+
+# Backend build
+dotnet build SmsApi.csproj
+# Expected: Build succeeded, 0 errors
+```
+
+### 8.2 New Files Checklist
+
+Verify all files exist before building:
+
+```
+mobile/src/offline/schema.ts            ← updated (3 new table defs)
+mobile/src/offline/db.ts                ← updated (3 new CREATE TABLE blocks)
+mobile/src/offline/queue.ts             ← updated (conflict capture + getConflictItems)
+mobile/src/offline/marksDraftService.ts ← NEW
+mobile/src/offline/bundleLoader.ts      ← NEW
+mobile/src/offline/maintenance.ts       ← NEW
+mobile/src/features/diary/hooks/useDiaryEntry.ts ← NEW
+mobile/src/components/offline/ConflictResolutionSheet.tsx ← NEW
+mobile/app/(teacher)/sync-status.tsx   ← NEW
+mobile/app/_layout.tsx                  ← updated
+mobile/src/features/navigation/hooks/useTeacherMoreItems.ts ← updated
+Controllers/Mobile/MobileDashboardController.cs ← updated (offline-bundle endpoint)
+Services/MobileDashboardService.cs      ← updated (GetOfflineBundleAsync)
+Models/DTOs/MobileDTOs.cs               ← updated (OfflineBundleResponse + DTOs)
+```
+
+### 8.3 Backend Deployment Steps
+
+No new database migrations — this sprint adds no new backend tables.
+
+1. Deploy the updated .NET backend:
+
+```bash
+dotnet publish -c Release -o ./publish
+# Deploy ./publish to your server or container
+```
+
+2. Verify the new endpoint is reachable:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer <teacher_jwt>" \
+  https://api.your-school.com/api/mobile/offline-bundle
+# Expected: 200
+```
+
+3. Verify the endpoint returns correct shape:
+
+```bash
+curl -H "Authorization: Bearer <teacher_jwt>" \
+  https://api.your-school.com/api/mobile/offline-bundle | jq '{
+  bundledAt: .bundledAt,
+  classCount: (.myClasses | length),
+  timetableSlots: (.todaysTimetable | length),
+  announcementCount: (.announcements | length)
+}'
+```
+
+### 8.4 Mobile OTA Deployment
+
+All changes are JS-only (no new native modules). Deploy via OTA update:
+
+```bash
+# Stage
+eas update --channel staging --message "feat(offline): PROMPT-12 advanced sync engine"
+
+# After staging verification (see 8.6 below)
+eas update --channel production --message "feat(offline): PROMPT-12 advanced sync engine"
+```
+
+### 8.5 First-Launch SQLite Table Creation
+
+The 3 new SQLite tables (`marks_drafts`, `diary_entry_queue`, `offline_bundle_cache`) are created automatically on first app launch via `initDatabase()`. No manual migration or seed data required.
+
+To verify tables were created (using Flipper SQLite plugin or Expo Dev Tools):
+
+```sql
+SELECT name FROM sqlite_master WHERE type='table' AND name IN 
+('marks_drafts','diary_entry_queue','offline_bundle_cache');
+-- Expected: 3 rows
+```
+
+### 8.6 Post-Deployment Verification
+
+**Backend:**
+- [ ] `GET /api/mobile/offline-bundle` returns 200 with Teacher JWT
+- [ ] `GET /api/mobile/offline-bundle` returns 403 with Parent JWT
+- [ ] Response contains `myClasses` array with at least 1 entry for a teacher with assignments
+- [ ] `bundledAt` and `expiresAt` are valid ISO datetime strings
+
+**Mobile:**
+- [ ] App launches without crash after OTA update
+- [ ] Teacher More menu shows "Sync Status" item
+- [ ] Sync Status screen loads without error (shows "All synced" for fresh installs)
+- [ ] SQLite has 3 new tables (verify via Flipper)
+- [ ] `performDatabaseMaintenance()` log appears in Metro (check `[Maintenance] Database cleanup complete`)
+
+### 8.7 Smoke Tests
+
+```bash
+# Verify TypeScript compiles
+pnpm --filter @vitana/mobile typecheck 2>&1 | grep -c "error TS"
+# Expected: 0
+
+# Run unit tests
+pnpm --filter @vitana/mobile test
+# Expected: all pass
+
+# Verify bundle endpoint (replace with real token + URL)
+TOKEN="eyJ..."
+curl -H "Authorization: Bearer $TOKEN" \
+     https://api.your-school.com/api/mobile/offline-bundle | jq '.bundledAt'
+```
+
+**Manual device verification (staging):**
+1. Open app as Teacher between 5–10 AM on a WiFi network
+2. Check Metro console for `[Bundle] Morning bundle loaded`
+3. Open Sync Status from More menu — should show bundle freshness indicator
+4. Turn on Airplane mode → open diary entry → fill form → submit
+5. Turn off Airplane mode → check Sync Status → diary entry should disappear from pending
+6. Submit attendance that has already been submitted → 409 should appear as "Conflict" in Sync Status failed list
+
+### 8.8 Monitoring Checks
+
+After deployment, monitor for 60 minutes:
+
+| Check | Expected |
+|---|---|
+| `GET /api/mobile/offline-bundle` latency | < 3s (parallel DB queries) |
+| `GET /api/mobile/offline-bundle` 5xx rate | 0% |
+| SQLite size on device | < 10 MB on first bundle load |
+| `[Bundle] Failed to load morning bundle` logs | 0 during morning window on WiFi |
+| Sync status screen crash rate | 0 |
+
+### 8.9 Rollback Procedure
+
+**Rollback mobile (OTA):**
+
+```bash
+# Roll back to previous bundle
+eas update --branch production \
+  --message "rollback: revert PROMPT-12 offline sync"
+```
+
+The previous version's `initDatabase()` does not include the 3 new tables. SQLite is additive — the new tables remain on disk but are ignored by the old version. No data corruption risk.
+
+**Rollback backend (if offline-bundle endpoint causes issues):**
+
+```bash
+# Re-deploy previous backend artifact
+# The endpoint is additive — removing it does not break existing endpoints
+```
+
+The new `GetOfflineBundleAsync` method in `MobileDashboardService` has no side effects and no database writes. Rolling back the backend leaves the mobile client without a bundle endpoint; `loadMorningBundle()` will `console.warn` and exit silently — the app continues to work normally offline with stale bundle data.
+
+---
+
+## 9. CI/CD Pipeline Guide (EP-11 — PROMPT-07)
+
+> Added: June 2026
+
+All mobile builds run through GitHub Actions + EAS Build. No local Xcode or Android Studio is required for CI builds.
+
+---
+
+### 9.1 Pipeline Overview
+
+| Trigger | Workflow File | What It Does | Approx. Time |
+|---|---|---|---|
+| PR touching `mobile/**` or `packages/**` | `mobile-eas-preview.yml` | Runs checks, builds APK + IPA, comments build links on PR | ~30 min |
+| Push to `develop` (mobile paths) | `mobile-eas-staging.yml` | Runs checks, builds staging AAB + iOS, auto-submits to internal tracks | ~35 min |
+| Git tag `mobile-v*.*.*` | `mobile-eas-production.yml` | Runs checks, waits for manual approval, builds production, submits to stores | ~40 min + approval |
+| `workflow_dispatch` — OTA Update | `mobile-ota-update.yml` | Deploys JS-only OTA update to any channel | ~5 min |
+| `workflow_dispatch` — School Build | `mobile-school-build.yml` | Validates school ID, injects assets, builds dedicated school app | ~35 min |
+
+All EAS workflows use the `mobile-checks.yml` reusable workflow to run TypeScript, ESLint, and Jest before building.
+
+---
+
+### 9.2 Pre-Deployment Requirements
+
+Before any pipeline will succeed, complete the one-time EAS setup (see `docs/DEPLOYMENT_CHECKLIST.md` → EP-11 section):
+
+1. Configure all 9 GitHub repository secrets
+2. Create the `mobile-production` GitHub Environment with required reviewers
+3. Run `eas project:init` and update `school-configs.json` with the real `easProjectId`
+4. Set up EAS credentials for Android and iOS
+
+---
+
+### 9.3 Releasing a New Production Version
+
+```bash
+# 1. Ensure all feature PRs are merged to develop
+
+# 2. Bump version in mobile/package.json
+#    "version": "1.2.0"
+
+# 3. Create and push the release tag
+git tag mobile-v1.2.0
+git push origin mobile-v1.2.0
+
+# 4. Go to GitHub Actions → "Mobile — Production Release" run
+#    → Approve the pending deployment at the "production-release" job gate
+
+# 5. Monitor the EAS dashboard for build progress
+#    → Once complete, builds are automatically submitted to Play Store Internal + TestFlight
+```
+
+---
+
+### 9.4 OTA Update Deployment
+
+Use OTA updates to ship JS-only fixes without a full store release (typically < 5 minutes).
+
+**Via GitHub Actions UI:**
+
+1. Go to **Actions → Mobile — OTA Update → Run workflow**
+2. Fill in:
+   - `channel`: `production` / `staging` / `school-dpsrohini-production`
+   - `message`: Short description of what was fixed (shown in EAS dashboard)
+   - `platform`: `all` / `android` / `ios`
+3. Click **Run workflow**
+
+**Via CLI (for urgent fixes):**
+
+```bash
+cd mobile
+
+# Deploy to staging
+eas update --channel staging --message "fix: announcement creation crash" --platform all
+
+# Deploy to production
+eas update --channel production --message "fix: announcement creation crash" --platform all
+```
+
+---
+
+### 9.5 School App Build
+
+**Via GitHub Actions UI:**
+
+1. Go to **Actions → Mobile — Build Dedicated School App → Run workflow**
+2. Fill in:
+   - `school_id`: Must match a key in `mobile/scripts/school-configs.json` (e.g. `dps-rohini`)
+   - `platform`: `all` / `android` / `ios`
+   - `submit_to_stores`: `true` to automatically submit to internal testing after build
+3. Click **Run workflow**
+
+The workflow validates the school ID first, injects school-specific assets from S3, then builds and optionally submits.
+
+---
+
+### 9.6 Emergency OTA Rollback
+
+```bash
+cd mobile
+
+# List recent updates to find a group ID
+eas update:list --channel production --limit 5
+
+# Roll back to embedded (app store) bundle — safest option
+./scripts/ota-rollback.sh production
+
+# Roll back to a specific previous update group
+./scripts/ota-rollback.sh production <group-id-from-list>
+
+# Test on staging first
+./scripts/ota-rollback.sh staging
+```
+
+The rollback script lives at `mobile/scripts/ota-rollback.sh`. Always test on staging before rolling back production.
+
+---
+
+### 9.7 Monitoring CI Builds
+
+- **EAS Dashboard:** [expo.dev](https://expo.dev) → Project → Builds — shows live build logs
+- **GitHub Actions:** Repository → Actions tab — shows workflow status, reusable check results, and job output
+- **Slack:** `#mobile-builds` channel — receives notifications for staging, production, school, and OTA builds
+- **Sentry:** Source maps are automatically uploaded on production releases — use the `version+buildNumber` release tag to find crash reports
+
+---
+
+### 9.8 Path Filter Behaviour
+
+Mobile workflows only trigger when `mobile/**` or `packages/**` paths change. Backend-only PRs do **not** trigger any mobile workflow.
+
+| Change type | Preview build | Staging build |
+|---|---|---|
+| `mobile/**` change | ✅ Triggers | ✅ Triggers |
+| `packages/**` change | ✅ Triggers | ✅ Triggers |
+| `backend/**` or `ui/**` only | ❌ Skipped | ❌ Skipped |
+| `docs/**` only | ❌ Skipped | ❌ Skipped |
+
+---
+
+---
+
+## Section 10: Store Submission & Release Procedure (PROMPT-16 / EP-17)
+
+> This section covers the end-to-end process for submitting Vitana SMS to the Google Play Store and Apple App Store, running staged rollouts, and managing OTA hotfixes. A new engineer should be able to execute a complete release using only this section together with `mobile/RELEASE_RUNBOOK.md`.
+
+---
+
+### 10.1 Pre-Deployment Validation
+
+Before any store submission, verify the following:
+
+```bash
+# 1. EAS credentials valid
+eas credentials --platform android
+eas credentials --platform ios
+# Both should show "Managed by EAS Remote Credentials"
+
+# 2. Demo school credentials work (all 4 roles)
+for user in demo.parent demo.teacher demo.student demo.admin; do
+  echo -n "$user@demo.vitanasms.com: "
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -X POST https://api.vitanasms.com/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"$user@demo.vitanasms.com\",\"password\":\"Demo@12345\"}"
+done
+# All must return 200
+
+# 3. Privacy policy URL live
+curl -I https://vitanasms.com/privacy    # Must return 200
+curl -I https://vitanasms.com/support    # Must return 200
+
+# 4. Version bumped in package.json
+cat mobile/package.json | grep '"version"'
+```
+
+---
+
+### 10.2 Store Setup (One-Time — Before First Release)
+
+These steps are performed once per environment. They require human action in browser consoles — they cannot be automated.
+
+#### Android (Play Console)
+
+1. Create app at [play.google.com/console](https://play.google.com/console)
+   - App name: `Vitana SMS — School App`
+   - Default language: English (India)
+   - App type: App
+2. Complete store listing — use content from `mobile/store-assets/descriptions/play-store.md`
+3. Upload screenshots and feature graphic — see `mobile/store-assets/CHECKLIST.md` §3
+4. Complete IARC content rating questionnaire (Education, Everyone, 13+)
+5. Complete Data Safety form — see `mobile/store-assets/data-safety.md` Part A
+6. Enrol in Google Play App Signing: Setup → App integrity → "Let Google manage and protect your app signing key"
+7. Add Google Play service account to Play Console with "Release Manager" role
+
+#### iOS (App Store Connect)
+
+1. Create app at [appstoreconnect.apple.com](https://appstoreconnect.apple.com)
+   - App name: `Vitana SMS`
+   - Bundle ID: `com.vitana.sms` (from Apple Developer portal)
+   - SKU: `vitana-sms-001`
+2. Complete store metadata — use content from `mobile/store-assets/descriptions/app-store.md`
+3. Upload screenshots — see `mobile/store-assets/CHECKLIST.md` §4
+4. Complete age rating questionnaire: 4+
+5. Complete App Privacy (Nutrition Label) — see `mobile/store-assets/data-safety.md` Part B
+6. Record the Apple ID (10-digit number) from App → General → Apple ID → set as `ASC_APP_ID` secret
+
+---
+
+### 10.3 Production Build
+
+The production build is triggered automatically by pushing a Git tag.
+
+```bash
+# Step 1: Ensure develop is clean
+git checkout develop && git pull origin develop
+
+# Step 2: Confirm version is bumped
+cat mobile/package.json | grep '"version"'
+
+# Step 3: Tag and push
+git tag mobile-v1.0.0
+git push origin mobile-v1.0.0
+```
+
+This triggers `.github/workflows/mobile-eas-production.yml` which:
+1. Runs `eas build --platform all --profile production`
+2. Pauses for manual approval at the `mobile-production` GitHub Environment gate
+3. After approval: runs `eas submit` for both platforms
+4. Uploads `.aab` and `.ipa` to S3 bucket `vitana-builds`
+5. Uploads Sentry source maps
+
+**Approval step:**
+GitHub → Actions → Mobile Production Release → "Review deployments" → Approve
+
+---
+
+### 10.4 Submission to Internal Testing
+
+`eas submit` (called automatically by the production workflow) uploads the build to:
+- Android: Play Console internal testing track
+- iOS: App Store Connect (available in TestFlight within minutes)
+
+**Manual submit (if workflow fails):**
+```bash
+cd mobile
+
+# Android — submit latest build to internal testing
+eas submit --platform android --latest --profile production
+
+# iOS — submit latest build
+eas submit --platform ios --latest --profile production
+```
+
+---
+
+### 10.5 Android Staged Rollout
+
+After internal testing QA sign-off:
+
+**Day 0 — Start production rollout at 10%:**
+1. Play Console → `Vitana SMS` → Production → Create new release
+2. Select AAB from internal testing (same build — do not rebuild)
+3. Add "What's New" release notes
+4. Set rollout: **10%**
+5. Click "Start rollout to Production"
+
+**Advancing the rollout:**
+```
+Day 0:  10%  — monitor Android Vitals for 24h
+Day 1:  25%  — if crash rate < 1% and ANR rate < 0.5%
+Day 3:  50%  — if all criteria still met
+Day 5: 100%  — full rollout
+```
+
+Play Console → Production → Edit release → Update rollout % → Save → Confirm
+
+**Halt rollout:**
+Play Console → Production → Edit release → **"Halt rollout"**
+
+---
+
+### 10.6 iOS App Store Submission
+
+After internal TestFlight QA sign-off:
+
+1. App Store Connect → `Vitana SMS` → + Version or Platform → iOS
+2. Select build from TestFlight
+3. Fill "What's New" (release notes)
+4. Update screenshots if any screens changed
+5. Upload App Review Notes: App Review Information section → copy from `app-review-notes.md` (retrieve from 1Password vault: "Vitana SMS App Review Notes")
+6. Enable **Phased Release** checkbox
+7. Click **"Submit for Review"**
+
+Apple review: 1–7 days.
+
+**After approval — Phased Release schedule (automatic):**
+```
+Day 1:   1%  → monitor Sentry closely
+Day 2:   2%
+Day 3:   5%
+Day 4:  10%
+Day 5:  20%
+Day 6:  50%
+Day 7: 100%
+```
+
+Pause at any stage: App Store Connect → Version → "Pause Phased Release"
+
+**Expedited review request** (for critical bugfixes only):
+App Store Connect → Resolution Center → "Request Expedited Review"
+
+---
+
+### 10.7 OTA Emergency Hotfix
+
+For JS-only fixes that do not require a binary rebuild.
+
+```bash
+# Total time target: < 30 minutes from bug discovery to deployed fix
+
+# Step 1: Apply fix on hotfix branch
+git checkout main && git pull
+git checkout -b hotfix/describe-the-bug
+# ... make fix ...
+git push origin hotfix/describe-the-bug
+# Open PR, 2 reviewers, fast-track merge
+
+# Step 2: Trigger OTA update
+# GitHub → Actions → Deploy OTA Update
+# Inputs:
+#   channel:  production
+#   message:  "Fix: <description>"
+#   platform: all
+
+# Step 3: Monitor
+# Sentry → Issues → filter by version — watch for 30 minutes
+```
+
+**Is this fix OTA-eligible?** — See `docs/mobile_application_docs/12-deployment-strategy.md` §3.1
+
+---
+
+### 10.8 Rollback Procedures
+
+**OTA rollback (< 5 minutes):**
+```bash
+cd mobile
+
+# Find previous update group
+eas update:list --channel production --limit 5
+
+# Rollback to embedded bundle (removes all OTA updates)
+./scripts/ota-rollback.sh production
+
+# Rollback to specific previous update group
+./scripts/ota-rollback.sh production <group-id>
+
+# Test rollback on staging first
+./scripts/ota-rollback.sh staging
+```
+
+**Android store rollback:**
+```
+Play Console → Production → Edit release → "Halt rollout"
+→ Submit new patched version to internal → promote to production
+```
+
+**iOS store rollback:**
+```
+App Store Connect → Version → "Pause Phased Release"
+→ Submit new patched version for expedited review
+```
+
+---
+
+### 10.9 Smoke Tests After Deployment
+
+Run these manually on a physical device after each production release:
+
+| # | Test | Platform | Expected |
+|---|---|---|---|
+| 1 | Login as Parent (`demo.parent@demo.vitanasms.com`) | Android + iOS | Dashboard loads, child visible |
+| 2 | Login as Teacher (`demo.teacher@demo.vitanasms.com`) | Android + iOS | Teacher dashboard loads |
+| 3 | Login as Student (`demo.student@demo.vitanasms.com`) | Android + iOS | Student dashboard loads |
+| 4 | Login as Admin (`demo.admin@demo.vitanasms.com`) | Android + iOS | Admin dashboard loads |
+| 5 | Enable Airplane Mode → open attendance marking | Android | Offline mode active; marking queued |
+| 6 | Re-enable network | Android + iOS | Offline queue syncs |
+| 7 | Trigger push notification (attendance alert) | Android + iOS | Notification received within 60s |
+| 8 | Attempt fee payment (sandbox card) | Android + iOS | Payment flow completes, sandbox receipt shown |
+| 9 | Force-update check (install old build) | Android + iOS | Force-update screen appears |
+| 10 | Biometric login (after initial password login) | Android + iOS | Face ID / fingerprint unlocks app |
+
+---
+
+### 10.10 Post-Deployment Monitoring
+
+**Hours 0–4 (Critical Window):**
+
+| Metric | Tool | Threshold | Action |
+|---|---|---|---|
+| Crash rate | Sentry | < 0.2% of sessions | > 1%: halt rollout |
+| ANR rate | Play Console → Android Vitals | < 0.2% | > 0.5%: halt rollout |
+| Login error rate | Sentry + API logs | < 1% | Spike: investigate backend |
+| Fee payment error rate | Sentry + Cashfree dashboard | < 0.5% | Any failure: investigate |
+
+**Days 1–7:**
+
+- Play Store rating: maintain > 4.0 stars
+- App Store reviews: respond to all < 3 stars within 48 hours
+- OTA update delivery rate: > 90% of active users within 24 hours
+- Sentry weekly error digest: review and triage new issues
+
+---
+
+## Module 13: Teacher Examinations & Marks Entry (PROMPT-13)
+
+*Implemented: June 2026 | Epic: EP-08, EP-14*
+
+### Pre-Deployment Validation
+
+1. Confirm Redis is running and reachable: `redis-cli ping` → `PONG`
+2. Confirm `marks_drafts` table exists in device SQLite (present since PROMPT-12): check `initDatabase` logs on app launch
+3. Confirm `ExamSetupController` constructor accepts `ICacheService` in DI container — rebuild backend and confirm no startup errors
+
+### Environment Setup
+
+No new environment variables. Existing configuration is sufficient.
+
+### Infrastructure Requirements
+
+- Redis instance (same as used by auth and other cache operations)
+- No new infrastructure
+
+### Migration Execution Steps
+
+No database migrations required on the server. On the mobile client, the `marks_drafts` table was created in PROMPT-12 with `CREATE TABLE IF NOT EXISTS` — upgrading apps will not encounter migration errors.
+
+### Build Steps
+
+```bash
+# Backend
+dotnet build SmsApi.csproj
+# Verify ExamSetupController DI resolves cleanly:
+dotnet run --project SmsApi.csproj -- --check-startuptime
+
+# Mobile (TypeScript check)
+cd mobile && npx tsc --noEmit
+```
+
+### Deployment Steps
+
+1. Deploy backend API with updated `ExamSetupController.cs`
+2. Deploy mobile OTA update via `eas update --channel staging` (no binary change required)
+3. Verify `X-Idempotency-Key` header flows through to Redis on a staging marks submission
+
+### Post-Deployment Verification
+
+```bash
+# Verify idempotency cache key created after first marks submission:
+redis-cli keys "marks_idem:*"
+# Should show keys like: marks_idem:<uuid>
+
+# Verify exam assignments load for a staff user:
+curl -H "Authorization: Bearer <teacher_token>" \
+  https://api.yourdomain.com/api/examinations/exam-setup/my-assignments
+
+# Verify marks sheet loads:
+curl -H "Authorization: Bearer <teacher_token>" \
+  "https://api.yourdomain.com/api/examinations/exam-setup/<setupId>/subjects/<subjectId>/marks"
+```
+
+### Smoke Tests
+
+| Test | Expected Result |
+|---|---|
+| Teacher opens Marks Entry from More menu | `/(teacher)/marks` screen renders exam list |
+| Tap on a pending exam | Subject list renders with progress bars |
+| Tap on a subject | Marks grid loads with FlashList; student rows visible |
+| Enter a mark > max | Field turns red border; Submit blocked with Alert |
+| Toggle absent for a student | Mark fields dim; grade shows "AB" |
+| Submit marks online | Navigate to performance screen showing average/grade distribution |
+| Submit marks offline (airplane mode) | Toast: "Saved Offline"; queued in `offlineQueue` |
+| Reconnect — sync | Queue processes; marks appear on server |
+| Reopen grid after partial entry | Draft loaded toast shown with save time |
+| Teacher opens Assignments | Tabs render: Active / Pending Grading / Closed |
+| Create Assignment | Form validates; assignment appears in list |
+| Grade submission | Marks + feedback saved; student count decrements |
+
+### Monitoring Checks
+
+- Sentry: watch for `marks_idem:` key lookup failures (would indicate Redis connectivity issue)
+- API: `POST /api/examinations/exam-setup/.../marks` response time should be < 500ms
+- Mobile: no new crash classes after OTA delivery
+
+### Rollback Procedure
+
+1. **OTA rollback**: `cd mobile && ./scripts/ota-rollback.sh staging`
+2. **Backend rollback**: revert `ExamSetupController.cs` to previous commit — the only change is additive (optional header), so the API remains backward compatible
+3. **Data**: marks already submitted to the server are preserved regardless of rollback; SQLite drafts on device persist until cleared by maintenance
+
+---
+
+## Section 12: EP-15 — Communication & Messaging (PROMPT-14)
+
+*Sprints 19–20 | June 2026*
+
+### 12.1 Pre-Deployment Validation
+
+```bash
+# Confirm backend messaging endpoints respond (authenticated)
+TOKEN=$(curl -s -X POST "$API_BASE/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"demo.teacher@demo.vitanasms.com","password":"Demo@12345","schoolDomain":"demo.vitanasms.com"}' \
+  | jq -r .token)
+
+curl -s -H "Authorization: Bearer $TOKEN" "$API_BASE/api/communication/messages/conversations?page=1&pageSize=1" | jq .
+curl -s -H "Authorization: Bearer $TOKEN" "$API_BASE/api/communication/messages/unread-count" | jq .
+curl -s -H "Authorization: Bearer $TOKEN" "$API_BASE/api/announcements?role=teacher&page=1&pageSize=1" | jq .
+curl -s -H "Authorization: Bearer $TOKEN" "$API_BASE/api/communication/messages/recipients" | jq .
+```
+
+All four commands must return HTTP 200 and valid JSON before proceeding.
+
+### 12.2 Mobile Build
+
+No native modules were added (only JS/TS). An OTA update is sufficient:
+
+```bash
+# Deploy to staging first
+cd mobile
+eas update --channel staging --message "feat(ep-15): teacher-parent messaging + announcements"
+
+# Verify on staging device (see smoke tests below)
+
+# Deploy to production
+eas update --channel production --message "feat(ep-15): teacher-parent messaging + announcements"
+```
+
+If a binary build is required (e.g., this is bundled with another native change):
+
+```bash
+eas build --platform all --profile production
+```
+
+### 12.3 Post-Deployment Smoke Tests
+
+| # | Test | Role | Expected |
+|---|---|---|---|
+| 1 | Open More → Messages | Teacher | Conversation list loads (empty OK) |
+| 2 | Tap "+" → select a parent | Teacher | New-thread screen opens |
+| 3 | Type and send a message | Teacher | Message appears immediately (optimistic); grey check icon |
+| 4 | Open the same conversation on parent device | Parent | Message visible; check turns blue (read receipt) |
+| 5 | Parent taps Reply | Parent | Reply appears in thread; teacher receives push within 30 s |
+| 6 | Type in thread → background app → return | Teacher | Draft text preserved in input |
+| 7 | Enable airplane mode; tap send | Teacher | Send button greyed; "Messaging requires an internet connection" visible |
+| 8 | Open More → Announcements → New | Teacher | Create form opens with class selector |
+| 9 | Post Urgent announcement | Teacher | Confirmation dialog appears; after confirm, shows in list |
+| 10 | Unread badge on Messages row | Both | Badge shows count > 0 after receiving a message |
+
+### 12.4 Monitoring Checks
+
+After deploying:
+- Sentry: filter by `mobile/messages` — look for `ApiError` on `getConversations`, `sendMessage`, or `getUnreadCount`
+- Sentry: check for `AsyncStorage` errors on draft save/restore
+- API logs: monitor `POST /api/communication/messages` for 4xx/5xx spike
+- Push notification delivery rate: confirm `new_message_teacher` / `new_message_parent` events appear in FCM / APNs dashboard
+
+### 12.5 Rollback Procedure
+
+No database migrations were added. Rollback is pure OTA:
+
+```bash
+# Find the previous update group
+eas update:list --channel production --limit 5
+
+# Roll back (removes OTA layer, falls back to embedded bundle)
+cd mobile && ./scripts/ota-rollback.sh production
+
+# Or roll back to specific group
+cd mobile && ./scripts/ota-rollback.sh production <group-id>
+```
+
+After rollback, the messaging screens will no longer be accessible. Push deep-links for `new_message_*` will fall back to the notifications list until re-deployed.
+
+---
+
+## 13. Analytics & Observability Deployment (PROMPT-15)
+
+*EP-16 · Sprint 17–18 · Implemented June 2026*
+
+### 13.1 Pre-Deployment Validation
+
+```bash
+# Verify Sentry SDK is in dependencies
+grep "@sentry/react-native" mobile/package.json
+
+# Verify Amplitude SDK is in dependencies
+grep "@amplitude/analytics-react-native" mobile/package.json
+
+# Verify env vars are set in your target environment's .env
+grep "EXPO_PUBLIC_SENTRY_DSN" mobile/.env
+grep "EXPO_PUBLIC_AMPLITUDE_API_KEY" mobile/.env
+
+# Run analytics unit tests
+npx jest --testPathPattern=analytics --no-coverage
+# Expected: 11 tests pass (7 sanitize + 4 getAmountBucket)
+```
+
+### 13.2 Environment Setup
+
+| Environment | Action |
+|---|---|
+| Local development | Copy `mobile/.env.example` to `mobile/.env`; fill in `EXPO_PUBLIC_SENTRY_DSN` and `EXPO_PUBLIC_AMPLITUDE_API_KEY` from your dev-tier projects |
+| Staging | Set `EXPO_PUBLIC_ENV=staging` so Sentry and Amplitude events are tagged as staging; use staging-tier API keys |
+| Production | Use production Sentry DSN and Amplitude API key; `SENTRY_AUTH_TOKEN` must be set as GitHub Actions secret |
+
+### 13.3 Infrastructure Requirements
+
+No new infrastructure. Analytics are SaaS-only:
+- **Sentry**: [sentry.io](https://sentry.io) — project `vitana-mobile` org `vitana-technologies`
+- **Amplitude**: [amplitude.com](https://amplitude.com) — production project
+
+### 13.4 Build & Deploy Steps
+
+```bash
+# Local — verify no TypeScript errors in analytics files
+npx tsc --noEmit 2>&1 | grep -E "(analytics|performance|FeatureError|useScreen)"
+# Expected: no output (no errors)
+
+# Production EAS build (CI triggered by mobile-v* tag)
+git tag mobile-v1.x.x
+git push origin mobile-v1.x.x
+# CI will: build → submit → upload source maps to Sentry (releases new + inject + upload + finalize)
+```
+
+### 13.5 Post-Deployment Verification
+
+```bash
+# 1. Trigger a test crash (in a debug build only):
+#    In any screen, add temporarily: throw new Error('Sentry test crash')
+# 2. Open Sentry dashboard → Issues → should see the crash within 30 s
+
+# 3. Verify no Authorization header in the Sentry event:
+#    Open the event → "Request" section → Headers → Authorization should NOT appear
+
+# 4. Verify user context is UUID only:
+#    Open the Sentry event → "User" section → id should be a UUID, not an email
+
+# 5. Open Amplitude Live Activity:
+#    Login with a test account → login_success event should appear with role property
+
+# 6. Check amount bucket:
+#    Trigger a fee payment → fee_payment_initiated event should have amount_bucket, not raw amount
+```
+
+### 13.6 Smoke Tests
+
+| # | Action | Expected Result |
+|---|---|---|
+| 1 | Log in with demo account | `login_success` in Amplitude within 30 s |
+| 2 | Navigate 5 screens | 5 `screen_viewed` events in Amplitude |
+| 3 | Log out | `logout` event in Amplitude; Sentry user context cleared |
+| 4 | Crash one feature screen (test only) | `FeatureErrorBoundary` fallback shows; other tabs still work |
+| 5 | Inspect any Sentry event | No `Authorization` header, no email, no phone number |
+| 6 | Check production stack trace | TypeScript filenames visible (not minified) |
+
+### 13.7 Monitoring Checks
+
+- Sentry: confirm events are flowing (check Issues feed within 30 min of first install)
+- Sentry Performance: confirm `screen_load_*` spans are appearing in the Performance tab
+- Amplitude: confirm `login_success`, `screen_viewed`, and `logout` events appear in Live Activity
+- CI: confirm "Upload source maps to Sentry" step exits 0 on first production tag push
+
+### 13.8 Rollback Procedure
+
+No database migrations. Rollback is OTA only:
+
+```bash
+# Roll back to previous update (removes analytics layer)
+cd mobile && ./scripts/ota-rollback.sh production
+
+# Or: disable analytics only by clearing env vars via a hotfix OTA
+# Set EXPO_PUBLIC_SENTRY_DSN="" and EXPO_PUBLIC_AMPLITUDE_API_KEY="" in .env
+# Then deploy a new OTA update:
+eas update --channel production --message "disable analytics temporarily"
+```
+
+**Privacy incident response**: If PII is found in Sentry events, immediately:
+1. Rotate the Sentry project (creates new DSN, invalidates old one)
+2. Update `EXPO_PUBLIC_SENTRY_DSN` in all environments
+3. Use Sentry Data Scrubbing (Project Settings → Security & Privacy) to purge affected events
+4. File an internal privacy incident report

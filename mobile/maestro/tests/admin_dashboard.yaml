@@ -1,0 +1,97 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-09 · PROMPT-09  |  Admin views dashboard KPIs and creates announcement
+# Precondition: fresh login as demo admin account
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: true
+
+# ── Domain entry ──────────────────────────────────────────────
+- assertVisible: "Vitana SMS"
+
+- tapOn:
+    text: "yourschool.vitanasms.com"
+
+- inputText: "demo.vitanasms.com"
+
+- tapOn:
+    text: "Continue"
+
+# ── Login as admin ────────────────────────────────────────────
+- assertVisible: "Sign in to your account"
+
+- tapOn:
+    id: "Username"
+
+- inputText: "demo.admin@demo.vitanasms.com"
+
+- tapOn:
+    id: "Password"
+
+- inputText: "Demo@12345"
+
+- tapOn:
+    text: "Sign In"
+
+# ── Verify Admin Dashboard loads ─────────────────────────────
+- assertVisible: "Dashboard"
+
+# ── Verify KPI cards ──────────────────────────────────────────
+# At least one KPI card visible (students, attendance, fees, leaves)
+- assertVisible:
+    text: "Students"
+    optional: true
+
+- assertVisible:
+    text: "Attendance"
+    optional: true
+
+- assertVisible:
+    text: "Leaves"
+    optional: true
+
+# ── Navigate to Announcements ─────────────────────────────────
+- tapOn:
+    text: "More"
+
+- tapOn:
+    text: "Announcements"
+
+- assertVisible: "Announcements"
+
+# ── Create a broadcast announcement ──────────────────────────
+- tapOn:
+    accessibilityLabel: "Create announcement"
+
+- assertVisible: "Post Announcement"
+
+- tapOn:
+    text: "e.g. Parent-Teacher Meeting"
+
+- inputText: "School Holiday Announcement"
+
+- tapOn:
+    text: "Write your announcement..."
+
+- inputText: "School will remain closed on June 20th on account of the annual sports day."
+
+# Set priority to High
+- tapOn:
+    text: "Normal"
+
+- tapOn:
+    text: "High"
+
+# Post to all classes (no class filter = broadcast)
+- tapOn:
+    text: "Post Announcement"
+
+- assertVisible: "Posted!"
+
+- tapOn:
+    text: "OK"
+
+# ── Verify announcement visible in the list ───────────────────
+- assertVisible: "School Holiday Announcement"

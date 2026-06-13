@@ -225,10 +225,10 @@ export const studentApi = {
     apiClient.get(`/assignments/${id}`),
 
   submitTextAssignment: (id: string, textContent: string): Promise<void> =>
-    apiClient.post(`/assignments/${id}/submissions`, { textContent }),
+    apiClient.post(`/assignments/${id}/submit`, { content: textContent }),
 
   submitFileAssignment: (id: string, formData: FormData): Promise<void> =>
-    apiClient.post(`/assignments/${id}/submissions`, formData, {
+    apiClient.post(`/assignments/${id}/submit`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
 

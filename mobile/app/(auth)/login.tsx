@@ -20,11 +20,13 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Constants from 'expo-constants';
+import * as Sentry from '@sentry/react-native';
 import { authApi } from '@/api/endpoints/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useSchoolStore } from '@/stores/schoolStore';
 import { queryClient } from '@/api/queryClient';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { identifyUser, track } from '@/lib/analytics';
 import type { UserRole } from '@vitana/shared-types';
 
 const loginSchema = z.object({
@@ -87,6 +89,7 @@ export default function LoginScreen() {
           cancelLabel: 'Cancel',
         });
         if (result.success) {
+          track('biometric_unlock');
           const { user } = useAuthStore.getState();
           if (user) {
             router.replace(getRoleRoute(user.role) as Parameters<typeof router.replace>[0]);
@@ -105,6 +108,7 @@ export default function LoginScreen() {
     });
 
     if (result.success) {
+      track('biometric_unlock');
       const { user } = useAuthStore.getState();
       if (user) {
         router.replace(getRoleRoute(user.role) as Parameters<typeof router.replace>[0]);
@@ -153,10 +157,16 @@ export default function LoginScreen() {
       }
 
       setAuth(response.user, response.token, response.refreshToken);
+      identifyUser(response.user.id, response.user.role, response.user.schoolId);
+      Sentry.setUser({ id: response.user.id });
+      Sentry.setTag('schoolId', response.user.schoolId);
+      Sentry.setTag('role', response.user.role);
+      track('login_success', { role: response.user.role, method: 'password' });
       await offerBiometricSetup();
       router.replace(getRoleRoute(response.user.role) as Parameters<typeof router.replace>[0]);
     } catch (err: unknown) {
       const status = (err as { status?: number })?.status ?? 0;
+      track('login_failed', { status_code: status });
       if (status === 429) {
         setApiError('Too many attempts. Account locked for 15 minutes.');
       } else if (status === 401) {
@@ -313,9 +323,13 @@ export default function LoginScreen() {
 
               {/* Forgot Password */}
               <TouchableOpacity
-                onPress={() =>
-                  void WebBrowser.openBrowserAsync('https://app.vitanasms.com/forgot-password')
-                }
+                onPress={() => {
+                  const base =
+                    (process.env.EXPO_PUBLIC_WEB_BASE_URL as string | undefined) ??
+                    (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined)?.replace('/api', '') ??
+                    'https://app.vitanasms.com';
+                  void WebBrowser.openBrowserAsync(`${base}/forgot-password`);
+                }}
                 className="items-center py-2"
                 accessibilityLabel="Forgot password"
               >

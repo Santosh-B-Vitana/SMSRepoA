@@ -154,5 +154,33 @@ namespace SmsApi.Controllers.Mobile
                 return StatusCode(500, new { message = "An error occurred." });
             }
         }
+
+        /// <summary>
+        /// Pre-fetches all daily data needed for offline use.
+        /// Returns teacher's class rosters, today's timetable, recent announcements,
+        /// and pending leave count so the app can work without connectivity.
+        /// Valid for 8 hours. Only fetched on WiFi during the 5–10 AM morning window
+        /// by the mobile client.
+        /// </summary>
+        /// <response code="200">Offline bundle data.</response>
+        /// <response code="401">Not authenticated.</response>
+        [HttpGet("offline-bundle")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
+        [ProducesResponseType(typeof(OfflineBundleResponse), 200)]
+        public async Task<ActionResult<OfflineBundleResponse>> GetOfflineBundle()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var email = GetUserEmail();
+                var result = await _dashboard.GetOfflineBundleAsync(schoolId, email);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching offline bundle");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
     }
 }

@@ -53,7 +53,7 @@
     },
     "school-production": {
       "extends": "production",
-      "channel": "school-${SCHOOL_ID}-production",
+      "channel": "school-production",
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://api.vitanasms.com/api",
         "EXPO_PUBLIC_ENV": "production",

@@ -1,0 +1,77 @@
+name: Mobile — OTA Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Update channel (e.g. production, staging, school-dpsrohini-production)'
+        required: true
+        type: string
+      message:
+        description: 'Update description (shown in EAS dashboard)'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - android
+          - ios
+
+jobs:
+  ota-update:
+    name: Deploy OTA Update
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared-types
+        run: pnpm --filter @vitana/shared-types build
+
+      - name: Build shared-utils
+        run: pnpm --filter @vitana/shared-utils build
+
+      - name: Deploy OTA Update
+        run: |
+          eas update \
+            --channel "${{ github.event.inputs.channel }}" \
+            --message "${{ github.event.inputs.message }}" \
+            --platform "${{ github.event.inputs.platform }}" \
+            --non-interactive
+        working-directory: mobile
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1.27
+        with:
+          channel-id: 'mobile-builds'
+          slack-message: |
+            *OTA Update* ${{ job.status == 'success' && '✅' || '❌' }}
+            Channel: `${{ github.event.inputs.channel }}`
+            Platform: `${{ github.event.inputs.platform }}`
+            Message: "${{ github.event.inputs.message }}"
+            By: @${{ github.actor }}
+            <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

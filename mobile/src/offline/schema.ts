@@ -45,3 +45,45 @@ export const cachedTimetable = sqliteTable('cached_timetable', {
   academicYear: text('academic_year').notNull(),
   schoolId: text('school_id').notNull(),
 });
+
+// ── Marks entry drafts ───────────────────────────────────────────────────────
+export const marksDrafts = sqliteTable('marks_drafts', {
+  id: text('id').primaryKey(), // composite: `${examId}-${classId}-${subjectId}`
+  examId: text('exam_id').notNull(),
+  classId: text('class_id').notNull(),
+  subjectId: text('subject_id').notNull(),
+  marks: text('marks').notNull(), // JSON: [{ studentId, theory, practical, isAbsent }]
+  idempotencyKey: text('idempotency_key').notNull(),
+  lastModified: integer('last_modified').notNull(),
+  isSubmitted: integer('is_submitted', { mode: 'boolean' }).default(false),
+  schoolId: text('school_id').notNull(),
+  markedBy: text('marked_by').notNull(),
+});
+
+// ── Diary entry queue ────────────────────────────────────────────────────────
+export const diaryEntryQueue = sqliteTable('diary_entry_queue', {
+  id: text('id').primaryKey(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  classId: text('class_id').notNull(),
+  date: text('date').notNull(), // YYYY-MM-DD
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  createdAt: integer('created_at').notNull(),
+  status: text('status').default('pending'), // 'pending'|'synced'|'failed'
+  errorMessage: text('error_message'),
+  schoolId: text('school_id').notNull(),
+  userId: text('user_id').notNull(),
+});
+
+// ── Morning bundle cache ─────────────────────────────────────────────────────
+export const offlineBundleCache = sqliteTable('offline_bundle_cache', {
+  id: integer('id').primaryKey(), // always 1 — single row
+  bundledAt: integer('bundled_at').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+  timetableJson: text('timetable_json').notNull(),
+  announcementsJson: text('announcements_json').notNull(),
+  classesJson: text('classes_json').notNull(),
+  pendingLeavesJson: text('pending_leaves_json').notNull(),
+  schoolId: text('school_id').notNull(),
+  academicYear: text('academic_year').notNull(),
+});

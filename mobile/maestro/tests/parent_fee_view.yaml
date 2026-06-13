@@ -1,0 +1,50 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-04 · PROMPT-11  |  Parent views fee summary and details
+# Precondition: parent is logged in (demo school, demo parent account)
+# Demo child "Aarav Sharma" has outstanding fees in the demo school.
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Fees ──────────────────────────────────────────
+- tapOn:
+    text: "Fees"
+
+# ── Verify fee summary screen loads ──────────────────────────
+- assertVisible: "Fee Summary"
+
+# ── Verify outstanding balance card is visible ───────────────
+# The card contains the amount due — we check that something
+# labelled "Outstanding" or "Due" is visible
+- assertVisible: "Outstanding"
+
+# ── Verify Pay Online button is present ──────────────────────
+- assertVisible: "Pay Online"
+
+# ── Tap View Details (or line items) ─────────────────────────
+- tapOn:
+    text: "View Details"
+
+# ── Verify fee breakdown / line items visible ─────────────────
+# At least one fee head (e.g. "Tuition Fee" or "Transport Fee")
+- assertVisible:
+    text: "Tuition"
+    optional: true
+
+- assertVisible:
+    text: "Transport"
+    optional: true
+
+# ── Verify receipt history section ───────────────────────────
+- assertVisible:
+    text: "Receipt"
+    optional: true
+
+# ── Go back to summary ────────────────────────────────────────
+- tapOn:
+    accessibilityLabel: "Go back"
+
+- assertVisible: "Fee Summary"

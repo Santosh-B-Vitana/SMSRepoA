@@ -1,0 +1,66 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-12 · PROMPT-13  |  Teacher enters marks and saves a draft
+# Precondition: teacher is logged in. Exam "Unit Test 1" exists
+# with at least 1 subject assigned to the demo teacher.
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Marks tab ─────────────────────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+- tapOn:
+    text: "Marks"
+
+- assertVisible: "Marks Entry"
+
+# ── Select the first exam in the list ────────────────────────
+- tapOn:
+    index: 0
+
+# ── Exam detail: subject selection screen ────────────────────
+# Subject list renders — tap the first unlocked subject
+- assertVisible: "Enter Marks"
+
+- tapOn:
+    text: "Enter Marks"
+
+# ── Marks entry screen ───────────────────────────────────────
+- assertVisible: "Theory"
+
+# ── Enter marks for student 1 ────────────────────────────────
+- tapOn:
+    index: 0   # first student theory field
+
+- inputText: "78"
+
+# ── Enter marks for student 2 ────────────────────────────────
+- tapOn:
+    index: 1   # second student theory field
+
+- inputText: "82"
+
+# ── Mark student 3 as absent ─────────────────────────────────
+- tapOn:
+    index: 0   # first absent toggle (third student row)
+    # In the UI this is a checkbox/toggle labelled "Absent"
+
+# ── Save draft ────────────────────────────────────────────────
+- tapOn:
+    text: "Save Draft"
+
+# ── Verify draft saved toast ──────────────────────────────────
+- assertVisible: "Draft saved"
+
+# ── Go back to subject list and verify status ────────────────
+- tapOn:
+    accessibilityLabel: "Go back"
+
+# Subject should now show progress bar partially filled
+- assertVisible: "Enter Marks"

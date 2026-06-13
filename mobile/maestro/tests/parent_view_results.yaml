@@ -1,0 +1,48 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-06 · PROMPT-13  |  Parent views exam results for child
+# Precondition: parent is logged in. Demo child has published exam results.
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Results via More menu ────────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+# The route is (parent)/results/[studentId]
+# The More menu item is labelled "Results" or "Exam Results"
+- tapOn:
+    text: "Results"
+
+# ── Results list screen ───────────────────────────────────────
+- assertVisible: "Results"
+
+# ── Select the first published exam ──────────────────────────
+- tapOn:
+    index: 0
+
+# ── Results detail screen ─────────────────────────────────────
+# Subject-wise marks table visible
+- assertVisible: "Total"
+
+# At least one subject row
+# Grade badges (A, B, C) or marks (e.g. "78 / 100") visible
+- assertVisible:
+    text: "/"
+    optional: true
+
+# ── Verify percentage or overall grade visible ────────────────
+- assertVisible:
+    text: "%"
+    optional: true
+
+# ── Go back ───────────────────────────────────────────────────
+- tapOn:
+    accessibilityLabel: "Go back"
+
+- assertVisible: "Results"

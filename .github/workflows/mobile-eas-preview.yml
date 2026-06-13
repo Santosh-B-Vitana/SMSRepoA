@@ -1,47 +1,24 @@
-name: Mobile PR Preview Build
+name: Mobile — PR Preview Build
 
 on:
   pull_request:
     paths:
       - 'mobile/**'
       - 'packages/**'
+      - '.github/workflows/mobile-*.yml'
+
+concurrency:
+  group: preview-${{ github.head_ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test & Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build shared packages
-        run: |
-          pnpm --filter @vitana/shared-types build
-          pnpm --filter @vitana/shared-utils build
-
-      - name: Lint
-        run: pnpm --filter @vitana/mobile lint
-
-      - name: TypeScript check
-        run: pnpm --filter @vitana/mobile typecheck
-
-      - name: Tests
-        run: pnpm --filter @vitana/shared-utils test --ci && pnpm --filter @vitana/mobile test --ci
+  checks:
+    uses: ./.github/workflows/mobile-checks.yml
+    secrets: inherit
 
   preview-build:
     name: EAS Preview Build
-    needs: test
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,11 +42,50 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: mobile
 
-      - name: Build preview (Android APK + iOS)
-        run: eas build --platform all --profile preview --non-interactive
+      - name: Build shared packages
+        run: |
+          pnpm --filter @vitana/shared-types build
+          pnpm --filter @vitana/shared-utils build
+
+      - name: EAS Preview Build (Android APK + iOS)
+        id: build
+        run: |
+          eas build \
+            --platform all \
+            --profile preview \
+            --non-interactive \
+            --json \
+            --no-wait \
+            > build_output.json
+          cat build_output.json
         working-directory: mobile
+        env:
+          SCHOOL_ID: vitana
+          BUILD_NUMBER: ${{ needs.checks.outputs.build_number }}
 
       - name: Comment build links on PR
-        uses: expo/expo-github-action/preview-comment@v8
+        uses: actions/github-script@v7
         with:
-          channel: preview
+          script: |
+            const fs = require('fs');
+            const buildOutput = JSON.parse(fs.readFileSync('mobile/build_output.json', 'utf8'));
+            const androidBuild = buildOutput.find(b => b.platform === 'ANDROID');
+            const iosBuild = buildOutput.find(b => b.platform === 'IOS');
+            const shortSha = '${{ github.sha }}'.slice(0, 7);
+
+            const body = `## 📱 Preview Build
+
+            | Platform | Status | Link |
+            |---|---|---|
+            | Android (APK) | ⏳ Building | [View on EAS](${androidBuild?.buildDetailsPageUrl ?? '#'}) |
+            | iOS | ⏳ Building | [View on EAS](${iosBuild?.buildDetailsPageUrl ?? '#'}) |
+
+            > Builds take ~20–30 minutes. Download links appear once complete.
+            > Build **#${{ github.run_number }}** · Commit \`${shortSha}\``;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

@@ -171,6 +171,42 @@ See [`docs/mobile_application_docs/06-mobile-architecture.md`](../docs/mobile_ap
 
 ---
 
+## CI/CD Pipelines
+
+All mobile builds run through GitHub Actions + EAS Build. No local Xcode or Android Studio is needed for CI.
+
+| Trigger | Workflow | Result |
+|---|---|---|
+| PR touching `mobile/**` or `packages/**` | `mobile-eas-preview.yml` | Preview APK + IPA, links posted on PR |
+| Push to `develop` (mobile paths) | `mobile-eas-staging.yml` | Staging AAB + iOS → internal testing tracks |
+| Tag `mobile-v*.*.*` | `mobile-eas-production.yml` | Production build + store submit (requires approval) |
+| `workflow_dispatch` | `mobile-school-build.yml` | Dedicated school app build |
+| `workflow_dispatch` | `mobile-ota-update.yml` | JS-only OTA update to any channel (~5 min) |
+
+### Releasing a New Version
+
+```bash
+# 1. Bump version in mobile/package.json
+# 2. Push the release tag
+git tag mobile-v1.2.0 && git push origin mobile-v1.2.0
+# 3. Approve the workflow in GitHub Actions → "Mobile — Production Release"
+```
+
+### Emergency OTA Rollback
+
+```bash
+cd mobile
+
+# Roll back production to embedded bundle
+./scripts/ota-rollback.sh production
+
+# Roll back to a specific previous update group
+eas update:list --channel production --limit 5   # find the group ID
+./scripts/ota-rollback.sh production <group-id>
+```
+
+---
+
 ## Deployment
 
-See [`docs/DEPLOYMENT_CHECKLIST.md`](../docs/DEPLOYMENT_CHECKLIST.md) Section 8 for complete pre-deployment checklist.
+See [`docs/DEPLOYMENT_CHECKLIST.md`](../docs/DEPLOYMENT_CHECKLIST.md) EP-11 section for the full list of required GitHub secrets, EAS one-time setup steps, and the `mobile-production` GitHub Environment configuration.

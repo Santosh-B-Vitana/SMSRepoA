@@ -5,6 +5,14 @@ import { apiClient } from '../api/client';
 import { queryClient } from '../api/queryClient';
 import { generateUUID } from '../lib/uuid';
 
+export interface ConflictItem {
+  id: string;
+  operationType: string;
+  body: string;
+  serverData: unknown;
+  createdAt: number;
+}
+
 type QueueItem = typeof offlineQueue.$inferSelect;
 
 export class OfflineQueueProcessor {
@@ -67,11 +75,12 @@ export class OfflineQueueProcessor {
       const isConflict = status === 409;
 
       if (isConflict) {
+        const serverData = (error as { response?: { data?: unknown } })?.response?.data ?? null;
         await db
           .update(offlineQueue)
           .set({
             status: 'failed',
-            errorMessage: 'Conflict: Data was already submitted by someone else.',
+            errorMessage: JSON.stringify({ type: 'conflict', serverData }),
             retryCount,
           })
           .where(eq(offlineQueue.id, item.id));
@@ -124,5 +133,52 @@ export class OfflineQueueProcessor {
       .from(offlineQueue)
       .where(and(eq(offlineQueue.userId, userId), eq(offlineQueue.status, 'pending')));
     return result.length;
+  }
+
+  static async getConflictItems(userId: string): Promise<ConflictItem[]> {
+    const rows = await db
+      .select()
+      .from(offlineQueue)
+      .where(and(eq(offlineQueue.userId, userId), eq(offlineQueue.status, 'failed')));
+
+    return rows
+      .filter((row) => {
+        try {
+          const parsed = JSON.parse(row.errorMessage ?? '{}') as { type?: string };
+          return parsed.type === 'conflict';
+        } catch {
+          return false;
+        }
+      })
+      .map((row) => {
+        const parsed = JSON.parse(row.errorMessage ?? '{}') as { type: string; serverData: unknown };
+        return {
+          id: row.id,
+          operationType: row.operationType,
+          body: row.body,
+          serverData: parsed.serverData,
+          createdAt: row.createdAt,
+        };
+      });
+  }
+
+  static async resolveConflict(
+    itemId: string,
+    resolution: 'keep_server' | 'use_mine',
+    overrideBody?: object,
+  ): Promise<void> {
+    if (resolution === 'keep_server') {
+      await db.update(offlineQueue).set({ status: 'synced', syncedAt: Date.now() }).where(eq(offlineQueue.id, itemId));
+    } else {
+      await db
+        .update(offlineQueue)
+        .set({
+          status: 'pending',
+          retryCount: 0,
+          errorMessage: null,
+          ...(overrideBody ? { body: JSON.stringify(overrideBody) } : {}),
+        })
+        .where(eq(offlineQueue.id, itemId));
+    }
   }
 }

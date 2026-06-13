@@ -1,0 +1,66 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# EP-12 · PROMPT-13  |  Teacher creates an assignment
+# Precondition: teacher is logged in (demo school, demo credentials)
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Assignments via More menu ────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+- tapOn:
+    text: "Assignments"
+
+- assertVisible: "Assignments"
+
+# ── Tap create button ─────────────────────────────────────────
+- tapOn:
+    accessibilityLabel: "Create assignment"
+
+- assertVisible: "New Assignment"
+
+# ── Fill in assignment title ──────────────────────────────────
+- tapOn:
+    text: "Assignment title"
+
+- inputText: "Chapter 5 Exercise"
+
+# ── Fill in description ───────────────────────────────────────
+- tapOn:
+    text: "Instructions or description"
+
+- inputText: "Complete exercises 1 to 10 from Chapter 5 of the textbook."
+
+# ── Select class (first available) ───────────────────────────
+- tapOn:
+    text: "Select class"
+
+- tapOn:
+    index: 0
+
+# ── Select due date (7 days out — use date picker) ───────────
+- tapOn:
+    text: "Due date"
+
+# Accept default date (or advance by one week using picker)
+- tapOn:
+    text: "OK"
+
+# ── Submit the assignment ─────────────────────────────────────
+- tapOn:
+    text: "Create Assignment"
+
+# ── Verify success feedback ───────────────────────────────────
+- assertVisible: "Assignment Created"
+
+- tapOn:
+    text: "OK"
+
+# ── Verify assignment appears in the list ─────────────────────
+- assertVisible: "Chapter 5 Exercise"

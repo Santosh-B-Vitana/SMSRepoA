@@ -1,11 +1,13 @@
 import { Tabs } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '@/theme';
+import { FeatureErrorBoundary } from '@/components/common/FeatureErrorBoundary';
 
 export default function TeacherLayout() {
   const { colors } = useAppTheme();
 
   return (
+    <FeatureErrorBoundary featureName="Teacher Portal">
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -60,6 +62,15 @@ export default function TeacherLayout() {
       <Tabs.Screen name="leaves/status" options={{ href: null }} />
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
+      <Tabs.Screen name="sync-status" options={{ href: null }} />
+      {/* EP-15: Messaging */}
+      <Tabs.Screen name="messages/index" options={{ href: null }} />
+      <Tabs.Screen name="messages/new" options={{ href: null }} />
+      <Tabs.Screen name="messages/[conversationId]" options={{ href: null }} />
+      {/* EP-15: Announcements */}
+      <Tabs.Screen name="announcements/index" options={{ href: null }} />
+      <Tabs.Screen name="announcements/create" options={{ href: null }} />
     </Tabs>
+    </FeatureErrorBoundary>
   );
 }

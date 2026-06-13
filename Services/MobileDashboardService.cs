@@ -11,6 +11,7 @@ namespace SmsApi.Services
         Task<TeacherDashboardResponse> GetTeacherDashboardAsync(Guid schoolId, Guid userId, string staffEmail);
         Task<StudentDashboardResponse> GetStudentDashboardAsync(Guid schoolId, Guid userId, string studentEmail);
         Task<AdminDashboardResponse> GetAdminDashboardAsync(Guid schoolId, Guid userId);
+        Task<OfflineBundleResponse> GetOfflineBundleAsync(Guid schoolId, string staffEmail);
     }
 
     public class MobileDashboardService : IMobileDashboardService
@@ -149,7 +150,7 @@ namespace SmsApi.Services
             var tomorrowDate = todayDate.AddDays(1);
 
             var attendanceRate   = await GetTodayAttendanceRateAsync(schoolId, todayDate);
-            var feeCollection    = await GetTodayFeeCollectionAsync(schoolId, todayDate, tomorrowDate);
+            var feeCollection    = await GetFeeCollectionAsync(schoolId, todayDate, tomorrowDate);
             var pendingApprovals = await GetPendingApprovalsAsync(schoolId);
             var billingAlert     = await GetBillingAlertAsync(schoolId);
             var announcements    = await GetRecentAnnouncementsAsync(schoolId);
@@ -157,13 +158,92 @@ namespace SmsApi.Services
 
             return new AdminDashboardResponse
             {
-                TodayAttendanceRate = attendanceRate,
-                TodayFeeCollection = feeCollection,
+                AttendanceRate = attendanceRate,
+                FeeCollection = feeCollection,
                 PendingApprovals = pendingApprovals,
                 BillingAlert = billingAlert,
                 RecentAnnouncements = announcements,
                 UnreadCount = unreadCount
             };
+        }
+
+        // ── Offline Bundle ───────────────────────────────────────────────────
+
+        public async Task<OfflineBundleResponse> GetOfflineBundleAsync(Guid schoolId, string staffEmail)
+        {
+            var today = DateTime.UtcNow;
+            var dayName = today.DayOfWeek.ToString();
+
+            var staff = await _db.StaffMembers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.SchoolId == schoolId && s.Email == staffEmail);
+
+            var myClasses = new List<OfflineBundleClassDto>();
+
+            if (staff != null)
+            {
+                var assignments = await _db.TeacherAssignments
+                    .AsNoTracking()
+                    .Include(ta => ta.Class)
+                    .Include(ta => ta.Section)
+                    .Where(ta => ta.SchoolId == schoolId && ta.StaffId == staff.Id && ta.Status == "active")
+                    .ToListAsync();
+
+                foreach (var assignment in assignments)
+                {
+                    var studentEnrollments = await _db.StudentEnrollments
+                        .AsNoTracking()
+                        .Include(e => e.Student)
+                        .Where(e => e.SchoolId == schoolId
+                                 && e.ClassId == assignment.ClassId
+                                 && e.SectionId == assignment.SectionId
+                                 && e.Status == "active")
+                        .ToListAsync();
+
+                    var students = studentEnrollments
+                        .Where(e => e.Student != null)
+                        .Select(e => new OfflineBundleStudentDto(
+                            e.Student!.Id,
+                            !string.IsNullOrWhiteSpace(e.Student.Name) ? e.Student.Name
+                                : !string.IsNullOrWhiteSpace($"{e.Student.FirstName} {e.Student.LastName}".Trim())
+                                    ? $"{e.Student.FirstName} {e.Student.LastName}".Trim()
+                                    : e.Student.Email,
+                            e.Student.RollNumber,
+                            e.Student.PhotoUrl
+                        ))
+                        .ToList();
+
+                    var classKey = $"{assignment.ClassId}-{assignment.SectionId}";
+                    if (!myClasses.Any(c => c.ClassId == classKey))
+                    {
+                        myClasses.Add(new OfflineBundleClassDto(
+                            classKey,
+                            assignment.Class?.Name ?? string.Empty,
+                            assignment.Section?.Name,
+                            students
+                        ));
+                    }
+                }
+            }
+
+            var timetable = staff != null
+                ? await GetTeacherTodayScheduleAsync(schoolId, staffEmail, dayName)
+                : new List<TimetableSlotDto>();
+
+            var pendingLeaveCount = await GetPendingLeaveCountAsync(schoolId);
+            var announcements = await GetRecentAnnouncementsAsync(schoolId);
+
+            var bundledAt = DateTime.UtcNow;
+            var expiresAt = bundledAt.AddHours(8);
+
+            return new OfflineBundleResponse(
+                bundledAt,
+                expiresAt,
+                myClasses,
+                timetable,
+                pendingLeaveCount,
+                announcements
+            );
         }
 
         // ── Private helpers ──────────────────────────────────────────────────
@@ -526,15 +606,30 @@ namespace SmsApi.Services
             return Math.Round((decimal)presentToday / totalActiveStudents * 100, 1);
         }
 
-        private async Task<decimal> GetTodayFeeCollectionAsync(
+        private async Task<FeeCollectionDto> GetFeeCollectionAsync(
             Guid schoolId, DateTime todayDate, DateTime tomorrowDate)
         {
-            return await _db.GatewayPaymentTransactions
+            var startOfMonth = new DateTime(todayDate.Year, todayDate.Month, 1);
+
+            var collectedToday = await _db.GatewayPaymentTransactions
                 .AsNoTracking()
                 .Where(t => t.SchoolId == schoolId
                          && t.Status == "Success"
                          && t.CreatedAt >= todayDate && t.CreatedAt < tomorrowDate)
                 .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+
+            var collectedThisMonth = await _db.GatewayPaymentTransactions
+                .AsNoTracking()
+                .Where(t => t.SchoolId == schoolId
+                         && t.Status == "Success"
+                         && t.CreatedAt >= startOfMonth && t.CreatedAt < tomorrowDate)
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+
+            return new FeeCollectionDto
+            {
+                CollectedToday = collectedToday,
+                CollectedThisMonth = collectedThisMonth
+            };
         }
 
         private async Task<PendingApprovalsDto> GetPendingApprovalsAsync(Guid schoolId)

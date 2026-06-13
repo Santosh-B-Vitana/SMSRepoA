@@ -319,6 +319,28 @@ namespace SmsApi.Controllers
             var schoolId = _tenant.GetEffectiveSchoolId();
             return Ok(await _libraryService.GetOverdueItemsAsync(schoolId));
         }
+
+        /// <summary>
+        /// [Mobile/Student] Returns issued books for the currently authenticated student.
+        /// StudentId is resolved from the JWT's LinkedEntityId claim.
+        /// </summary>
+        [HttpGet("my-issues")]
+        [Authorize(Roles = StatusConstants.Roles.Student)]
+        public async Task<ActionResult<BookIssueListResponse>> GetMyIssues(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50,
+            [FromQuery] string? status = null)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var studentId = _tenant.LinkedEntityId;
+
+            if (!studentId.HasValue || studentId == Guid.Empty)
+                return Unauthorized(new { message = "Student record not linked to this account." });
+
+            var result = await _libraryService.GetBookIssuesAsync(
+                schoolId, page, pageSize, bookId: null, studentId: studentId.Value, status: status);
+            return Ok(result);
+        }
     }
 }
 

@@ -60,8 +60,8 @@ describe('push notification deep links', () => {
       expect(DEEP_LINKS['leave_rejected']({})).toBe('/(parent)/leaves');
     });
 
-    it('new_message_parent falls back to parent notifications until EP-15 ships', () => {
-      expect(DEEP_LINKS['new_message_parent']({})).toBe('/(parent)/notifications');
+    it('new_message_parent links to parent messages list', () => {
+      expect(DEEP_LINKS['new_message_parent']({})).toBe('/(parent)/messages/index');
     });
   });
 
@@ -84,8 +84,8 @@ describe('push notification deep links', () => {
       expect(DEEP_LINKS['leave_request_received']({})).toBe('/(teacher)/leaves');
     });
 
-    it('new_message_teacher falls back to teacher notifications until EP-15 ships', () => {
-      expect(DEEP_LINKS['new_message_teacher']({})).toBe('/(teacher)/notifications');
+    it('new_message_teacher links to teacher messages list', () => {
+      expect(DEEP_LINKS['new_message_teacher']({})).toBe('/(teacher)/messages/index');
     });
 
     it('timetable_change links to teacher timetable', () => {

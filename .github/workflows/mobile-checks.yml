@@ -1,0 +1,79 @@
+name: Mobile Checks (reusable)
+
+on:
+  workflow_call:
+    outputs:
+      build_number:
+        description: 'Build number based on run ID'
+        value: ${{ jobs.checks.outputs.build_number }}
+
+jobs:
+  checks:
+    name: Lint, TypeCheck & Test
+    runs-on: ubuntu-latest
+    outputs:
+      build_number: ${{ steps.build_num.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared-types
+        run: pnpm --filter @vitana/shared-types build
+
+      - name: Build shared-utils
+        run: pnpm --filter @vitana/shared-utils build
+
+      - name: TypeScript check
+        run: pnpm --filter @vitana/mobile typecheck
+
+      - name: Lint
+        run: pnpm --filter @vitana/mobile lint
+
+      - name: Run tests with coverage
+        run: pnpm --filter @vitana/mobile test --ci --coverage --coverageReporters=lcov --coverageReporters=text-summary
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: mobile/coverage/lcov.info
+          retention-days: 7
+
+      - name: Coverage gate — enforce global thresholds
+        run: |
+          # Extract global line coverage % from lcov.info and fail if < 60
+          if [ -f mobile/coverage/lcov.info ]; then
+            TOTAL_LINES=$(grep -E "^DA:" mobile/coverage/lcov.info | wc -l)
+            HIT_LINES=$(grep -E "^DA:[0-9]+,[^0]" mobile/coverage/lcov.info | wc -l)
+            if [ "$TOTAL_LINES" -gt 0 ]; then
+              COVERAGE=$(( HIT_LINES * 100 / TOTAL_LINES ))
+              echo "Global line coverage: ${COVERAGE}% (${HIT_LINES}/${TOTAL_LINES})"
+              if [ "$COVERAGE" -lt 60 ]; then
+                echo "Coverage ${COVERAGE}% is below the required 60% threshold."
+                exit 1
+              fi
+            fi
+          fi
+
+      - name: Backend smoke test (non-blocking)
+        run: bash mobile/scripts/backend-smoke.sh
+        continue-on-error: true
+        env:
+          # Runs against staging API when SMOKE_API_URL secret is set;
+          # falls back to production demo URL otherwise.
+          SMOKE_API_URL: ${{ secrets.SMOKE_API_URL || 'https://api.vitanasms.com/api' }}
+
+      - name: Generate build number
+        id: build_num
+        run: echo "number=${{ github.run_number }}" >> $GITHUB_OUTPUT

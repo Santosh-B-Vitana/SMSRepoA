@@ -104,3 +104,7 @@ eas-secret.json
 # AWS credentials (should use IAM roles in production)
 .aws/credentials
 aws-credentials.json
+
+# App Store review credentials — CONFIDENTIAL — store in 1Password vault
+# "Vitana SMS App Review Notes"
+mobile/store-assets/app-review-notes.md

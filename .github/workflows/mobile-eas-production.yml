@@ -1,4 +1,4 @@
-name: Mobile Production Release
+name: Mobile — Production Release
 
 on:
   push:
@@ -6,12 +6,26 @@ on:
       - 'mobile-v*.*.*'
 
 jobs:
+  checks:
+    uses: ./.github/workflows/mobile-checks.yml
+    secrets: inherit
+
   production-release:
     name: EAS Production Build & Submit
+    needs: checks
     runs-on: ubuntu-latest
-    environment: mobile-production
+    environment:
+      name: mobile-production
+      url: ${{ steps.get-build-url.outputs.url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/mobile-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -29,27 +43,77 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
         working-directory: mobile
 
-      - name: Extract version from tag
-        run: echo "APP_VERSION=${GITHUB_REF#refs/tags/mobile-v}" >> $GITHUB_ENV
+      - name: Build shared packages
+        run: |
+          pnpm --filter @vitana/shared-types build
+          pnpm --filter @vitana/shared-utils build
 
-      - name: Build production
-        run: eas build --platform all --profile production --non-interactive
+      - name: EAS Production Build
+        id: get-build-url
+        run: |
+          BUILD_JSON=$(eas build \
+            --platform all \
+            --profile production \
+            --non-interactive \
+            --json)
+          echo "$BUILD_JSON" > build_output.json
+          echo "url=$(echo "$BUILD_JSON" | jq -r '.[0].buildDetailsPageUrl // "https://expo.dev"')" >> $GITHUB_OUTPUT
         working-directory: mobile
         env:
-          APP_VERSION: ${{ env.APP_VERSION }}
+          SCHOOL_ID: vitana
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ needs.checks.outputs.build_number }}
 
-      - name: Submit to stores
+      - name: Submit to App Stores (internal testing)
         run: eas submit --platform all --latest --non-interactive
         working-directory: mobile
 
+      - name: Upload build artifacts to S3
+        run: |
+          aws s3 cp mobile/ s3://vitana-builds/vitana/${{ steps.version.outputs.version }}/ \
+            --recursive \
+            --exclude "*" \
+            --include "*.aab" \
+            --include "*.ipa"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Upload source maps to Sentry
+        run: |
+          VERSION="${{ steps.version.outputs.version }}+${{ needs.checks.outputs.build_number }}"
+          npx @sentry/cli releases new "$VERSION" \
+            --org vitana-technologies \
+            --project vitana-mobile
+          npx @sentry/cli sourcemaps inject \
+            --org vitana-technologies \
+            --project vitana-mobile \
+            .expo/
+          npx @sentry/cli sourcemaps upload \
+            --org vitana-technologies \
+            --project vitana-mobile \
+            --release "$VERSION" \
+            .expo/
+          npx @sentry/cli releases finalize "$VERSION" \
+            --org vitana-technologies \
+            --project vitana-mobile
+        working-directory: mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
       - name: Notify Slack
         if: always()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v1.27
         with:
-          channel-id: mobile-builds
-          slack-message: "Production release ${{ env.APP_VERSION }} ${{ job.status }}"
+          channel-id: 'mobile-builds'
+          slack-message: |
+            *Production Release* ${{ job.status == 'success' && '✅' || '❌' }}
+            Version: `${{ steps.version.outputs.version }}`
+            Build: #${{ needs.checks.outputs.build_number }}
+            Submitted to: Play Store Internal + TestFlight
+            <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

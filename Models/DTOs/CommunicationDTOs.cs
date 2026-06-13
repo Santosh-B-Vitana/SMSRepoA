@@ -463,4 +463,58 @@ namespace SmsApi.Models.DTOs
         public DateTime SentAt { get; set; }
         public List<string> FailedParentEmails { get; set; } = new();
     }
+
+    // ── Mobile messaging (conversation thread model) ──────────────────────────
+
+    /// <summary>Virtual conversation row shown in the mobile messages list.</summary>
+    public class MobileConversationDto
+    {
+        public string Id { get; set; } = string.Empty;             // Conversation.Id as string
+        public string ParticipantId { get; set; } = string.Empty;  // other participant's UserLogin.Id
+        public string ParticipantName { get; set; } = string.Empty;
+        public string ParticipantRole { get; set; } = string.Empty;
+        public string? LastMessage { get; set; }
+        public DateTime? LastMessageTime { get; set; }
+        public int UnreadCount { get; set; }
+    }
+
+    /// <summary>Single message in a conversation thread.</summary>
+    public class MobileThreadMessageDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string SenderId { get; set; } = string.Empty;       // UserLogin.Id of sender
+        public string SenderName { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public DateTime SentAt { get; set; }
+        public string Status { get; set; } = "delivered";          // sent | delivered | read
+    }
+
+    /// <summary>Mobile send-message request body.</summary>
+    public class MobileSendMessagePayload
+    {
+        public string? ConversationId { get; set; }
+        [Required]
+        public string RecipientId { get; set; } = string.Empty;    // recipient UserLogin.Id
+        [Required]
+        [MinLength(1)]
+        [MaxLength(2000)]
+        public string Message { get; set; } = string.Empty;
+    }
+
+    /// <summary>Unread message count for mobile badge.</summary>
+    public class MobileUnreadCountDto
+    {
+        public int Count { get; set; }
+    }
+
+    /// <summary>Recipient row in the new-conversation picker.</summary>
+    public class MobileRecipientDto
+    {
+        public string Id { get; set; } = string.Empty;             // UserLogin.Id
+        public string Name { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public string? ClassId { get; set; }
+        public string? ClassName { get; set; }
+        public string? StudentName { get; set; }
+    }
 }

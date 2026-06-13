@@ -1069,10 +1069,11 @@ cd mobile && SCHOOL_ID=dps-rohini eas build --profile school-production --platfo
 ### 8.5 Mobile Phase 1 Checklist (before merging this PR)
 
 ```
-[ ] pnpm install from repo root completes with exit code 0
-[ ] pnpm --filter @vitana/shared-types build completes
-[ ] pnpm --filter @vitana/shared-utils test — all 34 tests pass
-[ ] pnpm --filter @vitana/mobile typecheck — 0 TypeScript errors
+[x] pnpm install from repo root completes with exit code 0
+[x] pnpm --filter @vitana/shared-types build completes
+[x] pnpm --filter @vitana/shared-utils test — all 34 tests pass
+[x] pnpm --filter @vitana/mobile typecheck — 0 TypeScript errors
+[x] mobile/.env.example present with all required keys documented
 [ ] mobile/.env created from mobile/.env.example with valid API URL
 [ ] mobile/scripts/school-configs.json EAS project IDs updated (or left as placeholder for Phase 2)
 [ ] Expo dev server starts without errors (pnpm --filter @vitana/mobile start)
@@ -1083,7 +1084,84 @@ cd mobile && SCHOOL_ID=dps-rohini eas build --profile school-production --platfo
 
 ---
 
-### 8.6 Future Phases (Firebase / APNs / Push Notifications)
+### 8.6 Mobile Test Infrastructure (June 2026)
+
+All items below have been implemented as part of the robustness testing phase.
+
+#### CI Checks (automated on every PR)
+
+| Check | Command | Status |
+|---|---|---|
+| TypeScript | `pnpm --filter @vitana/mobile typecheck` | ✅ PASS |
+| ESLint (0 warnings) | `pnpm --filter @vitana/mobile lint` | ✅ PASS |
+| Unit tests + coverage | `pnpm --filter @vitana/mobile test --ci --coverage` | ✅ PASS |
+| Coverage gate (≥60% lines) | Inline awk in `mobile-checks.yml` | ✅ Configured |
+| Backend smoke (non-blocking) | `bash mobile/scripts/backend-smoke.sh` | ✅ Added (`continue-on-error: true`) |
+
+#### Unit Test Files
+
+| File | Tests | Coverage Area |
+|---|---|---|
+| `src/features/auth/__tests__/useLogout.test.ts` | 5 | Auth store, logout flow |
+| `src/lib/__tests__/analytics.test.ts` | 9 | PII sanitization, amount bucketing |
+| `src/notifications/__tests__/handler.test.ts` | 6+ | Deep link routing (21 types) |
+| `src/hooks/__tests__/useFeatureFlag.test.ts` | — | Feature flag resolution |
+| `src/offline/__tests__/marksDraftService.test.ts` | 8 | SQLite draft CRUD |
+| `src/offline/__tests__/offlineQueue.test.ts` | 10 | Queue processing, conflict resolution |
+| `src/api/__tests__/client.test.ts` | 5 | Axios interceptors, ApiError |
+| `src/api/endpoints/__tests__/communication.test.ts` | 10 | Communication API URLs |
+| `src/components/common/__tests__/FeatureErrorBoundary.test.tsx` | 6 | Error boundary + Sentry |
+| `src/lib/__tests__/performance.test.ts` | 8 | Screen load spans, slow threshold |
+
+#### Component Tests (React Testing Library)
+
+| File | Tests | Screen |
+|---|---|---|
+| `src/screens/__tests__/LoginScreen.test.tsx` | 7 | Login form validation, API errors |
+| `src/screens/__tests__/SyncStatusScreen.test.tsx` | 8 | Sync queue display, retry |
+| `src/screens/__tests__/MarksExamSubjectScreen.test.tsx` | 6 | Exam subject selection |
+
+#### E2E Tests (Maestro — require device)
+
+| File | Flow |
+|---|---|
+| `maestro/tests/login_parent.yaml` | Parent login |
+| `maestro/tests/student_login.yaml` | Student login |
+| `maestro/tests/logout.yaml` | Logout |
+| `maestro/tests/student_attendance.yaml` | Student attendance view |
+| `maestro/tests/student_assignments.yaml` | Student assignments |
+| `maestro/tests/student_timetable.yaml` | Student timetable |
+| `maestro/tests/student_leave_apply.yaml` | Student leave apply |
+| `maestro/tests/student_notifications.yaml` | Student notifications |
+| `maestro/tests/teacher_send_message.yaml` | Teacher messaging + announcement |
+| `maestro/tests/teacher_create_assignment.yaml` | Teacher create assignment |
+| `maestro/tests/teacher_marks_entry.yaml` | Teacher marks entry + save draft |
+| `maestro/tests/teacher_create_announcement.yaml` | Teacher announcement standalone |
+| `maestro/tests/parent_fee_view.yaml` | Parent fee summary |
+| `maestro/tests/parent_view_results.yaml` | Parent exam results |
+| `maestro/tests/parent_send_message.yaml` | Parent send message |
+| `maestro/tests/admin_dashboard.yaml` | Admin dashboard + broadcast |
+
+#### Scripts
+
+| Script | Purpose |
+|---|---|
+| `mobile/scripts/smoke-test.sh` | One-command TypeScript + lint + jest |
+| `mobile/scripts/backend-smoke.sh` | cURL-based API health checks (all 4 demo roles) |
+| `mobile/scripts/ota-rollback.sh` | OTA rollback to embedded or specific update group |
+
+#### Documentation
+
+| File | Purpose |
+|---|---|
+| `docs/mobile_application_docs/TEST_CASES.md` | 113 detailed test cases (11 categories) |
+| `mobile/RELEASE_RUNBOOK.md` | Release procedure including rollback |
+| `mobile/store-assets/CHECKLIST.md` | Per-release store asset validation |
+| `mobile/store-assets/MAINTENANCE_SCHEDULE.md` | Weekly/monthly/annual tasks |
+
+---
+
+### 8.7 Future Phases (Firebase / APNs / Push Notifications)
 
 These are deferred to later epics (EP-06 Push Notifications):
 
@@ -1873,6 +1951,7 @@ No new backend environment variables are required beyond those already provision
 | Variable | Location | Purpose | Mandatory |
 |---|---|---|---|
 | `EXPO_PUBLIC_API_BASE_URL` | `mobile/.env` | Backend API base URL | Yes |
+| `EXPO_PUBLIC_WEB_BASE_URL` | `mobile/.env` | Web portal base URL for "Forgot Password" link. Defaults to `EXPO_PUBLIC_API_BASE_URL` minus `/api`. Only needed if web URL differs from API URL. | No |
 
 ### 14.6 Mobile AsyncStorage Cache
 
@@ -2248,5 +2327,502 @@ The Reports screen (`/(admin)/reports/`) depends on `GET /api/analytics/dashboar
 
 ---
 
-*Document version 1.8 — June 2026 — Vitana SMS Platform*  
-*Covers: WhatsApp Communication Hub + Full Platform Deployment + PROMPT-11 Mobile API Gaps + PROMPT-02 Auth + PROMPT-03 Parent App + EP-05 Student App + PROMPT-05 Push Notifications + PROMPT-04 Teacher Portal + EP-09 Feature Flag Platform + EP-06 Push Notifications + EP-10 White Label Architecture*
+## 18. EP-12 Advanced Offline Sync Engine
+
+> **Sprint**: 12 & 15 · **Story Points**: 24 · **Prompt**: PROMPT-12
+
+### 18.1 Environment Variables
+
+No new environment variables are required. The offline engine runs entirely within the mobile app using SQLite (expo-sqlite) and existing API credentials.
+
+| Variable | Purpose | Mandatory | Validation |
+|---|---|---|---|
+| `EXPO_PUBLIC_API_BASE_URL` | Morning bundle API calls | Yes | Valid HTTPS URL |
+
+### 18.2 New SQLite Tables
+
+Three new tables are created via `CREATE TABLE IF NOT EXISTS` in `initDatabase()`. No migration file is needed — tables are created automatically on first app launch after the update.
+
+| Table | Purpose | Cleanup |
+|---|---|---|
+| `marks_drafts` | Auto-saved marks entry drafts (every 30s) | Deleted when `is_submitted = 1` on startup maintenance |
+| `diary_entry_queue` | Offline diary post queue with idempotency | Deleted when `status = 'synced'` on startup maintenance |
+| `offline_bundle_cache` | Single-row morning bundle cache (id = 1) | Overwritten on each successful bundle fetch |
+
+### 18.3 New Backend Endpoint
+
+| Endpoint | Auth Role | Purpose | Validation |
+|---|---|---|---|
+| `GET /api/mobile/offline-bundle` | Teacher, Staff | Pre-fetched daily bundle: class rosters + timetable + announcements + pending leave count | Returns `OfflineBundleResponse` — 200 OK |
+
+The endpoint is added to `MobileDashboardController` and delegates to `IMobileDashboardService.GetOfflineBundleAsync`. No additional infrastructure (Redis, queues, crons) required — the endpoint is stateless.
+
+**Verify deployed:**
+```bash
+curl -H "Authorization: Bearer <teacher_jwt>" \
+     https://api.your-school.com/api/mobile/offline-bundle
+# Expected: 200 with { bundledAt, expiresAt, myClasses, todaysTimetable, pendingLeaveCount, announcements }
+```
+
+### 18.4 New Mobile Files
+
+| File | Purpose |
+|---|---|
+| `mobile/src/offline/marksDraftService.ts` | `saveDraft` / `loadDraft` / `markSubmitted` |
+| `mobile/src/offline/bundleLoader.ts` | WiFi-only morning bundle pre-fetch (5–10 AM, 4-hour freshness) |
+| `mobile/src/offline/maintenance.ts` | Startup DB cleanup — deletes synced/submitted records |
+| `mobile/src/features/diary/hooks/useDiaryEntry.ts` | Online POST or offline queue to `diary_entry_queue` |
+| `mobile/src/components/offline/ConflictResolutionSheet.tsx` | Bottom sheet UI for 409 conflict resolution |
+| `mobile/app/(teacher)/sync-status.tsx` | Sync status screen accessible from Teacher More menu |
+
+### 18.5 Modified Mobile Files
+
+| File | Change |
+|---|---|
+| `mobile/src/offline/schema.ts` | Added 3 new table definitions |
+| `mobile/src/offline/db.ts` | Added 3 `CREATE TABLE IF NOT EXISTS` blocks |
+| `mobile/src/offline/queue.ts` | 409 now stores structured JSON in `errorMessage`; added `getConflictItems` + `resolveConflict` |
+| `mobile/app/_layout.tsx` | Calls `performDatabaseMaintenance()` + `loadMorningBundle()` after DB init |
+| `mobile/src/features/navigation/hooks/useTeacherMoreItems.ts` | Added "Sync Status" menu item with live pending badge |
+
+### 18.6 No New Dependencies
+
+All functionality uses existing packages:
+- `expo-sqlite` + `drizzle-orm` — SQLite operations
+- `@react-native-community/netinfo` — WiFi detection for bundle loader
+- `@tanstack/react-query` — `useDiaryEntry` mutation
+
+No new npm packages are required. No new EAS build required — all changes are JS-only and can be deployed via OTA update.
+
+### 18.7 Database Size Monitoring
+
+| Threshold | Action |
+|---|---|
+| > 40 MB SQLite file | Warning log in `performDatabaseMaintenance()` |
+| > 50 MB SQLite file | Force maintenance run — delete all `synced` + submitted records regardless of age |
+
+The `offline_bundle_cache` table stores a single row of JSON. The largest blobs are `classes_json` (student lists). For a school with 50 classes × 40 students, each student being ~200 bytes, the maximum bundle JSON is approximately 400 KB — well within the 50 MB limit.
+
+### 18.8 Rollback Considerations
+
+| Scenario | Rollback Action |
+|---|---|
+| `offline_bundle_cache` table missing | `initDatabase()` uses `CREATE TABLE IF NOT EXISTS` — table is created automatically on next launch |
+| Bundle endpoint returns 500 | `loadMorningBundle()` catches the error with `console.warn` — app continues normally without bundle |
+| Marks draft saves corrupted | Delete `marks_drafts` row (PK: `${examId}-${classId}-${subjectId}`) via Flipper SQLite plugin |
+| Conflict resolution sheet shows wrong data | Force-delete the `offline_queue` row by ID in Flipper and re-submit |
+| 409 conflict loop | `resolveConflict('keep_server')` marks the item `synced` — stops the loop |
+
+### 18.9 Quality Gates
+
+```
+[ ] pnpm --filter @vitana/mobile typecheck → 0 errors
+[ ] pnpm --filter @vitana/mobile lint → 0 warnings
+[ ] vitana_offline.db opens in Flipper/expo-sqlite → marks_drafts, diary_entry_queue, offline_bundle_cache tables exist
+[ ] marks_drafts row appears after 30s auto-save in marks entry screen
+[ ] diary_entry_queue row appears after submitting diary entry while offline
+[ ] GET /api/mobile/offline-bundle returns 200 with OfflineBundleResponse shape
+[ ] offline_bundle_cache row exists in SQLite after app opens between 5–10 AM on WiFi
+[ ] cachedStudentLists updated from bundle data (check class_id rows)
+[ ] ConflictResolutionSheet appears when offline_queue item has type:'conflict' errorMessage
+[ ] Conflict resolved with 'use_mine' → item status reset to 'pending' → reprocessed on next sync
+[ ] Conflict resolved with 'keep_server' → item status set to 'synced'
+[ ] Sync status screen shows correct pending/failed/synced counts
+[ ] Retry All button resets failed items to pending and triggers processQueue
+[ ] performDatabaseMaintenance() deletes submitted marks_drafts rows on startup
+[ ] Teacher More menu shows Sync Status item with upload-cloud icon
+[ ] Sync Status badge updates to reflect pending count
+```
+
+---
+
+*Document version 2.0 — June 2026 — Vitana SMS Platform*  
+*Covers: WhatsApp Communication Hub + Full Platform Deployment + PROMPT-11 Mobile API Gaps + PROMPT-02 Auth + PROMPT-03 Parent App + EP-05 Student App + PROMPT-05 Push Notifications + PROMPT-04 Teacher Portal + EP-09 Feature Flag Platform + EP-06 Push Notifications + EP-10 White Label Architecture + EP-12 Advanced Offline Sync + EP-11 Build Automation CI/CD*
+
+---
+
+## EP-11 — CI/CD Build Automation (PROMPT-07)
+
+> Added: June 2026
+
+---
+
+### Required GitHub Repository Secrets
+
+Navigate to: **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret Name | Purpose | Mandatory | Where to Get It |
+|---|---|---|---|
+| `EXPO_TOKEN` | EAS CLI authentication for all build workflows | ✅ Yes | [expo.dev/accounts/[account]/settings/access-tokens](https://expo.dev/accounts) |
+| `APPLE_TEAM_ID` | Apple Developer team identifier (10-char string) | ✅ Yes | [developer.apple.com](https://developer.apple.com) → Membership |
+| `ASC_APP_ID` | App Store Connect numeric App ID | ✅ Yes | App Store Connect → App → App Information → Apple ID |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_KEY` | Full JSON content of Play Console service account key | ✅ Yes | Google Cloud Console → IAM → Service Accounts |
+| `AWS_ACCESS_KEY_ID` | AWS key for school asset downloads + build artifact uploads | ✅ Yes | AWS IAM Console |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret for school asset downloads + build artifact uploads | ✅ Yes | AWS IAM Console |
+| `SLACK_BOT_TOKEN` | Slack bot token for build notifications to `#mobile-builds` | ✅ Yes | [api.slack.com/apps](https://api.slack.com/apps) → OAuth & Permissions |
+| `EAS_PROJECT_ID` | EAS project UUID — used by `app.config.js` `updates.url` | ✅ Yes | Run `eas project:info` inside `mobile/` after `eas project:init` |
+| `SENTRY_AUTH_TOKEN` | Used by production workflow to upload source maps | ✅ Yes | [sentry.io](https://sentry.io) → Settings → Auth Tokens |
+
+**Validation:** After adding all secrets, run any workflow that uses EAS and verify it completes without `secret not found` errors.
+
+---
+
+### GitHub Environment: `mobile-production`
+
+The production and school-build workflows require a protected GitHub Environment to enforce manual approval before store submissions.
+
+**Setup steps:**
+
+1. Go to **GitHub → Repository → Settings → Environments → New environment**
+2. Name: `mobile-production`
+3. Enable **Required reviewers** — add at least 1 reviewer (e.g. Mobile Lead)
+4. Enable **Prevent self-review**
+5. Under **Deployment branches**, select **Protected branches only** and ensure tags matching `mobile-v*.*.*` are allowed
+
+**Validation:** Push a test tag `mobile-v0.0.1-test` — the production workflow should pause at the `production-release` job with "Waiting for approval".
+
+---
+
+### EAS One-Time Setup (DevOps — run once per environment)
+
+These steps must be completed before any CI pipeline will succeed. Run from the `mobile/` directory.
+
+| Step | Command | Purpose | Mandatory |
+|---|---|---|---|
+| 1. Login | `eas login` | Authenticate EAS CLI | ✅ Yes |
+| 2. Init project | `eas project:init` | Creates EAS project, generates `projectId` | ✅ Yes |
+| 3. Update config | Edit `mobile/scripts/school-configs.json` — set `vitana.easProjectId` to the UUID from step 2 | Links OTA update URL | ✅ Yes |
+| 4. Set secret | Add `EAS_PROJECT_ID` GitHub secret with the same UUID | Used by `app.config.js` | ✅ Yes |
+| 5. Android creds | `eas credentials --platform android` | Sets up managed keystore | ✅ Yes |
+| 6. iOS creds | `eas credentials --platform ios` | Sets up distribution cert + provisioning profile | ✅ Yes (macOS only) |
+
+**Validation:**
+
+```bash
+# From mobile/ directory — verify EAS project is linked
+eas project:info
+
+# Verify credentials are stored remotely
+eas credentials --platform android
+eas credentials --platform ios
+```
+
+---
+
+### Slack Channel Setup
+
+| Requirement | Value |
+|---|---|
+| Channel name | `#mobile-builds` |
+| Notifications sent by | `SLACK_BOT_TOKEN` secret |
+| Events notified | Staging build complete, production release complete, school app build complete, OTA update deployed |
+
+Create the `#mobile-builds` Slack channel and invite the bot before the first staging build.
+
+---
+
+### AWS S3 Bucket for Build Artifacts
+
+| Requirement | Value | Mandatory |
+|---|---|---|
+| Bucket name | `vitana-builds` | ✅ Yes |
+| Path structure | `s3://vitana-builds/{school_id}/{version}/*.aab` and `*.ipa` | — |
+| IAM permissions | `s3:PutObject`, `s3:GetObject` on `vitana-builds/*` | ✅ Yes |
+
+The production workflow uploads `.aab` and `.ipa` artifacts after a successful build. Create the bucket and attach the IAM policy to the `AWS_ACCESS_KEY_ID` before the first production release.
+
+---
+
+### Rollback Considerations
+
+| Scenario | Rollback Action |
+|---|---|
+| Bad OTA update on `production` channel | `cd mobile && ./scripts/ota-rollback.sh production` |
+| Bad OTA update on `staging` channel | `cd mobile && ./scripts/ota-rollback.sh staging` |
+| Bad OTA update — specific group ID | `cd mobile && ./scripts/ota-rollback.sh production <group-id>` |
+| Find group ID for rollback | `eas update:list --channel production --limit 5` |
+| Broken app store build | Re-submit the previous build from EAS dashboard |
+| Production workflow stuck at approval | Reject it in GitHub Actions — no build is triggered |
+
+---
+
+---
+
+## PROMPT-16 / EP-17: Store Deployment & Release Operations
+
+> **Sprint:** 13–14 | **Owner:** DevOps Engineer + Product Manager
+
+---
+
+### Play Console — One-Time Setup
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Google Play Developer Account | Vitana Technologies Pvt. Ltd. — $25 one-time registration | ✅ Yes | Login to play.google.com/console |
+| Play Console app created | App name: `Vitana SMS — School App`, package: `com.vitana.sms` | ✅ Yes | App appears in Play Console dashboard |
+| Google Play Service Account key | JSON key with "Release Manager" role → saved as `mobile/google-play-service-account.json` (gitignored) and `GOOGLE_PLAY_SERVICE_ACCOUNT_KEY` GitHub secret | ✅ Yes | `eas submit --platform android` succeeds |
+| Play Console permissions for service account | "Release apps to testing tracks and production" permission granted | ✅ Yes | `eas submit` completes without 403 |
+| Google Play App Signing enrolled | Delegated signing — Google re-signs release AAB | ✅ Yes | Play Console → Setup → App integrity → "App signing by Google Play" active |
+
+---
+
+### App Store Connect — One-Time Setup
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Apple Developer Program | Vitana Technologies Pvt. Ltd. — $99/year | ✅ Yes | developer.apple.com/account shows active membership |
+| App Store Connect app created | Name: `Vitana SMS`, Bundle ID: `com.vitana.sms`, SKU: `vitana-sms-001` | ✅ Yes | App visible in App Store Connect |
+| `APPLE_TEAM_ID` GitHub secret | Team ID from developer.apple.com/account → Membership | ✅ Yes | `eas build` iOS succeeds; no "team not found" error |
+| `ASC_APP_ID` GitHub secret | Apple ID of the app — found in App Store Connect → App → General → Apple ID (a 10-digit number) | ✅ Yes | `eas submit --platform ios` succeeds |
+| `ASC_APP_ID` EAS secret | Same 10-digit Apple ID set via `eas secret:create --scope project --name ASC_APP_ID` | ✅ Yes | `eas submit` reads the value |
+| `APPLE_TEAM_ID` EAS secret | Same Team ID set via `eas secret:create --scope project --name APPLE_TEAM_ID` | ✅ Yes | `eas build --platform ios` succeeds |
+
+---
+
+### Store Listing Assets
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Play Store listing complete | App name, short description (≤80 chars), full description (≤4000 chars) — see `mobile/store-assets/descriptions/play-store.md` | ✅ Yes | Play Console store listing shows green checkmarks |
+| App Store listing complete | Name, subtitle (≤30 chars), description, keywords (≤100 chars) — see `mobile/store-assets/descriptions/app-store.md` | ✅ Yes | App Store Connect listing form complete |
+| Android screenshots | 6 × 1080×1920 PNG, ≤8 MB each — see `mobile/store-assets/CHECKLIST.md` | ✅ Yes | Uploaded in Play Console; no size/dimension error |
+| Android feature graphic | 1024×500 PNG | ✅ Yes | Uploaded in Play Console |
+| Play Console icon | 512×512 PNG, no alpha | ✅ Yes | Uploaded in Play Console |
+| iOS iPhone 6.7" screenshots | 6 × 1290×2796 PNG | ✅ Yes | Uploaded in App Store Connect |
+| iOS iPhone 5.5" screenshots | 6 × 1242×2208 PNG | ✅ Yes | Uploaded in App Store Connect |
+| iOS iPad 13" screenshots | 3 × 2064×2752 PNG | ✅ Yes | Uploaded in App Store Connect |
+| iOS App Store icon | 1024×1024 PNG, no alpha — sourced from `mobile/assets/school-assets/vitana/app-icon-1024.png` | ✅ Yes | EAS builds icon automatically from `app.config.js` |
+
+---
+
+### Privacy & Compliance
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Privacy policy URL live | https://vitanasms.com/privacy — returns HTTP 200 | ✅ Yes | `curl -I https://vitanasms.com/privacy` → 200 |
+| Support URL live | https://vitanasms.com/support — returns HTTP 200 | ✅ Yes | `curl -I https://vitanasms.com/support` → 200 |
+| Play Store Data Safety completed | All data types declared in Play Console — see `mobile/store-assets/data-safety.md` Part A | ✅ Yes | Play Console → App Content → Data Safety → "Submitted" |
+| Play Store content rating | IARC questionnaire completed; rating: Everyone, target audience: 13+ | ✅ Yes | Play Console → App Content → Content Rating → "Applied" |
+| App Store Privacy Nutrition Label | All data types declared — see `mobile/store-assets/data-safety.md` Part B | ✅ Yes | App Store Connect → App Privacy → "Completed" |
+| App Review Notes | Demo credentials document uploaded — from `mobile/store-assets/app-review-notes.md` (1Password) | ✅ Yes | App Store Connect → App Review Information section filled |
+| `app-review-notes.md` gitignored | Entry present in `.gitignore`: `mobile/store-assets/app-review-notes.md` | ✅ Yes | `git status` does not show the file |
+| Credentials stored in 1Password | Vault entry: "Vitana SMS App Review Notes" | ✅ Yes | Team can retrieve credentials from 1Password |
+
+---
+
+### Demo School Permanence
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Demo school active | `demo.vitanasms.com` school permanently seeded in production database | ✅ Yes | Login with all 4 demo accounts returns HTTP 200 |
+| Demo credentials never expire | Demo accounts exempt from password expiry policy | ✅ Yes | Login works > 90 days without password reset |
+| Demo data populated | Aarav Sharma in Class 8A, attendance records, fee records, exam results visible | ✅ Yes | Parent dashboard shows child data after login |
+
+**Verification:**
+```bash
+for user in demo.parent demo.teacher demo.student demo.admin; do
+  echo -n "$user@demo.vitanasms.com: "
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -X POST https://api.vitanasms.com/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"$user@demo.vitanasms.com\",\"password\":\"Demo@12345\"}"
+done
+```
+
+---
+
+### Staged Rollout Configuration
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Android staged rollout | Start at 10% → advance to 25% → 50% → 100% with 24h+ between each step | ✅ Yes | Play Console → Production → Rollout percentage shows 10% |
+| Android halt thresholds monitored | Crash rate < 1%, ANR rate < 0.5% | ✅ Yes | Play Console → Android Vitals showing green |
+| iOS Phased Release enabled | Checkbox enabled in App Store Connect before submitting for review | ✅ Yes | App Store Connect → Version → "Phased Release" toggle ON |
+| iOS phased release monitoring | Day 1 (1%) → manual advancement if healthy; pause immediately if issues | ✅ Yes | App Store Connect → Version → Phased Release status |
+
+---
+
+### Release Runbook
+
+| Requirement | Value / Action | Mandatory | Validation |
+|---|---|---|---|
+| Release runbook available | `mobile/RELEASE_RUNBOOK.md` committed to repository | ✅ Yes | File exists; team can access it |
+| Runbook reviewed by team lead | Engineering Lead has read and approved | ✅ Yes | GitHub PR review comment or Slack confirmation |
+| OTA rollback tested in staging | `./scripts/ota-rollback.sh staging` executed successfully | ✅ Yes | EAS update list shows rollback update on staging channel |
+| Emergency hotfix path documented | Both OTA and binary paths covered in runbook | ✅ Yes | Section "Emergency Hotfix Decision Tree" in runbook |
+
+---
+
+### Rollback Considerations (PROMPT-16)
+
+| Scenario | Rollback Action |
+|---|---|
+| Bad OTA on `production` channel | `cd mobile && ./scripts/ota-rollback.sh production` |
+| Bad OTA — specific update group | `cd mobile && ./scripts/ota-rollback.sh production <group-id>` |
+| Android staged rollout bad binary | Play Console → Production → "Halt rollout" |
+| iOS phased release bad binary | App Store Connect → Version → "Pause Phased Release" |
+| Immediate iOS fix needed | Submit new patch version → request Expedited Review in App Store Connect |
+
+---
+
+## EP-14: Examinations & Marks Mobile (PROMPT-13)
+
+*Implemented: June 2026*
+
+### Environment Variables
+
+No new environment variables required for this module. All APIs use the existing `NEXT_PUBLIC_API_URL` / backend base URL already configured.
+
+### Infrastructure Requirements
+
+| Requirement | Purpose | Mandatory | Validation |
+|---|---|---|---|
+| Redis (already deployed) | Idempotency key cache for `POST .../marks` endpoint (24h TTL, key prefix `marks_idem:`) | ✅ Yes | `redis-cli ping` → `PONG`; `redis-cli keys "marks_idem:*"` should be empty initially |
+| SQLite on device (expo-sqlite) | `marks_drafts` table stores offline mark drafts per exam+subject | ✅ Yes — already present from PROMPT-12 | App launches without `marks_drafts` migration errors in Sentry |
+
+### Database Migrations
+
+No new server-side migrations. The `marks_drafts` SQLite table was created by PROMPT-12's `initDatabase()` call (`CREATE TABLE IF NOT EXISTS marks_drafts …`). No action needed for existing installations.
+
+### Feature Flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `canEnterMarks` (RBAC permission) | Enabled for `Staff` role | Guards marks entry screens; already in `RolePermissionsDto.CanEnterMarks` |
+
+No new feature flags needed; marks entry is controlled by server-side role assignment in `ExamSetupController.my-assignments`.
+
+### API Endpoint Changes
+
+| Endpoint | Change | Breaking? |
+|---|---|---|
+| `POST /api/examinations/exam-setup/{id}/subjects/{sid}/marks` | Added optional `X-Idempotency-Key` header + Redis cache check/store | No — header is optional |
+| `GET /api/examinations/exam-setup/my-assignments` | No change — already existed | — |
+| `GET /api/examinations/exam-setup/{id}/subjects/{sid}/marks` | No change — already existed | — |
+| `POST /api/assignments` | No change | — |
+| `GET /api/assignments/{id}/submissions` | No change | — |
+| `PUT /api/assignments/submissions/{id}/grade` | No change | — |
+
+### Rollback Considerations (PROMPT-13)
+
+| Scenario | Rollback Action |
+|---|---|
+| Marks submitted twice (idempotency cache miss) | Server-side upsert in `SaveBulkMarksAsync` is idempotent by design (re-writes same marks); no data loss |
+| Draft corrupted in SQLite | Clear draft: `marksDraftService.markSubmitted(examSetupId, examSetupSubjectId, '-')` — removes from next load |
+| Performance screen crashes | Navigate back with router; marks already saved to server |
+| Assignment creation fails | Form shows error toast; no partial state persisted on server |
+
+---
+
+## EP-15: Communication & Messaging (PROMPT-14)
+
+*Implemented: June 2026*
+
+### Environment Variables
+
+No new environment variables required. All communication endpoints are served by the existing backend under the authenticated API base URL.
+
+### Infrastructure Requirements
+
+| Requirement | Purpose | Mandatory | Validation |
+|---|---|---|---|
+| Push notification service (FCM + APNs) | Deliver `new_message_teacher` / `new_message_parent` pushes within 5 s of message creation | ✅ Yes — already configured via PROMPT-05 | Send a test message; receiving device shows notification within 10 s |
+| Existing `/api/communication/messages/*` endpoints | Conversation list, thread, send, mark-read, unread-count | ✅ Yes — provided by backend | `GET /api/communication/messages/conversations` returns HTTP 200 with valid JSON |
+| Existing `/api/announcements` endpoint | Teacher announcement creation and retrieval | ✅ Yes | `POST /api/announcements` with valid teacher JWT returns HTTP 201 |
+| Existing `/api/communication/messages/recipients` endpoint | Returns list of parents a teacher can message | ✅ Yes | `GET /api/communication/messages/recipients` returns HTTP 200; non-empty for seeded teachers |
+
+### Mobile AsyncStorage Keys
+
+| Key Pattern | Purpose | Lifecycle |
+|---|---|---|
+| `message_draft_{conversationId}` | Persists unsent message text per conversation | Written on every keystroke (500 ms debounce); deleted on send or manual clear |
+| `message_draft_{recipientId}` | Draft for new conversations before conversation ID is known | Deleted when conversation is created |
+
+### Push Notification Types
+
+| Type | Handler | Deep-link destination |
+|---|---|---|
+| `new_message_teacher` | Invalidates `conversations`, `messages`, `messages-unread` | `/(teacher)/messages/{conversationId}` |
+| `new_message_parent` | Invalidates `conversations`, `messages`, `messages-unread` | `/(parent)/messages/{conversationId}` |
+| `new_message` | Covered by both handlers via OR check | Role-specific messages screen |
+
+### Query Keys Added
+
+| Key | Screen | refetchInterval |
+|---|---|---|
+| `['conversations']` | Teacher + Parent conversations list | 30 s |
+| `['messages', conversationId]` | Thread screen | 15 s |
+| `['teacher-announcements']` | Teacher announcements list | 60 s |
+| `['messages-unread']` | More menu badge (both roles) | 60 s |
+| `['message-recipients']` | New conversation screen | Cached 5 min, no auto-refetch |
+
+### Feature Flags
+
+No new feature flags. Messaging is available to all teachers and parents by default.
+
+### Rollback Considerations (PROMPT-14)
+
+| Scenario | Rollback Action |
+|---|---|
+| Messaging screens cause crash loop | OTA rollback: `./scripts/ota-rollback.sh production` |
+| Draft AsyncStorage key collision | Clear via `AsyncStorage.removeItem('message_draft_{id}')` in developer menu or app settings |
+| `getUnreadCount` endpoint unavailable | Badge shows 0 (safe default); conversations still load |
+| Push deep-link navigates to wrong screen | Pre-EP-15 fallback was `/(role)/notifications` — can revert deepLinks.ts entry via hotfix OTA |
+
+---
+
+## EP-16: Analytics & Observability (PROMPT-15)
+
+*Implemented: June 2026*
+
+### Environment Variables
+
+| Variable | Purpose | Mandatory | Where to Get It |
+|---|---|---|---|
+| `EXPO_PUBLIC_SENTRY_DSN` | Sentry crash reporting DSN — embedded in JS bundle | ✅ Yes | Sentry Dashboard → Project Settings → Client Keys → DSN |
+| `EXPO_PUBLIC_AMPLITUDE_API_KEY` | Amplitude product analytics project API key | ✅ Yes | Amplitude → Settings → Projects → API Key |
+| `SENTRY_AUTH_TOKEN` | CI-only auth token for source map uploads | ✅ Yes (CI only) | Sentry → Settings → Auth Tokens; store as GitHub secret `SENTRY_AUTH_TOKEN` |
+
+**Note**: `EXPO_PUBLIC_*` values are embedded in the JS bundle and visible to users — never put secrets in these variables. The Sentry DSN and Amplitude API key are intentionally public-facing project identifiers, not secrets.
+
+### Third-Party Service Setup
+
+| Service | Required Action | Mandatory | Validation |
+|---|---|---|---|
+| **Sentry project** | Create project `vitana-mobile` under org `vitana-technologies` in [sentry.io](https://sentry.io) | ✅ Yes | `EXPO_PUBLIC_SENTRY_DSN` is non-null; test crash reaches Sentry within 30 s |
+| **Sentry source maps** | `SENTRY_AUTH_TOKEN` GitHub Actions secret configured | ✅ Yes | Production CI "Upload source maps to Sentry" step exits 0; TypeScript filenames visible in stack traces |
+| **Amplitude project** | Create project in [amplitude.com](https://amplitude.com) → copy API Key | ✅ Yes | `login_success` event appears in Amplitude Live Activity within 30 s of login |
+| **Amplitude environment separation** | Use separate Amplitude projects (or API keys) for dev/staging/production | ✅ Recommended | Staging events do not pollute production Amplitude charts |
+
+### GitHub Actions Secrets Required
+
+| Secret Name | Value | Mandatory |
+|---|---|---|
+| `SENTRY_AUTH_TOKEN` | Sentry auth token with `project:releases` and `org:read` scopes | ✅ Yes |
+
+### Privacy & PII Compliance
+
+| Requirement | Enforcement | Validation |
+|---|---|---|
+| No PII in Sentry events | `beforeSend` hook deletes `Authorization` header from request breadcrumbs | Inspect a Sentry event — no `Authorization` key visible |
+| User ID in Sentry is UUID only | `Sentry.setUser({ id: response.user.id })` — UUID string, never email | Check Sentry user context on any event — value matches UUID format |
+| No PII in Amplitude events | `sanitize()` function strips keys containing `name`, `email`, `phone`, `aadhaar`, `pan`, `password`, `token` | Run `sanitize({ name: 'Test', role: 'Parent' })` → returns `{ role: 'Parent' }` only |
+| Amounts use buckets | `getAmountBucket(amount)` returns `'<5k'` / `'5k-20k'` / `'20k-50k'` / `'>50k'` | `fee_payment_initiated` event has `amount_bucket` property, never raw rupee value |
+| No IP tracking in Amplitude | `trackingOptions: { ipAddress: false }` in `initAnalytics()` | Amplitude user profiles show no IP address field |
+
+### Feature Flags
+
+No new feature flags. Sentry and Amplitude are always active when their respective API keys are present. If `EXPO_PUBLIC_SENTRY_DSN` is empty, Sentry silently skips init. If `EXPO_PUBLIC_AMPLITUDE_API_KEY` is empty, `initAnalytics()` returns early.
+
+### Infrastructure Requirements
+
+No new infrastructure. Analytics data flows to Sentry Cloud and Amplitude Cloud SaaS respectively. No self-hosted infrastructure required.
+
+### Rollback Considerations (PROMPT-15)
+
+| Scenario | Rollback Action |
+|---|---|
+| Sentry causing app crashes | Set `EXPO_PUBLIC_SENTRY_DSN` to empty string → redeploy OTA; `Sentry.init` skips when DSN is falsy |
+| Amplitude causing performance issues | Set `EXPO_PUBLIC_AMPLITUDE_API_KEY` to empty string → redeploy OTA; `initAnalytics()` returns early |
+| PII accidentally logged | Immediately rotate Sentry project (new DSN); file a privacy incident report; purge affected events via Sentry Data Scrubbing in project settings |
+| Source maps not uploading in CI | Missing or expired `SENTRY_AUTH_TOKEN` secret; rotate and re-run workflow; app still functions — only stack traces are unreadable |

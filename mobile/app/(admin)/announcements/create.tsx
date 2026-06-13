@@ -163,7 +163,7 @@ export default function CreateAnnouncement() {
               name="priority"
               render={({ field: { onChange, value } }) => (
                 <View className="flex-row gap-2">
-                  {(Object.keys(PRIORITY_CONFIG) as Array<keyof typeof PRIORITY_CONFIG>).map(
+                  {(Object.keys(PRIORITY_CONFIG) as (keyof typeof PRIORITY_CONFIG)[]).map(
                     (p) => {
                       const conf = PRIORITY_CONFIG[p];
                       const selected = value === p;
