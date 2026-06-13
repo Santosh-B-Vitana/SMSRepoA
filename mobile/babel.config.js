@@ -10,6 +10,8 @@ module.exports = function (api) {
           root: ['./src'],
           alias: {
             '@': './src',
+            '@vitana/shared-types': './src/shared-types',
+            '@vitana/shared-utils': './src/shared-utils',
           },
         },
       ],

@@ -31,8 +31,6 @@
     "@shopify/flash-list": "^2.0.2",
     "@shopify/react-native-skia": "2.2.12",
     "@tanstack/react-query": "^5.60.0",
-    "@vitana/shared-types": "file:../packages/shared-types",
-    "@vitana/shared-utils": "file:../packages/shared-utils",
     "axios": "^1.7.0",
     "drizzle-orm": "^0.45.2",
     "expo": "~56.0.11",
@@ -112,12 +110,6 @@
         "branches": 50,
         "statements": 60
       }
-    }
-  },
-  "pnpm": {
-    "overrides": {
-      "@react-native-async-storage/async-storage": "2.2.0",
-      "react": "19.1.0"
     }
   }
 }

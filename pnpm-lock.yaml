@@ -44,12 +44,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.60.0
         version: 5.101.0(react@19.1.0)
-      '@vitana/shared-types':
-        specifier: file:../packages/shared-types
-        version: link:../packages/shared-types
-      '@vitana/shared-utils':
-        specifier: file:../packages/shared-utils
-        version: link:../packages/shared-utils
       axios:
         specifier: ^1.7.0
         version: 1.17.0
