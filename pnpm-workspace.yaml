@@ -1,8 +1,6 @@
 packages:
   - 'ui'
   - 'mobile'
-  - 'packages/shared-types'
-  - 'packages/shared-utils'
 
 allowBuilds:
   '@sentry/cli': true
