@@ -4,6 +4,8 @@
 
 expo-env.d.ts
 .expo/
+ios/
+android/
 # @end expo-cli
 
 # School-specific assets — each school's branding lives outside version control.

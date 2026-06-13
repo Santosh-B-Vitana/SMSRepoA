@@ -40,6 +40,13 @@ bld/
 # except build/, which is used as an MSBuild target.
 !**/[Pp]ackages/build/
 
+# Unignore Node.js workspace packages (shared-types, shared-utils)
+!packages/
+!packages/shared-types/
+!packages/shared-types/**
+!packages/shared-utils/
+!packages/shared-utils/**
+
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
 
