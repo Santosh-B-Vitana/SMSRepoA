@@ -75,7 +75,6 @@ module.exports = ({ config }) => {
     plugins: [
       'expo-router',
       'expo-updates',
-      'react-native-reanimated',
       ['expo-secure-store', {}],
       [
         'expo-local-authentication',
