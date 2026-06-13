@@ -48,7 +48,9 @@ module.exports = ({ config }) => {
         foregroundImage: `${assetBase}/adaptive-icon.png`,
         backgroundColor: school.colors.primary,
       },
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json',
+      ...(process.env.GOOGLE_SERVICES_JSON && {
+        googleServicesFile: process.env.GOOGLE_SERVICES_JSON,
+      }),
       permissions: [
         'android.permission.USE_BIOMETRIC',
         'android.permission.USE_FINGERPRINT',
@@ -63,7 +65,9 @@ module.exports = ({ config }) => {
       bundleIdentifier: school.iosBundleId,
       buildNumber: process.env.BUILD_NUMBER || '1',
       supportsTablet: true,
-      googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || './GoogleService-Info.plist',
+      ...(process.env.GOOGLE_SERVICES_PLIST && {
+        googleServicesFile: process.env.GOOGLE_SERVICES_PLIST,
+      }),
       infoPlist: {
         NSCameraUsageDescription: 'Camera is used to upload photos.',
         NSFaceIDUsageDescription: 'Face ID is used to unlock the app securely.',
