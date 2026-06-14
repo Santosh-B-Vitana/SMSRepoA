@@ -79,6 +79,18 @@ module.exports = ({ config }) => {
     plugins: [
       'expo-router',
       'expo-updates',
+      [
+        'expo-build-properties',
+        {
+          ios: {
+            deploymentTarget: '13.4',
+          },
+          android: {
+            compileSdkVersion: 35,
+            targetSdkVersion: 35,
+          },
+        },
+      ],
       '@sentry/react-native/expo',
       ['expo-secure-store', {}],
       [
