@@ -25,6 +25,7 @@ import { Feather } from '@expo/vector-icons';
 import { authApi } from '@/api/endpoints/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useSchoolStore } from '@/stores/schoolStore';
+import * as SecureStore from 'expo-secure-store';
 import { queryClient } from '@/api/queryClient';
 import { VITANA_COLORS, VITANA_GRADIENTS } from '@/theme/tokens';
 import { identifyUser, track } from '@/lib/analytics';
@@ -67,7 +68,7 @@ export default function LoginScreen() {
   const [showBiometricHint, setShowBiometricHint] = useState(false);
 
   const { setAuth } = useAuthStore();
-  const { branding } = useSchoolStore();
+  const { branding, resetBranding } = useSchoolStore();
   const isWhiteLabel = (Constants.expoConfig?.extra?.isWhiteLabel as boolean) ?? false;
 
   const primaryColor = branding?.primaryColor ?? VITANA_COLORS.primary;
@@ -352,7 +353,12 @@ export default function LoginScreen() {
 
                 {!isWhiteLabel ? (
                   <TouchableOpacity
-                    onPress={() => router.replace('/(auth)')}
+                    onPress={async () => {
+                      resetBranding();
+                      await SecureStore.deleteItemAsync('last_school_domain');
+                      await SecureStore.deleteItemAsync('school_domain');
+                      router.replace('/(auth)');
+                    }}
                     style={styles.linkBtn}
                   >
                     <Feather name="arrow-left" size={13} color={VITANA_COLORS.textSecondary} />

@@ -26,16 +26,41 @@ export default function SchoolDomainScreen() {
   const [domain, setDomain] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { setBranding } = useSchoolStore();
+  const { setBranding, branding } = useSchoolStore();
 
   useEffect(() => {
+    // White-label: domain is hardcoded in the app — skip this screen entirely
     if (isWhiteLabel && hardcodedDomain) {
       router.replace('/(auth)/login');
       return;
     }
-    void SecureStore.getItemAsync('last_school_domain').then((saved) => {
-      if (saved) setDomain(saved);
-    });
+
+    async function autoRestore() {
+      const saved = await SecureStore.getItemAsync('last_school_domain');
+      if (!saved) return;
+
+      setDomain(saved);
+
+      // If branding is already persisted (previous session), skip straight to login
+      if (branding) {
+        router.replace('/(auth)/login');
+        return;
+      }
+
+      // Branding not in store (e.g. first install after data clear) — re-fetch silently
+      try {
+        setLoading(true);
+        const result = await authApi.getPublicBranding(saved);
+        setBranding({ schoolName: result.schoolName, logoUrl: result.logoUrl, primaryColor: result.primaryColor });
+        router.replace('/(auth)/login');
+      } catch {
+        // Couldn't re-fetch — let user re-enter domain manually
+        setLoading(false);
+      }
+    }
+
+    void autoRestore();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleContinue() {
@@ -49,11 +74,11 @@ export default function SchoolDomainScreen() {
     setError('');
 
     try {
-      const branding = await authApi.getPublicBranding(trimmed);
+      const result = await authApi.getPublicBranding(trimmed);
       setBranding({
-        schoolName: branding.schoolName,
-        logoUrl: branding.logoUrl,
-        primaryColor: branding.primaryColor,
+        schoolName: result.schoolName,
+        logoUrl: result.logoUrl,
+        primaryColor: result.primaryColor,
       });
       await SecureStore.setItemAsync('last_school_domain', trimmed);
       await SecureStore.setItemAsync('school_domain', trimmed);

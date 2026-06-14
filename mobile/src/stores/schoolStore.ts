@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   MobileAppConfig,
   SchoolBranding,
@@ -25,7 +27,9 @@ interface SchoolState {
   resetBranding: () => void;
 }
 
-export const useSchoolStore = create<SchoolState>()((set) => ({
+export const useSchoolStore = create<SchoolState>()(
+  persist(
+    (set) => ({
   branding: null,
   mobileFeatureFlags: null,
   moduleFlags: null,
@@ -89,4 +93,13 @@ export const useSchoolStore = create<SchoolState>()((set) => ({
       academicYear: null,
       isConfigLoaded: false,
     }),
-}));
+  }),
+  {
+    name: 'vitana-school',
+    storage: createJSONStorage(() => AsyncStorage),
+    // Only persist branding — feature flags and config are re-fetched after login
+    partialize: (state) => ({
+      branding: state.branding,
+    }),
+  },
+));
