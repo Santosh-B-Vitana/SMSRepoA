@@ -27,7 +27,7 @@ export default function TeacherDashboard() {
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const firstName = user?.fullName?.split(' ')[0] ?? 'Teacher';
+  const firstName = user?.firstName ?? user?.fullName?.split(' ')[0] ?? 'Teacher';
 
   const notifBtn = (
     <TouchableOpacity
@@ -77,7 +77,7 @@ export default function TeacherDashboard() {
                 />
                 <StatCard
                   label="Classes Taught"
-                  value={data?.classesStatus?.filter((c) => c.attendanceMarked).length ?? 0}
+                  value={data?.classesStatus?.filter((c) => c.isMarked ?? c.attendanceMarked).length ?? 0}
                   icon="check-circle"
                   iconColor={VITANA_COLORS.success}
                 />
@@ -115,7 +115,7 @@ export default function TeacherDashboard() {
             ) : (
               data.todaySchedule.slice(0, 5).map((period, idx) => (
                 <TouchableOpacity
-                  key={period.id}
+                  key={period.id ?? `period-${idx}`}
                   onPress={() =>
                     router.push({
                       pathname: '/(teacher)/attendance/[classId]',
@@ -151,30 +151,39 @@ export default function TeacherDashboard() {
               iconColor={VITANA_COLORS.success}
               noPadding
             >
-              {data!.classesStatus.map((cls, idx) => (
-                <TouchableOpacity
-                  key={cls.classId}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/(teacher)/attendance/[classId]',
-                      params: { classId: cls.classId },
-                    })
-                  }
-                  style={[
-                    styles.attendanceRow,
-                    idx < data!.classesStatus.length - 1 && styles.periodRowBorder,
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.className}>{cls.className}</Text>
-                  <Badge
-                    label={cls.attendanceMarked ? 'Marked' : 'Pending'}
-                    variant={cls.attendanceMarked ? 'success' : 'warning'}
-                    dot
-                    size="sm"
-                  />
-                </TouchableOpacity>
-              ))}
+              {data!.classesStatus.map((cls, idx) => {
+                // API returns isMarked, classId may be absent — use className as fallback key
+                const isMarked = cls.isMarked ?? cls.attendanceMarked ?? false;
+                const classKey = cls.classId ?? cls.className ?? `class-${idx}`;
+                return (
+                  <TouchableOpacity
+                    key={classKey}
+                    onPress={() => {
+                      if (cls.classId) {
+                        router.push({
+                          pathname: '/(teacher)/attendance/[classId]',
+                          params: { classId: cls.classId },
+                        });
+                      }
+                    }}
+                    style={[
+                      styles.attendanceRow,
+                      idx < data!.classesStatus.length - 1 && styles.periodRowBorder,
+                    ]}
+                    activeOpacity={cls.classId ? 0.7 : 1}
+                  >
+                    <Text style={styles.className}>
+                      {cls.className}{cls.section ? ` ${cls.section}` : ''}
+                    </Text>
+                    <Badge
+                      label={isMarked ? 'Marked' : 'Pending'}
+                      variant={isMarked ? 'success' : 'warning'}
+                      dot
+                      size="sm"
+                    />
+                  </TouchableOpacity>
+                );
+              })}
             </SectionCard>
           ) : null}
 
@@ -203,7 +212,7 @@ export default function TeacherDashboard() {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'Classes', icon: 'users', route: '/(teacher)/classes/index', color: VITANA_COLORS.primary },
+  { label: 'Classes', icon: 'users', route: '/(teacher)/classes', color: VITANA_COLORS.primary },
   { label: 'Marks', icon: 'award', route: '/(teacher)/marks', color: '#7c3aed' },
   { label: 'Assignments', icon: 'book', route: '/(teacher)/assignments', color: '#059669' },
   { label: 'Leaves', icon: 'clipboard', route: '/(teacher)/leaves', color: VITANA_COLORS.warning },

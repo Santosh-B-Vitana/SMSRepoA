@@ -147,8 +147,18 @@ export interface TeacherAssignment {
 export interface TeacherDashboardResponse {
   todaySchedule: TimetableEntry[];
   pendingLeaveCount: number;
-  classesStatus: { classId: string; className: string; attendanceMarked: boolean }[];
-  unreadCount: number;
+  classesStatus: {
+    classId?: string | null;
+    className: string;
+    section?: string | null;
+    attendanceMarked?: boolean; // legacy field name
+    isMarked?: boolean;         // actual API field name
+    totalStudents?: number;
+    presentCount?: number;
+  }[];
+  unreadCount?: number;
+  unreadNotificationCount?: number;
+  pendingAssignmentSubmissions?: number;
 }
 
 export interface BulkAttendancePayload {
