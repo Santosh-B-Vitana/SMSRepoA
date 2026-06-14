@@ -25,7 +25,6 @@ import { Feather } from '@expo/vector-icons';
 import { authApi } from '@/api/endpoints/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useSchoolStore } from '@/stores/schoolStore';
-import * as SecureStore from 'expo-secure-store';
 import { queryClient } from '@/api/queryClient';
 import { VITANA_COLORS, VITANA_GRADIENTS } from '@/theme/tokens';
 import { identifyUser, track } from '@/lib/analytics';
