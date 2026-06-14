@@ -22,6 +22,14 @@ export async function markPermissionAsked(): Promise<void> {
 }
 
 export async function registerForPushNotifications(): Promise<void> {
+  // Push registration requires Firebase (FCM/APNs via Firebase) to be
+  // configured. In development builds without GOOGLE_SERVICES_PLIST/JSON,
+  // getDevicePushTokenAsync() returns a sandbox token the backend rejects.
+  if (process.env.EXPO_PUBLIC_ENV === 'development') {
+    console.log('[Push] Skipping device registration in development mode (no Firebase configured)');
+    return;
+  }
+
   const denied = await hasDeniedPermission();
   if (denied) return;
 
