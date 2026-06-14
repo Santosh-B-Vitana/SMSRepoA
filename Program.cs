@@ -266,6 +266,21 @@ app.MapControllers();
 // ── WhatsApp Communication Hub — Hangfire dashboard + recurring jobs ───────────
 app.UseWhatsAppHub();
 
+// ── Online Classes — 15-minute reminder recurring job (every 5 minutes) ──────
+// Wrapped in try/catch: Hangfire SQL storage tables may not exist in all environments.
+// The job is best-effort — if Hangfire isn't ready, the server still starts.
+try
+{
+    RecurringJob.AddOrUpdate<SmsApi.BackgroundJobs.OnlineClassReminderJob>(
+        "online-class-reminders",
+        job => job.ProcessAsync(),
+        "*/5 * * * *");
+}
+catch (Exception hangfireEx)
+{
+    Log.Warning("Could not register OnlineClassReminderJob with Hangfire: {Message}", hangfireEx.Message);
+}
+
 app.Run();
 
 }

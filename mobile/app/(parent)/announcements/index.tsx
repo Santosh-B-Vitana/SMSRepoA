@@ -6,10 +6,11 @@ import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
 import { parentApi } from '@/api/endpoints/parent';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
 import { formatRelativeTime } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import type { Announcement } from '@vitana/shared-types';
 
 const PRIORITY_COLORS: Record<string, string> = {

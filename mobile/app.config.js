@@ -109,6 +109,7 @@ module.exports = ({ config }) => {
         },
       ],
       'expo-sqlite',
+      '@livekit/react-native-expo-plugin',
       // '@react-native-firebase/app',  // not installed — enable only in production builds
     ],
 

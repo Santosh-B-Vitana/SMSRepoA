@@ -1,4 +1,4 @@
-import { ScrollView, View, Text, TouchableOpacity, RefreshControl } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -6,32 +6,30 @@ import { Feather } from '@expo/vector-icons';
 import { adminApi, type AdminDashboardResponse } from '@/api/endpoints/admin';
 import { useAuthStore } from '@/stores/authStore';
 import { useAppTheme } from '@/theme';
-import { VITANA_COLORS } from '@/theme/tokens';
+import { VITANA_COLORS, VITANA_SHADOWS } from '@/theme/tokens';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
 import { formatINR } from '@vitana/shared-utils';
-
-function AttendanceBar({ rate }: { rate: number }) {
-  const color =
-    rate >= 85
-      ? VITANA_COLORS.success
-      : rate >= 75
-        ? VITANA_COLORS.warning
-        : VITANA_COLORS.error;
-  return (
-    <View className="h-3 bg-surface rounded-full overflow-hidden mt-2">
-      <View
-        className="h-3 rounded-full"
-        style={{ width: `${Math.min(rate, 100)}%`, backgroundColor: color }}
-      />
-    </View>
-  );
-}
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { StatCard } from '@/components/ui/StatCard';
+import { SectionCard } from '@/components/ui/SectionCard';
+import { Badge } from '@/components/ui/Badge';
+import { Avatar } from '@/components/ui/Avatar';
 
 function totalPendingCount(data: AdminDashboardResponse): number {
   return (
     (data.pendingApprovals?.leaveRequests ?? 0) +
     (data.pendingApprovals?.admissionApplications ?? 0) +
     (data.pendingApprovals?.documentVerifications ?? 0)
+  );
+}
+
+function AttendanceBar({ rate, primaryColor }: { rate: number; primaryColor: string }) {
+  const barColor =
+    rate >= 85 ? VITANA_COLORS.success : rate >= 75 ? VITANA_COLORS.warning : VITANA_COLORS.error;
+  return (
+    <View style={styles.barTrack}>
+      <View style={[styles.barFill, { width: `${Math.min(rate, 100)}%`, backgroundColor: barColor }]} />
+    </View>
   );
 }
 
@@ -47,188 +45,291 @@ export default function AdminDashboard() {
   });
 
   const today = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'Asia/Kolkata',
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata',
   });
 
   const pendingTotal = data ? totalPendingCount(data) : 0;
+  const attendanceRate = data?.attendanceRate ?? 0;
+  const attendanceVariant = attendanceRate >= 85 ? 'success' : attendanceRate >= 75 ? 'warning' : 'error';
+
+  const firstName = user?.fullName?.split(' ')[0] ?? 'Admin';
+
+  const notifBtn = (
+    <TouchableOpacity
+      onPress={() => router.push('/(admin)/notifications')}
+      style={styles.headerBtn}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+    >
+      <Feather name="bell" size={20} color="#ffffff" />
+      {(data?.unreadCount ?? 0) > 0 ? <View style={styles.notifDot} /> : null}
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      {/* Header */}
-      <View className="px-4 pt-2 pb-4" style={{ backgroundColor: colors.primary }}>
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1 mr-3">
-            <Text className="text-white font-bold text-base" numberOfLines={1}>
-              {schoolName ?? 'Admin Portal'}
-            </Text>
-            <Text className="text-white/70 text-xs mt-0.5">{today}</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => router.push('/(admin)/notifications')}
-            className="p-1 relative"
-          >
-            <Feather name="bell" size={22} color="white" />
-            {!!data?.unreadCount && data.unreadCount > 0 && (
-              <View className="absolute top-0 right-0 bg-red-500 rounded-full w-4 h-4 items-center justify-center">
-                <Text className="text-white text-xs font-bold">
-                  {data.unreadCount > 9 ? '9+' : data.unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-        <Text className="text-white/80 text-sm mt-2">
-          Welcome back, {user?.fullName?.split(' ')[0] ?? 'Admin'}
-        </Text>
-      </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenHeader
+        title={schoolName ?? 'Admin Portal'}
+        subtitle={today}
+        primaryColor={colors.primary}
+        rightSlot={notifBtn}
+        variant="gradient"
+      />
 
       <ScrollView
-        className="flex-1"
+        style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
       >
-        <View className="px-4 pt-4 pb-10">
+        <View style={styles.body}>
+          {/* Greeting */}
+          <View style={styles.greetingRow}>
+            <View>
+              <Text style={styles.greetingName}>Welcome back, {firstName} 👋</Text>
+              <Text style={styles.greetingSub}>Here's your school overview</Text>
+            </View>
+            <Avatar name={user?.fullName} size="md" />
+          </View>
+
           {/* Billing Alert */}
-          {!!data?.billingAlert?.alertMessage && (
+          {data?.billingAlert?.alertMessage ? (
             <TouchableOpacity
-              className="flex-row items-start bg-red-50 border border-red-200 rounded-xl p-4 mb-4"
               onPress={() => router.push('/(admin)/more')}
+              style={styles.billingAlert}
               activeOpacity={0.8}
             >
-              <Feather name="alert-triangle" size={18} color={VITANA_COLORS.error} />
-              <Text className="text-red-700 text-sm ml-2 flex-1 font-medium">
-                {data.billingAlert.alertMessage}
-              </Text>
+              <Feather name="alert-triangle" size={16} color={VITANA_COLORS.error} />
+              <Text style={styles.billingText}>{data.billingAlert.alertMessage}</Text>
             </TouchableOpacity>
-          )}
+          ) : null}
+
+          {/* Stats Row */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
+            <View style={styles.statsRow}>
+              <StatCard
+                label="Attendance Today"
+                value={isLoading ? '–' : `${attendanceRate.toFixed(1)}%`}
+                icon="user-check"
+                iconColor={attendanceRate >= 75 ? VITANA_COLORS.success : VITANA_COLORS.error}
+              />
+              <StatCard
+                label="Pending Approvals"
+                value={isLoading ? '–' : pendingTotal}
+                icon="check-circle"
+                iconColor={pendingTotal > 0 ? VITANA_COLORS.warning : VITANA_COLORS.success}
+              />
+              <StatCard
+                label="Fee Today"
+                value={isLoading ? '–' : formatINR(data?.feeCollection?.collectedToday ?? 0)}
+                icon="credit-card"
+                iconColor={VITANA_COLORS.primary}
+              />
+            </View>
+          </ScrollView>
 
           {/* Attendance Card */}
           <TouchableOpacity
-            className="bg-white border border-gray-100 rounded-xl p-4 mb-3 shadow-sm"
             onPress={() => router.push('/(admin)/reports')}
+            style={[styles.attendanceCard, VITANA_SHADOWS.sm]}
             activeOpacity={0.8}
           >
-            <View className="flex-row items-center justify-between mb-1">
-              <Text className="font-semibold text-gray-800">Today's Attendance</Text>
-              <Feather name="chevron-right" size={16} color={VITANA_COLORS.textSecondary} />
-            </View>
-            {isLoading ? (
-              <SkeletonLoader height={52} borderRadius={8} />
-            ) : (
-              <>
-                <AttendanceBar rate={data?.attendanceRate ?? 0} />
-                <View className="flex-row items-center justify-between mt-2">
-                  <Text className="text-2xl font-bold text-gray-900">
-                    {(data?.attendanceRate ?? 0).toFixed(1)}%
-                  </Text>
-                  <Text className="text-gray-500 text-sm">school-wide today</Text>
+            <View style={styles.attendanceHeader}>
+              <View style={styles.attendanceTitleRow}>
+                <View style={[styles.attendanceIconBg, { backgroundColor: `${VITANA_COLORS.success}15` }]}>
+                  <Feather name="users" size={16} color={VITANA_COLORS.success} />
                 </View>
-              </>
-            )}
+                <Text style={styles.attendanceTitle}>School-Wide Attendance</Text>
+              </View>
+              <Badge
+                label={`${attendanceRate.toFixed(1)}%`}
+                variant={attendanceVariant}
+                dot
+              />
+            </View>
+            <AttendanceBar rate={attendanceRate} primaryColor={colors.primary} />
+            <Text style={styles.attendanceSub}>Today's attendance across all classes</Text>
           </TouchableOpacity>
 
-          {/* Pending Approvals Card */}
-          <TouchableOpacity
-            className="bg-white border border-gray-100 rounded-xl p-4 mb-3 shadow-sm flex-row items-center justify-between"
-            onPress={() => router.push('/(admin)/approvals')}
-            activeOpacity={0.8}
-          >
-            <View>
-              <Text className="font-semibold text-gray-800">Pending Approvals</Text>
-              {isLoading ? (
-                <SkeletonLoader width={80} height={28} borderRadius={4} />
-              ) : (
-                <Text className="text-2xl font-bold text-gray-900 mt-0.5">{pendingTotal}</Text>
-              )}
-              <Text className="text-gray-500 text-sm">leave + admission + docs</Text>
-            </View>
-            <View className="flex-row items-center">
-              {pendingTotal > 0 && (
-                <View className="px-2 py-1 rounded-full bg-amber-50 border border-amber-200 mr-2">
-                  <Text className="text-amber-700 text-xs font-medium">Action needed</Text>
-                </View>
-              )}
-              <Feather name="chevron-right" size={18} color={VITANA_COLORS.textSecondary} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Fee Collection Card */}
-          <TouchableOpacity
-            className="bg-white border border-gray-100 rounded-xl p-4 mb-3 shadow-sm"
-            onPress={() => router.push('/(admin)/reports')}
-            activeOpacity={0.8}
-          >
-            <View className="flex-row items-center justify-between">
-              <View>
-                <Text className="font-semibold text-gray-800">Fee Collection Today</Text>
-                {isLoading ? (
-                  <SkeletonLoader width={130} height={28} borderRadius={4} />
-                ) : (
-                  <Text className="text-2xl font-bold text-gray-900 mt-0.5">
-                    {formatINR(data?.feeCollection?.collectedToday ?? 0)}
-                  </Text>
-                )}
-                <Text className="text-gray-500 text-sm">
-                  This month: {formatINR(data?.feeCollection?.collectedThisMonth ?? 0)}
+          {/* Pending Approvals */}
+          {pendingTotal > 0 ? (
+            <TouchableOpacity
+              onPress={() => router.push('/(admin)/approvals')}
+              style={[styles.approvalsCard, VITANA_SHADOWS.sm]}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.approvalIconBg, { backgroundColor: `${VITANA_COLORS.warning}15` }]}>
+                <Feather name="clock" size={20} color={VITANA_COLORS.warning} />
+              </View>
+              <View style={styles.approvalsInfo}>
+                <Text style={styles.approvalsTitle}>Pending Approvals</Text>
+                <Text style={styles.approvalsMeta}>
+                  {data?.pendingApprovals?.leaveRequests ?? 0} leaves · {' '}
+                  {data?.pendingApprovals?.admissionApplications ?? 0} admissions · {' '}
+                  {data?.pendingApprovals?.documentVerifications ?? 0} docs
                 </Text>
               </View>
-              <Feather name="chevron-right" size={18} color={VITANA_COLORS.textSecondary} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Recent Announcements preview */}
-          {!!data?.recentAnnouncements?.length && (
-            <View className="bg-white border border-gray-100 rounded-xl p-4 mb-4 shadow-sm">
-              <View className="flex-row items-center justify-between mb-2">
-                <Text className="font-semibold text-gray-800">Recent Announcements</Text>
-                <TouchableOpacity onPress={() => router.push('/(admin)/announcements')}>
-                  <Text className="text-sm font-medium" style={{ color: colors.primary }}>
-                    See all
-                  </Text>
-                </TouchableOpacity>
+              <View style={styles.approvalsBadge}>
+                <Text style={styles.approvalsBadgeText}>{pendingTotal}</Text>
               </View>
-              {data.recentAnnouncements.slice(0, 2).map((ann) => (
-                <View key={ann.id} className="py-2 border-b border-gray-50 last:border-b-0">
-                  <Text className="text-gray-800 text-sm font-medium" numberOfLines={1}>
-                    {ann.title}
-                  </Text>
-                  <Text className="text-gray-500 text-xs mt-0.5" numberOfLines={1}>
-                    {ann.summary}
-                  </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Fee Collection */}
+          <SectionCard
+            title="Fee Collection"
+            icon="credit-card"
+            iconColor={VITANA_COLORS.primary}
+            onViewAll={() => router.push('/(admin)/reports')}
+          >
+            {isLoading ? (
+              <View style={{ gap: 8 }}>
+                <SkeletonLoader height={16} width="40%" />
+                <SkeletonLoader height={13} width="60%" />
+              </View>
+            ) : (
+              <View style={styles.feeRow}>
+                <View style={styles.feeStat}>
+                  <Text style={styles.feeLabel}>Today</Text>
+                  <Text style={styles.feeValue}>{formatINR(data?.feeCollection?.collectedToday ?? 0)}</Text>
+                </View>
+                <View style={styles.feeDivider} />
+                <View style={styles.feeStat}>
+                  <Text style={styles.feeLabel}>This Month</Text>
+                  <Text style={styles.feeValue}>{formatINR(data?.feeCollection?.collectedThisMonth ?? 0)}</Text>
+                </View>
+              </View>
+            )}
+          </SectionCard>
+
+          {/* Recent Announcements */}
+          {(data?.recentAnnouncements?.length ?? 0) > 0 ? (
+            <SectionCard
+              title="Recent Announcements"
+              icon="volume-2"
+              iconColor="#db2777"
+              onViewAll={() => router.push('/(admin)/announcements')}
+              noPadding
+            >
+              {data!.recentAnnouncements.slice(0, 3).map((ann, idx) => (
+                <View
+                  key={ann.id}
+                  style={[
+                    styles.annRow,
+                    idx < Math.min(data!.recentAnnouncements.length, 3) - 1 && styles.rowBorder,
+                  ]}
+                >
+                  <Text style={styles.annTitle} numberOfLines={1}>{ann.title}</Text>
+                  <Text style={styles.annSummary} numberOfLines={1}>{ann.summary}</Text>
                 </View>
               ))}
-            </View>
-          )}
+            </SectionCard>
+          ) : null}
 
           {/* Quick Actions */}
-          <Text className="font-semibold text-gray-800 mb-3 mt-1">Quick Actions</Text>
-          <View className="flex-row gap-3">
-            <TouchableOpacity
-              className="flex-1 bg-white border border-gray-100 rounded-xl p-4 items-center shadow-sm"
-              onPress={() => router.push('/(admin)/announcements/create')}
-              activeOpacity={0.8}
-            >
-              <Feather name="volume-2" size={24} color={colors.primary} />
-              <Text className="text-gray-700 text-sm font-medium mt-2 text-center">
-                Post Announcement
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="flex-1 bg-white border border-gray-100 rounded-xl p-4 items-center shadow-sm"
-              onPress={() => router.push('/(admin)/approvals')}
-              activeOpacity={0.8}
-            >
-              <Feather name="check-circle" size={24} color={colors.primary} />
-              <Text className="text-gray-700 text-sm font-medium mt-2 text-center">
-                Approve Leaves{pendingTotal > 0 ? ` (${pendingTotal})` : ''}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <SectionCard title="Quick Actions" icon="zap" iconColor={colors.primary} noPadding>
+            <View style={styles.quickGrid}>
+              {ADMIN_ACTIONS(colors.primary, pendingTotal).map((action) => (
+                <TouchableOpacity
+                  key={action.label}
+                  onPress={() => router.push(action.route as never)}
+                  style={styles.quickItem}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.quickIcon, { backgroundColor: `${action.color}15` }]}>
+                    <Feather name={action.icon as any} size={22} color={action.color} />
+                  </View>
+                  <Text style={styles.quickLabel}>{action.label}</Text>
+                  {action.badge ? (
+                    <View style={styles.quickBadge}>
+                      <Text style={styles.quickBadgeText}>{action.badge}</Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </SectionCard>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const ADMIN_ACTIONS = (primary: string, pending: number) => [
+  { label: 'Announce', icon: 'volume-2', route: '/(admin)/announcements/create', color: '#db2777', badge: 0 },
+  { label: 'Approvals', icon: 'check-circle', route: '/(admin)/approvals', color: VITANA_COLORS.warning, badge: pending },
+  { label: 'Reports', icon: 'bar-chart-2', route: '/(admin)/reports', color: primary, badge: 0 },
+  { label: 'Notifications', icon: 'bell', route: '/(admin)/notifications', color: VITANA_COLORS.info, badge: 0 },
+];
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: VITANA_COLORS.surface },
+  scroll: { flex: 1 },
+  body: { padding: 16, paddingBottom: 32, gap: 14 },
+  headerBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  notifDot: {
+    position: 'absolute', top: 6, right: 6,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: VITANA_COLORS.error,
+  },
+  greetingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  greetingName: { fontSize: 20, fontWeight: '700', color: VITANA_COLORS.text, fontFamily: 'Poppins' },
+  greetingSub: { fontSize: 13, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 2 },
+  billingAlert: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: VITANA_COLORS.errorLight,
+    borderWidth: 1, borderColor: '#fecaca',
+    borderRadius: 12, padding: 14,
+  },
+  billingText: { flex: 1, fontSize: 13, color: VITANA_COLORS.error, fontFamily: 'Inter', fontWeight: '500' },
+  statsScroll: { marginHorizontal: -16 },
+  statsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  attendanceCard: {
+    backgroundColor: VITANA_COLORS.background,
+    borderRadius: 14, borderWidth: 1, borderColor: VITANA_COLORS.border,
+    padding: 16,
+  },
+  attendanceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  attendanceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  attendanceIconBg: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  attendanceTitle: { fontSize: 14, fontWeight: '600', color: VITANA_COLORS.text, fontFamily: 'Inter' },
+  barTrack: { height: 8, backgroundColor: VITANA_COLORS.surface, borderRadius: 4, overflow: 'hidden' },
+  barFill: { height: 8, borderRadius: 4 },
+  attendanceSub: { fontSize: 11, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 8 },
+  approvalsCard: {
+    backgroundColor: VITANA_COLORS.background,
+    borderRadius: 14, borderWidth: 1, borderColor: VITANA_COLORS.border,
+    padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  approvalIconBg: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  approvalsInfo: { flex: 1 },
+  approvalsTitle: { fontSize: 15, fontWeight: '600', color: VITANA_COLORS.text, fontFamily: 'Inter' },
+  approvalsMeta: { fontSize: 12, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 2 },
+  approvalsBadge: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: VITANA_COLORS.warningLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  approvalsBadgeText: { fontSize: 16, fontWeight: '700', color: '#b45309', fontFamily: 'Poppins' },
+  feeRow: { flexDirection: 'row', alignItems: 'center' },
+  feeStat: { flex: 1 },
+  feeLabel: { fontSize: 11, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: 0.4 },
+  feeValue: { fontSize: 18, fontWeight: '700', color: VITANA_COLORS.text, fontFamily: 'Poppins', marginTop: 4 },
+  feeDivider: { width: 1, height: 40, backgroundColor: VITANA_COLORS.border, marginHorizontal: 16 },
+  annRow: { paddingHorizontal: 16, paddingVertical: 12 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: VITANA_COLORS.border },
+  annTitle: { fontSize: 14, fontWeight: '500', color: VITANA_COLORS.text, fontFamily: 'Inter' },
+  annSummary: { fontSize: 12, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 2 },
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 10 },
+  quickItem: { width: '22%', flexGrow: 1, alignItems: 'center', paddingVertical: 14, gap: 6, borderRadius: 12, backgroundColor: VITANA_COLORS.surface },
+  quickIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  quickLabel: { fontSize: 11, fontWeight: '500', color: VITANA_COLORS.text, fontFamily: 'Inter', textAlign: 'center' },
+  quickBadge: {
+    position: 'absolute', top: 8, right: 8,
+    backgroundColor: VITANA_COLORS.error, borderRadius: 8,
+    minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  quickBadgeText: { fontSize: 9, color: '#fff', fontWeight: '700' },
+});

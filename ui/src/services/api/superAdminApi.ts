@@ -179,6 +179,27 @@ export interface OnboardSchoolResult {
 export const onboardSchool = (data: OnboardSchoolRequest): Promise<OnboardSchoolResult> =>
   apiPost("/school-feature-permissions/onboard", data);
 
+// ─── Meeting Provider (Online Classes) ───────────────────────────────────────
+
+export interface ProvisionMeetingProviderRequest {
+  defaultProvider: "LiveKit" | "Zoom" | "Jitsi";
+  useSharedVitanaAccount: boolean;
+}
+
+/**
+ * Called after onboarding when the online_classes module is enabled.
+ * Provisions the SchoolMeetingProviderConfig row for the new school.
+ * Uses the SuperAdmin X-School-Override header to target the newly created school.
+ */
+export const provisionMeetingProvider = async (
+  schoolId: string,
+  data: ProvisionMeetingProviderRequest,
+): Promise<void> => {
+  await apiClient.post("/school-config/meeting-provider", data, {
+    headers: { "X-School-Override": schoolId },
+  });
+};
+
 // ─── Billing ──────────────────────────────────────────────────────────────────
 
 export interface SchoolBilling {

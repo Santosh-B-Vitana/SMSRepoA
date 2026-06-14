@@ -69,6 +69,47 @@ export const VITANA_FONT_SIZES = {
   '4xl': 36,
 } as const;
 
+export const VITANA_SHADOWS = {
+  sm: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  md: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  lg: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  card: {
+    shadowColor: '#1a6fd8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+} as const;
+
+export const VITANA_GRADIENTS = {
+  auth: ['#0d1b3e', '#1a3a7a', '#1a6fd8'] as string[],
+  authSubtle: ['#1a6fd8', '#1d4ed8'] as string[],
+  header: ['#1a6fd8', '#1d4ed8'] as string[],
+  card: ['#ffffff', '#f5f7fa'] as string[],
+  success: ['#22c55e', '#16a34a'] as string[],
+  warning: ['#f59e0b', '#d97706'] as string[],
+} as const;
+
 export type VitanaColors = typeof VITANA_COLORS;
 export type VitanaFonts = typeof VITANA_FONTS;
 export type VitanaSpacing = typeof VITANA_SPACING;
+export type VitanaShadows = typeof VITANA_SHADOWS;

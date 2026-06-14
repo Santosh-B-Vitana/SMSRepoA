@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi, type AnalyticsDashboard } from '@/api/endpoints/admin';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { formatINR } from '@vitana/shared-utils';
 
 // Lazy-load victory-native so a missing Skia binary shows a fallback

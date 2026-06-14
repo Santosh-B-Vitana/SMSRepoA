@@ -7,6 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { teacherApi, type AssignmentDto } from '@/api/endpoints/teacher';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 
 type TabKey = 'active' | 'grading' | 'closed';
 
@@ -169,40 +170,26 @@ export default function AssignmentsIndex() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
-      {/* Header */}
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          backgroundColor: '#fff',
-          borderBottomWidth: 1,
-          borderBottomColor: VITANA_COLORS.border,
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
-      >
-        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 12 }}>
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ fontSize: 17, fontWeight: '700', color: VITANA_COLORS.text, flex: 1 }}>
-          Assignments
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(teacher)/assignments/create' as never)}
-          style={{
-            backgroundColor: primaryColor ?? VITANA_COLORS.primary,
-            borderRadius: 8,
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <Feather name="plus" size={15} color="#fff" />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>New</Text>
-        </TouchableOpacity>
-      </View>
+      <SubScreenHeader
+        title="Assignments"
+        rightSlot={
+          <TouchableOpacity
+            onPress={() => router.push('/(teacher)/assignments/create' as never)}
+            style={{
+              backgroundColor: primaryColor ?? VITANA_COLORS.primary,
+              borderRadius: 8,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <Feather name="plus" size={15} color="#fff" />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>New</Text>
+          </TouchableOpacity>
+        }
+      />
 
       {/* Tabs */}
       <View

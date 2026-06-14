@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { parentApi } from '@/api/endpoints/parent';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonLoader, SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
 import type { ExamResult } from '@vitana/shared-types';
 

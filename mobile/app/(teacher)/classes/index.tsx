@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { teacherApi } from '@/api/endpoints/teacher';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
 
 export default function ClassesList() {

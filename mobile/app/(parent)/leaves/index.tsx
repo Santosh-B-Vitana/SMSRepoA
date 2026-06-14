@@ -5,10 +5,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { parentApi } from '@/api/endpoints/parent';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
 import { formatDate } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import type { LeaveRequest } from '@/api/endpoints/parent';
 
 type LeaveStatus = 'Pending' | 'Approved' | 'Rejected';
@@ -121,40 +122,23 @@ export default function LeaveHistory() {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: '#fff',
-          borderBottomWidth: 1,
-          borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text, marginLeft: 12 }}>
-          Leave Applications
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(parent)/leaves/apply')}
-          style={{
-            backgroundColor: primaryColor,
-            borderRadius: 8,
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-          }}
-        >
-          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>+ Apply</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader
+        title="Leave Applications"
+        rightSlot={
+          <TouchableOpacity
+            onPress={() => router.push('/(parent)/leaves/apply')}
+            style={{
+              backgroundColor: primaryColor,
+              borderRadius: 8,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>+ Apply</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

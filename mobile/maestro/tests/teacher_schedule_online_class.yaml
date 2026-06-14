@@ -1,0 +1,91 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# Online Classes · Teacher schedules an online class
+#
+# Precondition:
+#   - Teacher is already logged in (demo school)
+#   - online_classes module is enabled for the demo school
+#
+# Flow:
+#   More menu → Online Classes → Schedule Class form →
+#   Fill title + times → Submit → Verify confirmation →
+#   Verify class appears in list → Cancel it (cleanup)
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to More tab ──────────────────────────────────────
+- tapOn:
+    text: "More"
+
+- assertVisible: "More"
+
+# ── Open Online Classes from the More menu ────────────────────
+- tapOn:
+    text: "Online Classes"
+
+- assertVisible: "Online Classes"
+
+# ── Tap Schedule button (top-right header) ────────────────────
+- tapOn:
+    text: "+ Schedule"
+
+- assertVisible: "Schedule Class"
+
+# ── Fill class title ──────────────────────────────────────────
+- tapOn:
+    text: "e.g. Mathematics — Chapter 5 Revision"
+
+- inputText: "E2E Test Class — Physics"
+
+# ── Description (optional) ────────────────────────────────────
+- tapOn:
+    text: "Topic coverage, prerequisites, etc."
+
+- inputText: "Automated E2E test class — please ignore"
+
+# ── Start time: tomorrow at 10:00 AM
+#    Enter raw datetime-local string ───────────────────────────
+- tapOn:
+    text: "YYYY-MM-DDTHH:mm"
+    index: 0                    # first datetime field = Start
+
+# Note: Maestro on real device — input raw ISO string
+# The app accepts YYYY-MM-DDTHH:mm format directly
+- inputText: "2026-07-01T10:00"
+
+# ── End time ─────────────────────────────────────────────────
+- tapOn:
+    text: "YYYY-MM-DDTHH:mm"
+    index: 1                    # second datetime field = End
+
+- inputText: "2026-07-01T11:00"
+
+# ── Submit ────────────────────────────────────────────────────
+- tapOn:
+    text: "Schedule Class"
+
+# ── Verify scheduled confirmation dialog ─────────────────────
+- assertVisible: "Class Scheduled"
+
+# ── Tap View Class ────────────────────────────────────────────
+- tapOn:
+    text: "View Class"
+
+# ── Verify class detail screen ────────────────────────────────
+- assertVisible: "E2E Test Class — Physics"
+- assertVisible: "Scheduled"
+
+# ── Cancel the test class (cleanup) ──────────────────────────
+- tapOn:
+    text: "Cancel Class"
+
+- assertVisible: "Cancel Class?"
+
+- tapOn:
+    text: "Cancel Class"       # confirm button in Alert
+
+# ── Verify it is now cancelled ────────────────────────────────
+- assertVisible: "Cancelled"

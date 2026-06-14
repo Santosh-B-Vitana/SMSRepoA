@@ -302,6 +302,13 @@ namespace SmsApi.Data
         public DbSet<NotificationDeliveryLog> NotificationDeliveryLogs { get; set; }
         public DbSet<MobileAppBranding> MobileAppBrandings { get; set; }
 
+        // ── Online Classes (Virtual Classroom) ───────────────────────────────
+        public DbSet<OnlineClass> OnlineClasses { get; set; }
+        public DbSet<OnlineClassAttendanceRecord> OnlineClassAttendanceRecords { get; set; }
+        public DbSet<OnlineClassRecording> OnlineClassRecordings { get; set; }
+        public DbSet<SchoolMeetingProviderConfig> SchoolMeetingProviderConfigs { get; set; }
+        public DbSet<OnlineClassNotificationLog> OnlineClassNotificationLogs { get; set; }
+
         /// <summary>
         /// Automatically populates audit fields (CreatedAt, UpdatedAt, CreatedBy, UpdatedBy)
         /// on all BaseEntity-derived entities before persisting changes.
@@ -422,6 +429,7 @@ namespace SmsApi.Data
             ConfigureDiscipline(modelBuilder);
             ConfigureWhatsApp(modelBuilder);
             ConfigureMobile(modelBuilder);
+            ConfigureOnlineClasses(modelBuilder);
 
             // Apply IsDeleted = false soft-delete filter to ALL entities derived from BaseEntity.
             // This prevents soft-deleted records from ever appearing in queries unless the caller
@@ -3554,6 +3562,97 @@ namespace SmsApi.Data
             {
                 // One branding record per school
                 entity.HasIndex(e => e.SchoolId).IsUnique();
+            });
+        }
+
+        private void ConfigureOnlineClasses(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<OnlineClass>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.Status, e.ScheduledStart });
+                entity.HasIndex(e => new { e.SchoolId, e.HostStaffId, e.ScheduledStart });
+                entity.HasIndex(e => new { e.SchoolId, e.ClassId, e.ScheduledStart });
+                entity.HasIndex(e => new { e.SchoolId, e.AcademicYear });
+                entity.HasIndex(e => e.ProviderRoomName);
+
+                entity.Property(e => e.Provider).HasConversion<int>();
+                entity.Property(e => e.Status).HasConversion<int>();
+
+                entity.HasOne(e => e.HostStaff)
+                    .WithMany()
+                    .HasForeignKey(e => e.HostStaffId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Subject)
+                    .WithMany()
+                    .HasForeignKey(e => e.SubjectId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.TargetClass)
+                    .WithMany()
+                    .HasForeignKey(e => e.ClassId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(e => e.TargetSection)
+                    .WithMany()
+                    .HasForeignKey(e => e.SectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<OnlineClassAttendanceRecord>(entity =>
+            {
+                entity.HasIndex(e => new { e.OnlineClassId, e.StudentId }).IsUnique();
+                entity.HasIndex(e => new { e.SchoolId, e.StudentId, e.AttendanceStatus });
+
+                entity.Property(e => e.AttendanceStatus).HasConversion<int>();
+
+                entity.HasOne(e => e.OnlineClass)
+                    .WithMany(c => c.AttendanceRecords)
+                    .HasForeignKey(e => e.OnlineClassId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Student)
+                    .WithMany()
+                    .HasForeignKey(e => e.StudentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<OnlineClassRecording>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.OnlineClassId });
+                entity.HasIndex(e => e.EgressId);
+
+                entity.Property(e => e.RecordingStatus).HasConversion<int>();
+                entity.Property(e => e.FileSizeMb).HasColumnType("decimal(10,2)");
+
+                entity.HasOne(e => e.OnlineClass)
+                    .WithMany(c => c.Recordings)
+                    .HasForeignKey(e => e.OnlineClassId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SchoolMeetingProviderConfig>(entity =>
+            {
+                entity.HasIndex(e => e.SchoolId).IsUnique();
+                entity.Property(e => e.DefaultProvider).HasConversion<int>();
+
+                entity.HasOne(e => e.School)
+                    .WithMany()
+                    .HasForeignKey(e => e.SchoolId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<OnlineClassNotificationLog>(entity =>
+            {
+                entity.HasIndex(e => new { e.SchoolId, e.OnlineClassId, e.NotificationType });
+                entity.HasIndex(e => new { e.SchoolId, e.RecipientId, e.SentAt });
+
+                entity.Property(e => e.Channel).HasConversion<int>();
+
+                entity.HasOne(e => e.OnlineClass)
+                    .WithMany(c => c.NotificationLogs)
+                    .HasForeignKey(e => e.OnlineClassId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
 

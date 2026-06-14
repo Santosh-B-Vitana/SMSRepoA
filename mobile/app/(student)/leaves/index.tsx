@@ -6,8 +6,9 @@ import { Feather } from '@expo/vector-icons';
 import { studentApi } from '@/api/endpoints/student';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   Pending: { bg: '#fef3c7', text: '#d97706' },
@@ -25,29 +26,20 @@ export default function LeaveStatusScreen() {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      <View
-        style={{
-          flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingVertical: 12,
-          backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text, marginLeft: 12 }}>
-          Leave Applications
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(student)/leaves/apply')}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Feather name="plus" size={18} color={primaryColor} />
-          <Text style={{ fontSize: 14, color: primaryColor, fontWeight: '500' }}>Apply</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader
+        title="Leave Applications"
+        rightSlot={
+          <TouchableOpacity
+            onPress={() => router.push('/(student)/leaves/apply')}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="plus" size={18} color={primaryColor} />
+            <Text style={{ fontSize: 14, color: primaryColor, fontWeight: '500' }}>Apply</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView
         style={{ flex: 1 }}

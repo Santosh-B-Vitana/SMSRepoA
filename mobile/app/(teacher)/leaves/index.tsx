@@ -6,9 +6,11 @@ import { Feather } from '@expo/vector-icons';
 import { teacherApi } from '@/api/endpoints/teacher';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Badge } from '@/components/ui/Badge';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import { formatDate } from '@vitana/shared-utils';
-import { VITANA_COLORS } from '@/theme/tokens';
+import { VITANA_COLORS, VITANA_SHADOWS } from '@/theme/tokens';
 import type { LeaveRequest } from '@/api/endpoints/teacher';
 
 function LeaveCard({
@@ -175,43 +177,16 @@ export default function LeaveRequests() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: '#fff',
-          borderBottomWidth: 1,
-          borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text
-          style={{
-            flex: 1,
-            fontSize: 17,
-            fontWeight: '600',
-            color: VITANA_COLORS.text,
-            marginLeft: 12,
-          }}
-        >
-          Leave Requests
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(teacher)/leaves/status')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={{ fontSize: 13, color: primaryColor }}>My Leaves</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader
+        title="Leave Requests"
+        subtitle={data ? `${data.length} pending` : undefined}
+        rightSlot={
+          <TouchableOpacity onPress={() => router.push('/(teacher)/leaves/status')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 13, color: primaryColor, fontFamily: 'Inter', fontWeight: '600' }}>My Leaves</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

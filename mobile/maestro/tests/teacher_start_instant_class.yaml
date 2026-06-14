@@ -1,0 +1,56 @@
+appId: com.vitana.sms
+---
+# ────────────────────────────────────────────────────────────
+# Online Classes · Teacher starts an instant class
+#
+# Precondition:
+#   - Teacher is already logged in
+#   - online_classes module enabled
+#   - mobile.online_classes.instant_class flag = true
+#
+# Flow:
+#   More menu → Online Classes → tap "Start Instant Class" FAB →
+#   Verify class goes Live → tap "End Class" → confirm cleanup
+# ────────────────────────────────────────────────────────────
+
+- launchApp:
+    clearState: false
+
+# ── Navigate to Online Classes ────────────────────────────────
+- tapOn:
+    text: "More"
+
+- tapOn:
+    text: "Online Classes"
+
+- assertVisible: "Online Classes"
+
+# ── Tap the "Start Instant Class" FAB ────────────────────────
+- tapOn:
+    text: "Start Instant Class"
+
+# The FAB triggers API call — wait for navigation to class detail
+- assertVisible:
+    text: "● LIVE"
+    timeout: 5000
+
+# ── Verify class detail is shown ─────────────────────────────
+- assertVisible: "Instant Class"
+
+# ── Do NOT actually join the LiveKit room in E2E
+#    (WebRTC requires a real device with camera/mic permission)
+#    Instead verify the action buttons are present
+- assertVisible: "Rejoin Class"
+- assertVisible: "End Class"
+
+# ── End the instant class (cleanup) ──────────────────────────
+- tapOn:
+    text: "End Class"
+
+- assertVisible: "End Class?"
+
+- tapOn:
+    text: "End Class"          # confirm in Alert
+
+# ── Verify class is now ended ─────────────────────────────────
+- assertVisible: "Class has ended"

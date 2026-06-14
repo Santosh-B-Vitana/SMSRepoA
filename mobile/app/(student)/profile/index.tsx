@@ -10,6 +10,7 @@ import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { useLogout } from '@/features/auth/hooks/useLogout';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 
 function ProfileRow({ icon, label, value }: {
   icon: keyof typeof Feather.glyphMap; label: string; value: string;

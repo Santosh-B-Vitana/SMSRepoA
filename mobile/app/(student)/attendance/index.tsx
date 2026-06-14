@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { studentApi } from '@/api/endpoints/student';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import { VITANA_COLORS } from '@/theme/tokens';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -71,21 +72,8 @@ export default function AttendanceScreen() {
   const isBelowThreshold = parseFloat(percent) < 75;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      <View
-        style={{
-          flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingVertical: 12,
-          backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text, marginLeft: 12 }}>
-          Attendance
-        </Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader title="Attendance" subtitle={`${percent}% this month`} />
 
       <ScrollView
         style={{ flex: 1 }}

@@ -2,25 +2,15 @@ import { Tabs } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAppTheme } from '@/theme';
 import { FeatureErrorBoundary } from '@/components/common/FeatureErrorBoundary';
+import { getTabBarStyle } from '@/theme/tabBarStyle';
 
 export default function StudentLayout() {
   const { colors } = useAppTheme();
+  const { screenOptions } = getTabBarStyle(colors.primary);
 
   return (
     <FeatureErrorBoundary featureName="Student Portal">
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: '#9ca3af',
-        tabBarStyle: {
-          borderTopColor: '#f3f4f6',
-          backgroundColor: '#ffffff',
-          height: 60,
-          paddingBottom: 8,
-        },
-      }}
-    >
+    <Tabs screenOptions={screenOptions}>
       <Tabs.Screen
         name="index"
         options={{

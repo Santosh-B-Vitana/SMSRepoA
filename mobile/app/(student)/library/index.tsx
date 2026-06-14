@@ -6,8 +6,9 @@ import { Feather } from '@expo/vector-icons';
 import { studentApi } from '@/api/endpoints/student';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 
 export default function LibraryScreen() {
   const { primaryColor } = useSchoolTheme();

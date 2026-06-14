@@ -25,5 +25,7 @@ export {
   VITANA_SPACING,
   VITANA_BORDER_RADIUS,
   VITANA_FONT_SIZES,
+  VITANA_SHADOWS,
+  VITANA_GRADIENTS,
 } from './tokens';
-export type { VitanaColors, VitanaFonts, VitanaSpacing } from './tokens';
+export type { VitanaColors, VitanaFonts, VitanaSpacing, VitanaShadows } from './tokens';

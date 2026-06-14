@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { teacherApi } from '@/api/endpoints/teacher';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';

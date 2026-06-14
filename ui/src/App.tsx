@@ -51,6 +51,8 @@ const Fees                 = lazy(() => import("@/pages/Fees"));
 const StudentFeePaymentPage = lazy(() => import("@/pages/fees/StudentFeePaymentPage"));
 const Communication        = lazy(() => import("@/pages/Communication"));
 const Announcements        = lazy(() => import("@/pages/Announcements"));
+const OnlineClasses        = lazy(() => import("@/pages/OnlineClasses"));
+const OnlineClassesSettings = lazy(() => import("@/pages/OnlineClassesSettings"));
 const Documents            = lazy(() => import("@/pages/Documents"));
 const IdCards              = lazy(() => import("@/pages/IdCards"));
 const Analytics            = lazy(() => import("@/pages/Analytics"));
@@ -228,6 +230,8 @@ function App() {
                   <Route path="/timetable" element={<ProtectedRoute allowedRoles={['admin','staff']} requiredPermission={{ module: 'Timetable', action: 'View' }}><Layout><ModuleGuard module="timetable"><Timetable /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/alumni" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><Alumni /></Layout></ProtectedRoute>} />
                   <Route path="/announcements" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/online-classes" element={<ProtectedRoute><Layout><ModuleGuard module="online_classes"><OnlineClasses /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/online-classes/settings" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><OnlineClassesSettings /></Layout></ProtectedRoute>} />
                   <Route path="/communication" element={<ProtectedRoute><Layout><ModuleGuard module="communication"><Communication /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/documents" element={<ProtectedRoute><Layout><ModuleGuard module="documents"><Documents /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/notifications" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />

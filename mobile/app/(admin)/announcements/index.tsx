@@ -7,7 +7,8 @@ import { Feather } from '@expo/vector-icons';
 import { adminApi, type Announcement } from '@/api/endpoints/admin';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
-import { EmptyState } from '@/components/common/EmptyState';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { queryClient } from '@/api/queryClient';
 import { formatRelativeTime } from '@vitana/shared-utils';
 

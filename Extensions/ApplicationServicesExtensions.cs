@@ -81,6 +81,14 @@ public static class ApplicationServicesExtensions
         services.AddScoped<IAnnouncementService, AnnouncementService>();
         services.AddScoped<ICommunicationService, CommunicationService>();
 
+        // ── Online Classes (Virtual Classroom) ─────────────────────────────
+        services.AddScoped<ILiveKitTokenService, LiveKitTokenService>();
+        services.AddScoped<IOnlineClassNotificationService, OnlineClassNotificationService>();
+        services.AddScoped<IMeetingAttendanceService, MeetingAttendanceService>();
+        services.AddScoped<IRecordingService, RecordingService>();
+        services.AddScoped<IOnlineClassService, OnlineClassService>();
+        services.AddScoped<SmsApi.BackgroundJobs.OnlineClassReminderJob>();
+
         // ── Documents (chain-of-responsibility access policies) ────────────
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IDocumentAccessPolicyService, DocumentAccessPolicyService>();
@@ -151,7 +159,7 @@ public static class ApplicationServicesExtensions
         services.AddScoped<SmsApi.Infrastructure.Performance.CachingStrategy>();
 
         // ── WhatsApp Communication Hub ─────────────────────────────────────
-        services.AddWhatsAppServices(configuration);
+        services.AddWhatsAppServices(configuration, environment);
 
         // ── Mobile: app config, dashboard aggregation, push notifications ──
         services.AddScoped<IMobileAppConfigService, MobileAppConfigService>();

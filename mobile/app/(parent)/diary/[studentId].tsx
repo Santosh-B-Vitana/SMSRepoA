@@ -7,7 +7,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Feather } from '@expo/vector-icons';
 import { parentApi } from '@/api/endpoints/parent';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
 import { formatDate } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';

@@ -9,6 +9,7 @@ import type { MoreMenuItem } from './useParentMoreItems';
 export function useStudentMoreItems(): MoreMenuItem[] {
   const hasLibrary = useFeatureFlag('library');
   const hasOnlineExams = useFeatureFlag('onlineExams');
+  const hasOnlineClasses = useFeatureFlag('online_classes', false);
 
   const items: MoreMenuItem[] = [
     {
@@ -48,6 +49,16 @@ export function useStudentMoreItems(): MoreMenuItem[] {
       route: '/(student)/profile/index',
     },
   ];
+
+  // Online Classes
+  if (hasOnlineClasses) {
+    items.push({
+      key: 'online-classes',
+      label: 'Online Classes',
+      icon: 'video',
+      route: '/(student)/online-classes/index',
+    });
+  }
 
   // Library: screen exists at /(student)/library/index
   if (hasLibrary) {

@@ -9,7 +9,8 @@ public static class WhatsAppServicesExtensions
 {
     public static IServiceCollection AddWhatsAppServices(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IWebHostEnvironment? environment = null)
     {
         // ── Meta Cloud API typed HTTP client (Polly: 3 retries, exponential backoff) ──
         services.AddHttpClient<IMetaCloudApiClient, MetaCloudApiClient>(client =>
@@ -47,7 +48,15 @@ public static class WhatsAppServicesExtensions
         var hangfireConnectionString = configuration.GetConnectionString("CRMConnection")
             ?? configuration.GetConnectionString("DefaultConnection");
 
-        if (!string.IsNullOrEmpty(hangfireConnectionString))
+        // Hangfire storage selection:
+        // - SQL Server: when connection string is available AND Hangfire SQL schema exists
+        //   (checked via HANGFIRE_SQL_STORAGE env var or non-Development environment)
+        // - InMemory: development default, or when HANGFIRE_SQL_STORAGE is not set
+        // The HANGFIRE_SQL_STORAGE env var can be set to "true" to force SQL Server in any env.
+        var useHangfireSql = (System.Environment.GetEnvironmentVariable("HANGFIRE_SQL_STORAGE") ?? "false")
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrEmpty(hangfireConnectionString) && useHangfireSql)
         {
             services.AddHangfire(config => config
                 .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -62,22 +71,30 @@ public static class WhatsAppServicesExtensions
                     DisableGlobalLocks = true,
                     SchemaName = "hangfire"
                 }));
+            Serilog.Log.Information("Hangfire: SQL Server storage configured");
         }
         else
         {
-            // Fallback: use in-memory storage (no persistence; for dev without SQL Server CRM)
+            // Default: in-memory (safe in dev, and in prod without Hangfire SQL schema).
+            // Set HANGFIRE_SQL_STORAGE=true to enable persistent job storage.
             services.AddHangfire(config => config
                 .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
                 .UseSimpleAssemblyNameTypeSerializer()
                 .UseRecommendedSerializerSettings()
                 .UseInMemoryStorage());
+            Serilog.Log.Information("Hangfire: in-memory storage (set HANGFIRE_SQL_STORAGE=true to use SQL Server)");
         }
 
-        services.AddHangfireServer(options =>
+        // Only start the Hangfire background server when SQL storage is configured.
+        // Without SQL Server Hangfire schema, workers would fail immediately.
+        if (useHangfireSql)
         {
-            options.WorkerCount = 5;
-            options.Queues = new[] { "whatsapp-critical", "whatsapp-high", "whatsapp-default", "default" };
-        });
+            services.AddHangfireServer(options =>
+            {
+                options.WorkerCount = 5;
+                options.Queues = new[] { "whatsapp-critical", "whatsapp-high", "whatsapp-default", "default" };
+            });
+        }
 
         return services;
     }

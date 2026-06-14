@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   Alert,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -15,18 +14,22 @@ import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Constants from 'expo-constants';
 import * as Sentry from '@sentry/react-native';
+import { Feather } from '@expo/vector-icons';
 import { authApi } from '@/api/endpoints/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useSchoolStore } from '@/stores/schoolStore';
 import { queryClient } from '@/api/queryClient';
-import { VITANA_COLORS } from '@/theme/tokens';
+import { VITANA_COLORS, VITANA_GRADIENTS } from '@/theme/tokens';
 import { identifyUser, track } from '@/lib/analytics';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 import type { UserRole } from '@vitana/shared-types';
 
 const loginSchema = z.object({
@@ -68,6 +71,7 @@ export default function LoginScreen() {
   const isWhiteLabel = (Constants.expoConfig?.extra?.isWhiteLabel as boolean) ?? false;
 
   const primaryColor = branding?.primaryColor ?? VITANA_COLORS.primary;
+  const gradientColors = VITANA_GRADIENTS.auth as [string, string, string];
 
   const {
     control,
@@ -100,13 +104,12 @@ export default function LoginScreen() {
     void checkBiometricAvailability();
   }, []);
 
-  async function attemptBiometricUnlock() {
+  const attemptBiometricUnlock = useCallback(async () => {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage: 'Sign in to Vitana SMS',
       fallbackLabel: 'Use Password',
       cancelLabel: 'Cancel',
     });
-
     if (result.success) {
       track('biometric_unlock');
       const { user } = useAuthStore.getState();
@@ -114,7 +117,7 @@ export default function LoginScreen() {
         router.replace(getRoleRoute(user.role) as Parameters<typeof router.replace>[0]);
       }
     }
-  }
+  }, []);
 
   async function offerBiometricSetup() {
     const alreadyShown = await SecureStore.getItemAsync('biometric_prompt_shown');
@@ -142,7 +145,6 @@ export default function LoginScreen() {
 
   async function onSubmit(data: LoginForm) {
     setApiError('');
-    // Clear stale query cache before a fresh login
     queryClient.clear();
 
     try {
@@ -180,179 +182,320 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <LinearGradient
+      colors={gradientColors}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0.4, y: 1 }}
+      style={styles.gradient}
+    >
+      <SafeAreaView style={styles.safe}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
         >
-          <View className="flex-1 justify-center px-6 py-8">
-            {/* School Branding */}
-            <View className="items-center mb-8">
-              {branding?.logoUrl ? (
-                <Image
-                  source={{ uri: branding.logoUrl }}
-                  style={{ width: 80, height: 80, borderRadius: 12 }}
-                  contentFit="contain"
-                  accessibilityLabel={`${branding.schoolName} logo`}
-                />
-              ) : (
-                <View
-                  className="w-20 h-20 rounded-2xl items-center justify-center"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  <Text className="text-white font-bold text-2xl">
-                    {branding?.schoolName?.[0] ?? 'V'}
-                  </Text>
-                </View>
-              )}
-              <Text className="text-xl font-bold text-gray-900 mt-3">
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Hero: Logo + Branding */}
+            <View style={styles.hero}>
+              <View style={styles.logoContainer}>
+                {branding?.logoUrl ? (
+                  <Image
+                    source={{ uri: branding.logoUrl }}
+                    style={styles.schoolLogo}
+                    contentFit="contain"
+                    accessibilityLabel={`${branding.schoolName} logo`}
+                  />
+                ) : (
+                  <Image
+                    source={require('../../assets/logo/vitanalogo2-removebg-preview.png')}
+                    style={styles.vitanaLogo}
+                    contentFit="contain"
+                    accessibilityLabel="Vitana SMS"
+                  />
+                )}
+              </View>
+              <Text style={styles.appName}>
                 {branding?.schoolName ?? 'Vitana SMS'}
               </Text>
-              <Text className="text-sm text-gray-500 mt-1">Sign in to your account</Text>
+              <Text style={styles.tagline}>School Management System</Text>
             </View>
 
-            {/* Form */}
-            <View className="gap-y-4">
-              {/* Username */}
-              <View>
-                <Text className="text-sm font-medium text-gray-800 mb-1.5">Username</Text>
+            {/* Form Card */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Welcome back</Text>
+              <Text style={styles.cardSubtitle}>Sign in to your account</Text>
+
+              <View style={styles.form}>
+                {/* Username */}
                 <Controller
                   control={control}
                   name="username"
                   render={({ field: { onChange, onBlur, value } }) => (
-                    <TextInput
+                    <Input
+                      label="Username"
                       value={value}
                       onChangeText={onChange}
                       onBlur={onBlur}
                       placeholder="Enter your username"
-                      placeholderTextColor={VITANA_COLORS.textSecondary}
+                      icon="user"
                       autoCapitalize="none"
                       autoCorrect={false}
                       keyboardType="email-address"
                       returnKeyType="next"
                       accessibilityLabel="Username"
-                      className={`border rounded-xl px-4 py-3.5 text-base text-gray-900 bg-gray-50 ${
-                        errors.username ? 'border-red-500' : 'border-gray-200'
-                      }`}
+                      error={errors.username?.message}
+                      primaryColor={primaryColor}
                     />
                   )}
                 />
-                {errors.username ? (
-                  <Text className="text-red-500 text-sm mt-1">{errors.username.message}</Text>
-                ) : null}
-              </View>
 
-              {/* Password */}
-              <View>
-                <Text className="text-sm font-medium text-gray-800 mb-1.5">Password</Text>
-                <View className="relative">
-                  <Controller
-                    control={control}
-                    name="password"
-                    render={({ field: { onChange, onBlur, value } }) => (
-                      <TextInput
-                        value={value}
-                        onChangeText={onChange}
-                        onBlur={onBlur}
-                        placeholder="Enter your password"
-                        placeholderTextColor={VITANA_COLORS.textSecondary}
-                        secureTextEntry={!showPassword}
-                        returnKeyType="go"
-                        onSubmitEditing={handleSubmit(onSubmit)}
-                        accessibilityLabel="Password"
-                        className={`border rounded-xl px-4 py-3.5 pr-12 text-base text-gray-900 bg-gray-50 ${
-                          errors.password ? 'border-red-500' : 'border-gray-200'
-                        }`}
-                      />
-                    )}
-                  />
+                {/* Password */}
+                <Controller
+                  control={control}
+                  name="password"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <Input
+                      label="Password"
+                      value={value}
+                      onChangeText={onChange}
+                      onBlur={onBlur}
+                      placeholder="Enter your password"
+                      icon="lock"
+                      secureTextEntry={!showPassword}
+                      returnKeyType="go"
+                      onSubmitEditing={handleSubmit(onSubmit)}
+                      accessibilityLabel="Password"
+                      error={errors.password?.message}
+                      primaryColor={primaryColor}
+                      rightIcon={showPassword ? 'eye-off' : 'eye'}
+                      onRightIconPress={() => setShowPassword(!showPassword)}
+                    />
+                  )}
+                />
+
+                {/* API Error */}
+                {apiError ? (
+                  <View style={styles.errorBox}>
+                    <Feather name="alert-circle" size={14} color={VITANA_COLORS.error} />
+                    <Text style={styles.errorText}>{apiError}</Text>
+                  </View>
+                ) : null}
+
+                {/* Sign In */}
+                <Button
+                  label="Sign In"
+                  onPress={handleSubmit(onSubmit)}
+                  loading={isSubmitting}
+                  primaryColor={primaryColor}
+                  style={styles.signInBtn}
+                />
+
+                {/* Biometric */}
+                {showBiometricHint ? (
                   <TouchableOpacity
-                    onPress={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3.5 p-1"
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    onPress={() => void attemptBiometricUnlock()}
+                    style={styles.biometricBtn}
                   >
-                    <Text className="text-gray-400 text-sm">
-                      {showPassword ? 'Hide' : 'Show'}
+                    <Feather name="shield" size={16} color={primaryColor} />
+                    <Text style={[styles.biometricText, { color: primaryColor }]}>
+                      Use Biometric Unlock
                     </Text>
                   </TouchableOpacity>
-                </View>
-                {errors.password ? (
-                  <Text className="text-red-500 text-sm mt-1">{errors.password.message}</Text>
                 ) : null}
               </View>
 
-              {/* API Error */}
-              {apiError ? (
-                <View className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                  <Text className="text-red-600 text-sm">{apiError}</Text>
-                </View>
-              ) : null}
-
-              {/* Sign In Button */}
-              <TouchableOpacity
-                onPress={handleSubmit(onSubmit)}
-                disabled={isSubmitting}
-                className="rounded-xl py-4 items-center justify-center mt-2"
-                style={{ backgroundColor: primaryColor, opacity: isSubmitting ? 0.7 : 1 }}
-                accessibilityLabel="Sign In"
-                accessibilityRole="button"
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="font-semibold text-white text-base">Sign In</Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Biometric Unlock */}
-              {showBiometricHint ? (
+              {/* Footer Links */}
+              <View style={styles.links}>
                 <TouchableOpacity
-                  onPress={() => void attemptBiometricUnlock()}
-                  className="flex-row items-center justify-center py-3"
+                  onPress={() => {
+                    const base =
+                      (process.env.EXPO_PUBLIC_WEB_BASE_URL as string | undefined) ??
+                      (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined)?.replace('/api', '') ??
+                      'https://app.vitanasms.com';
+                    void WebBrowser.openBrowserAsync(`${base}/forgot-password`);
+                  }}
+                  style={styles.linkBtn}
+                  accessibilityLabel="Forgot password"
                 >
-                  <Text className="text-sm font-medium" style={{ color: primaryColor }}>
-                    Use Biometric Unlock
-                  </Text>
+                  <Text style={[styles.linkText, { color: primaryColor }]}>Forgot password?</Text>
                 </TouchableOpacity>
-              ) : null}
 
-              {/* Forgot Password */}
-              <TouchableOpacity
-                onPress={() => {
-                  const base =
-                    (process.env.EXPO_PUBLIC_WEB_BASE_URL as string | undefined) ??
-                    (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined)?.replace('/api', '') ??
-                    'https://app.vitanasms.com';
-                  void WebBrowser.openBrowserAsync(`${base}/forgot-password`);
-                }}
-                className="items-center py-2"
-                accessibilityLabel="Forgot password"
-              >
-                <Text className="text-sm text-gray-500 underline">Forgot password?</Text>
-              </TouchableOpacity>
-
-              {/* Switch school (shared app only) */}
-              {!isWhiteLabel ? (
-                <TouchableOpacity
-                  onPress={() => router.replace('/(auth)')}
-                  className="items-center py-2"
-                >
-                  <Text className="text-sm text-gray-500">← Use a different school</Text>
-                </TouchableOpacity>
-              ) : null}
+                {!isWhiteLabel ? (
+                  <TouchableOpacity
+                    onPress={() => router.replace('/(auth)')}
+                    style={styles.linkBtn}
+                  >
+                    <Feather name="arrow-left" size={13} color={VITANA_COLORS.textSecondary} />
+                    <Text style={styles.linkSecondaryText}> Use a different school</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
 
-      <View className="pb-6 items-center">
-        <Text className="text-xs text-gray-400">Powered by Vitana SMS</Text>
-      </View>
-    </SafeAreaView>
+            {/* Bottom badge */}
+            <View style={styles.bottomBadge}>
+              <Image
+                source={require('../../assets/logo/vitanalogo2-removebg-preview.png')}
+                style={styles.bottomLogo}
+                contentFit="contain"
+              />
+              <Text style={styles.poweredBy}>Powered by Vitana SMS</Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
+
+const styles = StyleSheet.create({
+  gradient: {
+    flex: 1,
+  },
+  safe: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+  },
+  hero: {
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingBottom: 28,
+  },
+  logoContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  schoolLogo: {
+    width: 80,
+    height: 80,
+  },
+  vitanaLogo: {
+    width: 70,
+    height: 70,
+  },
+  appName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#ffffff',
+    fontFamily: 'Poppins',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  tagline: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.70)',
+    fontFamily: 'Inter',
+    letterSpacing: 0.3,
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.20,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: VITANA_COLORS.text,
+    fontFamily: 'Poppins',
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: VITANA_COLORS.textSecondary,
+    fontFamily: 'Inter',
+    marginBottom: 24,
+  },
+  form: {
+    gap: 16,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: VITANA_COLORS.errorLight,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: VITANA_COLORS.error,
+    fontFamily: 'Inter',
+  },
+  signInBtn: {
+    marginTop: 4,
+  },
+  biometricBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+  },
+  biometricText: {
+    fontSize: 14,
+    fontFamily: 'Inter',
+    fontWeight: '500',
+  },
+  links: {
+    marginTop: 20,
+    gap: 4,
+    alignItems: 'center',
+  },
+  linkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  linkText: {
+    fontSize: 14,
+    fontFamily: 'Inter',
+    fontWeight: '600',
+  },
+  linkSecondaryText: {
+    fontSize: 13,
+    color: VITANA_COLORS.textSecondary,
+    fontFamily: 'Inter',
+  },
+  bottomBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 24,
+  },
+  bottomLogo: {
+    width: 16,
+    height: 16,
+  },
+  poweredBy: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.50)',
+    fontFamily: 'Inter',
+  },
+});

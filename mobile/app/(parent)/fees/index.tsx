@@ -9,9 +9,10 @@ import { parentApi } from '@/api/endpoints/parent';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import { formatINR, formatDate } from '@vitana/shared-utils';
-import { VITANA_COLORS } from '@/theme/tokens';
+import { VITANA_COLORS, VITANA_SHADOWS } from '@/theme/tokens';
 
 export default function FeesSummary() {
   const { primaryColor } = useSchoolTheme();

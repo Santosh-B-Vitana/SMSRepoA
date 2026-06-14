@@ -6,10 +6,11 @@ import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
 import { parentApi } from '@/api/endpoints/parent';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
 import { formatRelativeTime } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import type { AppNotification } from '@vitana/shared-types';
 
 const NOTIFICATION_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
@@ -139,48 +140,31 @@ export default function NotificationCenter() {
   const hasUnread = allItems.some((n) => !n.isRead);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: '#fff',
-          borderBottomWidth: 1,
-          borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text, marginLeft: 12 }}>
-          Notifications
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          {hasUnread && (
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader
+        title="Notifications"
+        rightSlot={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {hasUnread && (
+              <TouchableOpacity
+                onPress={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isPending}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{ fontSize: 13, color: primaryColor, fontWeight: '500' }}>
+                  {markAllReadMutation.isPending ? 'Marking...' : 'Mark all read'}
+                </Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              onPress={() => markAllReadMutation.mutate()}
-              disabled={markAllReadMutation.isPending}
+              onPress={() => router.push('/(parent)/notifications/settings')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={{ fontSize: 13, color: primaryColor, fontWeight: '500' }}>
-                {markAllReadMutation.isPending ? 'Marking...' : 'Mark all read'}
-              </Text>
+              <Feather name="settings" size={20} color={VITANA_COLORS.textSecondary} />
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={() => router.push('/(parent)/notifications/settings')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Feather name="settings" size={20} color={VITANA_COLORS.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </View>
+          </View>
+        }
+      />
 
       {isLoading ? (
         <View style={{ padding: 16, gap: 10 }}>

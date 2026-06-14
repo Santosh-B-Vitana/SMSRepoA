@@ -8,7 +8,7 @@ import {
   Megaphone, BarChart2, FolderOpen, ClipboardList,
   Library, Bus, Home, Heart, Wallet, MessageSquare,
   TrendingUp, Award, ShoppingBag, FileText, Sparkles,
-  School, Star,
+  School, Star, Video,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,10 @@ interface WizardData {
     autoGenerate: boolean;
   };
   modules: Record<string, boolean>;
+  meetingProvider: {
+    useSharedVitanaAccount: boolean;
+    provider: "LiveKit" | "Zoom" | "Jitsi";
+  };
   boards: {
     selected: string[];       // boardConfigurationId[]
     defaultBoardId: string;   // which one is the default
@@ -81,6 +85,7 @@ const ALL_MODULES = [
   { key: "certificates",   label: "Certificates",    icon: Award,           desc: "Certificates & achievements",          defaultOn: true  },
   { key: "store",          label: "Store",           icon: ShoppingBag,     desc: "School canteen & store management",   defaultOn: false },
   { key: "wallet",         label: "Wallet",          icon: BookOpen,        desc: "Student digital wallet & prepaid",     defaultOn: false },
+  { key: "online_classes", label: "Online Classes",  icon: Video,           desc: "Virtual classroom & live video sessions", defaultOn: false },
 ];
 
 const DEFAULT_MODULES: Record<string, boolean> = Object.fromEntries(
@@ -128,6 +133,7 @@ const INITIAL_DATA: WizardData = {
   year: { name: yearSuggestion.name, startDate: yearSuggestion.startDate, endDate: yearSuggestion.endDate, isCurrent: true },
   admin: { username: "", email: "", password: generatePassword(), autoGenerate: true },
   modules: { ...DEFAULT_MODULES },
+  meetingProvider: { useSharedVitanaAccount: true, provider: "LiveKit" },
   boards: { selected: [], defaultBoardId: "", names: {} },
 };
 
@@ -181,6 +187,9 @@ export default function SchoolOnboardingWizard() {
 
   const toggleModule = (key: string) =>
     setData((d) => ({ ...d, modules: { ...d.modules, [key]: !d.modules[key] } }));
+
+  const patchMeetingProvider = (patch: Partial<WizardData["meetingProvider"]>) =>
+    setData((d) => ({ ...d, meetingProvider: { ...d.meetingProvider, ...patch } }));
 
   const patchBoards = (patch: Partial<WizardData["boards"]>) =>
     setData((d) => ({ ...d, boards: { ...d.boards, ...patch } }));
@@ -266,6 +275,21 @@ export default function SchoolOnboardingWizard() {
       });
 
       setResult(res);
+
+      // If online_classes module is enabled, provision the meeting provider config.
+      // This is a best-effort call — we don't block onboarding if it fails.
+      if (data.modules["online_classes"]) {
+        try {
+          await superAdminApi.provisionMeetingProvider(res.schoolId, {
+            defaultProvider: data.meetingProvider.provider,
+            useSharedVitanaAccount: data.meetingProvider.useSharedVitanaAccount,
+          });
+        } catch {
+          // Non-critical — admin can configure it later in Settings → Online Classes
+          toast.info("School onboarded. Online Classes provider config can be set in school settings.");
+        }
+      }
+
       toast.success(`${res.schoolName} launched successfully!`);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -449,7 +473,9 @@ export default function SchoolOnboardingWizard() {
           {step === 4 && (
             <StepModules
               modules={data.modules}
+              meetingProvider={data.meetingProvider}
               onToggle={toggleModule}
+              onPatchMeetingProvider={patchMeetingProvider}
             />
           )}
           {step === 5 && (
@@ -871,12 +897,15 @@ function StepAdminAccount({
 // ─── Step 4: Modules ──────────────────────────────────────────────────────────
 
 function StepModules({
-  modules, onToggle,
+  modules, meetingProvider, onToggle, onPatchMeetingProvider,
 }: {
   modules: Record<string, boolean>;
+  meetingProvider: WizardData["meetingProvider"];
   onToggle: (key: string) => void;
+  onPatchMeetingProvider: (patch: Partial<WizardData["meetingProvider"]>) => void;
 }) {
   const enabledCount = Object.values(modules).filter(Boolean).length;
+  const onlineClassesEnabled = modules["online_classes"] ?? false;
 
   return (
     <WizardCard
@@ -923,6 +952,67 @@ function StepModules({
           );
         })}
       </div>
+
+      {/* Online Classes sub-config — shown only when the module is enabled */}
+      {onlineClassesEnabled && (
+        <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <Video className="h-4 w-4 text-indigo-600" />
+            <span className="text-sm font-semibold text-indigo-800">Online Classes Configuration</span>
+          </div>
+
+          {/* Provider selector */}
+          <div>
+            <Label className="text-xs font-semibold text-indigo-700 mb-2 block">Meeting Provider</Label>
+            <div className="flex gap-2">
+              {(["LiveKit", "Zoom", "Jitsi"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => onPatchMeetingProvider({ provider: p })}
+                  className={cn(
+                    "flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors",
+                    meetingProvider.provider === p
+                      ? "border-indigo-500 bg-indigo-600 text-white"
+                      : "border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-100"
+                  )}
+                >
+                  {p}
+                  {p === "LiveKit" && <span className="block text-[10px] font-normal opacity-80">Recommended</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cost model toggle */}
+          <div className="flex items-start gap-3 rounded-lg border border-indigo-200 bg-white p-3">
+            <Switch
+              checked={meetingProvider.useSharedVitanaAccount}
+              onCheckedChange={(v) => onPatchMeetingProvider({ useSharedVitanaAccount: v })}
+              className="mt-0.5 shrink-0"
+            />
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Use Vitana Shared Account
+                <span className="ml-2 text-[11px] font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                  Vitana pays
+                </span>
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {meetingProvider.useSharedVitanaAccount
+                  ? "The school uses Vitana's LiveKit infrastructure at no cost to them. Vitana bears the per-minute fee (~$0.006/participant-minute). Best for most schools."
+                  : "The school provides their own LiveKit API key. They pay their own LiveKit bill. Vitana bears zero infrastructure cost for this school. Best for large schools or data sovereignty requirements."}
+              </p>
+              {!meetingProvider.useSharedVitanaAccount && (
+                <p className="text-xs text-amber-600 mt-2 font-medium">
+                  ⚠ The school admin must enter their LiveKit credentials after onboarding in Settings → Online Classes.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground mt-3">
         You can change module permissions at any time from the School Management panel.
       </p>

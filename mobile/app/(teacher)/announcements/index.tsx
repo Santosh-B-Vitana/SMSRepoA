@@ -7,7 +7,8 @@ import { Feather } from '@expo/vector-icons';
 import { communicationApi, type AnnouncementDto, type AnnouncementPriority } from '@/api/endpoints/communication';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
-import { EmptyState } from '@/components/common/EmptyState';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const PRIORITY_COLORS: Record<AnnouncementPriority, string> = {
   Low: '#94a3b8',
@@ -49,19 +50,21 @@ export default function TeacherAnnouncementsList() {
   const announcements = data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <View className="px-4 pt-4 pb-3 flex-row items-center justify-between border-b border-gray-100">
-        <Text className="text-xl font-bold text-gray-900">Announcements</Text>
-        <TouchableOpacity
-          onPress={() => router.push('/(teacher)/announcements/create' as never)}
-          className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl"
-          style={{ backgroundColor: colors.primary }}
-          accessibilityLabel="Create announcement"
-        >
-          <Feather name="plus" size={15} color="white" />
-          <Text className="text-white text-sm font-semibold">New</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader
+        title="Announcements"
+        rightSlot={
+          <TouchableOpacity
+            onPress={() => router.push('/(teacher)/announcements/create' as never)}
+            className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl"
+            style={{ backgroundColor: colors.primary }}
+            accessibilityLabel="Create announcement"
+          >
+            <Feather name="plus" size={15} color="white" />
+            <Text className="text-white text-sm font-semibold">New</Text>
+          </TouchableOpacity>
+        }
+      />
 
       {announcements.length === 0 && !isLoading ? (
         <EmptyState

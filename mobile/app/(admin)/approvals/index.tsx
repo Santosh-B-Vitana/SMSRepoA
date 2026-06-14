@@ -16,7 +16,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { adminApi, type AdminLeaveRequest } from '@/api/endpoints/admin';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import { queryClient } from '@/api/queryClient';
 import { formatDate } from '@vitana/shared-utils';
 
@@ -155,22 +156,18 @@ export default function LeaveApprovals() {
   const isPending = approveMutation.isPending || rejectMutation.isPending;
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      {/* Header */}
-      <View className="px-4 pt-4 pb-2">
-        <Text className="text-xl font-bold text-gray-900 mb-3">Leave Approvals</Text>
-        <View className="flex-row bg-gray-100 rounded-xl p-1">
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }}>
+      <SubScreenHeader title="Leave Approvals" />
+      {/* Tab switcher */}
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: VITANA_COLORS.background, borderBottomWidth: 1, borderBottomColor: VITANA_COLORS.border }}>
+        <View style={{ flexDirection: 'row', backgroundColor: VITANA_COLORS.surface, borderRadius: 12, padding: 4 }}>
           {(['staff', 'student'] as Tab[]).map((tab) => (
             <TouchableOpacity
               key={tab}
               onPress={() => setActiveTab(tab)}
-              className="flex-1 py-2.5 rounded-lg items-center"
-              style={{ backgroundColor: activeTab === tab ? colors.primary : 'transparent' }}
+              style={{ flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center', backgroundColor: activeTab === tab ? colors.primary : 'transparent' }}
             >
-              <Text
-                className="font-medium capitalize"
-                style={{ color: activeTab === tab ? 'white' : VITANA_COLORS.textSecondary }}
-              >
+              <Text style={{ fontFamily: 'Inter', fontWeight: '600', fontSize: 13, color: activeTab === tab ? 'white' : VITANA_COLORS.textSecondary }}>
                 {tab === 'staff' ? 'Staff Leave' : 'Student Leave'}
               </Text>
             </TouchableOpacity>

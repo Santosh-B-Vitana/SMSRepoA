@@ -6,12 +6,14 @@ import { useAuthStore } from '@/stores/authStore';
 import { communicationApi } from '@/api/endpoints/communication';
 import type { MoreMenuItem } from './useParentMoreItems';
 
+
 /**
  * Returns dynamic More menu items for the Teacher portal.
  */
 export function useTeacherMoreItems(): MoreMenuItem[] {
   const hasWhatsApp = useFeatureFlag('whatsapp');
   const hasHealthRecords = useFeatureFlag('healthRecords');
+  const hasOnlineClasses = useFeatureFlag('online_classes', false);
   const user = useAuthStore((s) => s.user);
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -94,6 +96,16 @@ export function useTeacherMoreItems(): MoreMenuItem[] {
       badge: pendingCount,
     },
   ];
+
+  // Online Classes
+  if (hasOnlineClasses) {
+    items.push({
+      key: 'online-classes',
+      label: 'Online Classes',
+      icon: 'video',
+      route: '/(teacher)/online-classes/index',
+    });
+  }
 
   // Optional modules — screens not yet built
   if (hasWhatsApp) {

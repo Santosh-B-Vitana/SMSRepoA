@@ -10,6 +10,10 @@ export type NotificationType =
   | 'assignment_due'
   | 'exam_scheduled'
   | 'timetable_updated'
+  | 'class_starting_soon'
+  | 'class_started_now'
+  | 'recording_available'
+  | 'class_cancelled'
   | 'general';
 
 export interface AppNotification {

@@ -3,8 +3,8 @@ import { Feather } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useAppTheme } from '@/theme';
 import { adminApi, type AdminDashboardResponse } from '@/api/endpoints/admin';
-import { VITANA_COLORS } from '@/theme/tokens';
 import { FeatureErrorBoundary } from '@/components/common/FeatureErrorBoundary';
+import { getTabBarStyle } from '@/theme/tabBarStyle';
 
 function totalPendingApprovals(data: AdminDashboardResponse | undefined): number | undefined {
   if (!data) return undefined;
@@ -17,6 +17,7 @@ function totalPendingApprovals(data: AdminDashboardResponse | undefined): number
 
 export default function AdminLayout() {
   const { colors } = useAppTheme();
+  const { screenOptions } = getTabBarStyle(colors.primary);
 
   const { data } = useQuery<AdminDashboardResponse>({
     queryKey: ['admin-dashboard'],
@@ -28,17 +29,7 @@ export default function AdminLayout() {
 
   return (
     <FeatureErrorBoundary featureName="Admin Portal">
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: VITANA_COLORS.textSecondary,
-        tabBarStyle: {
-          borderTopColor: VITANA_COLORS.border,
-          backgroundColor: '#ffffff',
-        },
-      }}
-    >
+    <Tabs screenOptions={screenOptions}>
       <Tabs.Screen
         name="index"
         options={{

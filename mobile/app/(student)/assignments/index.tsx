@@ -3,14 +3,14 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { FlashList } from '@shopify/flash-list';
-import { Feather } from '@expo/vector-icons';
 import { useState } from 'react';
 import { studentApi } from '@/api/endpoints/student';
 import type { AssignmentSummary } from '@/api/endpoints/student';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 
 type Filter = 'All' | 'Pending' | 'Submitted' | 'Graded';
 
@@ -93,25 +93,11 @@ export default function AssignmentsScreen() {
   const pendingCount = allItems.filter((a) => a.status === 'Pending' || a.status === 'Late').length;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingVertical: 12,
-          backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={{ fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text }}>Assignments</Text>
-          {pendingCount > 0 && (
-            <Text style={{ fontSize: 12, color: '#d97706' }}>{pendingCount} pending</Text>
-          )}
-        </View>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader
+        title="Assignments"
+        subtitle={pendingCount > 0 ? `${pendingCount} pending` : undefined}
+      />
 
       {/* Filter tabs */}
       <View

@@ -41,6 +41,25 @@ export const DEEP_LINKS: Record<string, (data: Record<string, string>) => string
       ? `/(teacher)/messages/${d.conversationId}`
       : '/(teacher)/messages/index',
 
+  // ── Online Classes ────────────────────────────────────────────────────────
+  // Teacher-scoped notifications
+  class_starting_soon_teacher: (d) =>
+    d.classId ? `/(teacher)/online-classes/${d.classId}` : '/(teacher)/online-classes/index',
+  class_started_now_teacher: (d) =>
+    d.classId ? `/(teacher)/online-classes/${d.classId}` : '/(teacher)/online-classes/index',
+  recording_available_teacher: (d) =>
+    d.classId ? `/(teacher)/online-classes/${d.classId}` : '/(teacher)/online-classes/index',
+  class_cancelled_teacher: () => '/(teacher)/online-classes/index',
+
+  // Student-scoped notifications
+  class_starting_soon: (d) =>
+    d.classId ? `/(student)/online-classes/${d.classId}` : '/(student)/online-classes/index',
+  class_started_now: (d) =>
+    d.classId ? `/(student)/online-classes/${d.classId}` : '/(student)/online-classes/index',
+  recording_available: (d) =>
+    d.classId ? `/(student)/online-classes/${d.classId}` : '/(student)/online-classes/index',
+  class_cancelled: () => '/(student)/online-classes/index',
+
   // ── Admin ─────────────────────────────────────────────────────────────────
   billing_expiry_warning: () => '/(admin)/more',
   billing_expired: () => '/(admin)/more',

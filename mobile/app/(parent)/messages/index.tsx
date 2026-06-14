@@ -6,7 +6,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { communicationApi, type ConversationDto } from '@/api/endpoints/communication';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 function formatRelativeTime(iso: string | null): string {
   if (!iso) return '';

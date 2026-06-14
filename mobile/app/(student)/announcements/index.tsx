@@ -1,5 +1,4 @@
 import { View, Text, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { FlashList } from '@shopify/flash-list';
@@ -7,9 +6,10 @@ import { Feather } from '@expo/vector-icons';
 import { studentApi } from '@/api/endpoints/student';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { formatRelativeTime } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import type { Announcement } from '@vitana/shared-types';
 
 export default function AnnouncementsScreen() {
@@ -28,21 +28,8 @@ export default function AnnouncementsScreen() {
   const allItems = data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      <View
-        style={{
-          flexDirection: 'row', alignItems: 'center',
-          paddingHorizontal: 16, paddingVertical: 12,
-          backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text, marginLeft: 12 }}>
-          Announcements
-        </Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader title="Announcements" />
 
       {isLoading ? (
         <View style={{ padding: 16, gap: 10 }}>

@@ -37,7 +37,8 @@ namespace SmsApi.Middleware
             { "/api/analytics", "analytics" },
             { "/api/certificates", "certificates" },
             { "/api/store", "store" },
-            { "/api/wallet", "wallet" }
+            { "/api/wallet", "wallet" },
+            { "/api/online-classes", "online_classes" }
         };
 
         public SchoolFeatureAccessMiddleware(RequestDelegate next)
@@ -116,6 +117,7 @@ namespace SmsApi.Middleware
                 "/api/schoolfeaturepermissions",
                 "/api/permissions",
                 "/api/settings",
+                "/api/webhooks/livekit",
                 "/swagger",
                 "/health"
             };

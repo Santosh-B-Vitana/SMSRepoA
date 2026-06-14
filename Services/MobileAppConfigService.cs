@@ -136,6 +136,12 @@ namespace SmsApi.Services
             map.TryAdd("mobile.exams.online_exam_portal", false);
             map.TryAdd("mobile.parent.multi_child", true);
 
+            // Online Classes module flags (default: enabled for teacher/student, parent view off)
+            map.TryAdd("mobile.online_classes.instant_class", true);
+            map.TryAdd("mobile.online_classes.recordings", true);
+            map.TryAdd("mobile.online_classes.attendance_auto", false);
+            map.TryAdd("mobile.online_classes.parent_view", false);
+
             return map;
         }
 

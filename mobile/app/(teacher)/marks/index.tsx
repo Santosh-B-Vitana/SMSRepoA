@@ -5,84 +5,100 @@ import { useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { teacherApi, type ExamSetupBasicDto } from '@/api/endpoints/teacher';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
-import { VITANA_COLORS } from '@/theme/tokens';
+import { VITANA_COLORS, VITANA_SHADOWS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Badge } from '@/components/ui/Badge';
 
-const STATUS_LABELS: Record<string, { label: string; bg: string; text: string }> = {
-  marks_entry: { label: 'Pending Entry', bg: '#fef3c7', text: '#d97706' },
-  draft: { label: 'Draft', bg: '#dbeafe', text: '#2563eb' },
-  locked: { label: 'Locked', bg: '#f3e8ff', text: '#7c3aed' },
-  finalized: { label: 'Finalized', bg: '#dcfce7', text: '#16a34a' },
-  published: { label: 'Published', bg: '#dcfce7', text: '#15803d' },
+const STATUS_VARIANTS: Record<string, 'warning' | 'info' | 'neutral' | 'success' | 'primary'> = {
+  marks_entry: 'warning',
+  draft: 'info',
+  locked: 'neutral',
+  finalized: 'success',
+  published: 'success',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  marks_entry: 'Pending Entry',
+  draft: 'Draft',
+  locked: 'Locked',
+  finalized: 'Finalized',
+  published: 'Published',
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const config = STATUS_LABELS[status.toLowerCase()] ?? {
-    label: status,
-    bg: VITANA_COLORS.surface,
-    text: VITANA_COLORS.textSecondary,
-  };
-  return (
-    <View
-      style={{
-        backgroundColor: config.bg,
-        borderRadius: 20,
-        paddingHorizontal: 10,
-        paddingVertical: 3,
-      }}
-    >
-      <Text style={{ fontSize: 11, fontWeight: '600', color: config.text }}>{config.label}</Text>
-    </View>
-  );
+  const key = status.toLowerCase();
+  const label = STATUS_LABELS[key] ?? status;
+  const variant = STATUS_VARIANTS[key] ?? 'neutral';
+  return <Badge label={label} variant={variant} size="sm" />;
 }
 
-function ExamCard({ exam }: { exam: ExamSetupBasicDto }) {
+function ExamCard({ exam, primaryColor }: { exam: ExamSetupBasicDto; primaryColor: string }) {
   const isPendingEntry = ['marks_entry', 'draft'].includes(exam.status.toLowerCase());
   return (
     <TouchableOpacity
       onPress={() => router.push(`/(teacher)/marks/${exam.id}` as never)}
-      style={{
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: isPendingEntry ? VITANA_COLORS.primary + '33' : VITANA_COLORS.border,
-        marginBottom: 10,
-        gap: 8,
-      }}
+      style={[
+        examStyles.card,
+        VITANA_SHADOWS.sm,
+        isPendingEntry && { borderColor: `${primaryColor}44` },
+      ]}
       activeOpacity={0.75}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <View style={examStyles.header}>
         <View style={{ flex: 1, marginRight: 10 }}>
-          <Text style={{ fontSize: 15, fontWeight: '600', color: VITANA_COLORS.text }} numberOfLines={1}>
-            {exam.name}
-          </Text>
-          <Text style={{ fontSize: 13, color: VITANA_COLORS.textSecondary, marginTop: 2 }}>
-            {exam.className} · {exam.examType}
-          </Text>
+          <Text style={examStyles.name} numberOfLines={1}>{exam.name}</Text>
+          <Text style={examStyles.meta}>{exam.className} · {exam.examType}</Text>
         </View>
         <StatusBadge status={exam.status} />
       </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View style={examStyles.subjectRow}>
         <Feather name="book-open" size={13} color={VITANA_COLORS.textSecondary} />
-        <Text style={{ fontSize: 13, color: VITANA_COLORS.textSecondary }}>
-          {exam.myAssignedSubjectIds.length}{' '}
-          {exam.myAssignedSubjectIds.length === 1 ? 'subject' : 'subjects'} assigned
+        <Text style={examStyles.subjectText}>
+          {exam.myAssignedSubjectIds.length} {exam.myAssignedSubjectIds.length === 1 ? 'subject' : 'subjects'} assigned
         </Text>
       </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <Text style={{ fontSize: 13, color: VITANA_COLORS.primary, fontWeight: '600' }}>
+      <View style={examStyles.ctaRow}>
+        <Text style={[examStyles.ctaText, { color: primaryColor }]}>
           {isPendingEntry ? 'Enter Marks' : 'View Marks'}
         </Text>
-        <Feather name="chevron-right" size={14} color={VITANA_COLORS.primary} />
+        <Feather name="chevron-right" size={14} color={primaryColor} />
       </View>
     </TouchableOpacity>
   );
 }
 
+const sectionLabel = {
+  fontSize: 11,
+  fontWeight: '700' as const,
+  color: VITANA_COLORS.textSecondary,
+  textTransform: 'uppercase' as const,
+  letterSpacing: 0.8,
+  marginBottom: 10,
+  fontFamily: 'Inter',
+};
+
+const examStyles = {
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: VITANA_COLORS.border,
+    marginBottom: 10,
+    gap: 8,
+  } as const,
+  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' } as const,
+  name: { fontSize: 15, fontWeight: '600', color: VITANA_COLORS.text, fontFamily: 'Inter' } as const,
+  meta: { fontSize: 13, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 2 } as const,
+  subjectRow: { flexDirection: 'row', alignItems: 'center', gap: 6 } as const,
+  subjectText: { fontSize: 13, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter' } as const,
+  ctaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 } as const,
+  ctaText: { fontSize: 13, fontWeight: '600', fontFamily: 'Inter' } as const,
+};
+
 export default function MarksIndex() {
-  useSchoolTheme();
+  const { primaryColor } = useSchoolTheme();
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['my-exam-assignments'],
@@ -100,94 +116,44 @@ export default function MarksIndex() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          backgroundColor: '#fff',
-          borderBottomWidth: 1,
-          borderBottomColor: VITANA_COLORS.border,
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
-      >
-        <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 12 }}>
-          <Feather name="arrow-left" size={22} color={VITANA_COLORS.text} />
-        </TouchableOpacity>
-        <Text style={{ fontSize: 17, fontWeight: '700', color: VITANA_COLORS.text, flex: 1 }}>
-          Marks Entry
-        </Text>
-      </View>
+      <SubScreenHeader
+        title="Marks Entry"
+        subtitle={`${pending.length} pending · ${others.length} completed`}
+      />
 
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={primaryColor} />}
       >
         {isLoading && (
           <View style={{ gap: 10 }}>
             {[1, 2, 3].map((i) => (
-              <View
-                key={i}
-                style={{
-                  height: 90,
-                  backgroundColor: VITANA_COLORS.border,
-                  borderRadius: 12,
-                  opacity: 0.5,
-                }}
-              />
+              <View key={i} style={{ height: 100, backgroundColor: VITANA_COLORS.border, borderRadius: 14, opacity: 0.4 }} />
             ))}
           </View>
         )}
 
         {!isLoading && exams.length === 0 && (
-          <View style={{ alignItems: 'center', paddingTop: 60, gap: 12 }}>
-            <Feather name="check-circle" size={48} color={VITANA_COLORS.border} />
-            <Text style={{ fontSize: 16, fontWeight: '600', color: VITANA_COLORS.text }}>
-              No exams assigned
-            </Text>
-            <Text style={{ fontSize: 14, color: VITANA_COLORS.textSecondary, textAlign: 'center' }}>
-              You will see exams here once you are assigned as the marks teacher.
-            </Text>
-          </View>
+          <EmptyState
+            icon="check-circle"
+            title="No exams assigned"
+            subtitle="You will see exams here once you are assigned as the marks teacher."
+            iconColor={VITANA_COLORS.textSecondary}
+          />
         )}
 
         {pending.length > 0 && (
           <View style={{ marginBottom: 20 }}>
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: '700',
-                color: VITANA_COLORS.textSecondary,
-                textTransform: 'uppercase',
-                letterSpacing: 0.8,
-                marginBottom: 10,
-              }}
-            >
-              Pending Entry ({pending.length})
-            </Text>
-            {pending.map((exam) => (
-              <ExamCard key={exam.id} exam={exam} />
-            ))}
+            <Text style={sectionLabel}>Pending Entry ({pending.length})</Text>
+            {pending.map((exam) => <ExamCard key={exam.id} exam={exam} primaryColor={primaryColor} />)}
           </View>
         )}
 
         {others.length > 0 && (
           <View>
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: '700',
-                color: VITANA_COLORS.textSecondary,
-                textTransform: 'uppercase',
-                letterSpacing: 0.8,
-                marginBottom: 10,
-              }}
-            >
-              Completed ({others.length})
-            </Text>
-            {others.map((exam) => (
-              <ExamCard key={exam.id} exam={exam} />
-            ))}
+            <Text style={sectionLabel}>Completed ({others.length})</Text>
+            {others.map((exam) => <ExamCard key={exam.id} exam={exam} primaryColor={primaryColor} />)}
           </View>
         )}
       </ScrollView>

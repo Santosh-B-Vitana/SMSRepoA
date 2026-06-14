@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -6,8 +6,9 @@ import { Feather } from '@expo/vector-icons';
 import { teacherApi } from '@/api/endpoints/teacher';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { SkeletonCard } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
-import { VITANA_COLORS } from '@/theme/tokens';
+import { VITANA_COLORS, VITANA_SHADOWS } from '@/theme/tokens';
+import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { TimetableEntry } from '@/api/endpoints/teacher';
 
 function PeriodCard({ period, primaryColor }: { period: TimetableEntry; primaryColor: string }) {
@@ -20,51 +21,45 @@ function PeriodCard({ period, primaryColor }: { period: TimetableEntry; primaryC
         })
       }
       activeOpacity={0.7}
-      style={{
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 14,
-        borderWidth: 1,
-        borderColor: VITANA_COLORS.border,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-      }}
+      style={[periodStyles.card, VITANA_SHADOWS.sm]}
     >
-      {/* Period number */}
-      <View
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: 12,
-          backgroundColor: `${primaryColor}18`,
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <Text style={{ fontSize: 11, fontWeight: '700', color: primaryColor }}>P{period.periodNumber}</Text>
-        <Text style={{ fontSize: 10, color: primaryColor }}>{period.startTime}</Text>
+      <View style={[periodStyles.badge, { backgroundColor: `${primaryColor}15` }]}>
+        <Text style={[periodStyles.badgePeriod, { color: primaryColor }]}>P{period.periodNumber}</Text>
+        <Text style={[periodStyles.badgeTime, { color: primaryColor }]}>{period.startTime}</Text>
       </View>
-
-      {/* Subject + class */}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15, fontWeight: '600', color: VITANA_COLORS.text }}>
-          {period.subjectName}
+        <Text style={periodStyles.subject}>{period.subjectName}</Text>
+        <Text style={periodStyles.meta}>
+          {period.className}{period.room ? ` · Room ${period.room}` : ''}
         </Text>
-        <Text style={{ fontSize: 13, color: VITANA_COLORS.textSecondary, marginTop: 2 }}>
-          {period.className}
-          {period.room ? ` · Room ${period.room}` : ''}
-        </Text>
-        <Text style={{ fontSize: 11, color: VITANA_COLORS.textSecondary, marginTop: 2 }}>
-          {period.startTime} – {period.endTime}
-        </Text>
+        <Text style={periodStyles.time}>{period.startTime} – {period.endTime}</Text>
       </View>
-
-      <Feather name="chevron-right" size={16} color={VITANA_COLORS.border} />
+      <Feather name="chevron-right" size={16} color={VITANA_COLORS.textSecondary} />
     </TouchableOpacity>
   );
 }
+
+const periodStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: VITANA_COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  badge: {
+    width: 52, height: 52, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  badgePeriod: { fontSize: 13, fontWeight: '700', fontFamily: 'Inter' },
+  badgeTime: { fontSize: 10, fontFamily: 'Inter', marginTop: 1 },
+  subject: { fontSize: 15, fontWeight: '600', color: VITANA_COLORS.text, fontFamily: 'Inter' },
+  meta: { fontSize: 12, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 2 },
+  time: { fontSize: 11, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', marginTop: 2 },
+});
 
 export default function Timetable() {
   const { primaryColor } = useSchoolTheme();
@@ -75,26 +70,11 @@ export default function Timetable() {
     staleTime: 30 * 60 * 1000,
   });
 
+  const todayDate = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: '#fff',
-          borderBottomWidth: 1,
-          borderBottomColor: VITANA_COLORS.border,
-        }}
-      >
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', color: VITANA_COLORS.text }}>
-          Today's Schedule
-        </Text>
-        <Text style={{ fontSize: 13, color: VITANA_COLORS.textSecondary }}>
-          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}
-        </Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
+      <SubScreenHeader title="Today's Schedule" subtitle={todayDate} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

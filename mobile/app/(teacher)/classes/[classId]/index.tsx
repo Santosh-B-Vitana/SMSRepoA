@@ -14,7 +14,7 @@ import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { useAuthStore } from '@/stores/authStore';
 import { useSchoolStore } from '@/stores/schoolStore';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
-import { EmptyState } from '@/components/common/EmptyState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
 import type { MinimalStudent } from '@/api/endpoints/teacher';
 
