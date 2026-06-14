@@ -49,16 +49,24 @@ let totalFixed = 0;
 for (const srcDir of dirs) {
   // Use perl for reliable in-place replacement (BSD and GNU compatible)
   try {
-    const result = execSync(
-      `find "${srcDir}" -name "*.swift" -print0 | xargs -0 perl -i -pe 's/\\bweak let\\b/weak var/g'`,
+    // Fix 1: weak let → nonisolated(unsafe) weak var
+    //   - `weak` must be `var` (Swift 6 rule 1: weak refs can become nil)
+    //   - `nonisolated(unsafe)` suppresses Sendable mutability error
+    //     (Swift 6 rule 2: mutable stored props in Sendable types are unsafe)
+    execSync(
+      `find "${srcDir}" -name "*.swift" -print0 | xargs -0 perl -i -pe 's/\\bweak let\\b/nonisolated(unsafe) weak var/g'`,
       { stdio: 'pipe' }
     );
-    // Count how many files have weak var now
-    const count = execSync(`grep -rl "weak var" "${srcDir}" | wc -l`, { stdio: 'pipe' }).toString().trim();
+    // Also fix any we already changed to weak var in previous runs
+    execSync(
+      `find "${srcDir}" -name "*.swift" -print0 | xargs -0 perl -i -pe 's/(?<!nonisolated\\(unsafe\\) )\\bweak var\\b/nonisolated(unsafe) weak var/g'`,
+      { stdio: 'pipe' }
+    );
+    const count = execSync(`grep -rl "nonisolated(unsafe)" "${srcDir}" | wc -l`, { stdio: 'pipe' }).toString().trim();
     totalFixed += parseInt(count, 10);
   } catch (e) {
     console.warn('[fix-expo-modules-jsi] Warning during patch:', e.message);
   }
 }
 
-console.log(`[fix-expo-modules-jsi] Applied weak let -> weak var in ${totalFixed} Swift files (Swift 6 fix)`);
+console.log(`[fix-expo-modules-jsi] Applied nonisolated(unsafe) weak var in ${totalFixed} Swift files (Swift 6 fix)`);
