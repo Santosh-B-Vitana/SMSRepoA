@@ -134,16 +134,22 @@ export const adminApi = {
   getDashboard: (): Promise<AdminDashboardResponse> =>
     apiClient.get('/mobile/admin-dashboard'),
 
-  getPendingLeaves: (type: 'staff' | 'student'): Promise<AdminLeaveRequest[]> =>
-    apiClient.get('/leavemanagement/leave-requests', {
-      params: { status: 'pending', type },
-    }),
+  getPendingLeaves: (type: 'staff' | 'student'): Promise<AdminLeaveRequest[]> => {
+    if (type === 'student') {
+      return apiClient.get('/leavemanagement/student-leaves', {
+        params: { status: 'pending' },
+      });
+    }
+    return apiClient.get('/leavemanagement/requests', {
+      params: { status: 'pending' },
+    });
+  },
 
   approveLeave: (id: string, remark?: string): Promise<void> =>
-    apiClient.put(`/leavemanagement/leave-requests/${id}/approve`, { remark }),
+    apiClient.put(`/leavemanagement/requests/${id}/approve`, { remark }),
 
   rejectLeave: (id: string, reason: string): Promise<void> =>
-    apiClient.put(`/leavemanagement/leave-requests/${id}/reject`, { reason }),
+    apiClient.put(`/leavemanagement/requests/${id}/reject`, { reason }),
 
   getAnnouncements: (page = 1): Promise<PaginatedResponse<Announcement>> =>
     apiClient.get('/announcements', { params: { page, pageSize: 20 } }),
