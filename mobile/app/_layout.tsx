@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -127,7 +127,22 @@ function AppAnalytics() {
 }
 
 function RootLayout() {
-  const isHydrated = useAuthStore.persist?.hasHydrated?.() ?? true;
+  // hasHydrated() is NOT a reactive selector — it's a static call.
+  // On a fresh install, async SecureStore hydration completes but state
+  // values don't change (still null/false), so no Zustand re-render fires.
+  // We use onFinishHydration to force the re-render when hydration is done.
+  const [isHydrated, setIsHydrated] = useState(
+    () => useAuthStore.persist?.hasHydrated?.() ?? true,
+  );
+
+  useEffect(() => {
+    if (isHydrated) return;
+    const unsub = useAuthStore.persist?.onFinishHydration?.(() => {
+      setIsHydrated(true);
+    });
+    return unsub ?? undefined;
+  }, [isHydrated]);
+
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
 
