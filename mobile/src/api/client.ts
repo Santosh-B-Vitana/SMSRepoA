@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 import { useAuthStore } from '@/stores/authStore';
 import { useAcademicYearStore } from '@/stores/academicYearStore';
 import { API_TIMEOUT_MS } from '@/lib/constants';
+import { toast } from '@/lib/toast';
 
 function generateUUID(): string {
   return Crypto.randomUUID();
@@ -114,7 +115,10 @@ apiClient.interceptors.response.use(
     }
 
     const status = error.response?.status ?? 0;
-    if (status >= 500) {
+    if (status === 0 || status === undefined) {
+      toast.error('No connection', 'Check your internet and try again.');
+    } else if (status >= 500) {
+      toast.error('Server error', 'Something went wrong on our end. Please try again.');
       Sentry.withScope((scope) => {
         scope.setTag('endpoint', error.config?.url ?? 'unknown');
         scope.setTag('httpMethod', error.config?.method?.toUpperCase() ?? 'UNKNOWN');
@@ -129,6 +133,8 @@ apiClient.interceptors.response.use(
           'error',
         );
       });
+    } else if (status === 403) {
+      toast.error("Access denied", "You don't have permission for this action.");
     }
 
     return Promise.reject(normalizeApiError(error));

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Toast from 'react-native-toast-message';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -205,4 +206,13 @@ function RootLayout() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+function RootLayoutWithToast() {
+  return (
+    <>
+      <RootLayout />
+      <Toast />
+    </>
+  );
+}
+
+export default Sentry.wrap(RootLayoutWithToast);

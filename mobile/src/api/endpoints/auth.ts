@@ -36,10 +36,20 @@ export const authApi = {
     const response = await fetch(
       `${baseUrl}/settings/public-branding?domain=${encodeURIComponent(domain)}`,
     );
-    const json = (await response.json()) as { success: boolean; data: PublicBrandingResponse; message?: string };
+    const json = (await response.json()) as {
+      success: boolean;
+      data: { schoolName?: string; name?: string; logoUrl?: string | null; primaryColor?: string };
+      message?: string;
+    };
     if (!json.success) {
       throw new ApiError(json.message ?? 'School not found', response.status);
     }
-    return json.data;
+    // Normalize: backend may return `name` instead of `schoolName`
+    const raw = json.data;
+    return {
+      schoolName: raw.schoolName ?? raw.name ?? 'Vitana SMS',
+      logoUrl: raw.logoUrl ?? null,
+      primaryColor: raw.primaryColor ?? '#1a6fd8',
+    };
   },
 };
