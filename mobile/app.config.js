@@ -91,7 +91,7 @@ module.exports = ({ config }) => {
           },
         },
       ],
-      '@sentry/react-native/expo',
+      // '@sentry/react-native/expo',  // re-enable when SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT are configured
       ['expo-secure-store', {}],
       [
         'expo-local-authentication',
