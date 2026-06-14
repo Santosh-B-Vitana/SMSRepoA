@@ -2,12 +2,26 @@ import React from 'react';
 import { ScrollView, View, Text, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { CartesianChart, Line, Bar, Area } from 'victory-native';
 import { adminApi, type AnalyticsDashboard } from '@/api/endpoints/admin';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { EmptyState } from '@/components/common/EmptyState';
 import { formatINR } from '@vitana/shared-utils';
+
+// Lazy-load victory-native so a missing Skia binary shows a fallback
+// instead of crashing the entire route at import time.
+let CartesianChart: any, Line: any, Bar: any, Area: any;
+let skiaAvailable = false;
+try {
+  const victoryNative = require('victory-native');
+  CartesianChart = victoryNative.CartesianChart;
+  Line = victoryNative.Line;
+  Bar = victoryNative.Bar;
+  Area = victoryNative.Area;
+  skiaAvailable = true;
+} catch {
+  skiaAvailable = false;
+}
 
 const CHART_HEIGHT = 180;
 
@@ -55,6 +69,24 @@ export default function AnalyticsReports() {
           title="Analytics unavailable"
           subtitle="Could not load analytics data. Pull down to retry."
         />
+      </SafeAreaView>
+    );
+  }
+
+  if (!skiaAvailable) {
+    return (
+      <SafeAreaView className="flex-1 bg-background">
+        <View className="px-4 pt-4 pb-2">
+          <Text className="text-xl font-bold text-gray-900">Analytics & Reports</Text>
+          <Text className="text-gray-500 text-sm mt-0.5">School-wide performance overview</Text>
+        </View>
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-4xl mb-3">📊</Text>
+          <Text className="text-gray-700 font-semibold text-base text-center">Charts require updated app</Text>
+          <Text className="text-gray-400 text-sm text-center mt-1">
+            Install the latest build from the EAS dashboard to view analytics charts.
+          </Text>
+        </View>
       </SafeAreaView>
     );
   }
