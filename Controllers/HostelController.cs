@@ -1,9 +1,13 @@
 using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
+using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace SmsApi.Controllers
@@ -15,11 +19,58 @@ namespace SmsApi.Controllers
     {
         private readonly IHostelService _hostelService;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
 
-        public HostelController(IHostelService hostelService, ITenantContext tenant)
+        public HostelController(IHostelService hostelService, ITenantContext tenant, AppDbContext db)
         {
             _hostelService = hostelService;
             _tenant = tenant;
+            _db = db;
+        }
+
+        // ── Parent: view child's hostel assignment ─────────────────────────────
+
+        [HttpGet("parent/my-child/{studentId:guid}")]
+        [Authorize(Roles = "Parent")]
+        public async Task<ActionResult> GetChildHostelInfo(Guid studentId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var parentEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+
+            var isMyChild = await _db.StudentGuardians
+                .AnyAsync(sg => sg.SchoolId == schoolId && !sg.IsDeleted
+                             && sg.StudentId == studentId
+                             && sg.Email != null && sg.Email.ToLower() == parentEmail.ToLower());
+            if (!isMyChild)
+                return StatusCode(403, new { message = "You can only view your own child's hostel information." });
+
+            var all = await _hostelService.GetAllHostelStudentsAsync(schoolId);
+            var child = all.FirstOrDefault(s => s.StudentId == studentId);
+
+            if (child == null)
+                return NotFound(new { message = "No hostel assignment found for this student." });
+
+            return Ok(child);
+        }
+
+        // ── Student: view own hostel assignment ───────────────────────────────
+
+        [HttpGet("my-assignment")]
+        [Authorize(Roles = "Student")]
+        public async Task<ActionResult> GetMyHostelAssignment()
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var linkedId = _tenant.LinkedEntityId;
+            if (!linkedId.HasValue || linkedId == Guid.Empty)
+                return StatusCode(403, new { message = "Student identity could not be resolved from token." });
+
+            var all = await _hostelService.GetAllHostelStudentsAsync(schoolId);
+            var child = all.FirstOrDefault(s => s.StudentId == linkedId.Value);
+
+            if (child == null)
+                return NotFound(new { message = "No hostel assignment found." });
+
+            return Ok(child);
         }
 
         [HttpGet("rooms")]

@@ -19,7 +19,7 @@ const STATUS_VARIANTS: Record<string, 'warning' | 'info' | 'neutral' | 'success'
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  marks_entry: 'Pending Entry',
+  marks_entry: 'Entry Open',
   draft: 'Draft',
   locked: 'Locked',
   finalized: 'Finalized',
@@ -60,7 +60,7 @@ function ExamCard({ exam, primaryColor }: { exam: ExamSetupBasicDto; primaryColo
       </View>
       <View style={examStyles.ctaRow}>
         <Text style={[examStyles.ctaText, { color: primaryColor }]}>
-          {isPendingEntry ? 'Enter Marks' : 'View Marks'}
+          {isPendingEntry ? 'Enter / View Marks' : 'View Marks & Performance'}
         </Text>
         <Feather name="chevron-right" size={14} color={primaryColor} />
       </View>
@@ -118,7 +118,7 @@ export default function MarksIndex() {
     <SafeAreaView style={{ flex: 1, backgroundColor: VITANA_COLORS.surface }} edges={['top']}>
       <SubScreenHeader
         title="Marks Entry"
-        subtitle={`${pending.length} pending · ${others.length} completed`}
+        subtitle={`${pending.length} open · ${others.length} completed`}
       />
 
       <ScrollView
@@ -145,7 +145,7 @@ export default function MarksIndex() {
 
         {pending.length > 0 && (
           <View style={{ marginBottom: 20 }}>
-            <Text style={sectionLabel}>Pending Entry ({pending.length})</Text>
+            <Text style={sectionLabel}>Open for Entry ({pending.length})</Text>
             {pending.map((exam) => <ExamCard key={exam.id} exam={exam} primaryColor={primaryColor} />)}
           </View>
         )}

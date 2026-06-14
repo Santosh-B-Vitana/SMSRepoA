@@ -1,9 +1,14 @@
 using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
+using SmsApi.Models.Entities;
 using SmsApi.Services;
 using System;
+using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace SmsApi.Controllers
@@ -15,11 +20,13 @@ namespace SmsApi.Controllers
     {
         private readonly ITransportService _transportService;
         private readonly ITenantContext _tenant;
+        private readonly AppDbContext _db;
 
-        public TransportController(ITransportService transportService, ITenantContext tenant)
+        public TransportController(ITransportService transportService, ITenantContext tenant, AppDbContext db)
         {
             _transportService = transportService;
             _tenant = tenant;
+            _db = db;
         }
 
         [HttpGet("routes")]
@@ -314,5 +321,147 @@ namespace SmsApi.Controllers
             catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "An error occurred." }); }
         }
+
+        // ── GPS Tracking ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Push a GPS location ping for a vehicle.
+        /// Called by the driver app or GPS hardware integration.
+        /// </summary>
+        [HttpPost("gps/{vehicleId:guid}")]
+        [Authorize(Roles = "TransportManager,Admin,SuperAdmin")]
+        public async Task<IActionResult> UpdateGpsLocation(Guid vehicleId, [FromBody] GpsLocationPushRequest req)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+
+            var existing = await _db.VehicleGpsLocations
+                .FirstOrDefaultAsync(g => g.SchoolId == schoolId && g.VehicleId == vehicleId && !g.IsDeleted);
+
+            if (existing == null)
+            {
+                existing = new VehicleGpsLocation
+                {
+                    SchoolId  = schoolId,
+                    VehicleId = vehicleId,
+                };
+                _db.VehicleGpsLocations.Add(existing);
+            }
+
+            existing.Latitude      = req.Latitude;
+            existing.Longitude     = req.Longitude;
+            existing.SpeedKmh      = req.SpeedKmh;
+            existing.Heading       = req.Heading;
+            existing.Status        = req.Status ?? "running";
+            existing.ActiveRouteId = req.ActiveRouteId;
+            existing.PingTime      = DateTime.UtcNow;
+            existing.UpdatedAt     = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+            return Ok(new { vehicleId, pingTime = existing.PingTime });
+        }
+
+        /// <summary>
+        /// Get current GPS location for a specific vehicle.
+        /// </summary>
+        [HttpGet("gps/{vehicleId:guid}")]
+        [Authorize(Roles = StatusConstants.RoleGroups.TransportManagement + ",Parent")]
+        public async Task<IActionResult> GetVehicleGps(Guid vehicleId)
+        {
+            var schoolId = _tenant.GetEffectiveSchoolId();
+            var loc = await _db.VehicleGpsLocations
+                .AsNoTracking()
+                .Include(g => g.Vehicle)
+                .FirstOrDefaultAsync(g => g.SchoolId == schoolId && g.VehicleId == vehicleId && !g.IsDeleted);
+
+            if (loc == null) return NotFound(new { message = "No GPS data available for this vehicle." });
+
+            var staleSec = (DateTime.UtcNow - loc.PingTime).TotalSeconds;
+            return Ok(new
+            {
+                vehicleId,
+                vehicleNumber = loc.Vehicle?.RegistrationNumber,
+                loc.Latitude,
+                loc.Longitude,
+                loc.SpeedKmh,
+                loc.Heading,
+                loc.Status,
+                loc.ActiveRouteId,
+                pingTime = loc.PingTime,
+                isStale  = staleSec > 300, // stale if no ping in 5 minutes
+                staleSeconds = Math.Round(staleSec),
+            });
+        }
+
+        /// <summary>
+        /// Parent: get live bus locations for all routes their children are assigned to.
+        /// </summary>
+        [HttpGet("gps/parent/my-children")]
+        [Authorize(Roles = "Parent")]
+        public async Task<IActionResult> GetParentChildrenBusLocations()
+        {
+            var schoolId   = _tenant.GetEffectiveSchoolId();
+            var parentEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+
+            // Find children via legacy StudentGuardians table
+            var childIds = await _db.StudentGuardians
+                .AsNoTracking()
+                .Where(sg => sg.SchoolId == schoolId && !sg.IsDeleted
+                          && sg.Email != null && sg.Email.ToLower() == parentEmail.ToLower())
+                .Select(sg => sg.StudentId)
+                .Distinct()
+                .ToListAsync();
+
+            if (!childIds.Any()) return Ok(Array.Empty<object>());
+
+            // Find route+vehicle assignments for each child
+            var assignments = await _db.TransportStudents
+                .AsNoTracking()
+                .Include(ts => ts.Route)
+                .ThenInclude(r => r.Vehicle)
+                .Where(ts => ts.SchoolId == schoolId && childIds.Contains(ts.StudentId) && !ts.IsDeleted)
+                .ToListAsync();
+
+            var result = new System.Collections.Generic.List<object>();
+            foreach (var a in assignments)
+            {
+                var vehicleId = a.Route?.VehicleId;
+                VehicleGpsLocation? loc = null;
+                if (vehicleId.HasValue)
+                {
+                    loc = await _db.VehicleGpsLocations
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(g => g.SchoolId == schoolId && g.VehicleId == vehicleId.Value && !g.IsDeleted);
+                }
+
+                result.Add(new
+                {
+                    studentId    = a.StudentId,
+                    routeId      = a.RouteId,
+                    routeNumber  = a.Route?.RouteNumber,
+                    routeName    = a.Route?.RouteName,
+                    vehicleId,
+                    vehicleNumber = a.Route?.Vehicle?.RegistrationNumber,
+                    hasGps       = loc != null,
+                    latitude     = loc?.Latitude,
+                    longitude    = loc?.Longitude,
+                    speedKmh     = loc?.SpeedKmh,
+                    status       = loc?.Status ?? "unknown",
+                    pingTime     = loc?.PingTime,
+                    isStale      = loc == null || (DateTime.UtcNow - loc.PingTime).TotalSeconds > 300,
+                });
+            }
+
+            return Ok(result);
+        }
     }
+}
+
+public class GpsLocationPushRequest
+{
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public double? SpeedKmh { get; set; }
+    public double? Heading { get; set; }
+    public string? Status { get; set; }
+    public Guid? ActiveRouteId { get; set; }
 }

@@ -79,8 +79,9 @@ export default function StaffDirectoryScreen() {
       queryKey: ['admin-staff', debouncedSearch, filterRole],
       queryFn: ({ pageParam = 1 }) =>
         apiClient.get('/staff', {
-          params: { page: pageParam, pageSize: 20, search: debouncedSearch || undefined, role: filterRole || undefined },
-        }) as Promise<{ staff: StaffMember[]; totalCount: number }>,
+          // Backend expects `designation` not `role` for filtering by teacher/librarian/etc.
+          params: { page: pageParam, pageSize: 20, search: debouncedSearch || undefined, designation: filterRole || undefined },
+        }) as Promise<{ staff: StaffMember[]; total: number; page: number; pageSize: number }>,
       initialPageParam: 1,
       getNextPageParam: (lastPage, pages) =>
         lastPage.staff?.length === 20 ? pages.length + 1 : undefined,
@@ -94,7 +95,7 @@ export default function StaffDirectoryScreen() {
   }, []);
 
   const allStaff = data?.pages.flatMap((p) => p.staff ?? []) ?? [];
-  const roles = ['Teacher', 'Principal', 'HRManager', 'Staff', 'Librarian'];
+  const roles = ['Teacher', 'Principal', 'Admin', 'HRManager', 'Librarian', 'Receptionist', 'Staff'];
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

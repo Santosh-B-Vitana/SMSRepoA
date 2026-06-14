@@ -12,6 +12,10 @@ namespace SmsApi.Services
         Task<StudentDashboardResponse> GetStudentDashboardAsync(Guid schoolId, Guid userId, string studentEmail);
         Task<AdminDashboardResponse> GetAdminDashboardAsync(Guid schoolId, Guid userId);
         Task<OfflineBundleResponse> GetOfflineBundleAsync(Guid schoolId, string staffEmail);
+        Task<LibrarianDashboardResponse> GetLibrarianDashboardAsync(Guid schoolId, Guid userId);
+        Task<TransportDashboardResponse> GetTransportDashboardAsync(Guid schoolId, Guid userId);
+        Task<HostelDashboardResponse> GetHostelDashboardAsync(Guid schoolId, Guid userId);
+        Task<ReceptionistDashboardResponse> GetReceptionistDashboardAsync(Guid schoolId, Guid userId);
     }
 
     public class MobileDashboardService : IMobileDashboardService
@@ -155,6 +159,7 @@ namespace SmsApi.Services
             var billingAlert     = await GetBillingAlertAsync(schoolId);
             var announcements    = await GetRecentAnnouncementsAsync(schoolId);
             var unreadCount      = await GetUnreadCountAsync(schoolId, userId);
+            var schoolCounts     = await GetSchoolCountsAsync(schoolId);
 
             return new AdminDashboardResponse
             {
@@ -163,8 +168,24 @@ namespace SmsApi.Services
                 PendingApprovals = pendingApprovals,
                 BillingAlert = billingAlert,
                 RecentAnnouncements = announcements,
-                UnreadCount = unreadCount
+                UnreadCount = unreadCount,
+                TotalStudents = schoolCounts.TotalStudents,
+                ActiveStudents = schoolCounts.ActiveStudents,
+                TotalStaff = schoolCounts.TotalStaff,
+                ActiveStaff = schoolCounts.ActiveStaff,
+                TotalClasses = schoolCounts.TotalClasses,
             };
+        }
+
+        private async Task<(int TotalStudents, int ActiveStudents, int TotalStaff, int ActiveStaff, int TotalClasses)>
+            GetSchoolCountsAsync(Guid schoolId)
+        {
+            var totalStudents  = await _db.Students.AsNoTracking().CountAsync(s => s.SchoolId == schoolId);
+            var activeStudents = await _db.Students.AsNoTracking().CountAsync(s => s.SchoolId == schoolId && s.Status == "active");
+            var totalStaff     = await _db.StaffMembers.AsNoTracking().CountAsync(s => s.SchoolId == schoolId);
+            var activeStaff    = await _db.StaffMembers.AsNoTracking().CountAsync(s => s.SchoolId == schoolId && s.Status == "active");
+            var totalClasses   = await _db.Classes.AsNoTracking().CountAsync(c => c.SchoolId == schoolId && c.Status == "active");
+            return (totalStudents, activeStudents, totalStaff, activeStaff, totalClasses);
         }
 
         // ── Offline Bundle ───────────────────────────────────────────────────
@@ -400,6 +421,7 @@ namespace SmsApi.Services
 
             return periods.Select(p => new TimetableSlotDto
             {
+                ClassId = p.Timetable?.Class?.Id,
                 SubjectName = p.Subject?.Name ?? string.Empty,
                 ClassName = p.Timetable?.Class?.Name,
                 Section = p.Timetable?.Section?.Name,
@@ -435,7 +457,10 @@ namespace SmsApi.Services
             var periods = await _db.TimetablePeriods
                 .AsNoTracking()
                 .Include(p => p.Subject)
-                .Where(p => p.TimetableId == timetable.Id && p.DayOfWeek == dayName)
+                .Where(p => p.TimetableId == timetable.Id
+                         && p.DayOfWeek == dayName
+                         && p.PeriodType != "break"
+                         && p.PeriodType != "lunch")
                 .OrderBy(p => p.StartTime)
                 .ToListAsync();
 
@@ -466,43 +491,52 @@ namespace SmsApi.Services
 
             if (staff == null) return new List<ClassAttendanceStatusDto>();
 
-            var assignments = await _db.TeacherAssignments
+            var dayName = todayDate.DayOfWeek.ToString();
+
+            // Use today's timetable periods — one entry per class (deduplicated)
+            var todayPeriods = await _db.TimetablePeriods
                 .AsNoTracking()
-                .Include(ta => ta.Class)
-                .Include(ta => ta.Section)
-                .Where(ta => ta.SchoolId == schoolId
-                          && ta.StaffId == staff.Id
-                          && ta.Status == "active")
+                .Include(p => p.Timetable).ThenInclude(t => t!.Class)
+                .Include(p => p.Timetable).ThenInclude(t => t!.Section)
+                .Where(p => p.Timetable!.SchoolId == schoolId
+                         && p.Timetable.Status == "active"
+                         && !p.IsDeleted
+                         && p.DayOfWeek == dayName
+                         && p.TeacherId == staff.Id
+                         && p.PeriodType == "lecture")
                 .ToListAsync();
+
+            // One entry per class (a teacher may have multiple subjects in same class today)
+            var classGroups = todayPeriods
+                .Where(p => p.Timetable?.Class != null)
+                .GroupBy(p => p.Timetable!.ClassId)
+                .ToList();
 
             var result = new List<ClassAttendanceStatusDto>();
 
-            foreach (var assignment in assignments)
+            foreach (var group in classGroups)
             {
-                var totalStudents = await _db.StudentEnrollments
-                    .AsNoTracking()
-                    .Where(e => e.SchoolId == schoolId
-                             && e.ClassId == assignment.ClassId
-                             && e.SectionId == assignment.SectionId
-                             && e.Status == "active")
-                    .CountAsync();
+                var firstPeriod = group.First();
+                var classEntity  = firstPeriod.Timetable!.Class!;
+                var sectionEntity = firstPeriod.Timetable!.Section;
+                var classId = classEntity.Id;
 
-                // Count attendance records for today in this class/section
-                var markedStudentIds = await _db.StudentEnrollments
+                var enrolledStudentIds = await _db.StudentEnrollments
                     .AsNoTracking()
                     .Where(e => e.SchoolId == schoolId
-                             && e.ClassId == assignment.ClassId
-                             && e.SectionId == assignment.SectionId
+                             && e.ClassId == classId
                              && e.Status == "active")
                     .Select(e => e.StudentId)
                     .ToListAsync();
+
+                var totalStudents = enrolledStudentIds.Count;
 
                 var todayAttendanceCount = await _db.AttendanceRecords
                     .AsNoTracking()
                     .Where(a => a.SchoolId == schoolId
                              && a.EntityType == "Student"
                              && a.Date == todayDate
-                             && markedStudentIds.Contains(a.StudentId!.Value))
+                             && enrolledStudentIds.Contains(a.StudentId!.Value))
                     .CountAsync();
 
                 var presentCount = await _db.AttendanceRecords
@@ -511,13 +545,14 @@ namespace SmsApi.Services
                              && a.EntityType == "Student"
                              && a.Date == todayDate
                              && a.Status.ToLower() == "present"
-                             && markedStudentIds.Contains(a.StudentId!.Value))
+                             && enrolledStudentIds.Contains(a.StudentId!.Value))
                     .CountAsync();
 
                 result.Add(new ClassAttendanceStatusDto
                 {
-                    ClassName = assignment.Class?.Name ?? string.Empty,
-                    Section = assignment.Section?.Name,
+                    ClassId = classId,
+                    ClassName = classEntity.Name,
+                    Section = sectionEntity?.Name,
                     IsMarked = todayAttendanceCount > 0,
                     TotalStudents = totalStudents,
                     PresentCount = presentCount
@@ -611,18 +646,20 @@ namespace SmsApi.Services
         {
             var startOfMonth = new DateTime(todayDate.Year, todayDate.Month, 1);
 
-            var collectedToday = await _db.GatewayPaymentTransactions
+            // Include all payment modes (cash, cheque, online, DD, etc.) from PaymentTransactions.
+            // GatewayPaymentTransactions only captures online gateway payments and would miss counter collections.
+            var collectedToday = await _db.PaymentTransactions
                 .AsNoTracking()
                 .Where(t => t.SchoolId == schoolId
-                         && t.Status == "Success"
-                         && t.CreatedAt >= todayDate && t.CreatedAt < tomorrowDate)
+                         && t.Status == "success"
+                         && t.Date >= todayDate && t.Date < tomorrowDate)
                 .SumAsync(t => (decimal?)t.Amount) ?? 0m;
 
-            var collectedThisMonth = await _db.GatewayPaymentTransactions
+            var collectedThisMonth = await _db.PaymentTransactions
                 .AsNoTracking()
                 .Where(t => t.SchoolId == schoolId
-                         && t.Status == "Success"
-                         && t.CreatedAt >= startOfMonth && t.CreatedAt < tomorrowDate)
+                         && t.Status == "success"
+                         && t.Date >= startOfMonth && t.Date < tomorrowDate)
                 .SumAsync(t => (decimal?)t.Amount) ?? 0m;
 
             return new FeeCollectionDto
@@ -694,6 +731,186 @@ namespace SmsApi.Services
                 Summary = a.Content.Length > 150 ? a.Content[..150] + "…" : a.Content,
                 CreatedAt = a.CreatedAt
             }).ToList();
+        }
+
+        // ── Librarian Dashboard ───────────────────────────────────────────────
+
+        public async Task<LibrarianDashboardResponse> GetLibrarianDashboardAsync(Guid schoolId, Guid userId)
+        {
+            var today = DateTime.UtcNow.Date;
+            var tomorrow = today.AddDays(1);
+
+            var issuedToday = await _db.BookIssues
+                .AsNoTracking()
+                .Where(b => b.SchoolId == schoolId && b.IssueDate >= today && b.IssueDate < tomorrow && !b.IsDeleted)
+                .CountAsync();
+
+            var returnsToday = await _db.BookIssues
+                .AsNoTracking()
+                .Where(b => b.SchoolId == schoolId && b.ReturnDate >= today && b.ReturnDate < tomorrow && !b.IsDeleted)
+                .CountAsync();
+
+            var overdue = await _db.BookIssues
+                .AsNoTracking()
+                .Where(b => b.SchoolId == schoolId && b.ReturnDate == null && b.DueDate < today && !b.IsDeleted)
+                .CountAsync();
+
+            var reservations = await _db.BookReservations
+                .AsNoTracking()
+                .Where(r => r.SchoolId == schoolId && r.Status == "pending" && !r.IsDeleted)
+                .CountAsync();
+
+            var totalBooks = await _db.Books
+                .AsNoTracking()
+                .Where(b => b.SchoolId == schoolId && !b.IsDeleted)
+                .SumAsync(b => (int?)b.TotalCopies) ?? 0;
+
+            var issued = await _db.BookIssues
+                .AsNoTracking()
+                .Where(b => b.SchoolId == schoolId && b.ReturnDate == null && !b.IsDeleted)
+                .CountAsync();
+
+            var topOverdue = await _db.BookIssues
+                .AsNoTracking()
+                .Include(b => b.Book)
+                .Include(b => b.Student)
+                .Where(b => b.SchoolId == schoolId && b.ReturnDate == null && b.DueDate < today && !b.IsDeleted)
+                .OrderBy(b => b.DueDate)
+                .Take(5)
+                .Select(b => new OverdueBookSummaryDto
+                {
+                    BookTitle = b.Book != null ? b.Book.Title : "Unknown",
+                    StudentName = b.Student != null ? $"{b.Student.FirstName} {b.Student.LastName}" : "Unknown",
+                    DaysOverdue = (int)(today - b.DueDate).TotalDays,
+                    FineAmount = b.Fine > 0 ? b.Fine : (decimal)((today - b.DueDate).TotalDays * 1.0)
+                })
+                .ToListAsync();
+
+            return new LibrarianDashboardResponse
+            {
+                BooksIssuedToday = issuedToday,
+                TotalOverdue = overdue,
+                ReturnsToday = returnsToday,
+                PendingReservations = reservations,
+                TotalBooks = totalBooks,
+                AvailableBooks = Math.Max(0, totalBooks - issued),
+                TopOverdueBooks = topOverdue,
+                UnreadCount = await GetUnreadCountAsync(schoolId, userId)
+            };
+        }
+
+        // ── Transport Dashboard ───────────────────────────────────────────────
+
+        public async Task<TransportDashboardResponse> GetTransportDashboardAsync(Guid schoolId, Guid userId)
+        {
+            var routes = await _db.TransportRoutes
+                .AsNoTracking()
+                .Where(r => r.SchoolId == schoolId && !r.IsDeleted)
+                .Select(r => new RouteSummaryDto
+                {
+                    RouteNumber = r.RouteNumber,
+                    RouteName = r.RouteName,
+                    StudentsAssigned = r.StudentsAssigned,
+                    Capacity = r.Capacity,
+                    IsActive = r.Status == "active"
+                })
+                .ToListAsync();
+
+            var totalVehicles = await _db.Vehicles
+                .AsNoTracking()
+                .Where(v => v.SchoolId == schoolId && !v.IsDeleted)
+                .CountAsync();
+
+            return new TransportDashboardResponse
+            {
+                TotalRoutes = routes.Count,
+                ActiveRoutes = routes.Count(r => r.IsActive),
+                TotalVehicles = totalVehicles,
+                StudentsAssigned = routes.Sum(r => r.StudentsAssigned),
+                MaintenanceDue = 0,
+                RoutesSummary = routes.Take(5).ToList(),
+                UnreadCount = await GetUnreadCountAsync(schoolId, userId)
+            };
+        }
+
+        // ── Hostel Dashboard ──────────────────────────────────────────────────
+
+        public async Task<HostelDashboardResponse> GetHostelDashboardAsync(Guid schoolId, Guid userId)
+        {
+            var today = DateTime.UtcNow.Date;
+            var tomorrow = today.AddDays(1);
+
+            var rooms = await _db.HostelRooms
+                .AsNoTracking()
+                .Where(r => r.SchoolId == schoolId && !r.IsDeleted)
+                .Select(r => new { r.Capacity, Occupied = r.Occupied })
+                .ToListAsync();
+
+            var checkedIn = await _db.HostelStudents
+                .AsNoTracking()
+                .Where(a => a.SchoolId == schoolId && a.Status == "active" && !a.IsDeleted)
+                .CountAsync();
+
+            var visitorsInside = await _db.HostelVisitorLogs
+                .AsNoTracking()
+                .Where(v => v.SchoolId == schoolId && v.CheckOutTime == null && !v.IsDeleted)
+                .CountAsync();
+
+            var pendingLeaves = await _db.HostelLeaves
+                .AsNoTracking()
+                .Where(l => l.SchoolId == schoolId && l.Status == "pending" && !l.IsDeleted)
+                .CountAsync();
+
+            var leavesToday = await _db.HostelLeaves
+                .AsNoTracking()
+                .Where(l => l.SchoolId == schoolId && l.UpdatedAt >= today && l.UpdatedAt < tomorrow && l.Status == "approved" && !l.IsDeleted)
+                .CountAsync();
+
+            return new HostelDashboardResponse
+            {
+                TotalRooms = rooms.Count,
+                OccupiedBeds = rooms.Sum(r => r.Occupied),
+                TotalCapacity = rooms.Sum(r => r.Capacity),
+                StudentsCheckedIn = checkedIn,
+                VisitorsInside = visitorsInside,
+                PendingHostelLeaves = pendingLeaves,
+                HostelLeavesToday = leavesToday,
+                UnreadCount = await GetUnreadCountAsync(schoolId, userId)
+            };
+        }
+
+        // ── Receptionist Dashboard ────────────────────────────────────────────
+
+        public async Task<ReceptionistDashboardResponse> GetReceptionistDashboardAsync(Guid schoolId, Guid userId)
+        {
+            var today = DateTime.UtcNow.Date;
+            var tomorrow = today.AddDays(1);
+
+            var todayVisitors = await _db.VisitorLogs
+                .AsNoTracking()
+                .Where(v => v.SchoolId == schoolId && v.CheckInTime >= today && v.CheckInTime < tomorrow && !v.IsDeleted)
+                .ToListAsync();
+
+            var inside = todayVisitors.Count(v => v.CheckOutTime == null);
+            var checkedOut = todayVisitors.Where(v => v.CheckOutTime != null).ToList();
+            var avgDuration = checkedOut.Count > 0
+                ? checkedOut.Average(v => (v.CheckOutTime!.Value - v.CheckInTime).TotalMinutes)
+                : 0;
+
+            var pending = await _db.VisitorPreRegistrations
+                .AsNoTracking()
+                .Where(p => p.SchoolId == schoolId && p.Status == "pending" && !p.IsDeleted)
+                .CountAsync();
+
+            return new ReceptionistDashboardResponse
+            {
+                VisitorsCurrentlyInside = inside,
+                TotalCheckInsToday = todayVisitors.Count,
+                TotalCheckOutsToday = checkedOut.Count,
+                PendingPreRegistrations = pending,
+                AverageDurationMinutes = Math.Round(avgDuration, 1),
+                UnreadCount = await GetUnreadCountAsync(schoolId, userId)
+            };
         }
     }
 }

@@ -43,19 +43,24 @@ export type AnnouncementPriority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export interface AnnouncementDto {
   id: string;
   title: string;
-  body: string;
+  content: string;
   priority: AnnouncementPriority;
+  targetAudience: string;
   classId: string | null;
   className: string | null;
   createdAt: string;
-  recipientCount: number;
+  createdByStaffName: string | null;
+  totalRecipients: number;
+  readCount: number;
+  isPinned: boolean;
 }
 
 export interface CreateAnnouncementPayload {
   title: string;
-  body: string;
+  content: string;
   priority: AnnouncementPriority;
-  classId?: string | null;
+  targetAudience?: 'All' | 'Parents' | 'Staff' | 'Students';
+  targetClassId?: string | null;
 }
 
 // ─── Recipients (for new conversation picker) ────────────────────────────────

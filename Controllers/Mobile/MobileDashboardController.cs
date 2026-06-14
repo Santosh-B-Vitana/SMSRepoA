@@ -157,13 +157,7 @@ namespace SmsApi.Controllers.Mobile
 
         /// <summary>
         /// Pre-fetches all daily data needed for offline use.
-        /// Returns teacher's class rosters, today's timetable, recent announcements,
-        /// and pending leave count so the app can work without connectivity.
-        /// Valid for 8 hours. Only fetched on WiFi during the 5–10 AM morning window
-        /// by the mobile client.
         /// </summary>
-        /// <response code="200">Offline bundle data.</response>
-        /// <response code="401">Not authenticated.</response>
         [HttpGet("offline-bundle")]
         [Authorize(Roles = StatusConstants.RoleGroups.AllStaff)]
         [ProducesResponseType(typeof(OfflineBundleResponse), 200)]
@@ -179,6 +173,98 @@ namespace SmsApi.Controllers.Mobile
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching offline bundle");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
+
+        /// <summary>
+        /// Librarian home-screen: books issued today, overdue count, pending reservations.
+        /// </summary>
+        [HttpGet("librarian-dashboard")]
+        [Authorize(Roles = "Librarian")]
+        [ProducesResponseType(typeof(LibrarianDashboardResponse), 200)]
+        public async Task<ActionResult<LibrarianDashboardResponse>> GetLibrarianDashboard()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+                var result = await _dashboard.GetLibrarianDashboardAsync(schoolId, userId.Value);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching librarian dashboard");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
+
+        /// <summary>
+        /// Transport Manager home-screen: active routes, vehicle count, students assigned.
+        /// </summary>
+        [HttpGet("transport-dashboard")]
+        [Authorize(Roles = "TransportManager")]
+        [ProducesResponseType(typeof(TransportDashboardResponse), 200)]
+        public async Task<ActionResult<TransportDashboardResponse>> GetTransportDashboard()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+                var result = await _dashboard.GetTransportDashboardAsync(schoolId, userId.Value);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching transport dashboard");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
+
+        /// <summary>
+        /// Hostel Warden home-screen: room occupancy, checked-in students, visitor count.
+        /// </summary>
+        [HttpGet("hostel-dashboard")]
+        [Authorize(Roles = "HostelWarden")]
+        [ProducesResponseType(typeof(HostelDashboardResponse), 200)]
+        public async Task<ActionResult<HostelDashboardResponse>> GetHostelDashboard()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+                var result = await _dashboard.GetHostelDashboardAsync(schoolId, userId.Value);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching hostel dashboard");
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
+
+        /// <summary>
+        /// Receptionist home-screen: visitors currently inside, check-ins today, pending pre-registrations.
+        /// </summary>
+        [HttpGet("receptionist-dashboard")]
+        [Authorize(Roles = "Receptionist")]
+        [ProducesResponseType(typeof(ReceptionistDashboardResponse), 200)]
+        public async Task<ActionResult<ReceptionistDashboardResponse>> GetReceptionistDashboard()
+        {
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId = GetUserId();
+                if (userId == null) return Unauthorized(new { message = "User identity not found." });
+                var result = await _dashboard.GetReceptionistDashboardAsync(schoolId, userId.Value);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching receptionist dashboard");
                 return StatusCode(500, new { message = "An error occurred." });
             }
         }

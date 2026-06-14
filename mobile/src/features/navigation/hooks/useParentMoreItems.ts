@@ -55,6 +55,18 @@ export function useParentMoreItems(): MoreMenuItem[] {
       route: '/(parent)/diary/',
     },
     {
+      key: 'ptm',
+      label: 'Parent-Teacher Meetings',
+      icon: 'users',
+      route: '/(parent)/ptm/index',
+    },
+    {
+      key: 'behaviour',
+      label: 'Behaviour Reports',
+      icon: 'award',
+      route: '/(parent)/behaviour/index',
+    },
+    {
       key: 'leaves',
       label: 'Leave Applications',
       icon: 'calendar',
@@ -100,13 +112,12 @@ export function useParentMoreItems(): MoreMenuItem[] {
       lockReason: 'Not available on your current plan',
     });
   } else {
+    // Transport screen now available at /(parent)/transport/index
     items.push({
       key: 'transport',
       label: 'Transport',
       icon: 'map-pin',
-      route: '',
-      isLocked: true,
-      lockReason: 'Coming soon',
+      route: '/(parent)/transport/index',
     });
   }
 
@@ -124,9 +135,7 @@ export function useParentMoreItems(): MoreMenuItem[] {
       key: 'hostel',
       label: 'Hostel',
       icon: 'home',
-      route: '',
-      isLocked: true,
-      lockReason: 'Coming soon',
+      route: '/(parent)/hostel/index',
     });
   }
 

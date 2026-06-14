@@ -14,9 +14,10 @@ import {
 import {
   TrendingUp, TrendingDown, Users, BookOpen, DollarSign,
   Calendar, Target, Award, GraduationCap, Activity,
-  AlertTriangle, CheckCircle,
+  AlertTriangle, CheckCircle, UserCheck, BriefcaseBusiness,
 } from "lucide-react";
 import { analyticsApi } from "@/services/api/analyticsApi";
+import { staffApi } from "@/services/api/staffApi";
 import { toast } from "sonner";
 
 const PIE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
@@ -101,6 +102,12 @@ export function AdvancedAnalytics() {
     staleTime: 60_000,
   });
 
+  const { data: allStaff, isLoading: staffLoading } = useQuery({
+    queryKey: ['analytics', 'staff-list'],
+    queryFn:  () => staffApi.list(1, 200),
+    staleTime: 5 * 60_000,
+  });
+
   if (overviewErr) {
     toast.error('Failed to load analytics data');
   }
@@ -137,6 +144,36 @@ export function AdvancedAnalytics() {
         { name: 'Inactive', value: overview.totalStudents - overview.activeStudents },
       ]
     : [];
+
+  // ── Staff analytics derived data ──────────────────────────────────────────
+  const staffList = allStaff?.staff ?? [];
+  const teachingStaff    = staffList.filter(s => ['teacher','senior teacher','class teacher','subject teacher','head of department','principal','vice principal'].some(t => (s.designation ?? '').toLowerCase().includes(t)));
+  const nonTeachingStaff = staffList.filter(s => !teachingStaff.some(t => t.id === s.id));
+
+  // Department distribution
+  const deptMap: Record<string, number> = {};
+  for (const s of staffList) {
+    const dept = s.department || 'Unknown';
+    deptMap[dept] = (deptMap[dept] ?? 0) + 1;
+  }
+  const deptChartData = Object.entries(deptMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // Teaching vs Non-Teaching pie
+  const staffTypePie = [
+    { name: 'Teaching', value: teachingStaff.length },
+    { name: 'Non-Teaching', value: nonTeachingStaff.length },
+  ].filter(d => d.value > 0);
+
+  // Active vs Inactive (use status field if available)
+  const activeStaffCount   = (allStaff?.staff ?? []).filter(s => (s.status ?? 'active').toLowerCase() === 'active').length;
+  const inactiveStaffCount = staffList.length - activeStaffCount;
+
+  const staffStudentRatio = overview?.totalStudents && staffList.length > 0
+    ? (overview.totalStudents / staffList.length).toFixed(1)
+    : '—';
 
   return (
     <div className="space-y-6">
@@ -185,11 +222,12 @@ export function AdvancedAnalytics() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview">
-        <TabsList className="w-full grid grid-cols-4">
+        <TabsList className="w-full grid grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="financial">Financial</TabsTrigger>
+          <TabsTrigger value="staff">Staff</TabsTrigger>
         </TabsList>
 
         {/* â”€â”€ Overview Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -507,6 +545,174 @@ export function AdvancedAnalytics() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Staff Tab ──────────────────────────────────────────────────────── */}
+        <TabsContent value="staff" className="space-y-6 pt-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Staff Analytics</h2>
+          </div>
+
+          {/* KPI strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              {
+                label: 'Total Staff',
+                value: staffLoading ? '—' : staffList.length,
+                icon: Users,
+                sub: `${activeStaffCount} active`,
+              },
+              {
+                label: 'Teaching Staff',
+                value: staffLoading ? '—' : teachingStaff.length,
+                icon: GraduationCap,
+                sub: `${nonTeachingStaff.length} non-teaching`,
+              },
+              {
+                label: 'Active Staff',
+                value: staffLoading ? '—' : activeStaffCount,
+                icon: UserCheck,
+                sub: inactiveStaffCount > 0 ? `${inactiveStaffCount} inactive` : 'All active',
+              },
+              {
+                label: 'Student : Teacher Ratio',
+                value: staffLoading || overviewLoading ? '—' : staffStudentRatio,
+                icon: BriefcaseBusiness,
+                sub: 'students per staff',
+              },
+            ].map(({ label, value, icon: Ic, sub }) => (
+              <Card key={label}>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <Ic className="h-7 w-7 text-primary shrink-0" />
+                    <div>
+                      {staffLoading ? (
+                        <Skeleton className="h-7 w-14 mb-1" />
+                      ) : (
+                        <p className="text-2xl font-bold">{value}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Teaching vs Non-Teaching pie */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Teaching vs Non-Teaching</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {staffLoading ? (
+                  <Skeleton className="h-[250px] w-full" />
+                ) : staffTypePie.length === 0 ? (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">No staff data</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={staffTypePie}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={4}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {staffTypePie.map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Department distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Staff by Department</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {staffLoading ? (
+                  <Skeleton className="h-[250px] w-full" />
+                ) : deptChartData.length === 0 ? (
+                  <div className="h-[250px] flex items-center justify-center text-muted-foreground">No department data</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={deptChartData} layout="vertical" margin={{ left: 16, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" allowDecimals={false} />
+                      <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} name="Staff" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Staff directory table */}
+          {!staffLoading && staffList.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Staff Directory ({staffList.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-muted-foreground">
+                        <th className="text-left py-2 px-3">Name</th>
+                        <th className="text-left py-2 px-3">Department</th>
+                        <th className="text-left py-2 px-3">Designation</th>
+                        <th className="text-left py-2 px-3">Experience</th>
+                        <th className="text-left py-2 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {staffList.slice(0, 15).map((s) => (
+                        <tr key={s.id} className="border-b hover:bg-muted/40 transition-colors">
+                          <td className="py-2 px-3 font-medium">
+                            {s.name ?? `${s.firstName ?? ''} ${s.lastName ?? ''}`.trim()}
+                          </td>
+                          <td className="py-2 px-3 text-muted-foreground">{s.department ?? '—'}</td>
+                          <td className="py-2 px-3">{s.designation ?? '—'}</td>
+                          <td className="py-2 px-3 text-muted-foreground">
+                            {s.experience ? `${s.experience} yrs` : '—'}
+                          </td>
+                          <td className="py-2 px-3">
+                            <Badge
+                              variant={(s.status ?? 'active').toLowerCase() === 'active' ? 'default' : 'secondary'}
+                              className="capitalize text-xs"
+                            >
+                              {s.status ?? 'Active'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {staffList.length > 15 && (
+                    <p className="text-xs text-muted-foreground text-center mt-3">
+                      Showing 15 of {staffList.length} staff members. Go to{' '}
+                      <a href="/staff" className="text-primary hover:underline">Staff page</a>{' '}
+                      to see all.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

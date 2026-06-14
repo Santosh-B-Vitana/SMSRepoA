@@ -10,6 +10,8 @@ export interface LeaveType {
   requiresDocument: boolean;
   minNoticeDays: number;
   isCarryForward: boolean;
+  /** null = carry all unused days; a positive integer caps the carry-forward amount */
+  maxCarryForwardDays?: number | null;
   isPaid: boolean;
   isActive: boolean;
 }
@@ -198,42 +200,26 @@ const leaveManagementApi = {
     }
   },
 
-  // Get leave balance for current user
-  async getMyLeaveBalance(): Promise<LeaveBalance[]> {
-    try {
-      // This endpoint needs to be determined based on implementation
-      // For now, we'll fetch all leaves and calculate
-      const leaveRequests = await this.getMyLeaveRequests(1, 100);
-      
-      // Calculate balance based on approved leaves
-      const balances: LeaveBalance[] = [];
-      return balances;
-    } catch (error) {
-      console.error('Error fetching leave balance:', error);
-      throw error;
-    }
-  },
-
-  // Get leave balance for specific user (admin/principal or self via staffMemberId)
-  async getLeaveBalance(userId: string, userType: string = 'Staff'): Promise<LeaveBalance[]> {
-    try {
-      const response = await api.get(`/LeaveManagement/balance/${userId}`, {
-        params: { userType }
-      });
-      // Backend wraps response: { success, data: [...] }
-      return response.data?.data ?? response.data ?? [];
-    } catch (error) {
-      console.error('Error fetching leave balance:', error);
-      throw error;
-    }
-  },
-
+  // Get leave balance for the currently logged-in user
   async getMyLeaveBalance(): Promise<LeaveBalance[]> {
     try {
       const response = await api.get('/LeaveManagement/my-balance');
       return response.data?.data ?? response.data ?? [];
     } catch (error) {
       console.error('Error fetching my leave balance:', error);
+      throw error;
+    }
+  },
+
+  // Get leave balance for a specific user (admin/principal use)
+  async getLeaveBalance(userId: string, userType: string = 'Staff'): Promise<LeaveBalance[]> {
+    try {
+      const response = await api.get(`/LeaveManagement/balance/${userId}`, {
+        params: { userType }
+      });
+      return response.data?.data ?? response.data ?? [];
+    } catch (error) {
+      console.error('Error fetching leave balance:', error);
       throw error;
     }
   },
@@ -290,6 +276,7 @@ const leaveManagementApi = {
     requiresDocument: boolean;
     minNoticeDays: number;
     isCarryForward: boolean;
+    maxCarryForwardDays?: number | null;
     isPaid: boolean;
   }): Promise<LeaveType> {
     const response = await api.post('/LeaveManagement/types', data);
@@ -304,6 +291,7 @@ const leaveManagementApi = {
     requiresDocument: boolean;
     minNoticeDays: number;
     isCarryForward: boolean;
+    maxCarryForwardDays?: number | null;
     isPaid: boolean;
     isActive: boolean;
   }): Promise<LeaveType> {

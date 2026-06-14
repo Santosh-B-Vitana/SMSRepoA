@@ -72,6 +72,15 @@ namespace SmsApi.Middleware
             ["/api/visitormanagement"]   = "Visitor",
             ["/api/health"]              = "Health",
             ["/api/settings"]            = "Settings",
+            // Previously unmapped routes — now gated for custom-role users
+            ["/api/analytics"]           = "Analytics",
+            ["/api/reports"]             = "Reports",
+            ["/api/online-classes"]      = "Communication",
+            ["/api/diary"]               = "Communication",
+            ["/api/syllabus"]            = "Examinations",
+            ["/api/discipline"]          = "Students",
+            ["/api/documents"]           = "Students",
+            ["/api/alumni"]              = "Students",
         };
 
         // POST paths containing any of these tokens are treated as read-like / side actions
@@ -106,10 +115,14 @@ namespace SmsApi.Middleware
                     return;
                 }
 
-                // Admin / SuperAdmin: never restricted.
+                // Admin / SuperAdmin / Principal: never restricted by this middleware.
+                // Principal is included because the controller-level [Authorize(Roles="Admin,Principal")]
+                // already ensures Principals can reach admin endpoints; blocking them here via a
+                // custom role assignment would contradict the intended access grant.
                 var jwtRole = user.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
                 if (jwtRole.Equals("Admin", StringComparison.OrdinalIgnoreCase)
-                    || jwtRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
+                    || jwtRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase)
+                    || jwtRole.Equals("Principal", StringComparison.OrdinalIgnoreCase))
                 {
                     await _next(context);
                     return;

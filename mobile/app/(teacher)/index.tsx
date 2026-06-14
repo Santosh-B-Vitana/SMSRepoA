@@ -115,7 +115,7 @@ export default function TeacherDashboard() {
             ) : (
               data.todaySchedule.slice(0, 5).map((period, idx) => (
                 <TouchableOpacity
-                  key={period.id ?? `period-${idx}`}
+                  key={period.id || `period-${idx}`}
                   onPress={() =>
                     router.push({
                       pathname: '/(teacher)/attendance/[classId]',
@@ -154,7 +154,7 @@ export default function TeacherDashboard() {
               {data!.classesStatus.map((cls, idx) => {
                 // API returns isMarked, classId may be absent — use className as fallback key
                 const isMarked = cls.isMarked ?? cls.attendanceMarked ?? false;
-                const classKey = cls.classId ?? cls.className ?? `class-${idx}`;
+                const classKey = `${cls.classId ?? cls.className ?? 'class'}-${idx}`;
                 return (
                   <TouchableOpacity
                     key={classKey}

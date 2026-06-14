@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { VITANA_COLORS, VITANA_BORDER_RADIUS, VITANA_SHADOWS, VITANA_FONT_SIZES } from '@/theme/tokens';
 
@@ -22,12 +22,13 @@ export function StatCard({
   iconBg,
   trend,
   style,
+  onPress,
 }: StatCardProps) {
   const tintColor = iconColor ?? VITANA_COLORS.primary;
   const bgColor = iconBg ?? `${tintColor}18`;
 
-  return (
-    <View style={[styles.card, VITANA_SHADOWS.md, style]}>
+  const inner = (
+    <View style={[styles.card, VITANA_SHADOWS.md, style, onPress && styles.cardTappable]}>
       <View style={[styles.iconContainer, { backgroundColor: bgColor }]}>
         <Feather name={icon} size={20} color={tintColor} />
       </View>
@@ -50,8 +51,22 @@ export function StatCard({
           </Text>
         </View>
       ) : null}
+      {onPress && (
+        <View style={styles.tapHint}>
+          <Feather name="chevron-right" size={12} color={tintColor} />
+        </View>
+      )}
     </View>
   );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.75}>
+        {inner}
+      </TouchableOpacity>
+    );
+  }
+  return inner;
 }
 
 const styles = StyleSheet.create({
@@ -96,5 +111,13 @@ const styles = StyleSheet.create({
     fontSize: VITANA_FONT_SIZES.xs,
     fontFamily: 'Inter',
     fontWeight: '600',
+  },
+  cardTappable: {
+    borderColor: VITANA_COLORS.border,
+  },
+  tapHint: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
   },
 });

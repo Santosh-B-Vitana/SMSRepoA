@@ -131,6 +131,7 @@ namespace SmsApi.Models.DTOs
 
     public class TimetableSlotDto
     {
+        public Guid? ClassId { get; set; }
         public string SubjectName { get; set; } = string.Empty;
         public string? ClassName { get; set; }
         public string? Section { get; set; }
@@ -142,6 +143,7 @@ namespace SmsApi.Models.DTOs
 
     public class ClassAttendanceStatusDto
     {
+        public Guid? ClassId { get; set; }
         public string ClassName { get; set; } = string.Empty;
         public string? Section { get; set; }
         public bool IsMarked { get; set; }
@@ -184,6 +186,12 @@ namespace SmsApi.Models.DTOs
         public BillingAlertDto? BillingAlert { get; set; }
         public List<AnnouncementSummaryDto> RecentAnnouncements { get; set; } = new();
         public int UnreadCount { get; set; }
+        // School overview counts
+        public int TotalStudents { get; set; }
+        public int ActiveStudents { get; set; }
+        public int TotalStaff { get; set; }
+        public int ActiveStaff { get; set; }
+        public int TotalClasses { get; set; }
     }
 
     public class FeeCollectionDto
@@ -381,6 +389,76 @@ namespace SmsApi.Models.DTOs
 
         [MaxLength(80)]
         public string? StoreShortDescription { get; set; }
+    }
+
+    // ── Librarian Dashboard ───────────────────────────────────────────────────
+
+    public class LibrarianDashboardResponse
+    {
+        public int BooksIssuedToday { get; set; }
+        public int TotalOverdue { get; set; }
+        public int ReturnsToday { get; set; }
+        public int PendingReservations { get; set; }
+        public int TotalBooks { get; set; }
+        public int AvailableBooks { get; set; }
+        public List<OverdueBookSummaryDto> TopOverdueBooks { get; set; } = new();
+        public int UnreadCount { get; set; }
+    }
+
+    public class OverdueBookSummaryDto
+    {
+        public string BookTitle { get; set; } = string.Empty;
+        public string StudentName { get; set; } = string.Empty;
+        public int DaysOverdue { get; set; }
+        public decimal FineAmount { get; set; }
+    }
+
+    // ── Transport Dashboard ───────────────────────────────────────────────────
+
+    public class TransportDashboardResponse
+    {
+        public int TotalRoutes { get; set; }
+        public int ActiveRoutes { get; set; }
+        public int TotalVehicles { get; set; }
+        public int StudentsAssigned { get; set; }
+        public int MaintenanceDue { get; set; }
+        public List<RouteSummaryDto> RoutesSummary { get; set; } = new();
+        public int UnreadCount { get; set; }
+    }
+
+    public class RouteSummaryDto
+    {
+        public string RouteNumber { get; set; } = string.Empty;
+        public string RouteName { get; set; } = string.Empty;
+        public int StudentsAssigned { get; set; }
+        public int Capacity { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    // ── Hostel Dashboard ──────────────────────────────────────────────────────
+
+    public class HostelDashboardResponse
+    {
+        public int TotalRooms { get; set; }
+        public int OccupiedBeds { get; set; }
+        public int TotalCapacity { get; set; }
+        public int StudentsCheckedIn { get; set; }
+        public int VisitorsInside { get; set; }
+        public int PendingHostelLeaves { get; set; }
+        public int HostelLeavesToday { get; set; }
+        public int UnreadCount { get; set; }
+    }
+
+    // ── Receptionist Dashboard ────────────────────────────────────────────────
+
+    public class ReceptionistDashboardResponse
+    {
+        public int VisitorsCurrentlyInside { get; set; }
+        public int TotalCheckInsToday { get; set; }
+        public int TotalCheckOutsToday { get; set; }
+        public int PendingPreRegistrations { get; set; }
+        public double AverageDurationMinutes { get; set; }
+        public int UnreadCount { get; set; }
     }
 
     // ── Offline Bundle ────────────────────────────────────────────────────────

@@ -67,6 +67,10 @@ public class TokenService : ITokenService
         return Convert.ToBase64String(randomNumber);
     }
 
+    /// <inheritdoc />
+    public string GetEffectiveRole(string? rawRole, string? designation)
+        => ResolveEffectiveRole(rawRole, designation);
+
     /// <summary>
     /// Resolves the effective JWT role by taking designation into account.
     /// Leadership designations (Principal, Vice Principal, HR Manager) override

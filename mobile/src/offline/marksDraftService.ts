@@ -7,6 +7,7 @@ export interface MarksEntry {
   studentId: string;
   theory: number | null;
   practical: number | null;
+  internal: number | null;
   isAbsent: boolean;
 }
 

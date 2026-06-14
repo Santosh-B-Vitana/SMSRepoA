@@ -74,6 +74,8 @@ const ParentNotifications  = lazy(() => import("./pages/ParentNotifications"));
 const ParentAnnouncements  = lazy(() => import("./pages/ParentAnnouncements"));
 const StudentAttendance    = lazy(() => import("./pages/StudentAttendance"));
 const Alumni               = lazy(() => import("./pages/Alumni"));
+const ParentTeacherMeeting = lazy(() => import("./pages/ParentTeacherMeeting"));
+const Behaviour            = lazy(() => import("./pages/Behaviour"));
 const StaffAttendanceTeacher = lazy(() => import("./pages/StaffAttendanceTeacher"));
 const Wallet               = lazy(() => import("./pages/Wallet"));
 const SchoolConnect        = lazy(() => import("./pages/SchoolConnect"));
@@ -233,6 +235,8 @@ function App() {
                   <Route path="/online-classes" element={<ProtectedRoute><Layout><ModuleGuard module="online_classes"><OnlineClasses /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/online-classes/settings" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><OnlineClassesSettings /></Layout></ProtectedRoute>} />
                   <Route path="/communication" element={<ProtectedRoute><Layout><ModuleGuard module="communication"><Communication /></ModuleGuard></Layout></ProtectedRoute>} />
+                  <Route path="/ptm" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><ParentTeacherMeeting /></Layout></ProtectedRoute>} />
+                  <Route path="/behaviour" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']}><Layout><Behaviour /></Layout></ProtectedRoute>} />
                   <Route path="/documents" element={<ProtectedRoute><Layout><ModuleGuard module="documents"><Documents /></ModuleGuard></Layout></ProtectedRoute>} />
                   <Route path="/notifications" element={<ProtectedRoute><Layout><ModuleGuard module="announcements"><Announcements /></ModuleGuard></Layout></ProtectedRoute>} />
 
@@ -277,7 +281,7 @@ function App() {
                   <Route path="/visitor-management" element={<ProtectedRoute allowedRoles={['admin','super_admin','staff']} requiredPermission={{ module: 'Visitor', action: 'View' }}><Layout><VisitorManagement /></Layout></ProtectedRoute>} />
                   <Route path="/id-cards" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><IdCards /></Layout></ProtectedRoute>} />
                   <Route path="/security" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><SecurityDashboardPage /></Layout></ProtectedRoute>} />
-                  <Route path="/advanced-analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><AdvancedAnalytics /></Layout></ProtectedRoute>} />
+                  <Route path="/advanced-analytics" element={<ProtectedRoute allowedRoles={['admin','super_admin']}><Layout><ModuleGuard module="analytics"><AdvancedAnalytics /></ModuleGuard></Layout></ProtectedRoute>} />
 
                   {/* ── 404 ──────────────────────────────────────────────── */}
                   <Route path="*" element={<Layout><NotFound /></Layout>} />

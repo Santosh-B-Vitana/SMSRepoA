@@ -244,6 +244,7 @@ public class AuthController : ControllerBase
         var userModel = MapToUserModel(userLogin, designation);
         var accessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
         var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
+        var effectiveRole = _tokenService.GetEffectiveRole(userLogin.Role, designation);
 
         _logger.LogInformation("Login successful for {Username} (SchoolId: {SchoolId})",
             userLogin.Username, userLogin.SchoolId);
@@ -253,7 +254,7 @@ public class AuthController : ControllerBase
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = BuildUserInfo(userLogin, designation, profilePhoto)
+            User = BuildUserInfo(userLogin, designation, profilePhoto, effectiveRole)
         });
     }
 
@@ -312,12 +313,13 @@ public class AuthController : ControllerBase
             var newAccessToken = _tokenService.GenerateAccessToken(userModel, userLogin.SchoolId);
             var expMins = _configuration.GetValue<int>("JwtSettings:ExpirationInMinutes", 60);
 
+            var effectiveRefreshRole = _tokenService.GetEffectiveRole(userLogin.Role, refreshDesignation);
             return Ok(new LoginResponse
             {
                 Token = newAccessToken,
                 RefreshToken = newRawRefreshToken,
                 Expiration = DateTime.UtcNow.AddMinutes(expMins),
-                User = BuildUserInfo(userLogin, refreshDesignation, refreshPhoto)
+                User = BuildUserInfo(userLogin, refreshDesignation, refreshPhoto, effectiveRefreshRole)
             });
         }
         catch (Exception ex)
@@ -372,7 +374,8 @@ public class AuthController : ControllerBase
             return NotFound(new { message = "User not found" });
 
         var (meDesignation, mePhoto) = await ResolveDesignationAsync(userLogin.Email, userLogin.SchoolId);
-        return Ok(BuildUserInfo(userLogin, meDesignation, mePhoto));
+        var meEffectiveRole = _tokenService.GetEffectiveRole(userLogin.Role, meDesignation);
+        return Ok(BuildUserInfo(userLogin, meDesignation, mePhoto, meEffectiveRole));
     }
 
     /// <summary>
@@ -473,12 +476,13 @@ public class AuthController : ControllerBase
 
         _logger.LogInformation("2FA login successful for user {Id}", userLogin.Id);
 
+        var twoFaEffectiveRole = _tokenService.GetEffectiveRole(userLogin.Role, twoFaDesignation);
         return Ok(new LoginResponse
         {
             Token = accessToken,
             RefreshToken = rawRefreshToken,
             Expiration = DateTime.UtcNow.AddMinutes(expMins),
-            User = BuildUserInfo(userLogin, twoFaDesignation, twoFaPhoto)
+            User = BuildUserInfo(userLogin, twoFaDesignation, twoFaPhoto, twoFaEffectiveRole)
         });
     }
 
@@ -713,13 +717,19 @@ public class AuthController : ControllerBase
         LinkedEntityId = userLogin.LinkedEntityId,
     };
 
-    private static UserInfo BuildUserInfo(UserLogin userLogin, string? designation = null, string? profilePhoto = null) => new()
+    private static UserInfo BuildUserInfo(
+        UserLogin userLogin,
+        string? designation = null,
+        string? profilePhoto = null,
+        string? effectiveRole = null) => new()
     {
         Id = userLogin.Id,
         Email = userLogin.Email,
         FirstName = userLogin.FirstName,
         LastName = userLogin.LastName,
-        Role = userLogin.Role,
+        // Use the designation-resolved role so the response body matches the JWT claim.
+        // Falls back to the raw DB role if no effective role was computed.
+        Role = effectiveRole ?? userLogin.Role,
         Designation = designation,
         SchoolId = userLogin.SchoolId,
         RequirePasswordChange = userLogin.RequirePasswordChange,

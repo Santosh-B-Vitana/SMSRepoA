@@ -2,10 +2,13 @@ using SmsApi.Models.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -14,15 +17,19 @@ namespace SmsApi.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    // Fine-grained role restrictions are applied per action below.
+    // All payroll access requires Admin, Principal, HRManager, or Accountant role.
     public class PayrollController : ControllerBase
     {
         private readonly IPayrollService _service;
         private readonly ILogger<PayrollController> _logger;
+        private readonly AppDbContext _db;
 
-        public PayrollController(IPayrollService service, ILogger<PayrollController> logger)
+        public PayrollController(IPayrollService service, ILogger<PayrollController> logger, AppDbContext db)
         {
             _service = service;
             _logger = logger;
+            _db = db;
         }
 
         private Guid GetSchoolId()
@@ -37,12 +44,133 @@ namespace SmsApi.Controllers
             return Guid.Parse(userIdClaim ?? throw new UnauthorizedAccessException());
         }
 
+        // ========== STAFF SELF-SERVICE PAYROLL ==========
+
+        /// <summary>
+        /// GET /api/Payroll/my-salary — Staff self-view: returns the calling staff member's
+        /// own payslip history. Resolves staffId from JWT LinkedEntityId or email fallback.
+        /// </summary>
+        [HttpGet("my-salary")]
+        [Authorize(Roles = "Teacher,Staff,Principal,HRManager,Accountant,Librarian,TransportManager,HostelWarden,Receptionist")]
+        [ProducesResponseType(typeof(List<PayrollBasicDto>), 200)]
+        public async Task<IActionResult> GetMySalary(
+            [FromQuery] int? year = null,
+            [FromQuery] string? status = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 24)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var userId   = GetUserId();
+
+                // Resolve Staff ID from JWT LinkedEntityId, then fall back to email
+                Guid? staffId = null;
+                var userLogin = await _db.UserLogins.AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+
+                if (userLogin?.LinkedEntityId != null)
+                {
+                    var linked = await _db.StaffMembers.AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.Id == userLogin.LinkedEntityId && s.SchoolId == schoolId);
+                    if (linked != null) staffId = linked.Id;
+                }
+
+                if (staffId == null)
+                {
+                    var email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(email))
+                    {
+                        var byEmail = await _db.StaffMembers.AsNoTracking()
+                            .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == schoolId);
+                        if (byEmail != null) staffId = byEmail.Id;
+                    }
+                }
+
+                if (staffId == null)
+                    return Ok(new { items = Array.Empty<object>(), totalCount = 0, page, pageSize, totalPages = 0 });
+
+                var filters = new PayrollFiltersDto
+                {
+                    StaffId = staffId,
+                    Year    = year,
+                    Status  = status,
+                };
+
+                var result = await _service.GetPayrollRecordsAsync(schoolId, filters, page, pageSize);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetMySalary for user {UserId}", GetUserId());
+                return StatusCode(500, new { message = "An error occurred while fetching your salary records." });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/Payroll/my-salary/{id} — Staff self-view: returns the full payslip detail
+        /// for a specific payroll record owned by the calling staff member.
+        /// </summary>
+        [HttpGet("my-salary/{id:guid}")]
+        [Authorize(Roles = "Teacher,Staff,Principal,HRManager,Accountant,Librarian,TransportManager,HostelWarden,Receptionist")]
+        [ProducesResponseType(typeof(PayrollRecordFullDto), 200)]
+        public async Task<IActionResult> GetMyPayslip(Guid id)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var userId   = GetUserId();
+
+                // Get the payslip and verify it belongs to the calling staff member
+                var payslip = await _service.GetPayslipAsync(schoolId, id);
+                if (payslip == null)
+                    return NotFound(new { message = "Payslip not found." });
+
+                // Ownership check: resolve calling staff ID
+                Guid? staffId = null;
+                var userLogin = await _db.UserLogins.AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+
+                if (userLogin?.LinkedEntityId != null)
+                {
+                    var linked = await _db.StaffMembers.AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.Id == userLogin.LinkedEntityId && s.SchoolId == schoolId);
+                    if (linked != null) staffId = linked.Id;
+                }
+                if (staffId == null)
+                {
+                    var email = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(email))
+                    {
+                        var byEmail = await _db.StaffMembers.AsNoTracking()
+                            .FirstOrDefaultAsync(s => s.Email == email && s.SchoolId == schoolId);
+                        if (byEmail != null) staffId = byEmail.Id;
+                    }
+                }
+
+                if (staffId == null || payslip.StaffId != staffId.Value)
+                    return Forbid();
+
+                return Ok(payslip);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { message = "Payslip not found." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetMyPayslip {Id}", id);
+                return StatusCode(500, new { message = "An error occurred." });
+            }
+        }
+
         // ========== PAYROLL RECORDS API ==========
 
         /// <summary>
         /// Get paginated payroll records with filters
         /// </summary>
         [HttpGet("records")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Accountant")]
         [ProducesResponseType(typeof(PaginatedResponse<PayrollRecordBasicDto>), 200)]
         [ProducesResponseType(400)]
         public async Task<ActionResult<PaginatedResponse<PayrollRecordBasicDto>>> GetPayrollRecords(
@@ -75,6 +203,7 @@ namespace SmsApi.Controllers
         /// Get payroll record by ID (Full DTO)
         /// </summary>
         [HttpGet("records/{id}")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Accountant")]
         [ProducesResponseType(typeof(PayrollRecordFullDto), 200)]
         [ProducesResponseType(404)]
         public async Task<ActionResult<PayrollRecordFullDto>> GetPayrollById(Guid id)
@@ -100,6 +229,7 @@ namespace SmsApi.Controllers
         /// Create payroll record
         /// </summary>
         [HttpPost("records")]
+        [Authorize(Roles = "Admin,HRManager,Accountant")]
         [ProducesResponseType(typeof(PayrollRecordFullDto), 201)]
         [ProducesResponseType(400)]
         public async Task<ActionResult<PayrollRecordFullDto>> CreatePayroll([FromBody] CreatePayrollDto dto)
@@ -152,6 +282,7 @@ namespace SmsApi.Controllers
         /// Update payroll record
         /// </summary>
         [HttpPut("records/{id}")]
+        [Authorize(Roles = "Admin,HRManager,Accountant")]
         [ProducesResponseType(typeof(PayrollRecordFullDto), 200)]
         [ProducesResponseType(404)]
         [ProducesResponseType(400)]
@@ -206,6 +337,7 @@ namespace SmsApi.Controllers
         /// Delete payroll record
         /// </summary>
         [HttpDelete("records/{id}")]
+        [Authorize(Roles = "Admin,HRManager")]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public async Task<ActionResult> DeletePayroll(Guid id)
@@ -235,6 +367,7 @@ namespace SmsApi.Controllers
         /// Process multiple staff payrolls
         /// </summary>
         [HttpPost("process")]
+        [Authorize(Roles = "Admin,HRManager,Accountant")]
         [ProducesResponseType(typeof(List<PayrollRecordBasicDto>), 201)]
         [ProducesResponseType(400)]
         public async Task<ActionResult<List<PayrollRecordBasicDto>>> ProcessPayrolls(
@@ -272,6 +405,7 @@ namespace SmsApi.Controllers
         /// Approve payroll record
         /// </summary>
         [HttpPut("records/{id}/approve")]
+        [Authorize(Roles = "Admin,Principal,HRManager")]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public async Task<ActionResult> ApprovePayroll(
@@ -308,6 +442,7 @@ namespace SmsApi.Controllers
         /// Get payslip for payroll record
         /// </summary>
         [HttpGet("records/{id}/payslip")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Accountant")]
         [ProducesResponseType(typeof(PayrollRecordFullDto), 200)]
         [ProducesResponseType(404)]
         public async Task<ActionResult<PayrollRecordFullDto>> GetPayslip(Guid id)
@@ -333,6 +468,7 @@ namespace SmsApi.Controllers
         /// Calculate salary for staff
         /// </summary>
         [HttpPost("calculate")]
+        [Authorize(Roles = "Admin,HRManager,Accountant")]
         [ProducesResponseType(typeof(SalaryCalculationDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -374,6 +510,7 @@ namespace SmsApi.Controllers
         /// Get payroll statistics
         /// </summary>
         [HttpGet("stats")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Accountant")]
         [ProducesResponseType(typeof(PayrollStatsDto), 200)]
         public async Task<ActionResult<PayrollStatsDto>> GetStats(
             [FromQuery] int? month,
@@ -396,6 +533,7 @@ namespace SmsApi.Controllers
         /// Get salary structure by designation
         /// </summary>
         [HttpGet("salary-structures/{designation}")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Accountant")]
         [ProducesResponseType(typeof(SalaryStructureDto), 200)]
         [ProducesResponseType(404)]
         public async Task<ActionResult<SalaryStructureDto>> GetSalaryStructure(string designation)
@@ -421,6 +559,7 @@ namespace SmsApi.Controllers
         /// Create or update salary structure
         /// </summary>
         [HttpPost("salary-structures")]
+        [Authorize(Roles = "Admin,HRManager")]
         [ProducesResponseType(typeof(SalaryStructureDto), 201)]
         public async Task<ActionResult<SalaryStructureDto>> CreateSalaryStructure(
             [FromBody] CreateSalaryStructureDto dto)

@@ -15,6 +15,8 @@ namespace SmsApi.Models.DTOs
         public bool RequiresDocument { get; set; } = false;
         public int MinNoticeDays { get; set; }
         public bool IsCarryForward { get; set; } = false;
+        /// <summary>null = carry forward all unused days; a positive integer caps the carry-forward.</summary>
+        public int? MaxCarryForwardDays { get; set; }
         public bool IsPaid { get; set; } = true;
         public Guid CreatedBy { get; set; }
     }
@@ -28,6 +30,8 @@ namespace SmsApi.Models.DTOs
         public bool RequiresDocument { get; set; }
         public int MinNoticeDays { get; set; }
         public bool IsCarryForward { get; set; }
+        /// <summary>null = carry forward all unused days; a positive integer caps the carry-forward.</summary>
+        public int? MaxCarryForwardDays { get; set; }
         public bool IsPaid { get; set; }
         public bool IsActive { get; set; }
         public Guid UpdatedBy { get; set; }
@@ -45,6 +49,8 @@ namespace SmsApi.Models.DTOs
         public bool RequiresDocument { get; set; }
         public int MinNoticeDays { get; set; }
         public bool IsCarryForward { get; set; }
+        /// <summary>null = carry forward all unused days; a positive integer caps the carry-forward.</summary>
+        public int? MaxCarryForwardDays { get; set; }
         public bool IsPaid { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }

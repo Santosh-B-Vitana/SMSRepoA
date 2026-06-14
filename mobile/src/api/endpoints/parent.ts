@@ -191,10 +191,64 @@ export const parentApi = {
     apiClient.get('/leavemanagement/student-leave/my-children', { params: { studentId } }),
 
   getNotifications: (page: number): Promise<PaginatedResponse<AppNotification>> =>
-    apiClient.get('/notifications/my', { params: { page, pageSize: 20 } }),
+    (apiClient.get('/notifications/my', { params: { page, pageSize: 20 } }) as Promise<Record<string, unknown>>).then(
+      (res) => ({
+        items: (res?.notifications ?? res?.items ?? []) as AppNotification[],
+        totalCount: (res?.total ?? res?.totalCount ?? 0) as number,
+        page: (res?.page ?? page) as number,
+        pageSize: (res?.pageSize ?? 20) as number,
+        totalPages: (res?.totalPages ?? 1) as number,
+      }),
+    ),
 
   markNotificationRead: (id: string): Promise<void> =>
     apiClient.put(`/notifications/${id}/read`),
 
   markAllRead: (): Promise<void> => apiClient.put('/notifications/read-all'),
+
+  getChildBehaviourSummary: (studentId: string): Promise<{
+    totalPoints: number;
+    meritCount: number;
+    demeritCount: number;
+    openCount: number;
+    records: {
+      id: string;
+      incidentType: 'positive' | 'negative';
+      category: string;
+      incidentDate: string;
+      description: string;
+      actionTaken?: string | null;
+      points: number;
+      status: string;
+      parentNotified: boolean;
+    }[];
+  }> =>
+    apiClient.get(`/behaviour/student/${studentId}/summary`),
+
+  getPtmSessions: (): Promise<{
+    id: string;
+    title: string;
+    description?: string | null;
+    sessionDate: string;
+    startTime: string;
+    endTime: string;
+    slotDurationMinutes: number;
+    status: string;
+    location?: string | null;
+    slotCount: number;
+    bookedCount: number;
+  }[]> =>
+    apiClient.get('/ptm/sessions?status=scheduled'),
+
+  getMyPtmBookings: (): Promise<{
+    id: string;
+    slotDateTime: string;
+    status: string;
+    sessionTitle?: string | null;
+    sessionLocation?: string | null;
+    teacherName?: string | null;
+    studentName?: string | null;
+    teacherRemarks?: string | null;
+  }[]> =>
+    apiClient.get('/ptm/parent/my-bookings'),
 };

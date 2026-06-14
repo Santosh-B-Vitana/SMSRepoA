@@ -25,6 +25,18 @@ export function useStudentMoreItems(): MoreMenuItem[] {
       route: '/(student)/fees/index',
     },
     {
+      key: 'behaviour',
+      label: 'Behaviour Record',
+      icon: 'award',
+      route: '/(student)/behaviour/index',
+    },
+    {
+      key: 'health',
+      label: 'Health Record',
+      icon: 'heart',
+      route: '/(student)/health/index',
+    },
+    {
       key: 'leaves',
       label: 'Leave Applications',
       icon: 'calendar',

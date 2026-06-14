@@ -40,6 +40,16 @@ namespace SmsApi.Services
         Task SeedExaminationsAsync();
         Task EnsureStudentEnrollmentsAsync();
         Task SeedRbacTestStaffAsync();
+        Task SeedStudentLoginsAsync();
+        Task SeedAdmissionApplicationsAsync();
+        Task SeedStudentDocumentsAsync();
+        Task EnsureTodayAttendanceAsync();
+        Task EnsureOverdueFeeRecordsAsync();
+        Task SeedLibraryIssuesAsync();
+        Task SeedVisitorEntriesAsync();
+        Task SeedHostelAttendanceAsync();
+        Task SeedBehaviourRecordsAsync();
+        Task SeedPtmDataAsync();
     }
 
     public class DbSeeder : IDbSeeder
@@ -60,15 +70,34 @@ namespace SmsApi.Services
             {
                 _logger.LogInformation("🌱 Starting database seeding...");
 
-                // Use existing school ID for consistency
-                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+                // Seed for all active schools that have at least one admin user but no student data yet
+                var schoolIds = await _context.Schools
+                    .Where(s => s.IsActive)
+                    .Select(s => s.Id)
+                    .ToListAsync();
 
+                foreach (var sid in schoolIds)
+                {
+                    _schoolId = sid;
+                    await SeedForSchoolAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "⚠️ Warning during database seeding - proceeding anyway");
+            }
+        }
+
+        private async Task SeedForSchoolAsync()
+        {
+            try
+            {
                 // Check if data already exists
                 if (await _context.Students.AnyAsync(s => s.SchoolId == _schoolId) &&
                     await _context.Classes.AnyAsync(c => c.SchoolId == _schoolId) &&
                     await _context.Subjects.AnyAsync(s => s.SchoolId == _schoolId))
                 {
-                    _logger.LogInformation("✅ Mock data already exists, skipping bulk seeding");
+                    _logger.LogInformation("✅ Mock data already exists for school {SchoolId}, running incremental seeders", _schoolId);
                     // Still run incremental seeders that have their own guards
                     await SeedClassesAsync();
                     await SeedStaffAsync();
@@ -76,6 +105,7 @@ namespace SmsApi.Services
                     await SeedTeacherAssignmentsAsync();
                     await EnsureClassSubjectsForTeacherAssignmentsAsync();
                     await FixStudentClassNamesAsync();
+                    await EnsureStudentsForAllClassesAsync();
                     await SeedLeaveTypesAsync();
                     await SeedExamTypesAsync();
                     await SeedTimetablePeriodsAsync();
@@ -89,7 +119,18 @@ namespace SmsApi.Services
                     await EnsureParentChildrenTransportHostelAsync();
                     await EnsureParentNotificationsAsync();
                     await SeedRbacTestStaffAsync();
-                    return;
+                    await SeedStudentLoginsAsync();
+                    await SeedSchoolFeaturePermissionsAsync();
+                await SeedLeaveApplicationsAsync();
+                await SeedAssignmentSubmissionsAsync();
+                await EnsureParentLoginAsync();
+                await SeedAdmissionApplicationsAsync();
+                await SeedStudentDocumentsAsync();
+                await EnsureTodayAttendanceAsync();
+                await EnsureOverdueFeeRecordsAsync();
+                await SeedBehaviourRecordsAsync();
+                await SeedPtmDataAsync();
+                return;
                 }
 
                 _logger.LogInformation("🔄 Adding comprehensive mock data...");
@@ -120,14 +161,26 @@ namespace SmsApi.Services
                 await EnsureParentChildrenTransportHostelAsync();
                 await EnsureParentNotificationsAsync();
                 await SeedRbacTestStaffAsync();
+                await SeedStudentLoginsAsync();
+                await SeedSchoolFeaturePermissionsAsync();
+                await SeedLeaveApplicationsAsync();
+                await SeedAssignmentSubmissionsAsync();
+                await EnsureParentLoginAsync();
+                await SeedAdmissionApplicationsAsync();
+                await SeedStudentDocumentsAsync();
+                await EnsureTodayAttendanceAsync();
+                await EnsureOverdueFeeRecordsAsync();
+                await SeedLibraryIssuesAsync();
+                await SeedVisitorEntriesAsync();
+                await SeedHostelAttendanceAsync();
+                await SeedBehaviourRecordsAsync();
+                await SeedPtmDataAsync();
 
-                _logger.LogInformation("✅ Database seeding completed successfully!");
+                _logger.LogInformation("✅ Database seeding completed successfully for school {SchoolId}!", _schoolId);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "⚠️ Warning during database seeding - proceeding anyway");
-                // Don't throw - allow app to continue even if seeding fails
-                // This allows us to test the API even with incomplete seeding
+                _logger.LogWarning(ex, "⚠️ Warning during database seeding for school {SchoolId} - proceeding", _schoolId);
             }
         }
 
@@ -161,7 +214,7 @@ namespace SmsApi.Services
 
             var users = new List<UserLogin>
             {
-                // Admin
+                // Admin — BCrypt-hashed (was SHA-256; fixed to match AuthService.Verify)
                 new UserLogin
                 {
                     Id = Guid.NewGuid(),
@@ -172,12 +225,12 @@ namespace SmsApi.Services
                     LastName = "User",
                     Role = "admin",
                     Status = "active",
-                    PasswordHash = HashPassword("AdminDemo2026!"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("AdminDemo2026!", workFactor: 12),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 },
 
-                // Teachers
+                // Teachers — BCrypt-hashed
                 new UserLogin
                 {
                     Id = Guid.NewGuid(),
@@ -188,7 +241,7 @@ namespace SmsApi.Services
                     LastName = "Johnson",
                     Role = "teacher",
                     Status = "active",
-                    PasswordHash = HashPassword("Teacher@123"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Teacher@123", workFactor: 12),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 },
@@ -203,7 +256,7 @@ namespace SmsApi.Services
                     LastName = "Smith",
                     Role = "teacher",
                     Status = "active",
-                    PasswordHash = HashPassword("Teacher@123"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Teacher@123", workFactor: 12),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 },
@@ -218,12 +271,12 @@ namespace SmsApi.Services
                     LastName = "Singh",
                     Role = "teacher",
                     Status = "active",
-                    PasswordHash = HashPassword("Teacher@123"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Teacher@123", workFactor: 12),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 },
 
-                // Staff
+                // Staff — BCrypt-hashed
                 new UserLogin
                 {
                     Id = Guid.NewGuid(),
@@ -234,7 +287,7 @@ namespace SmsApi.Services
                     LastName = "Kumar",
                     Role = "staff",
                     Status = "active",
-                    PasswordHash = HashPassword("StaffDemo2026!"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("StaffDemo2026!", workFactor: 12),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 },
@@ -249,7 +302,7 @@ namespace SmsApi.Services
                     LastName = "Sharma",
                     Role = "staff",
                     Status = "active",
-                    PasswordHash = HashPassword("StaffDemo2026!"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("StaffDemo2026!", workFactor: 12),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 }
@@ -264,17 +317,38 @@ namespace SmsApi.Services
         {
             _logger.LogInformation("🎓 Seeding students...");
 
+            // 50 students: 5 per section × 2 sections × 5 classes = all classes covered
             var studentNames = new[]
             {
-                ("Aarav", "Patel"), ("Ananya", "Sharma"), ("Arjun", "Singh"),
-                ("Aisha", "Khan"), ("Avni", "Gupta"), ("Akshay", "Mishra"),
-                ("Priya", "Verma"), ("Reyansh", "Kumar"), ("Riya", "Joshi"),
-                ("Rohan", "Nair"), ("Sneha", "Iyer"), ("Siddharth", "Rao"),
-                ("Sara", "Menon"), ("Tanvi", "Bhat"), ("Varun", "Desai"),
-                ("Veena", "Rao"), ("Yash", "Pillai"), ("Yasmin", "Ahmed"),
-                ("Zara", "Ali"), ("Zain", "Hassan"), ("Aarush", "Malhotra"),
-                ("Aditi", "Saxena"), ("Aryan", "Kapoor"), ("Amira", "Mukherjee"),
-                ("Aditya", "Chopra")
+                // Class 1 Section A
+                ("Aarav", "Patel"), ("Ananya", "Sharma"), ("Arjun", "Singh"), ("Aisha", "Khan"), ("Avni", "Gupta"),
+                // Class 1 Section B
+                ("Akshay", "Mishra"), ("Priya", "Verma"), ("Reyansh", "Kumar"), ("Riya", "Joshi"), ("Rohan", "Nair"),
+                // Class 2 Section A
+                ("Sneha", "Iyer"), ("Siddharth", "Rao"), ("Sara", "Menon"), ("Tanvi", "Bhat"), ("Varun", "Desai"),
+                // Class 2 Section B
+                ("Veena", "Rao"), ("Yash", "Pillai"), ("Yasmin", "Ahmed"), ("Zara", "Ali"), ("Zain", "Hassan"),
+                // Class 3 Section A
+                ("Aarush", "Malhotra"), ("Aditi", "Saxena"), ("Aryan", "Kapoor"), ("Amira", "Mukherjee"), ("Aditya", "Chopra"),
+                // Class 3 Section B
+                ("Bharat", "Kulkarni"), ("Deepika", "Menon"), ("Gaurav", "Nambiar"), ("Harini", "Pillai"), ("Ishaan", "Bose"),
+                // Class 4 Section A
+                ("Kavya", "Reddy"), ("Lakshya", "Tiwari"), ("Meera", "Aggarwal"), ("Nikhil", "Dubey"), ("Pooja", "Garg"),
+                // Class 4 Section B
+                ("Qasim", "Sheikh"), ("Ruchi", "Arora"), ("Sahil", "Malhotra"), ("Tanya", "Mehta"), ("Uday", "Pandey"),
+                // Class 5 Section A
+                ("Vani", "Krishnan"), ("Wasim", "Qureshi"), ("Xena", "D'Souza"), ("Yuvraj", "Singh"), ("Zoya", "Mirza"),
+                // Class 5 Section B
+                ("Alok", "Dixit"), ("Bindu", "Nair"), ("Chetan", "Shah"), ("Divya", "Mohan"), ("Esha", "Rawat")
+            };
+
+            // Static UUIDs for the two demo-parent children so EnsureParentChildrenTransportHostelAsync()
+            // can locate them by ID without relying on name-based lookups across random GUIDs.
+            // Index 8 = "Riya Joshi" (Class 1-B), Index 9 = "Rohan Nair" (Class 1-B).
+            var staticStudentIds = new Dictionary<int, Guid>
+            {
+                [8] = Guid.Parse("c0a80101-0000-4000-8000-000000000001"), // Riya — parent demo child 1
+                [9] = Guid.Parse("67e1d74f-5eab-42a8-918b-bf30c64111c3"), // Rohan — parent demo child 2
             };
 
             var students = new List<Student>();
@@ -283,23 +357,24 @@ namespace SmsApi.Services
 
             for (int i = 0; i < studentNames.Length; i++)
             {
+                var (first, last) = studentNames[i];
                 var student = new Student
                 {
-                    Id = Guid.NewGuid(),
+                    Id = staticStudentIds.TryGetValue(i, out var staticId) ? staticId : Guid.NewGuid(),
                     SchoolId = _schoolId,
-                    Name = $"{studentNames[i].Item1} {studentNames[i].Item2}",
-                    FirstName = studentNames[i].Item1,
-                    LastName = studentNames[i].Item2,
+                    Name = $"{first} {last}",
+                    FirstName = first,
+                    LastName = last,
                     RollNumber = (i + 1).ToString("D3"),
-                    Email = $"{studentNames[i].Item1.ToLower()}.{studentNames[i].Item2.ToLower()}@student.stmarys.edu.in",
+                    Email = $"{first.ToLower()}.{last.ToLower()}@student.stmarys.edu.in",
                     PrimaryPhone = $"+91-98765{i:D5}",
-                    DateOfBirth = new DateTime(2010, Random.Shared.Next(1, 13), Random.Shared.Next(1, 28)),
+                    DateOfBirth = new DateTime(2010 - classNum, ((i % 12) + 1), ((i % 27) + 1)),
                     Gender = i % 2 == 0 ? "Male" : "Female",
                     Address = $"Address Line {i + 1}, Mumbai",
-                    GuardianName = $"Guardian of {studentNames[i].Item1}",
-                    Status = "Active",
-                    PhotoUrl = "/placeholder.svg",
-                    AdmissionDate = DateTime.UtcNow.AddMonths(-Random.Shared.Next(1, 12)),
+                    GuardianName = $"Guardian of {first}",
+                    Status = "active",
+                    PhotoUrl = null,
+                    AdmissionDate = DateTime.UtcNow.AddMonths(-Random.Shared.Next(1, 24)),
                     AdmissionNumber = $"ADM{DateTime.UtcNow.Year}{(i + 1):D4}",
                     Class = $"Class {classNum}",
                     Section = ((char)('A' + sectionNum)).ToString(),
@@ -309,7 +384,7 @@ namespace SmsApi.Services
 
                 students.Add(student);
 
-                // Distribute students across classes and sections
+                // 5 students per section, 2 sections per class
                 if ((i + 1) % 5 == 0)
                 {
                     sectionNum++;
@@ -324,6 +399,84 @@ namespace SmsApi.Services
             _context.Students.AddRange(students);
             await _context.SaveChangesAsync();
             _logger.LogInformation("✅ {Count} students seeded", students.Count);
+        }
+
+        /// <summary>
+        /// Adds students to any class that currently has zero enrollments.
+        /// Safe to call repeatedly — skips classes that already have students.
+        /// </summary>
+        public async Task EnsureStudentsForAllClassesAsync()
+        {
+            var classes = await _context.Classes
+                .Where(c => c.SchoolId == _schoolId)
+                .OrderBy(c => c.Name)
+                .ToListAsync();
+
+            if (!classes.Any()) return;
+
+            // Extra names for gap-filling
+            var fillNames = new[]
+            {
+                ("Farhan", "Siddiqui"), ("Girish", "Rao"), ("Hema", "Shetty"), ("Indu", "Bhat"), ("Jai", "Kumar"),
+                ("Kavita", "Sinha"), ("Laxman", "Hegde"), ("Minal", "Jain"), ("Nitin", "Chauhan"), ("Ojal", "Deshpande"),
+                ("Preethi", "Murthy"), ("Rahul", "Verma"), ("Seema", "Agarwal"), ("Tushar", "Patil"), ("Uma", "Naidu"),
+                ("Vikram", "Rao"), ("Winnie", "Pinto"), ("Xavier", "Almeida"), ("Yamini", "Rao"), ("Zubin", "Mehta")
+            };
+
+            int fillIdx = 0;
+            int rollOffset = 1000;
+
+            foreach (var cls in classes)
+            {
+                // Count existing students for this class (by class name string)
+#pragma warning disable CS0618
+                var existingCount = await _context.Students
+                    .Where(s => s.SchoolId == _schoolId && s.Class == cls.Name)
+                    .CountAsync();
+#pragma warning restore CS0618
+
+                if (existingCount >= 5) continue; // Already has enough students
+
+                _logger.LogInformation("➕ Adding students to {Class} (currently {Count})", cls.Name, existingCount);
+
+                // Add students to Section A and Section B
+                foreach (var section in new[] { "A", "B" })
+                {
+                    for (int j = 0; j < 5; j++)
+                    {
+                        var (first, last) = fillNames[fillIdx % fillNames.Length];
+                        fillIdx++;
+                        rollOffset++;
+
+                        _context.Students.Add(new Student
+                        {
+                            Id = Guid.NewGuid(),
+                            SchoolId = _schoolId,
+                            Name = $"{first} {last}",
+                            FirstName = first,
+                            LastName = last,
+                            RollNumber = rollOffset.ToString("D4"),
+                            Email = $"{first.ToLower()}{rollOffset}@student.stmarys.edu.in",
+                            PrimaryPhone = $"+91-9000{rollOffset:D6}",
+                            DateOfBirth = new DateTime(2008, ((rollOffset % 12) + 1), ((rollOffset % 27) + 1)),
+                            Gender = rollOffset % 2 == 0 ? "Male" : "Female",
+                            Address = $"Block {section}, {cls.Name} Street, Mumbai",
+                            GuardianName = $"Parent of {first}",
+                            Status = "active",
+                            PhotoUrl = null,
+                            AdmissionDate = DateTime.UtcNow.AddMonths(-12),
+                            AdmissionNumber = $"ADMF{rollOffset:D5}",
+                            Class = cls.Name,
+                            Section = section,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Gap-fill students saved");
         }
 
         public async Task SeedStaffAsync()
@@ -697,6 +850,10 @@ namespace SmsApi.Services
 
             var days = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
 
+            // Track occupied teacher slots: key = (day, periodNum, teacherId)
+            // This prevents the same teacher from being in two classes at the same time
+            var occupiedSlots = new HashSet<(string day, int period, Guid teacherId)>();
+
             foreach (var cls in classes)
             {
                 // ── Load class-subject assignments (with actual teacher per subject) ──
@@ -741,10 +898,35 @@ namespace SmsApi.Services
 
                         if (!isBreak && subjectSlots.Count > 0)
                         {
-                            var slot = subjectSlots[slotIdx % subjectSlots.Count];
-                            subjectId = slot.subjectId;
-                            teacherId = slot.teacherId;
-                            slotIdx++;
+                            // Find a non-conflicting slot for this day+period
+                            int attempts = 0;
+                            while (attempts < subjectSlots.Count)
+                            {
+                                var candidate = subjectSlots[slotIdx % subjectSlots.Count];
+                                slotIdx++;
+                                attempts++;
+
+                                // If this teacher is already busy at this day+period, try next subject
+                                if (candidate.teacherId.HasValue &&
+                                    occupiedSlots.Contains((day, periodNum, candidate.teacherId.Value)))
+                                    continue;
+
+                                subjectId = candidate.subjectId;
+                                teacherId = candidate.teacherId;
+                                break;
+                            }
+
+                            // If all teachers conflict, still assign the subject but clear teacher
+                            if (subjectId == null && subjectSlots.Count > 0)
+                            {
+                                subjectId = subjectSlots[slotIdx % subjectSlots.Count].subjectId;
+                                teacherId = null; // no teacher available — mark for manual assignment
+                                slotIdx++;
+                            }
+
+                            // Mark this slot as occupied
+                            if (teacherId.HasValue)
+                                occupiedSlots.Add((day, periodNum, teacherId.Value));
                         }
 
                         _context.TimetablePeriods.Add(new TimetablePeriod
@@ -966,16 +1148,12 @@ namespace SmsApi.Services
         }
 
         /// <summary>
-        /// Simple password hashing (for testing only - use proper hashing in production)
+        /// Password hashing for seeded accounts — uses BCrypt to match AuthService.Verify().
+        /// All callers have been migrated to BCrypt.Net.BCrypt.HashPassword() directly;
+        /// this helper is retained as a safe fallback and now delegates to BCrypt.
         /// </summary>
         private string HashPassword(string password)
-        {
-            using (var sha = System.Security.Cryptography.SHA256.Create())
-            {
-                var hashedBuffer = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
-                return Convert.ToBase64String(hashedBuffer);
-            }
-        }
+            => BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 
         // ─────────────────────────────────────────────────────────────────────
         // Fee Structures — one per class (Primary, Middle, High, Higher)
@@ -1123,7 +1301,8 @@ namespace SmsApi.Services
             var records = new List<AttendanceRecord>();
             var today = DateTime.UtcNow.Date;
 
-            for (int dayOffset = 30; dayOffset >= 1; dayOffset--)
+            // dayOffset 0 = today, so the teacher dashboard "isMarked" check returns true for today
+            for (int dayOffset = 30; dayOffset >= 0; dayOffset--)
             {
                 var date = today.AddDays(-dayOffset);
                 // Skip weekends
@@ -2091,6 +2270,915 @@ namespace SmsApi.Services
 
             await _context.SaveChangesAsync();
             _logger.LogInformation("✅ RBAC test staff seeded: transport.mgr, accountant, hostel.warden, receptionist @demo.edu (password: Staff@123)");
+        }
+
+        // ─── Parent Login ────────────────────────────────────────────────────────────
+        // Ensures the demo parent account always exists with a well-known password so
+        // testers can log in without knowing the Program.cs bootstrap password.
+        // Credentials: aj@gmail.com / Parent@123
+        private async Task EnsureParentLoginAsync()
+        {
+            _logger.LogInformation("👨‍👩‍👧 Ensuring demo parent login (aj@gmail.com)...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            const string parentEmail    = "aj@gmail.com";
+            const string parentPassword = "Parent@123";
+
+            var existing = await _context.UserLogins.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == parentEmail && u.SchoolId == _schoolId && !u.IsDeleted);
+
+            if (existing != null)
+            {
+                // Ensure role and status are correct; reset to known password so login works
+                existing.Role     = "Parent";
+                existing.Status   = "active";
+                existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(parentPassword, workFactor: 12);
+                existing.UpdatedAt    = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("✅ Demo parent login updated (aj@gmail.com / Parent@123)");
+                return;
+            }
+
+            // Create fresh parent login
+            _context.UserLogins.Add(new UserLogin
+            {
+                Id            = Guid.NewGuid(),
+                SchoolId      = _schoolId,
+                Username      = "parent_demo",
+                Email         = parentEmail,
+                FirstName     = "Arjun",
+                LastName      = "Joshi",
+                PasswordHash  = BCrypt.Net.BCrypt.HashPassword(parentPassword, workFactor: 12),
+                Role          = "Parent",
+                Status        = "active",
+                LinkedEntityType = "parent",
+                CreatedAt     = DateTime.UtcNow,
+                UpdatedAt     = DateTime.UtcNow,
+            });
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Demo parent login created: aj@gmail.com / Parent@123");
+        }
+
+        // ─── Student Logins ───────────────────────────────────────────────────────
+        /// <summary>
+        /// Seeds UserLogin rows for three demo students so the student mobile portal is testable.
+        /// Uses the static UUIDs assigned to Riya Joshi (index 8) and Rohan Nair (index 9) in
+        /// SeedStudentsAsync(), plus the first student in Class 1-A (Aarav Patel, index 0).
+        /// Password: Student@123 (BCrypt hashed).
+        /// </summary>
+        public async Task SeedStudentLoginsAsync()
+        {
+            _logger.LogInformation("🎓 Seeding student login accounts...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            const string studentPassword = "Student@123";
+
+            // Candidate students: Aarav Patel (Class 1-A first student), Riya Joshi, Rohan Nair.
+            // We look them up by email to keep this idempotent.
+            var candidates = new[]
+            {
+                new { Email = "aarav.patel@student.stmarys.edu.in", Username = "aarav.patel",  First = "Aarav",  Last = "Patel"  },
+                new { Email = "riya.joshi@student.stmarys.edu.in",  Username = "riya.joshi",   First = "Riya",   Last = "Joshi"  },
+                new { Email = "rohan.nair@student.stmarys.edu.in",  Username = "rohan.nair",   First = "Rohan",  Last = "Nair"   },
+            };
+
+            foreach (var c in candidates)
+            {
+                // Skip if login already exists
+                var existing = await _context.UserLogins.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(u => u.Email.ToLower() == c.Email && u.SchoolId == _schoolId && !u.IsDeleted);
+
+                if (existing != null)
+                {
+                    // Ensure role + password are correct
+                    existing.Role         = "Student";
+                    existing.Status       = "active";
+                    existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(studentPassword, workFactor: 12);
+                    existing.UpdatedAt    = DateTime.UtcNow;
+                    continue;
+                }
+
+                // Find the linked student entity
+                var student = await _context.Students.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.SchoolId == _schoolId && s.Email.ToLower() == c.Email && !s.IsDeleted);
+
+                _context.UserLogins.Add(new UserLogin
+                {
+                    Id               = Guid.NewGuid(),
+                    SchoolId         = _schoolId,
+                    Username         = c.Username,
+                    Email            = c.Email,
+                    FirstName        = c.First,
+                    LastName         = c.Last,
+                    PasswordHash     = BCrypt.Net.BCrypt.HashPassword(studentPassword, workFactor: 12),
+                    Role             = "Student",
+                    Status           = "active",
+                    LinkedEntityId   = student?.Id,
+                    LinkedEntityType = "student",
+                    CreatedAt        = DateTime.UtcNow,
+                    UpdatedAt        = DateTime.UtcNow,
+                    IsDeleted        = false,
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Student login accounts ensured (Student@123)");
+        }
+
+        // ─── School Feature Permissions ───────────────────────────────────────────
+        /// <summary>
+        /// Ensures all 20 standard modules are enabled in SchoolFeaturePermissions for the demo school.
+        /// Without this seed the mobile app-config endpoint returns all module flags as false on a fresh DB,
+        /// causing library, transport, hostel and other modules to appear locked on first launch.
+        /// </summary>
+        private async Task SeedSchoolFeaturePermissionsAsync()
+        {
+            _logger.LogInformation("🔑 Seeding school feature permissions...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            var modules = new[]
+            {
+                "students", "staff", "attendance", "fees", "timetable", "examinations",
+                "announcements", "reports", "documents", "admissions", "library",
+                "transport", "hostel", "health", "payroll", "communication",
+                "analytics", "certificates", "store", "wallet",
+            };
+
+            foreach (var module in modules)
+            {
+                var exists = await _context.SchoolFeaturePermissions
+                    .IgnoreQueryFilters()
+                    .AnyAsync(p => p.SchoolId == _schoolId && p.ModuleName == module && !p.IsDeleted);
+
+                if (!exists)
+                {
+                    _context.SchoolFeaturePermissions.Add(new SchoolFeaturePermission
+                    {
+                        Id               = Guid.NewGuid(),
+                        SchoolId         = _schoolId,
+                        ModuleName       = module,
+                        IsEnabled        = true,
+                        PermissionLevels = "read,write,delete",
+                        PackageName      = "Standard",
+                        Notes            = "Seeded by DbSeeder",
+                        CreatedAt        = DateTime.UtcNow,
+                        UpdatedAt        = DateTime.UtcNow,
+                        IsDeleted        = false,
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ School feature permissions ensured for {Count} modules", modules.Length);
+        }
+
+        // ─── Leave Applications ───────────────────────────────────────────────────
+        private async Task SeedLeaveApplicationsAsync()
+        {
+            _logger.LogInformation("📋 Seeding leave applications...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            if (await _context.LeaveRequests.AnyAsync(l => l.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Leave applications already seeded");
+                return;
+            }
+
+            var leaveTypes = await _context.LeaveTypes
+                .Where(lt => lt.SchoolId == _schoolId && lt.IsActive)
+                .ToListAsync();
+
+            if (!leaveTypes.Any())
+            {
+                _logger.LogWarning("⚠️ No leave types found, skipping leave application seeding");
+                return;
+            }
+
+            var staffMembers = await _context.StaffMembers
+                .Where(s => s.SchoolId == _schoolId && s.IsActive && !s.IsDeleted)
+                .Take(6)
+                .ToListAsync();
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .Take(12)
+                .ToListAsync();
+
+            var rng = new Random(789);
+            var today = DateTime.UtcNow.Date;
+            var requests = new List<StaffLeaveRequest>();
+
+            var staffLeaveReasons = new[]
+            {
+                "Feeling unwell - fever and cold. Will submit medical certificate.",
+                "Family function - sister's wedding. Prior notice as required.",
+                "Personal work - property registration. Will complete pending tasks beforehand.",
+                "Medical appointment - follow-up checkup scheduled for this day.",
+                "Child's school function - mandatory parent attendance event.",
+                "Out of station - family emergency, returning next week.",
+            };
+
+            var studentLeaveReasons = new[]
+            {
+                "Suffering from fever and cold. Doctor has advised rest for 2 days.",
+                "Family function - attending elder sibling's wedding ceremony.",
+                "Medical appointment - scheduled dental procedure.",
+                "Out of station with family - visiting grandparents in hometown.",
+                "Participating in state-level science olympiad competition.",
+                "Religious festival observance at home temple.",
+                "Sports event - selected for district cricket team.",
+                "Throat infection - ENT specialist visit recommended.",
+                "Family emergency - grandfather hospitalised.",
+                "Prior engagement - passport application appointment.",
+                "Mild viral fever, doctor advised 3 days of rest.",
+                "Cultural program at community hall - compulsory family event.",
+            };
+
+            var statuses = new[] { "Approved", "Pending", "Approved", "Rejected", "Approved", "Pending" };
+
+            // Staff leave requests
+            foreach (var (staff, i) in staffMembers.Select((s, i) => (s, i)))
+            {
+                var staffLeaveType = leaveTypes.FirstOrDefault(lt => lt.ApplicableTo == "Staff")
+                    ?? leaveTypes[i % leaveTypes.Count];
+                var startDate = today.AddDays(-rng.Next(5, 45));
+                var days = rng.Next(1, 4);
+                var status = statuses[i % statuses.Length];
+
+                requests.Add(new StaffLeaveRequest
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    LeaveNumber = $"SL{DateTime.UtcNow.Year}{(i + 1):D4}",
+                    ApplicantId = staff.Id,
+                    ApplicantType = "Staff",
+                    LeaveTypeId = staffLeaveType.Id,
+                    StartDate = startDate,
+                    EndDate = startDate.AddDays(days),
+                    TotalDays = days + 1,
+                    Reason = staffLeaveReasons[i % staffLeaveReasons.Length],
+                    Status = status,
+                    ApplicationDate = startDate.AddDays(-rng.Next(1, 3)),
+                    ApprovedByStaffId = status != "Pending" ? staff.Id : null,
+                    ApprovedDate = status == "Approved" ? startDate.AddDays(-1) : null,
+                    ApproverRemarks = status == "Approved" ? "Approved. Please ensure class work is covered." :
+                                      status == "Rejected" ? "Cannot be approved due to upcoming board exams." : null,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+
+            // Student leave requests (using StaffLeaveRequest with ApplicantType = "Student")
+            foreach (var (student, i) in students.Select((s, i) => (s, i)))
+            {
+                var studentLeaveType = leaveTypes.FirstOrDefault(lt =>
+                    lt.ApplicableTo == "Student" || lt.ApplicableTo == "All")
+                    ?? leaveTypes[i % leaveTypes.Count];
+
+                var startDate = today.AddDays(-rng.Next(3, 30));
+                var days = rng.Next(1, 3);
+                var status = statuses[i % statuses.Length];
+
+                requests.Add(new StaffLeaveRequest
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    LeaveNumber = $"STL{DateTime.UtcNow.Year}{(i + 1):D4}",
+                    ApplicantId = student.Id,
+                    ApplicantType = "Student",
+                    LeaveTypeId = studentLeaveType.Id,
+                    StartDate = startDate,
+                    EndDate = startDate.AddDays(days),
+                    TotalDays = days + 1,
+                    Reason = studentLeaveReasons[i % studentLeaveReasons.Length],
+                    Status = status,
+                    ApplicationDate = startDate.AddDays(-1),
+                    ApprovedDate = status == "Approved" ? startDate : null,
+                    ApproverRemarks = status == "Approved" ? "Approved. Please complete missed work upon return." :
+                                      status == "Rejected" ? "Not approved - class test scheduled on this date." : null,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+
+            _context.LeaveRequests.AddRange(requests);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} leave applications seeded ({Staff} staff, {Students} students)",
+                requests.Count, staffMembers.Count, students.Count);
+        }
+
+        // ─── Assignment Submissions ───────────────────────────────────────────────
+        private async Task SeedAssignmentSubmissionsAsync()
+        {
+            _logger.LogInformation("📝 Seeding assignment submissions...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            var assignments = await _context.Assignments
+                .Where(a => a.SchoolId == _schoolId && !a.IsDeleted)
+                .Take(20)
+                .ToListAsync();
+
+            if (!assignments.Any())
+            {
+                _logger.LogWarning("⚠️ No assignments found, skipping submission seeding");
+                return;
+            }
+
+            var assignmentIds = assignments.Select(a => a.Id).ToList();
+            if (await _context.AssignmentSubmissions.AnyAsync(s => assignmentIds.Contains(s.AssignmentId)))
+            {
+                _logger.LogInformation("✅ Assignment submissions already seeded");
+                return;
+            }
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .Take(15)
+                .ToListAsync();
+
+            var assignedByStaff = await _context.StaffMembers
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .FirstOrDefaultAsync();
+
+            if (assignedByStaff == null || !students.Any()) return;
+
+            var rng = new Random(321);
+            var submissions = new List<AssignmentSubmission>();
+
+            var submissionContents = new[]
+            {
+                "I have completed all the given exercises. Please find my solutions attached.",
+                "Attempted all problems. Some were challenging but I gave my best effort.",
+                "Completed the assignment on time. Used the examples from the textbook.",
+                "All questions answered. I double-checked my work before submitting.",
+                "Done as per instructions. Referenced chapter 3 for the last section.",
+            };
+
+            var feedbacks = new[]
+            {
+                "Excellent work! Very well organized and accurate solutions.",
+                "Good effort. Please review Question 4 as the approach could be improved.",
+                "Well done! Your understanding of the topic is clear.",
+                "Satisfactory. Work on presenting your steps more clearly.",
+                "Outstanding submission. Keep up the great work!",
+                "Good, but missed a few steps in the solution. Please refer to class notes.",
+            };
+
+            foreach (var assignment in assignments)
+            {
+                // 70-90% of students submit
+                var submitterCount = rng.Next((int)(students.Count * 0.7), students.Count + 1);
+                var submitters = students.OrderBy(_ => rng.Next()).Take(submitterCount).ToList();
+
+                foreach (var student in submitters)
+                {
+                    var daysAfterAssigned = rng.Next(1, 6);
+                    var submissionDate = assignment.AssignedDate.AddDays(daysAfterAssigned);
+                    if (submissionDate > assignment.DueDate.AddDays(2))
+                        submissionDate = assignment.DueDate.AddDays(-1);
+
+                    var isGraded = rng.Next(0, 100) < 65;
+                    var marksObtained = isGraded
+                        ? Math.Round((decimal)rng.Next(55, (int)assignment.MaxMarks + 1), 1)
+                        : (decimal?)null;
+
+                    submissions.Add(new AssignmentSubmission
+                    {
+                        Id = Guid.NewGuid(),
+                        AssignmentId = assignment.Id,
+                        StudentId = student.Id,
+                        SubmissionDate = submissionDate,
+                        Content = submissionContents[rng.Next(submissionContents.Length)],
+                        Status = isGraded ? "graded" : "submitted",
+                        MarksObtained = marksObtained,
+                        Feedback = isGraded ? feedbacks[rng.Next(feedbacks.Length)] : null,
+                        GradedById = isGraded ? assignedByStaff.Id : null,
+                        GradedDate = isGraded ? submissionDate.AddDays(rng.Next(1, 4)) : null,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            _context.AssignmentSubmissions.AddRange(submissions);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} assignment submissions seeded across {Assignments} assignments",
+                submissions.Count, assignments.Count);
+        }
+
+        // ─── Admission Applications ───────────────────────────────────────────────
+        public async Task SeedAdmissionApplicationsAsync()
+        {
+            _logger.LogInformation("📋 Seeding admission applications...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            if (await _context.Admissions.AnyAsync(a => a.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Admission applications already seeded");
+                return;
+            }
+
+            var rng = new Random(777);
+            var statuses = new[] { "Pending", "Pending", "Pending", "Shortlisted", "Shortlisted", "Approved", "Approved", "Enrolled", "Rejected", "Inquiry" };
+            var classes  = new[] { "Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10" };
+
+            var applicants = new[]
+            {
+                ("Rahul", "Verma",    "Sunita Verma",    "9876501001", "sunita.v@gmail.com",    "M"),
+                ("Priya", "Sharma",   "Rajesh Sharma",   "9876501002", "rajesh.s@gmail.com",    "F"),
+                ("Ankit", "Gupta",    "Meena Gupta",     "9876501003", "meena.g@yahoo.com",     "M"),
+                ("Sneha", "Patil",    "Suresh Patil",    "9876501004", "suresh.p@gmail.com",    "F"),
+                ("Rohan", "Joshi",    "Kavita Joshi",    "9876501005", "kavita.j@gmail.com",    "M"),
+                ("Nisha", "Reddy",    "Venkat Reddy",    "9876501006", "venkat.r@hotmail.com",  "F"),
+                ("Aryan", "Mehta",    "Pooja Mehta",     "9876501007", "pooja.m@gmail.com",     "M"),
+                ("Kavya", "Iyer",     "Krishnan Iyer",   "9876501008", "krishnan.i@gmail.com",  "F"),
+                ("Vivek", "Pandey",   "Geeta Pandey",    "9876501009", "geeta.p@gmail.com",     "M"),
+                ("Divya", "Nair",     "Suresh Nair",     "9876501010", "suresh.n@gmail.com",    "F"),
+            };
+
+            var admissions = new List<Admission>();
+            for (var i = 0; i < applicants.Length; i++)
+            {
+                var (first, last, parent, phone, email, gender) = applicants[i];
+                var status = statuses[i % statuses.Length];
+                var appDate = DateTime.UtcNow.AddDays(-rng.Next(1, 30));
+
+                admissions.Add(new Admission
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    ApplicationNumber = $"ADM{DateTime.UtcNow.Year}{(i + 1001):D4}",
+                    FirstName = first,
+                    LastName = last,
+                    ParentName = parent,
+                    ParentPhone = phone,
+                    ParentEmail = email,
+                    ApplyingForClass = classes[rng.Next(classes.Length)],
+                    ApplicationDate = appDate,
+                    Status = status,
+                    DateOfBirth = new DateTime(DateTime.UtcNow.Year - rng.Next(5, 14), rng.Next(1, 12), rng.Next(1, 28)),
+                    Gender = gender,
+                    Address = $"{rng.Next(1, 100)}, Demo Nagar, Mumbai, Maharashtra",
+                    Remarks = status == "Rejected" ? "Seats not available for requested class." :
+                              status == "Approved" ? "All documents verified. Eligible for admission." :
+                              status == "Shortlisted" ? "Call for interview scheduled." : null,
+                    CreatedAt = appDate,
+                    UpdatedAt = appDate,
+                });
+            }
+
+            _context.Admissions.AddRange(admissions);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} admission applications seeded ({Pending} pending)",
+                admissions.Count, admissions.Count(a => a.Status == "Pending"));
+        }
+
+        // ─── Student Documents ────────────────────────────────────────────────────
+        public async Task SeedStudentDocumentsAsync()
+        {
+            _logger.LogInformation("📄 Seeding student documents...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            if (await _context.StudentDocuments.AnyAsync(d => d.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Student documents already seeded");
+                return;
+            }
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .Take(5)
+                .ToListAsync();
+
+            if (!students.Any())
+            {
+                _logger.LogWarning("⚠️ No students found for document seeding");
+                return;
+            }
+
+            var docTypes = new[] { "aadharCard", "birthCertificate", "tcFromPreviousSchool", "photo" };
+            var verificationStatuses = new[] { "pending", "pending", "pending", "verified", "verified" };
+            var documents = new List<StudentDocument>();
+            var rng = new Random(888);
+
+            foreach (var (student, si) in students.Select((s, i) => (s, i)))
+            {
+                var docType = docTypes[si % docTypes.Length];
+                documents.Add(new StudentDocument
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    StudentId = student.Id,
+                    DocumentType = docType,
+                    FileName = $"{docType}_{student.AdmissionNumber}.pdf",
+                    FileUrl = $"/documents/placeholder/{student.AdmissionNumber}/{docType}.pdf",
+                    VerificationStatus = verificationStatuses[si % verificationStatuses.Length],
+                    UploadedAt = DateTime.UtcNow.AddDays(-rng.Next(1, 15)),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
+            }
+
+            _context.StudentDocuments.AddRange(documents);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} student documents seeded ({Pending} pending verification)",
+                documents.Count, documents.Count(d => d.VerificationStatus == "pending"));
+        }
+
+        // ─── Today's Attendance ───────────────────────────────────────────────────
+        public async Task EnsureTodayAttendanceAsync()
+        {
+            _logger.LogInformation("📅 Ensuring today's attendance records...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            var today = DateTime.UtcNow.Date;
+
+            if (await _context.AttendanceRecords.AnyAsync(a => a.SchoolId == _schoolId && a.Date == today && a.EntityType == "Student"))
+            {
+                _logger.LogInformation("✅ Today's attendance already exists");
+                return;
+            }
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && s.Status == "active" && !s.IsDeleted)
+                .Take(50)
+                .ToListAsync();
+
+            if (!students.Any()) return;
+
+            var rng = new Random(today.DayOfYear);
+            var records = new List<AttendanceRecord>();
+
+            foreach (var student in students)
+            {
+                var roll = rng.Next(1, 101);
+                var status = roll <= 80 ? "present" : roll <= 95 ? "absent" : "late";
+                records.Add(new AttendanceRecord
+                {
+                    Id = Guid.NewGuid(),
+                    SchoolId = _schoolId,
+                    EntityType = "Student",
+                    StudentId = student.Id,
+                    Date = today,
+                    Status = status,
+                    Remarks = status == "absent" ? "Not present" : null,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                });
+            }
+
+            _context.AttendanceRecords.AddRange(records);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} attendance records seeded for today ({Present} present, {Absent} absent)",
+                records.Count,
+                records.Count(r => r.Status == "present"),
+                records.Count(r => r.Status == "absent"));
+        }
+
+        // ─── Overdue Fee Records ──────────────────────────────────────────────────
+        // ─── Library Issues — 5 active issues, 2 overdue ─────────────────────────
+        public async Task SeedLibraryIssuesAsync()
+        {
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            if (await _context.BookIssues.AnyAsync(b => b.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Library issues already seeded");
+                return;
+            }
+
+            var books = await _context.Books
+                .Where(b => b.SchoolId == _schoolId && !b.IsDeleted)
+                .Take(5)
+                .ToListAsync();
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && s.Status.ToLower() == "active" && !s.IsDeleted)
+                .Take(5)
+                .ToListAsync();
+
+            if (!books.Any() || !students.Any()) return;
+
+            var today = DateTime.UtcNow.Date;
+            var issues = new List<BookIssue>();
+            for (var i = 0; i < Math.Min(books.Count, students.Count); i++)
+            {
+                var isOverdue = i < 2;
+                var issueDate = isOverdue ? today.AddDays(-20) : today.AddDays(-i);
+                var dueDate   = isOverdue ? today.AddDays(-5)  : today.AddDays(14 - i);
+                issues.Add(new BookIssue
+                {
+                    Id         = Guid.NewGuid(),
+                    SchoolId   = _schoolId,
+                    BookId     = books[i].Id,
+                    StudentId  = students[i].Id,
+                    IssueDate  = issueDate,
+                    DueDate    = dueDate,
+                    ReturnDate = null,
+                    Status     = isOverdue ? "overdue" : "issued",
+                    Fine       = isOverdue ? Math.Max(0, (today - dueDate).Days * 2m) : 0,
+                    CreatedAt  = issueDate,
+                    UpdatedAt  = issueDate,
+                });
+            }
+
+            _context.BookIssues.AddRange(issues);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} library issues seeded ({Overdue} overdue)", issues.Count, issues.Count(i => i.Status == "overdue"));
+        }
+
+        // ─── Visitor Entries — 5 visitors (3 currently inside) ───────────────────
+        public async Task SeedVisitorEntriesAsync()
+        {
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            if (await _context.VisitorLogs.AnyAsync(v => v.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Visitor entries already seeded");
+                return;
+            }
+
+            var today = DateTime.UtcNow.Date;
+            var purposes = new[] { "Parent Visit", "Official Work", "Meeting", "Delivery", "Interview" };
+            var personToMeet = new[] { "Principal", "Class Teacher", "Admin Office", "HR Manager", "Accounts" };
+
+            var visitors = new List<Visitor>();
+            var logs     = new List<VisitorLog>();
+            var preRegs  = new List<VisitorPreRegistration>();
+
+            for (var i = 0; i < 5; i++)
+            {
+                var visitor = new Visitor
+                {
+                    Id        = Guid.NewGuid(),
+                    SchoolId  = _schoolId,
+                    Name      = $"Visitor {i + 1}",
+                    Phone     = $"987650{2000 + i}",
+                    IdType    = "Aadhaar",
+                    IdNumber  = $"1234 5678 {9000 + i}",
+                    CreatedAt = today,
+                    UpdatedAt = today,
+                };
+                visitors.Add(visitor);
+
+                var checkIn = today.AddHours(9 + i);
+                logs.Add(new VisitorLog
+                {
+                    Id           = Guid.NewGuid(),
+                    SchoolId     = _schoolId,
+                    VisitorId    = visitor.Id,
+                    VisitNumber  = $"V{DateTime.UtcNow.Year}{i + 1001}",
+                    CheckInTime  = checkIn,
+                    CheckOutTime = i >= 3 ? (DateTime?)checkIn.AddHours(1) : null,
+                    Purpose      = purposes[i],
+                    PersonToMeet = personToMeet[i],
+                    CreatedAt    = checkIn,
+                    UpdatedAt    = checkIn,
+                });
+            }
+
+            // 3 pending pre-registrations
+            var adminStaff = await _context.UserLogins
+                .Where(u => u.SchoolId == _schoolId && u.Role == "Admin" && !u.IsDeleted)
+                .Select(u => u.Id)
+                .FirstOrDefaultAsync();
+
+            for (var j = 0; j < 3; j++)
+            {
+                preRegs.Add(new VisitorPreRegistration
+                {
+                    Id              = Guid.NewGuid(),
+                    SchoolId        = _schoolId,
+                    VisitorName     = $"Expected Visitor {j + 1}",
+                    VisitorPhone    = $"987650{3000 + j}",
+                    Purpose         = purposes[j],
+                    PersonToMeet    = personToMeet[j],
+                    ExpectedDate    = today,
+                    ExpectedTime    = TimeSpan.FromHours(11 + j),
+                    Status          = "Pending",
+                    RegisteredBy    = adminStaff == Guid.Empty ? Guid.NewGuid() : adminStaff,
+                    CreatedAt       = today.AddDays(-1),
+                    UpdatedAt       = today.AddDays(-1),
+                });
+            }
+
+            _context.Visitors.AddRange(visitors);
+            _context.VisitorLogs.AddRange(logs);
+            _context.VisitorPreRegistrations.AddRange(preRegs);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {V} visitors, {L} logs, {P} pre-registrations seeded", visitors.Count, logs.Count, preRegs.Count);
+        }
+
+        // ─── Hostel Attendance — today's attendance for hostel students ───────────
+        public async Task SeedHostelAttendanceAsync()
+        {
+            _logger.LogInformation("🏠 Skipping hostel attendance seed (no HostelAttendance entity yet)");
+            await Task.CompletedTask;
+        }
+
+        public async Task EnsureOverdueFeeRecordsAsync()
+        {
+            _logger.LogInformation("💸 Ensuring overdue fee records...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            var overdueCount = await _context.FeeRecords
+                .CountAsync(f => f.SchoolId == _schoolId && f.Status == "Overdue" && f.PendingAmount > 0);
+
+            if (overdueCount >= 10)
+            {
+                _logger.LogInformation("✅ Sufficient overdue fee records already exist ({Count})", overdueCount);
+                return;
+            }
+
+            // Mark some existing Pending records as Overdue by backdating their due date
+            var pendingRecords = await _context.FeeRecords
+                .Where(f => f.SchoolId == _schoolId && f.PendingAmount > 0 && !f.IsDeleted)
+                .Take(15)
+                .ToListAsync();
+
+            if (!pendingRecords.Any()) return;
+
+            var rng = new Random(999);
+            var now = DateTime.UtcNow;
+
+            foreach (var (record, i) in pendingRecords.Select((r, i) => (r, i)))
+            {
+                record.DueDate = now.AddDays(-rng.Next(30, 90));
+                record.Status = "Overdue";
+                record.UpdatedAt = now;
+            }
+
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ {Count} fee records marked as overdue", pendingRecords.Count);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // BEHAVIOUR RECORDS — merits and demerits for test student/parent views
+        // ─────────────────────────────────────────────────────────────────────
+        public async Task SeedBehaviourRecordsAsync()
+        {
+            _logger.LogInformation("🏅 Seeding behaviour records...");
+
+            if (await _context.BehaviourRecords.AnyAsync(b => b.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ Behaviour records already present");
+                return;
+            }
+
+            var students = await _context.Students
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .Take(10)
+                .ToListAsync();
+
+            if (!students.Any()) return;
+
+            var staff = await _context.StaffMembers
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .Select(s => s.Id)
+                .FirstOrDefaultAsync();
+
+            var rng = new Random(42);
+            var records = new List<BehaviourRecord>();
+
+            string[] merits   = { "Academic Excellence", "Sports Achievement", "Community Service" };
+            string[] demerits = { "Tardiness", "Disruptive Behaviour", "Dress Code Violation", "Mobile Phone Violation" };
+
+            foreach (var student in students)
+            {
+                // 2-3 merit records
+                for (int i = 0; i < rng.Next(2, 4); i++)
+                {
+                    records.Add(new BehaviourRecord
+                    {
+                        SchoolId          = _schoolId,
+                        StudentId         = student.Id,
+                        ReportedByStaffId = staff,
+                        IncidentType      = "positive",
+                        Category          = merits[rng.Next(merits.Length)],
+                        IncidentDate      = DateTime.UtcNow.AddDays(-rng.Next(10, 180)),
+                        Description       = "Student demonstrated exceptional performance.",
+                        Points            = rng.Next(5, 15),
+                        Status            = "resolved",
+                        ParentNotified    = true,
+                        CreatedAt         = DateTime.UtcNow,
+                        UpdatedAt         = DateTime.UtcNow,
+                    });
+                }
+
+                // 1-2 demerit records
+                for (int i = 0; i < rng.Next(1, 3); i++)
+                {
+                    records.Add(new BehaviourRecord
+                    {
+                        SchoolId          = _schoolId,
+                        StudentId         = student.Id,
+                        ReportedByStaffId = staff,
+                        IncidentType      = "negative",
+                        Category          = demerits[rng.Next(demerits.Length)],
+                        IncidentDate      = DateTime.UtcNow.AddDays(-rng.Next(5, 90)),
+                        Description       = "Student was found violating school conduct guidelines.",
+                        ActionTaken       = "Verbal warning issued. Parent informed.",
+                        Points            = -(rng.Next(2, 8)),
+                        Status            = i == 0 ? "open" : "resolved",
+                        ParentNotified    = true,
+                        CreatedAt         = DateTime.UtcNow,
+                        UpdatedAt         = DateTime.UtcNow,
+                    });
+                }
+            }
+
+            _context.BehaviourRecords.AddRange(records);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Seeded {Count} behaviour records", records.Count);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // PTM DATA — sessions and available slots for parent booking tests
+        // ─────────────────────────────────────────────────────────────────────
+        public async Task SeedPtmDataAsync()
+        {
+            _logger.LogInformation("📅 Seeding PTM sessions...");
+
+            if (await _context.PtmSessions.AnyAsync(p => p.SchoolId == _schoolId))
+            {
+                _logger.LogInformation("✅ PTM sessions already present");
+                return;
+            }
+
+            // Get a teacher for slot assignment
+            var teacherIds = await _context.StaffMembers
+                .Where(s => s.SchoolId == _schoolId && !s.IsDeleted)
+                .Select(s => s.Id)
+                .Take(3)
+                .ToListAsync();
+
+            if (!teacherIds.Any()) return;
+
+            var sessionDate = DateTime.UtcNow.AddDays(14).Date; // 2 weeks from now
+            var session = new PtmSession
+            {
+                SchoolId            = _schoolId,
+                Title               = "Term 1 Parent-Teacher Meeting 2025-26",
+                Description         = "Annual parent-teacher interaction session for Term 1. Parents can discuss their child's academic progress.",
+                SessionDate         = sessionDate,
+                StartTime           = new TimeSpan(9, 0, 0),
+                EndTime             = new TimeSpan(13, 0, 0),
+                SlotDurationMinutes = 10,
+                Location            = "School Auditorium",
+                Status              = "scheduled",
+                CreatedAt           = DateTime.UtcNow,
+                UpdatedAt           = DateTime.UtcNow,
+            };
+            _context.PtmSessions.Add(session);
+            await _context.SaveChangesAsync();
+
+            // Generate slots: 4-hour window / 10-min slots = 24 slots per teacher
+            var slots = new List<PtmSlot>();
+            var slotDuration = TimeSpan.FromMinutes(10);
+
+            foreach (var teacherId in teacherIds)
+            {
+                var slotTime = sessionDate + session.StartTime;
+                var endTime  = sessionDate + session.EndTime;
+                while (slotTime + slotDuration <= endTime)
+                {
+                    slots.Add(new PtmSlot
+                    {
+                        SchoolId     = _schoolId,
+                        SessionId    = session.Id,
+                        TeacherId    = teacherId,
+                        SlotDateTime = slotTime,
+                        Status       = "available",
+                        CreatedAt    = DateTime.UtcNow,
+                        UpdatedAt    = DateTime.UtcNow,
+                    });
+                    slotTime += slotDuration;
+                }
+            }
+
+            _context.PtmSlots.AddRange(slots);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Seeded 1 PTM session with {Count} slots", slots.Count);
         }
     }
 }

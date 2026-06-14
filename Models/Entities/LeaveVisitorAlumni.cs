@@ -29,6 +29,13 @@ namespace SmsApi.Models.Entities
         public int MinNoticeDays { get; set; } = 0;
         
         public bool IsCarryForward { get; set; } = false;
+
+        /// <summary>
+        /// Maximum days that can be carried forward per year. null = unlimited (carry all unused days).
+        /// Only relevant when IsCarryForward is true.
+        /// NOTE: requires migration after adding this column.
+        /// </summary>
+        public int? MaxCarryForwardDays { get; set; }
         
         public bool IsPaid { get; set; } = true;
         

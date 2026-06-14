@@ -1,14 +1,21 @@
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useState } from 'react';
+import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { studentApi } from '@/api/endpoints/student';
+import { apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
+
+// expo-document-picker requires a native build — not available in Expo Go / dev-client.
+// File upload is disabled and falls back to text submission only.
+const DOCUMENT_PICKER_AVAILABLE = false;
 
 const OFFLINE_QUEUE_KEY = 'offline_assignment_queue';
 
@@ -26,12 +33,23 @@ async function queueOfflineSubmission(assignmentId: string, textContent: string)
   await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(filtered));
 }
 
+interface PickedFile {
+  name: string;
+  uri: string;
+  mimeType: string;
+  size?: number;
+}
+
 export default function SubmitAssignment() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { primaryColor } = useSchoolTheme();
   const queryClient = useQueryClient();
+  const token = useAuthStore((s) => s.accessToken);
   const [textContent, setTextContent] = useState('');
   const [activeTab, setActiveTab] = useState<'text' | 'file'>('text');
+  const [pickedFile, setPickedFile] = useState<PickedFile | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
   const { data: assignment } = useQuery({
     queryKey: ['assignment', id],
@@ -49,10 +67,59 @@ export default function SubmitAssignment() {
         { text: 'OK', onPress: () => router.back() },
       ]);
     },
-    onError: () => {
-      Alert.alert('Error', 'Failed to submit. Please try again.');
-    },
+    onError: () => Alert.alert('Error', 'Failed to submit. Please try again.'),
   });
+
+  async function pickDocument() {
+    if (!DOCUMENT_PICKER_AVAILABLE) {
+      Alert.alert(
+        'Not Available',
+        'File upload requires installing the full app build. Please use text submission for now.',
+      );
+      return;
+    }
+  }
+
+  async function uploadFile() {
+    if (!pickedFile) return;
+    const net = await NetInfo.fetch();
+    if (!net.isConnected) {
+      Alert.alert('No Internet', 'File upload requires an internet connection.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
+      const uploadResult = await FileSystem.uploadAsync(
+        `${baseUrl}/api/assignments/${id!}/submit-file`,
+        pickedFile.uri,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          mimeType: pickedFile.mimeType,
+        },
+      );
+
+      if (uploadResult.status >= 200 && uploadResult.status < 300) {
+        void queryClient.invalidateQueries({ queryKey: ['assignment', id] });
+        void queryClient.invalidateQueries({ queryKey: ['student-assignments'] });
+        Alert.alert('Uploaded!', 'Your file has been submitted successfully.', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } else {
+        Alert.alert('Upload Failed', 'Server returned an error. Please try again.');
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to upload file. Please try again.');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }
 
   async function handleSubmit() {
     if (!textContent.trim()) {
@@ -105,33 +172,33 @@ export default function SubmitAssignment() {
 
           {/* Tab selector */}
           <View style={{ flexDirection: 'row', backgroundColor: '#f3f4f6', borderRadius: 10, padding: 4 }}>
-            {(['text', 'file'] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                onPress={() => setActiveTab(tab)}
-                style={{
-                  flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8,
-                  backgroundColor: activeTab === tab ? '#fff' : 'transparent',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Feather
-                    name={tab === 'text' ? 'edit-3' : 'paperclip'}
-                    size={15}
-                    color={activeTab === tab ? primaryColor : VITANA_COLORS.textSecondary}
-                  />
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: activeTab === tab ? '600' : '400',
-                      color: activeTab === tab ? primaryColor : VITANA_COLORS.textSecondary,
-                    }}
-                  >
-                    {tab === 'text' ? 'Write' : 'Upload File'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+            <TouchableOpacity
+              onPress={() => setActiveTab('text')}
+              style={{
+                flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8,
+                backgroundColor: activeTab === 'text' ? '#fff' : 'transparent',
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Feather name="edit-3" size={15} color={activeTab === 'text' ? primaryColor : VITANA_COLORS.textSecondary} />
+                <Text style={{ fontSize: 14, fontWeight: activeTab === 'text' ? '600' : '400', color: activeTab === 'text' ? primaryColor : VITANA_COLORS.textSecondary }}>
+                  Write Answer
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setActiveTab('file')}
+              style={{
+                flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8,
+                backgroundColor: activeTab === 'file' ? '#fff' : 'transparent',
+                opacity: 0.6,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Feather name="paperclip" size={15} color={VITANA_COLORS.textSecondary} />
+                <Text style={{ fontSize: 14, color: VITANA_COLORS.textSecondary }}>Upload File</Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
           {activeTab === 'text' ? (
@@ -160,26 +227,27 @@ export default function SubmitAssignment() {
               </Text>
             </View>
           ) : (
-            <View
-              style={{
-                backgroundColor: '#fff', borderRadius: 12, padding: 24,
-                borderWidth: 1, borderColor: VITANA_COLORS.border,
-                alignItems: 'center', borderStyle: 'dashed',
-              }}
-            >
-              <Feather name="upload-cloud" size={40} color={VITANA_COLORS.textSecondary} />
-              <Text style={{ fontSize: 15, color: VITANA_COLORS.text, fontWeight: '500', marginTop: 12 }}>
-                File Upload
+            <View style={{
+              backgroundColor: '#fff', borderRadius: 14, padding: 28,
+              borderWidth: 1, borderColor: '#e5e7eb',
+              alignItems: 'center', gap: 12,
+            }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="alert-circle" size={28} color="#9ca3af" />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: VITANA_COLORS.text }}>
+                File Upload Unavailable
               </Text>
-              <Text
-                style={{ fontSize: 13, color: VITANA_COLORS.textSecondary, textAlign: 'center', marginTop: 6, lineHeight: 18 }}
+              <Text style={{ fontSize: 13, color: VITANA_COLORS.textSecondary, textAlign: 'center', lineHeight: 20 }}>
+                File upload requires the full production build of the app.
+                Please use the <Text style={{ fontWeight: '700', color: primaryColor }}>Write Answer</Text> tab to submit your response.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setActiveTab('text')}
+                style={{ backgroundColor: primaryColor, paddingHorizontal: 24, paddingVertical: 11, borderRadius: 10 }}
               >
-                File upload requires an internet connection.{'\n'}
-                Max file size: 10 MB
-              </Text>
-              <Text style={{ fontSize: 12, color: '#d97706', marginTop: 12 }}>
-                File upload coming in a future update.{'\n'}Use text submission for now.
-              </Text>
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Switch to Write Answer</Text>
+              </TouchableOpacity>
             </View>
           )}
 

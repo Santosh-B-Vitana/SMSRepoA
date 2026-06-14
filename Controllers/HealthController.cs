@@ -6,6 +6,7 @@ using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -40,6 +41,12 @@ namespace SmsApi.Controllers
         private string? GetDesignation()
         {
             return User.FindFirst("Designation")?.Value;
+        }
+
+        private Guid? GetLinkedEntityId()
+        {
+            var raw = User.FindFirst("LinkedEntityId")?.Value;
+            return Guid.TryParse(raw, out var id) ? id : null;
         }
 
         // ========== HEALTH RECORDS API ==========
@@ -370,6 +377,60 @@ namespace SmsApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error acknowledging alert {Id}", id);
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        // ── Student / Parent self-service health record ────────────────────────
+
+        /// <summary>
+        /// Student: get own health record. Resolves student identity from JWT.
+        /// </summary>
+        [HttpGet("records/me")]
+        [Authorize(Roles = "Student")]
+        public async Task<ActionResult> GetMyHealthRecord()
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var studentId = GetLinkedEntityId();
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                    return StatusCode(403, new { message = "Student identity could not be resolved from token." });
+
+                var result = await _service.GetHealthRecordsAsync(
+                    schoolId,
+                    new HealthFiltersDto { StudentId = studentId.Value },
+                    page: 1,
+                    pageSize: 1);
+
+                return Ok(result.Items.FirstOrDefault());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting own health record");
+                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Parent: get health record for a specific child.
+        /// </summary>
+        [HttpGet("records/child/{studentId:guid}")]
+        [Authorize(Roles = "Parent")]
+        public async Task<ActionResult> GetChildHealthRecord(Guid studentId)
+        {
+            try
+            {
+                var schoolId = GetSchoolId();
+                var parentEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
+
+                // Validate parent-child relationship via StudentGuardians
+                // (service layer does not provide this check — we do it here)
+                return StatusCode(501, new { message = "Parent child health endpoint — implement guardian check." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting child health record {StudentId}", studentId);
                 return StatusCode(500, new { message = "An error occurred", error = ex.Message });
             }
         }

@@ -5,9 +5,10 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { apiClient } from '@/api/client';
+import { adminApi } from '@/api/endpoints/admin';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
@@ -78,7 +79,15 @@ export default function StudentDirectoryScreen() {
   }, []);
 
   const allStudents = data?.pages.flatMap((p) => p.students ?? []) ?? [];
-  const classes = ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'];
+
+  // Fetch class list dynamically from API — deduplicate by name since API returns one entry per section
+  const { data: classesData } = useQuery({
+    queryKey: ['admin-classes-list'],
+    queryFn: adminApi.getClasses,
+    staleTime: 10 * 60 * 1000,
+  });
+  // Deduplicate: API returns one record per class-section combination; we only want unique names for the filter
+  const classes: string[] = Array.from(new Set(classesData?.classes?.map((c) => c.name) ?? []));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -101,24 +110,27 @@ export default function StudentDirectoryScreen() {
         )}
       </View>
 
-      <FlatList
-        horizontal
-        data={[null, ...classes]}
-        keyExtractor={(item) => item ?? 'all'}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.filterChip, classFilter === item && { backgroundColor: primaryColor }]}
-            onPress={() => setClassFilter(classFilter === item ? null : item)}
-          >
-            <Text style={[styles.filterText, classFilter === item && { color: '#fff' }]}>
-              {item === null ? 'All Classes' : item}
-            </Text>
-          </TouchableOpacity>
-        )}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}
-        style={{ flexGrow: 0 }}
-      />
+      {/* Class filter chips — horizontal scroll row */}
+      <View style={styles.chipsRow}>
+        <FlatList
+          horizontal
+          data={[null, ...classes]}
+          keyExtractor={(item, index) => `chip-${index}-${item ?? 'all'}`}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.filterChip, classFilter === item && { backgroundColor: primaryColor, borderColor: primaryColor }]}
+              onPress={() => setClassFilter(classFilter === item ? null : item)}
+            >
+              <Text style={[styles.filterText, classFilter === item && { color: '#fff', fontWeight: '700' }]}>
+                {item === null ? 'All' : item.replace('Class ', 'Cls ')}
+              </Text>
+            </TouchableOpacity>
+          )}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}
+          bounces={false}
+        />
+      </View>
 
       <FlatList
         data={allStudents}
@@ -156,9 +168,22 @@ const styles = StyleSheet.create({
     margin: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb',
   },
   searchInput: { flex: 1, paddingVertical: 11, paddingHorizontal: 10, fontSize: 14, color: VITANA_COLORS.text },
+  chipsRow: {
+    height: 50,
+    flexShrink: 0,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
   filterChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb',
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterText: { fontSize: 12, fontWeight: '500', color: VITANA_COLORS.textSecondary },
   row: {

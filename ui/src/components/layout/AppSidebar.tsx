@@ -1,5 +1,5 @@
 import * as React from "react"
-import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck, CalendarCheck, Star, FileText, Megaphone, Receipt, type LucideIcon } from "lucide-react"
+import { GraduationCap, Users, UserCheck, BookOpen, Award, Clock, Bus, Heart, DollarSign, MessageSquare, Settings, User, Building, Library, Wallet, School, ShoppingBag, LayoutDashboard, Shield, UserCog, Home, BarChart3, UserPlus, Calendar, Bell, ClipboardList, HeartPulse, Banknote, Truck, CalendarCheck, Star, FileText, Megaphone, Receipt, Crown, BadgeCheck, AlertTriangle, type LucideIcon } from "lucide-react"
 import { NavMain } from "@/components/sidebar/nav-main"
 import { TeamSwitcher } from "@/components/sidebar/team-switcher"
 import {
@@ -28,10 +28,39 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const getNavigationItems = () => {
     if (!user) return []
 
-    if (user.role === 'super_admin' || user.role === 'admin') {
+    if (user.role === 'super_admin') {
+      // ── Super Admin: platform management comes first ──────────────────────
+      return [
+        { title: 'Platform Management', isLabel: true },
+        { title: t('nav.dashboard'), url: "/super-admin-dashboard", icon: LayoutDashboard },
+        { title: t('nav.schools'), url: "/superadmin/schools", icon: Building },
+        { title: t('nav.userManagement'), url: "/superadmin/users", icon: UserCog },
+
+        { title: 'School Operations', isLabel: true },
+        { title: t('nav.students'), url: "/students", icon: Users, moduleKey: "students" as ModuleName },
+        { title: t('nav.staff'), url: "/staff", icon: UserCheck, moduleKey: "staff" as ModuleName },
+        { title: t('nav.academicSetup'), url: "/academics", icon: BookOpen },
+        { title: t('nav.examinations'), url: "/examinations", icon: Award, moduleKey: "examinations" as ModuleName },
+        { title: t('nav.timetable'), url: "/timetable", icon: Clock, moduleKey: "timetable" as ModuleName },
+
+        { title: 'Finance & Reports', isLabel: true },
+        { title: t('nav.collectFees'), url: "/fees/collect", icon: Receipt, moduleKey: "fees" as ModuleName },
+        { title: t('nav.feeSetup'), url: "/fees/setup", icon: Settings, moduleKey: "fees" as ModuleName },
+        { title: t('nav.reports'), url: "/reports", icon: FileText, moduleKey: "reports" as ModuleName },
+        { title: t('nav.advancedAnalytics'), url: "/advanced-analytics", icon: BarChart3, moduleKey: "analytics" as ModuleName },
+
+        { title: 'System', isLabel: true },
+        { title: t('nav.settings'), url: "/settings", icon: Settings },
+        { title: t('nav.security'), url: "/security", icon: Shield },
+        { title: t('nav.roleManagement'), url: "/role-management", icon: Shield },
+      ] as NavItem[];
+    }
+
+    if (user.role === 'admin') {
+      // ── School Admin: full school operations ──────────────────────────────
       const adminItems: NavItem[] = [
         { title: t('nav.sectionOverview'), isLabel: true },
-        { title: t('nav.dashboard'), url: user.role === 'super_admin' ? "/super-admin-dashboard" : "/admin-dashboard", icon: LayoutDashboard },
+        { title: t('nav.dashboard'), url: "/admin-dashboard", icon: LayoutDashboard },
 
         { title: t('nav.sectionPeople'), isLabel: true },
         { title: t('nav.students'), url: "/students", icon: Users, moduleKey: "students" },
@@ -58,12 +87,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         { title: t('nav.sectionCommunications'), isLabel: true },
         { title: t('nav.communication'), url: "/communication", icon: MessageSquare, moduleKey: "communication" },
-
-        ...(user.role === 'super_admin' ? [
-          { title: t('nav.sectionSystemAdmin'), isLabel: true },
-          { title: t('nav.schools'), url: "/superadmin/schools", icon: Building },
-          { title: t('nav.userManagement'), url: "/superadmin/users", icon: UserCog },
-        ] as NavItem[] : []),
+        { title: 'Parent-Teacher Meetings', url: "/ptm", icon: Users },
+        { title: 'Behaviour & Discipline', url: "/behaviour", icon: AlertTriangle },
 
         { title: t('nav.sectionAdditional'), isLabel: true },
         { title: t('nav.alumni'), url: "/alumni", icon: GraduationCap },
@@ -71,17 +96,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         { title: t('common.store'), url: "/store", icon: ShoppingBag, moduleKey: "store" },
         { title: t('nav.schoolConnect'), url: "/school-connect", icon: School },
 
-        { title: t('nav.sectionGovt'), isLabel: true },
+        { title: 'Reports & Analytics', isLabel: true },
+        { title: 'Reports', url: "/reports", icon: FileText, moduleKey: "reports" },
+        { title: t('nav.advancedAnalytics'), url: "/advanced-analytics", icon: BarChart3, moduleKey: "analytics" },
         { title: t('nav.diseReport'), url: "/reports/dise", icon: FileText, moduleKey: "reports" },
 
         { title: t('nav.sectionSettings'), isLabel: true },
         { title: t('nav.settings'), url: "/settings", icon: Settings },
         { title: t('nav.security'), url: "/security", icon: Shield },
-        { title: t('nav.advancedAnalytics'), url: "/advanced-analytics", icon: BarChart3, moduleKey: "analytics" },
       ];
 
-      // Keep module items visible even when disabled so users can open the existing
-      // ModuleRestricted page and understand why access is blocked.
       return adminItems;
     }
 
@@ -425,10 +449,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     return []
   }
 
+  // Role badge shown below the school name / team switcher
+  const roleBadge = user?.role === 'super_admin' ? (
+    <div className="mx-2 mb-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-100 border border-purple-200 text-purple-800">
+      <Crown className="h-3.5 w-3.5 shrink-0" />
+      <span className="text-[11px] font-semibold tracking-wide">Platform Admin</span>
+    </div>
+  ) : user?.role === 'admin' ? (
+    <div className="mx-2 mb-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700">
+      <BadgeCheck className="h-3.5 w-3.5 shrink-0" />
+      <span className="text-[11px] font-semibold tracking-wide">School Admin</span>
+    </div>
+  ) : user?.role === 'staff' ? (
+    <div className="mx-2 mb-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200 text-green-700">
+      <BadgeCheck className="h-3.5 w-3.5 shrink-0" />
+      <span className="text-[11px] font-semibold tracking-wide">
+        {user.designation ? user.designation : 'Staff'}
+      </span>
+    </div>
+  ) : user?.role === 'parent' ? (
+    <div className="mx-2 mb-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700">
+      <User className="h-3.5 w-3.5 shrink-0" />
+      <span className="text-[11px] font-semibold tracking-wide">Parent / Guardian</span>
+    </div>
+  ) : null;
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <TeamSwitcher />
+        {roleBadge}
       </SidebarHeader>
       <SidebarContent className="py-2 px-1">
         <NavMain items={getNavigationItems()} />

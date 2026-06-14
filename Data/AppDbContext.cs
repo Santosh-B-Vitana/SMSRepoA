@@ -245,6 +245,16 @@ namespace SmsApi.Data
         public DbSet<AlumniMeet> AlumniMeets { get; set; }
         public DbSet<AlumniDonation> AlumniDonations { get; set; }
 
+        // Parent-Teacher Meetings
+        public DbSet<PtmSession> PtmSessions { get; set; }
+        public DbSet<PtmSlot> PtmSlots { get; set; }
+
+        // GPS Tracking
+        public DbSet<VehicleGpsLocation> VehicleGpsLocations { get; set; }
+
+        // Behaviour / Discipline
+        public DbSet<BehaviourRecord> BehaviourRecords { get; set; }
+
         // School Connect - Social Media Platform
         public DbSet<SchoolConnectPost> SchoolConnectPosts { get; set; }
         public DbSet<SchoolConnectComment> SchoolConnectComments { get; set; }

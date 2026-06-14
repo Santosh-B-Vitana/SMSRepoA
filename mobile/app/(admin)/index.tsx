@@ -106,22 +106,46 @@ export default function AdminDashboard() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll}>
             <View style={styles.statsRow}>
               <StatCard
+                label="Students"
+                value={isLoading ? '–' : (data?.activeStudents ?? 0)}
+                icon="users"
+                iconColor={colors.primary}
+                onPress={() => router.push('/(admin)/students')}
+              />
+              <StatCard
+                label="Staff"
+                value={isLoading ? '–' : (data?.activeStaff ?? 0)}
+                icon="briefcase"
+                iconColor="#7c3aed"
+                onPress={() => router.push('/(admin)/staff')}
+              />
+              <StatCard
+                label="Classes"
+                value={isLoading ? '–' : (data?.totalClasses ?? 0)}
+                icon="book-open"
+                iconColor="#059669"
+                onPress={() => router.push('/(admin)/classes')}
+              />
+              <StatCard
                 label="Attendance Today"
                 value={isLoading ? '–' : `${attendanceRate.toFixed(1)}%`}
                 icon="user-check"
                 iconColor={attendanceRate >= 75 ? VITANA_COLORS.success : VITANA_COLORS.error}
+                onPress={() => router.push('/(admin)/attendance')}
               />
               <StatCard
                 label="Pending Approvals"
                 value={isLoading ? '–' : pendingTotal}
                 icon="check-circle"
                 iconColor={pendingTotal > 0 ? VITANA_COLORS.warning : VITANA_COLORS.success}
+                onPress={() => router.push('/(admin)/approvals')}
               />
               <StatCard
                 label="Fee Today"
                 value={isLoading ? '–' : formatINR(data?.feeCollection?.collectedToday ?? 0)}
                 icon="credit-card"
                 iconColor={VITANA_COLORS.primary}
+                onPress={() => router.push('/(admin)/fees')}
               />
             </View>
           </ScrollView>

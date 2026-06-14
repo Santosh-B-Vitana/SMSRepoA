@@ -3,9 +3,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
+using Microsoft.AspNetCore.Http;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -21,14 +25,22 @@ namespace SmsApi.Controllers
         private readonly AppDbContext _context;
         private readonly IParentAuthorizationService _parentAuth;
         private readonly IStudentService _studentService;
+        private readonly IFileStorageService _storageService;
 
-        public AssignmentsController(IAssignmentService assignmentService, ITenantContext tenant, AppDbContext context, IParentAuthorizationService parentAuth, IStudentService studentService)
+        public AssignmentsController(
+            IAssignmentService assignmentService,
+            ITenantContext tenant,
+            AppDbContext context,
+            IParentAuthorizationService parentAuth,
+            IStudentService studentService,
+            IFileStorageService storageService)
         {
             _assignmentService = assignmentService;
             _tenant = tenant;
             _context = context;
             _parentAuth = parentAuth;
             _studentService = studentService;
+            _storageService = storageService;
         }
 
         // Assignment Endpoints
@@ -251,7 +263,7 @@ namespace SmsApi.Controllers
         [HttpGet("for-child")]
         [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<ChildAssignmentListResponse>> GetAssignmentsForChild(
-            [FromQuery] Guid studentId,
+            [FromQuery] Guid? studentId = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50)
         {
@@ -260,21 +272,35 @@ namespace SmsApi.Controllers
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
 
-                if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                if (userRole.Equals("Student", StringComparison.OrdinalIgnoreCase))
                 {
+                    // Student: always resolve from JWT — never trust a provided studentId
+                    var linkedId = _tenant.LinkedEntityId;
+                    if (!linkedId.HasValue || linkedId == Guid.Empty)
+                        return StatusCode(403, new { error = "Student identity could not be resolved from token." });
+                    studentId = linkedId.Value;
+                }
+                else if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!studentId.HasValue || studentId == Guid.Empty)
+                        return BadRequest(new { error = "studentId is required for Parent role." });
                     var parentEmail = _tenant.UserEmail ?? string.Empty;
                     if (string.IsNullOrWhiteSpace(parentEmail))
                         return StatusCode(403, new { error = "Parent email not found in token." });
-                    // Use the same child-resolution logic as my-children endpoint for consistency
                     var accessibleChildren = await _studentService.GetMyChildrenAsync(schoolId, parentEmail);
-                    var canAccess = accessibleChildren.Any(c => c.Id == studentId);
+                    var canAccess = accessibleChildren.Any(c => c.Id == studentId.Value);
                     if (!canAccess)
                         return StatusCode(403, new { error = "Parents can only access their own child's data." });
                 }
 
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                    return BadRequest(new { error = "studentId is required." });
+
+                var resolvedStudentId = studentId.Value;
+
                 // Resolve the student's active enrollment
                 var enrollment = await _context.StudentEnrollments
-                    .Where(e => e.StudentId == studentId && e.SchoolId == schoolId && e.Status == "active")
+                    .Where(e => e.StudentId == resolvedStudentId && e.SchoolId == schoolId && e.Status == "active")
                     .OrderByDescending(e => e.EnrollmentDate)
                     .FirstOrDefaultAsync();
 
@@ -303,7 +329,7 @@ namespace SmsApi.Controllers
                 var assignmentIds = assignments.Select(a => a.Id).ToList();
 
                 var submissionMap = await _context.AssignmentSubmissions
-                    .Where(s => s.StudentId == studentId && assignmentIds.Contains(s.AssignmentId))
+                    .Where(s => s.StudentId == resolvedStudentId && assignmentIds.Contains(s.AssignmentId))
                     .ToDictionaryAsync(s => s.AssignmentId);
 
                 var now = DateTime.UtcNow;
@@ -347,8 +373,9 @@ namespace SmsApi.Controllers
         /// Admin/Staff can access any student. Parents can only access their linked child.
         /// </summary>
         [HttpGet("student-submissions")]
+        [Authorize(Roles = StatusConstants.RoleGroups.StudentView)]
         public async Task<ActionResult<List<SubmissionResponse>>> GetStudentSubmissions(
-            [FromQuery] Guid studentId,
+            [FromQuery] Guid? studentId = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50)
         {
@@ -357,17 +384,31 @@ namespace SmsApi.Controllers
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
 
-                // Parent role: verify this student is their linked child
-                if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                if (userRole.Equals("Student", StringComparison.OrdinalIgnoreCase))
                 {
+                    // Student: always resolve from JWT — never trust provided studentId
+                    var linkedId = _tenant.LinkedEntityId;
+                    if (!linkedId.HasValue || linkedId == Guid.Empty)
+                        return StatusCode(403, new { error = "Student identity could not be resolved from token." });
+                    studentId = linkedId.Value;
+                }
+                else if (userRole.Equals("Parent", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!studentId.HasValue || studentId == Guid.Empty)
+                        return BadRequest(new { error = "studentId is required for Parent role." });
                     var parentEmail = _tenant.UserEmail ?? string.Empty;
-                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId);
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId.Value);
                     if (!canAccess)
                         return StatusCode(403, new { error = "Parents can only access their own child's submissions." });
                 }
 
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                    return BadRequest(new { error = "studentId is required." });
+
+                var resolvedId = studentId.Value;
+
                 var submissions = await _context.AssignmentSubmissions
-                    .Where(s => s.StudentId == studentId)
+                    .Where(s => s.StudentId == resolvedId)
                     .Include(s => s.Assignment)
                     .OrderByDescending(s => s.SubmissionDate)
                     .Skip((page - 1) * pageSize)
@@ -579,6 +620,77 @@ namespace SmsApi.Controllers
             {
                 return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// [Mobile/Student] Submit an assignment with a file attachment.
+        /// Accepts multipart/form-data with a single 'file' field (max 10 MB).
+        /// The file is stored via IFileStorageService and the public URL is saved as the submission attachment.
+        /// </summary>
+        [HttpPost("{id}/submit-file")]
+        [Authorize(Roles = StatusConstants.Roles.Student)]
+        [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB
+        public async Task<ActionResult<SubmissionResponse>> StudentSubmitAssignmentFile(
+            Guid id,
+            IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { error = "No file uploaded." });
+
+            var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/pdf",
+                "image/jpeg", "image/png", "image/gif", "image/webp",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "text/plain",
+            };
+            if (!allowedTypes.Contains(file.ContentType))
+                return BadRequest(new { error = "File type not allowed." });
+
+            try
+            {
+                var schoolId = _tenant.GetEffectiveSchoolId();
+                var userId   = _tenant.UserId;
+
+                Guid? studentId = _tenant.LinkedEntityId;
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                {
+                    studentId = await _context.Students
+                        .Where(s => s.SchoolId == schoolId && !s.IsDeleted &&
+                                    _context.UserLogins.Any(u => u.Id == userId && u.Email == s.Email))
+                        .Select(s => (Guid?)s.Id)
+                        .FirstOrDefaultAsync();
+                }
+
+                if (!studentId.HasValue || studentId == Guid.Empty)
+                    return Unauthorized(new { error = "Student record not found." });
+
+                // Upload file
+                var ext      = Path.GetExtension(file.FileName);
+                var safeKey  = $"assignments/{schoolId}/{id}/submissions/{studentId}/{Guid.NewGuid()}{ext}";
+                var fullKey  = _storageService.BuildAssetKey(safeKey);
+
+                await using var stream = file.OpenReadStream();
+                var saved = await _storageService.SaveFileAsync(fullKey, stream);
+                if (!saved) return StatusCode(500, new { error = "Failed to store file." });
+
+                var publicUrl = _storageService.GetPublicUrl(fullKey);
+
+                var submission = await _assignmentService.CreateSubmissionAsync(new CreateSubmissionRequest
+                {
+                    AssignmentId  = id,
+                    StudentId     = studentId.Value,
+                    Content       = $"[File: {file.FileName}]",
+                    AttachmentUrl = publicUrl,
+                });
+
+                return CreatedAtAction(nameof(GetSubmissionById), new { id = submission.Id }, submission);
+            }
+            catch (ArgumentException ex)     { return BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+            catch (KeyNotFoundException ex)  { return NotFound(new { error = ex.Message }); }
+            catch (Exception ex)             { return StatusCode(500, new { error = "Unexpected error", details = ex.Message }); }
         }
     }
 }

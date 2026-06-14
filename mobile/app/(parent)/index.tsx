@@ -130,6 +130,16 @@ export default function ParentDashboard() {
           {/* Active child card */}
           {isLoading ? (
             <SkeletonLoader height={72} borderRadius={14} />
+          ) : !activeChild && !isLoading ? (
+            // Empty state — no children linked to this parent account
+            <View style={styles.noChildCard}>
+              <Feather name="users" size={32} color={VITANA_COLORS.border} />
+              <Text style={styles.noChildTitle}>No students linked</Text>
+              <Text style={styles.noChildSubtitle}>
+                Your account is not yet linked to any student profiles.
+                Please contact your school admin to link your children to this account.
+              </Text>
+            </View>
           ) : activeChild ? (
             <View style={[styles.childCard, VITANA_SHADOWS.sm]}>
               <Avatar name={activeChild.studentName} size="md" />
@@ -269,6 +279,12 @@ const styles = StyleSheet.create({
   childAvatarImg: { width: 56, height: 56 },
   childInitial: { fontSize: 22, fontWeight: '700' },
   childName: { fontSize: 11, color: VITANA_COLORS.textSecondary, fontFamily: 'Inter', width: 60, textAlign: 'center' },
+  noChildCard: {
+    backgroundColor: VITANA_COLORS.background, borderRadius: 14, borderWidth: 1,
+    borderColor: VITANA_COLORS.border, padding: 24, alignItems: 'center', gap: 10,
+  },
+  noChildTitle: { fontSize: 16, fontWeight: '600', color: VITANA_COLORS.text, textAlign: 'center' },
+  noChildSubtitle: { fontSize: 13, color: VITANA_COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
   childCard: {
     backgroundColor: VITANA_COLORS.background,
     borderRadius: 14, borderWidth: 1, borderColor: VITANA_COLORS.border,

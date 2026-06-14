@@ -184,9 +184,18 @@ namespace SmsApi.Controllers
             {
                 var schoolId = GetSchoolId();
 
-                // Parent role: verify they only access their linked child's attendance
+                // Role-based data isolation for attendance records
                 var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "";
-                if (userRole == "Parent")
+
+                if (userRole == "Student")
+                {
+                    // Student: always force to own LinkedEntityId — never accept arbitrary studentId
+                    var linkedId = _tenant.LinkedEntityId;
+                    if (!linkedId.HasValue || linkedId == Guid.Empty)
+                        return StatusCode(403, new { message = "Student identity could not be resolved from token." });
+                    filters.StudentId = linkedId.Value;
+                }
+                else if (userRole == "Parent")
                 {
                     if (!filters.StudentId.HasValue)
                         return BadRequest(new { message = "studentId is required for Parent role." });
@@ -256,7 +265,7 @@ namespace SmsApi.Controllers
         /// Mark attendance for a student (Teachers and Admin only)
         /// </summary>
         [HttpPost("records")]
-        [Authorize(Roles = "Admin,Principal,Teacher,ClassTeacher,Staff")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
         [ProducesResponseType(typeof(AttendanceRecordFullDto), 201)]
         [ProducesResponseType(400)]
         public async Task<ActionResult<AttendanceRecordFullDto>> MarkAttendance([FromBody] MarkAttendanceDto dto)
@@ -293,7 +302,7 @@ namespace SmsApi.Controllers
         /// Bulk mark attendance for multiple students (Teachers and Admin only)
         /// </summary>
         [HttpPost("records/bulk")]
-        [Authorize(Roles = "Admin,Principal,Teacher,ClassTeacher,Staff")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
         [ProducesResponseType(typeof(List<AttendanceRecordBasicDto>), 201)]
         public async Task<ActionResult<List<AttendanceRecordBasicDto>>> BulkMarkAttendance(
             [FromBody] BulkMarkAttendanceDto dto)
@@ -485,7 +494,7 @@ namespace SmsApi.Controllers
         /// Approve leave request
         /// </summary>
         [HttpPut("leave-requests/{id}/approve")]
-        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Teacher")]
         [ProducesResponseType(typeof(LeaveRequestFullDto), 200)]
         [ProducesResponseType(404)]
         public async Task<ActionResult<LeaveRequestFullDto>> ApproveLeaveRequest(
@@ -519,7 +528,7 @@ namespace SmsApi.Controllers
         /// Reject leave request
         /// </summary>
         [HttpPut("leave-requests/{id}/reject")]
-        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Teacher")]
         [ProducesResponseType(typeof(LeaveRequestFullDto), 200)]
         [ProducesResponseType(404)]
         public async Task<ActionResult<LeaveRequestFullDto>> RejectLeaveRequest(
@@ -600,26 +609,39 @@ namespace SmsApi.Controllers
         public async Task<ActionResult> GetStudentAttendances(
             [FromQuery] DateTime? date = null,
             [FromQuery] Guid? studentId = null,
-            [FromQuery] string? classFilter = null)
+            [FromQuery] string? classFilter = null,
+            [FromQuery] int? month = null,
+            [FromQuery] int? year = null)
         {
             try
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
                 var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
-                // Student: restrict to own records only
+
                 if (userRole == "Student")
                 {
+                    // Student: always override to own LinkedEntityId — no IDOR fallback
                     var linkedId = _tenant.LinkedEntityId;
-                    if (linkedId.HasValue)
-                    {
-                        studentId = linkedId; // enforce own student only
-                    }
-                    else if (!studentId.HasValue)
-                    {
-                        return BadRequest(new { message = "studentId is required." });
-                    }
-                    // else: trust provided studentId (linkedEntityId not set in JWT)
+                    if (!linkedId.HasValue || linkedId == Guid.Empty)
+                        return StatusCode(403, new { message = "Student identity could not be resolved from token." });
+                    studentId = linkedId.Value;
                 }
+                else if (userRole == "Parent")
+                {
+                    if (!studentId.HasValue)
+                        return BadRequest(new { message = "studentId is required for Parent role." });
+                    var parentEmail = _tenant.UserEmail ?? string.Empty;
+                    var canAccess = await _parentAuth.CanAccessStudentAsync(schoolId, parentEmail, studentId.Value);
+                    if (!canAccess)
+                        return StatusCode(403, new { message = "Parents can only access their own child's attendance records." });
+                }
+
+                // If month/year supplied, build a date range for filtering
+                if (!date.HasValue && month.HasValue && year.HasValue)
+                {
+                    date = new DateTime(year.Value, month.Value, 1, 0, 0, 0, DateTimeKind.Utc);
+                }
+
                 var attendances = await _service.GetStudentAttendancesAsync(schoolId, date, studentId, classFilter);
                 return Ok(attendances);
             }
@@ -632,7 +654,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("students")]
-        [Authorize(Roles = "Admin,Principal,Teacher,ClassTeacher,Staff")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
         public async Task<ActionResult<StudentAttendanceResponse>> CreateStudentAttendance([FromBody] CreateStudentAttendanceRequest request)
         {
             try
@@ -650,7 +672,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("students/bulk")]
-        [Authorize(Roles = "Admin,Principal,Teacher,ClassTeacher,Staff")]
+        [Authorize(Roles = "Admin,Principal,Teacher,Staff")]
         public async Task<ActionResult> CreateBulkStudentAttendance([FromBody] BulkStudentAttendanceRequest request)
         {
             try
@@ -742,7 +764,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPost("staff")]
-        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Teacher")]
         public async Task<ActionResult<StaffAttendanceResponse>> CreateStaffAttendance([FromBody] CreateStaffAttendanceRequest request)
         {
             try
@@ -760,7 +782,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpPut("staff/{id:guid}")]
-        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Teacher")]
         public async Task<ActionResult<StaffAttendanceResponse>> UpdateStaffAttendance(Guid id, [FromBody] UpdateStaffAttendanceRequest request)
         {
             try
@@ -778,7 +800,7 @@ namespace SmsApi.Controllers
         }
 
         [HttpDelete("staff/{id:guid}")]
-        [Authorize(Roles = "Admin,Principal,HRManager,ClassTeacher")]
+        [Authorize(Roles = "Admin,Principal,HRManager,Teacher")]
         public async Task<ActionResult> DeleteStaffAttendance(Guid id)
         {
             try

@@ -18,11 +18,19 @@ function SubjectCard({ examSetupId, subjectId }: SubjectCardProps) {
     staleTime: 2 * 60 * 1000,
   });
 
-  const isPendingEntry = !sheet || ['marks_entry', 'draft'].includes(sheet.status.toLowerCase());
   const isLocked = sheet?.isLocked ?? false;
-
-  const filled = sheet ? sheet.rows.filter((r) => r.obtainedMarks !== null || r.isAbsent).length : 0;
   const total = sheet?.rows.length ?? 0;
+
+  // A row is "filled" when a marks record has been created (marksEntryId is set) or the student is marked absent.
+  // Using marksEntryId (not obtainedMarks) correctly identifies 0-marks submissions as filled too.
+  const filled = sheet
+    ? sheet.rows.filter((r) => r.marksEntryId !== null || r.isAbsent).length
+    : 0;
+
+  // Show "Done" once every student has a marks record, regardless of the backend status string.
+  // The backend keeps status as "marks_entry" even after saves; the filled count is more accurate.
+  const allFilled = total > 0 && filled === total;
+  const isPendingEntry = !sheet || total === 0 || !allFilled || sheet.status.toLowerCase() === 'draft';
 
   return (
     <TouchableOpacity
@@ -145,11 +153,38 @@ function SubjectCard({ examSetupId, subjectId }: SubjectCardProps) {
           )}
 
           {!isLocked && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={{ fontSize: 13, color: VITANA_COLORS.primary, fontWeight: '600' }}>
-                {isPendingEntry ? 'Enter Marks' : 'View / Edit'}
-              </Text>
-              <Feather name="chevron-right" size={14} color={VITANA_COLORS.primary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 13, color: VITANA_COLORS.primary, fontWeight: '600' }}>
+                  {isPendingEntry ? 'Enter Marks' : 'View / Edit'}
+                </Text>
+                <Feather name="chevron-right" size={14} color={VITANA_COLORS.primary} />
+              </View>
+              {allFilled && (
+                <TouchableOpacity
+                  onPress={() => {
+                    router.push({
+                      pathname: '/(teacher)/marks/[examSetupId]/performance' as never,
+                      params: { examSetupId, examSetupSubjectId: subjectId },
+                    } as never);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    backgroundColor: '#f3e8ff',
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    borderRadius: 8,
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Feather name="bar-chart-2" size={13} color="#7c3aed" />
+                  <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600' }}>
+                    Performance
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </>

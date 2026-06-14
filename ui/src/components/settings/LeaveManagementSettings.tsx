@@ -50,6 +50,7 @@ interface LeaveTypeFormValues {
   requiresDocument: boolean;
   minNoticeDays: number;
   isCarryForward: boolean;
+  maxCarryForwardDays: number | null;
   isPaid: boolean;
   isActive: boolean;
 }
@@ -63,6 +64,7 @@ const EMPTY_FORM: LeaveTypeFormValues = {
   requiresDocument: false,
   minNoticeDays: 0,
   isCarryForward: false,
+  maxCarryForwardDays: null,
   isPaid: true,
   isActive: true,
 };
@@ -110,6 +112,7 @@ export function LeaveManagementSettings() {
       requiresDocument: lt.requiresDocument,
       minNoticeDays: lt.minNoticeDays,
       isCarryForward: lt.isCarryForward,
+      maxCarryForwardDays: lt.maxCarryForwardDays ?? null,
       isPaid: lt.isPaid,
       isActive: lt.isActive,
     });
@@ -136,6 +139,7 @@ export function LeaveManagementSettings() {
           requiresDocument: form.requiresDocument,
           minNoticeDays: form.minNoticeDays,
           isCarryForward: form.isCarryForward,
+          maxCarryForwardDays: form.isCarryForward ? form.maxCarryForwardDays : null,
           isPaid: form.isPaid,
           isActive: form.isActive,
         });
@@ -150,6 +154,7 @@ export function LeaveManagementSettings() {
           requiresDocument: form.requiresDocument,
           minNoticeDays: form.minNoticeDays,
           isCarryForward: form.isCarryForward,
+          maxCarryForwardDays: form.isCarryForward ? form.maxCarryForwardDays : null,
           isPaid: form.isPaid,
         });
         toast({ title: "Created", description: "Leave type added successfully." });
@@ -255,7 +260,11 @@ export function LeaveManagementSettings() {
                         )}
                       </TableCell>
                       <TableCell className="text-center text-sm text-muted-foreground">
-                        {lt.isCarryForward ? "Yes" : "No"}
+                        {lt.isCarryForward
+                          ? lt.maxCarryForwardDays
+                            ? `Up to ${lt.maxCarryForwardDays}d`
+                            : "All unused"
+                          : "No"}
                       </TableCell>
                       <TableCell className="text-center text-sm text-muted-foreground">
                         {lt.requiresApproval ? "Required" : "Auto"}
@@ -396,7 +405,10 @@ export function LeaveManagementSettings() {
                 <Switch
                   id="isCarryForward"
                   checked={form.isCarryForward}
-                  onCheckedChange={(v) => set("isCarryForward", v)}
+                  onCheckedChange={(v) => {
+                    set("isCarryForward", v);
+                    if (!v) set("maxCarryForwardDays", null);
+                  }}
                 />
                 <Label htmlFor="isCarryForward" className="cursor-pointer">Carry Forward</Label>
               </div>
@@ -412,6 +424,30 @@ export function LeaveManagementSettings() {
                 </div>
               )}
             </div>
+
+            {form.isCarryForward && (
+              <div className="space-y-1.5">
+                <Label>
+                  Max Carry-Forward Days
+                  <span className="text-muted-foreground font-normal ml-1">(leave blank for unlimited)</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={365}
+                  placeholder="e.g. 15 — or blank for all unused days"
+                  value={form.maxCarryForwardDays ?? ""}
+                  onChange={(e) =>
+                    set("maxCarryForwardDays", e.target.value === "" ? null : parseInt(e.target.value) || null)
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  {form.maxCarryForwardDays
+                    ? `At year-end, staff can carry forward up to ${form.maxCarryForwardDays} unused days.`
+                    : "All unused days will be carried forward to the next year."}
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

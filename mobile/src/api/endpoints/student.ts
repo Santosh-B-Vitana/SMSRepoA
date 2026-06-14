@@ -205,7 +205,7 @@ export const studentApi = {
     apiClient.get('/timetable', { params: { classId } }),
 
   getAttendance: (month: number, year: number): Promise<MonthlyAttendanceResponse> =>
-    apiClient.get('/attendance/my-attendance', { params: { month, year } }),
+    apiClient.get('/attendance/students', { params: { month, year } }),
 
   getExamResults: (): Promise<ExamResult[]> =>
     apiClient.get('/examinations/results', { params: { studentId: 'me' } }),
@@ -217,8 +217,8 @@ export const studentApi = {
     apiClient.get('/examinations/report-cards/me'),
 
   getAssignments: (status?: string): Promise<PaginatedResponse<AssignmentSummary>> =>
-    apiClient.get('/assignments', {
-      params: { studentId: 'me', status, pageSize: 50 },
+    apiClient.get('/assignments/for-child', {
+      params: { status, pageSize: 50 },
     }),
 
   getAssignmentDetail: (id: string): Promise<AssignmentDetail> =>
@@ -248,11 +248,65 @@ export const studentApi = {
     apiClient.get('/announcements', { params: { page, pageSize: 20 } }),
 
   getNotifications: (page: number): Promise<PaginatedResponse<AppNotification>> =>
-    apiClient.get('/notifications/my', { params: { page, pageSize: 20 } }),
+    (apiClient.get('/notifications/my', { params: { page, pageSize: 20 } }) as Promise<Record<string, unknown>>).then(
+      (res) => ({
+        items: (res?.notifications ?? res?.items ?? []) as AppNotification[],
+        totalCount: (res?.total ?? res?.totalCount ?? 0) as number,
+        page: (res?.page ?? page) as number,
+        pageSize: (res?.pageSize ?? 20) as number,
+        totalPages: (res?.totalPages ?? 1) as number,
+      }),
+    ),
 
   markNotificationRead: (id: string): Promise<void> =>
     apiClient.put(`/notifications/${id}/read`),
 
   markAllNotificationsRead: (): Promise<void> =>
     apiClient.put('/notifications/read-all'),
+
+  initiatePayment: (studentId: string, amount: number): Promise<{
+    cfOrderId: string;
+    paymentSessionId: string;
+    orderId: string;
+    amount: number;
+    currency: string;
+  }> =>
+    apiClient.post('/fees/payments/mobile-initiate', { studentId, amount }),
+
+  verifyPayment: (cfOrderId: string, paymentId: string): Promise<{ status: string }> =>
+    apiClient.post(`/fees/transactions/${cfOrderId}/verify`, { paymentId }),
+
+  getBehaviourSummary: (): Promise<{
+    totalPoints: number;
+    meritCount: number;
+    demeritCount: number;
+    openCount: number;
+    records: {
+      id: string;
+      incidentType: 'positive' | 'negative';
+      category: string;
+      incidentDate: string;
+      description: string;
+      actionTaken?: string | null;
+      points: number;
+      status: string;
+      parentNotified: boolean;
+    }[];
+  }> =>
+    apiClient.get('/behaviour/student/me/summary'),
+
+  getHealthRecord: (): Promise<{
+    id: string;
+    height?: number | null;
+    weight?: number | null;
+    bloodGroup?: string | null;
+    visionLeft?: string | null;
+    visionRight?: string | null;
+    allergies?: string | null;
+    medicalConditions?: string | null;
+    emergencyContact?: string | null;
+    emergencyPhone?: string | null;
+    lastUpdated?: string | null;
+  } | null> =>
+    apiClient.get('/health/records/me'),
 };

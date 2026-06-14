@@ -83,12 +83,30 @@ export default function AdminLayout() {
       />
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
+      <Tabs.Screen name="notifications/compose" options={{ href: null }} />
       <Tabs.Screen name="announcements/create" options={{ href: null }} />
       <Tabs.Screen name="staff/index" options={{ href: null }} />
       <Tabs.Screen name="staff/[id]" options={{ href: null }} />
+      <Tabs.Screen name="staff/add" options={{ href: null }} />
+      <Tabs.Screen name="staff/assign-classes" options={{ href: null }} />
       <Tabs.Screen name="students/index" options={{ href: null }} />
       <Tabs.Screen name="students/[id]" options={{ href: null }} />
+      <Tabs.Screen name="students/add" options={{ href: null }} />
       <Tabs.Screen name="library/index" options={{ href: null }} />
+      <Tabs.Screen name="admissions/index" options={{ href: null }} />
+      <Tabs.Screen name="attendance/index" options={{ href: null }} />
+      <Tabs.Screen name="fees/index" options={{ href: null }} />
+      <Tabs.Screen name="fees/receipt" options={{ href: null }} />
+      <Tabs.Screen name="fees/setup" options={{ href: null }} />
+      <Tabs.Screen name="fees/concessions" options={{ href: null }} />
+      <Tabs.Screen name="classes/index" options={{ href: null }} />
+      <Tabs.Screen name="classes/create" options={{ href: null }} />
+      <Tabs.Screen name="classes/[classId]" options={{ href: null }} />
+      <Tabs.Screen name="calendar/index" options={{ href: null }} />
+      <Tabs.Screen name="exams/index" options={{ href: null }} />
+      <Tabs.Screen name="assignments/index" options={{ href: null }} />
+      <Tabs.Screen name="students/promote" options={{ href: null }} />
+      <Tabs.Screen name="communication/index" options={{ href: null }} />
     </Tabs>
     </FeatureErrorBoundary>
   );

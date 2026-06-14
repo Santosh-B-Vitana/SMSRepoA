@@ -43,7 +43,8 @@ namespace SmsApi.Controllers
             [FromQuery] string? academicYear = null,
             [FromQuery] string? sortBy = null,
             [FromQuery] string? sortOrder = null,
-            [FromQuery] bool minimal = false)
+            [FromQuery] bool minimal = false,
+            [FromQuery] Guid? classId = null)
         {
             page = Math.Max(1, page);
             try
@@ -55,7 +56,7 @@ namespace SmsApi.Controllers
                 {
                     pageSize = Math.Clamp(pageSize, 1, 200);
                     var minimalResult = await _studentService.GetStudentsMinimalAsync(
-                        schoolId, classFilter, sectionFilter, page, pageSize);
+                        schoolId, classFilter, sectionFilter, page, pageSize, classId);
                     return Ok(minimalResult);
                 }
 

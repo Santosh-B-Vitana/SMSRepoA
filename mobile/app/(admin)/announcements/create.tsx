@@ -8,14 +8,15 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
-import { adminApi, type CreateAnnouncementRequest } from '@/api/endpoints/admin';
+import { adminApi } from '@/api/endpoints/admin';
+import { ApiError } from '@/api/client';
 import { useAppTheme } from '@/theme';
 import { queryClient } from '@/api/queryClient';
 
@@ -44,6 +45,12 @@ const AUDIENCE_OPTIONS = [
 
 export default function CreateAnnouncement() {
   const { colors } = useAppTheme();
+  const params = useLocalSearchParams<{
+    editId?: string; editTitle?: string; editContent?: string;
+    editPriority?: string; editAudience?: string;
+  }>();
+
+  const isEdit = !!params.editId;
 
   const {
     control,
@@ -53,29 +60,45 @@ export default function CreateAnnouncement() {
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      priority: 'Normal',
-      audience: 'All',
-      title: '',
-      body: '',
+      priority: (params.editPriority as FormData['priority']) ?? 'Normal',
+      audience: (params.editAudience as FormData['audience']) ?? 'All',
+      title: params.editTitle ?? '',
+      body: params.editContent ?? '',
     },
   });
 
   const watchedPriority = watch('priority');
 
   const mutation = useMutation({
-    mutationFn: (data: CreateAnnouncementRequest) => adminApi.createAnnouncement(data),
+    mutationFn: (data: FormData) => {
+      const payload = {
+        title: data.title,
+        content: data.body,
+        priority: data.priority,
+        targetAudience: data.audience,
+      };
+      return isEdit
+        ? adminApi.editAnnouncement(params.editId!, payload)
+        : adminApi.createAnnouncement(payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-announcements'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
-      Alert.alert('Posted!', 'Your announcement has been published.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      Alert.alert(
+        isEdit ? 'Updated!' : 'Posted!',
+        isEdit ? 'Announcement has been updated.' : 'Your announcement has been published.',
+        [{ text: 'OK', onPress: () => router.back() }],
+      );
     },
-    onError: () => Alert.alert('Error', 'Failed to post announcement. Please try again.'),
+    onError: (error: unknown) => {
+      // 403 is already surfaced by the global Axios interceptor as an "Access denied" toast.
+      if (error instanceof ApiError && error.status === 403) return;
+      Alert.alert('Error', `Failed to ${isEdit ? 'update' : 'post'} announcement. Please try again.`);
+    },
   });
 
   function onSubmit(data: FormData) {
-    if (data.priority === 'Urgent') {
+    if (!isEdit && data.priority === 'Urgent') {
       Alert.alert(
         'Urgent Announcement',
         'This will send push notifications immediately to all recipients. Continue?',
@@ -100,7 +123,7 @@ export default function CreateAnnouncement() {
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
           <Feather name="volume-2" size={18} color={colors.primary} />
-          <Text style={styles.headerTitle}>Post Announcement</Text>
+          <Text style={styles.headerTitle}>{isEdit ? 'Edit Announcement' : 'Post Announcement'}</Text>
         </View>
       </View>
 
@@ -296,7 +319,7 @@ export default function CreateAnnouncement() {
                 color="#fff"
               />
               <Text style={styles.submitText}>
-                {watchedPriority === 'Urgent' ? 'Post Urgent Announcement' : 'Post Announcement'}
+                {isEdit ? 'Save Changes' : watchedPriority === 'Urgent' ? 'Post Urgent Announcement' : 'Post Announcement'}
               </Text>
             </View>
           )}

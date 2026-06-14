@@ -18,10 +18,22 @@ interface Book {
 }
 
 interface IssuedBook {
-  id: string; bookTitle: string; bookAuthor?: string;
-  studentName: string; studentClass?: string; studentSection?: string;
-  issueDate: string; dueDate: string; returnDate?: string | null;
-  isOverdue?: boolean; fineAmount?: number;
+  id: string;
+  bookTitle: string;
+  bookIsbn?: string;
+  studentName: string;
+  studentClass?: string;
+  studentSection?: string;
+  issueDate: string;
+  dueDate: string;
+  returnDate?: string | null;
+  /** Backend field: 'issued' | 'returned' | 'overdue' */
+  status?: string;
+  fine?: number;
+  daysOverdue?: number;
+  /** Derived — backend uses status field, not a boolean */
+  isOverdue?: boolean;
+  fineAmount?: number;
 }
 
 type ViewMode = 'books' | 'issued';
@@ -51,8 +63,9 @@ function BookCard({ item }: { item: Book }) {
 }
 
 function IssuedCard({ item }: { item: IssuedBook }) {
-  const overdue = item.isOverdue && !item.returnDate;
-  const returned = !!item.returnDate;
+  const status   = (item.status ?? '').toLowerCase();
+  const returned = status === 'returned' || !!item.returnDate;
+  const overdue  = !returned && (status === 'overdue' || item.isOverdue === true || (item.daysOverdue ?? 0) > 0);
   return (
     <View style={[styles.issuedCard, overdue && styles.overdueCard]}>
       <View style={styles.issuedHeader}>
@@ -77,8 +90,8 @@ function IssuedCard({ item }: { item: IssuedBook }) {
           Due: {new Date(item.dueDate).toLocaleDateString('en-IN')}
         </Text>
         {returned && <Text style={styles.returnedDate}>Returned: {new Date(item.returnDate!).toLocaleDateString('en-IN')}</Text>}
-        {overdue && !returned && item.fineAmount && item.fineAmount > 0 && (
-          <Text style={styles.fine}>Fine: ₹{item.fineAmount}</Text>
+        {overdue && !returned && (item.fine ?? item.fineAmount ?? 0) > 0 && (
+          <Text style={styles.fine}>Fine: ₹{item.fine ?? item.fineAmount}</Text>
         )}
       </View>
     </View>
@@ -106,28 +119,29 @@ export default function LibraryScreen() {
     staleTime: 2 * 60 * 1000,
   });
 
+  // Correct endpoint: GET /library/issues — response shape: { issues: BookIssueResponse[], total, page, pageSize }
+  // BookIssueResponse fields: id, bookTitle, studentName, studentClass, studentSection, issueDate, dueDate, returnDate, status, fine
   const issuedQuery = useInfiniteQuery({
     queryKey: ['admin-library-issued', debouncedSearch],
     queryFn: ({ pageParam = 1 }) =>
-      apiClient.get('/library/transactions', {
-        params: { page: pageParam, pageSize: 20, status: 'issued', search: debouncedSearch || undefined },
-      }).catch(() =>
-        apiClient.get('/library/issued', {
-          params: { page: pageParam, pageSize: 20, search: debouncedSearch || undefined },
-        })
-      ) as Promise<{ transactions?: IssuedBook[]; items?: IssuedBook[]; issued?: IssuedBook[]; totalCount: number }>,
+      apiClient.get('/library/issues', {
+        params: {
+          page: pageParam,
+          pageSize: 20,
+          status: 'issued',
+          search: debouncedSearch || undefined,
+        },
+      }) as Promise<{ issues: IssuedBook[]; total: number; page: number; pageSize: number }>,
     initialPageParam: 1,
-    getNextPageParam: (lastPage, pages) => {
-      const items = lastPage.transactions ?? lastPage.items ?? lastPage.issued ?? [];
-      return items.length === 20 ? pages.length + 1 : undefined;
-    },
+    getNextPageParam: (lastPage, pages) =>
+      (lastPage.issues ?? []).length === 20 ? pages.length + 1 : undefined,
     enabled: mode === 'issued',
     staleTime: 2 * 60 * 1000,
   });
 
   const activeQuery = mode === 'books' ? booksQuery : issuedQuery;
-  const allBooks = booksQuery.data?.pages.flatMap((p) => p.books ?? p.items ?? []) ?? [];
-  const allIssued = issuedQuery.data?.pages.flatMap((p) => p.transactions ?? p.items ?? p.issued ?? []) ?? [];
+  const allBooks   = booksQuery.data?.pages.flatMap((p) => p.books ?? p.items ?? []) ?? [];
+  const allIssued  = issuedQuery.data?.pages.flatMap((p) => p.issues ?? []) ?? [];
 
   const handleSearch = (text: string) => {
     setSearch(text);

@@ -5,12 +5,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { studentApi } from '@/api/endpoints/student';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
 import { formatINR } from '@vitana/shared-utils';
 import { VITANA_COLORS } from '@/theme/tokens';
 
 export default function FeeSummaryScreen() {
-  useSchoolTheme();
+  const { primaryColor } = useSchoolTheme();
+  const canOnlinePayment = useFeatureFlag('mobile.fees.online_payment', true);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['student-fees'],
@@ -91,20 +93,34 @@ export default function FeeSummaryScreen() {
                 </View>
               </View>
 
-              {/* Note: Fee payment not enabled for students */}
+              {/* Online payment or contact school */}
               {data.pendingAmount > 0 && (
-                <View
-                  style={{
-                    backgroundColor: '#eff6ff', borderRadius: 12, padding: 14,
-                    borderWidth: 1, borderColor: '#bfdbfe',
-                    flexDirection: 'row', gap: 10, alignItems: 'flex-start',
-                  }}
-                >
-                  <Feather name="info" size={16} color="#2563eb" />
-                  <Text style={{ flex: 1, fontSize: 13, color: '#1d4ed8', lineHeight: 18 }}>
-                    Please contact your school administration to make fee payments.
-                  </Text>
-                </View>
+                canOnlinePayment ? (
+                  <TouchableOpacity
+                    onPress={() => router.push('/(student)/fees/pay' as any)}
+                    style={{
+                      backgroundColor: primaryColor, borderRadius: 12,
+                      paddingVertical: 14, alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                      Pay Online  {formatINR(data.pendingAmount)}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View
+                    style={{
+                      backgroundColor: '#eff6ff', borderRadius: 12, padding: 14,
+                      borderWidth: 1, borderColor: '#bfdbfe',
+                      flexDirection: 'row', gap: 10, alignItems: 'flex-start',
+                    }}
+                  >
+                    <Feather name="info" size={16} color="#2563eb" />
+                    <Text style={{ flex: 1, fontSize: 13, color: '#1d4ed8', lineHeight: 18 }}>
+                      Please contact your school administration to make fee payments.
+                    </Text>
+                  </View>
+                )
               )}
 
               {/* Fee heads breakdown */}

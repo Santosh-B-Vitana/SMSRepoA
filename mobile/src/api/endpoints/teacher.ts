@@ -64,8 +64,8 @@ export interface BulkMarksEntryPayload {
 }
 
 export interface BulkOperationResult {
-  succeeded: number;
-  failed: number;
+  successCount: number;
+  failureCount: number;
   errors: string[];
 }
 
@@ -136,12 +136,36 @@ export interface TimetableEntry {
   className: string;
   classId: string;
   room?: string | null;
+  dayOfWeek?: string;
+}
+
+export interface TeacherScheduleEntry {
+  periodId: string;
+  dayOfWeek: string;
+  periodNumber: number;
+  startTime: string;
+  endTime: string;
+  subjectId?: string;
+  subjectName?: string;
+  classId: string;
+  className?: string;
+  sectionName?: string;
+  room?: string;
+}
+
+export interface TeacherFullScheduleResponse {
+  teacherId: string;
+  teacherName: string;
+  schedule: TeacherScheduleEntry[];
+  totalPeriods: number;
 }
 
 export interface TeacherAssignment {
   classId: string;
   className: string;
   subjects: string[];
+  isClassTeacher?: boolean;
+  sectionName?: string;
 }
 
 export interface TeacherDashboardResponse {
@@ -193,6 +217,20 @@ export interface LeaveType {
   id: string;
   name: string;
   description?: string | null;
+  maxDaysPerYear: number;
+  isCarryForward: boolean;
+  isPaid: boolean;
+}
+
+export interface LeaveBalanceResponse {
+  id: string;
+  leaveTypeId: string;
+  leaveTypeName: string;
+  academicYear: string;
+  totalAllowed: number;
+  used: number;
+  available: number;
+  carriedForward: number;
 }
 
 export interface AttendanceStats {
@@ -210,11 +248,55 @@ export const teacherApi = {
   getTodaySchedule: (): Promise<TimetableEntry[]> =>
     apiClient.get('/timetable/my-schedule'),
 
+  getFullSchedule: (): Promise<TeacherFullScheduleResponse> =>
+    apiClient.get('/timetable/my-schedule'),
+
   getTeacherAssignments: (): Promise<TeacherAssignment[]> =>
-    apiClient.get('/academics/teacher-assignments'),
+    (apiClient.get('/academics/my-class-assignments') as Promise<Array<{
+      classId: string;
+      className: string;
+      sectionId: string | null;
+      sectionName: string | null;
+      subjectName: string | null;
+      status: string;
+    }>>).then((list) => {
+      // Group by classId+sectionId so each card = one class (aggregating subjects)
+      const map = new Map<string, TeacherAssignment>();
+      for (const item of list) {
+        if (item.status?.toLowerCase() === 'inactive') continue;
+        const key = item.sectionId ? `${item.classId}-${item.sectionId}` : item.classId;
+        if (!map.has(key)) {
+          map.set(key, {
+            classId: item.classId,
+            className: item.sectionName
+              ? `${item.className} - ${item.sectionName}`
+              : item.className,
+            subjects: [],
+          });
+        }
+        const entry = map.get(key)!;
+        if (item.subjectName && !entry.subjects.includes(item.subjectName)) {
+          entry.subjects.push(item.subjectName);
+        }
+      }
+      return Array.from(map.values());
+    }),
 
   getClassStudents: (classId: string): Promise<MinimalStudent[]> =>
-    apiClient.get('/students', { params: { classId, minimal: true, pageSize: 100 } }),
+    (apiClient.get('/students', { params: { classId, minimal: true, pageSize: 100 } }) as Promise<{
+      students?: Array<{ id: string; firstName: string; lastName: string; rollNumber: string; profilePhotoUrl?: string | null; photoUrl?: string | null }>;
+      items?: MinimalStudent[];
+    } | MinimalStudent[]>).then((res) => {
+      if (Array.isArray(res)) return res;
+      const list = res?.students ?? res?.items ?? [];
+      return list.map((s) => ({
+        id: s.id,
+        firstName: s.firstName ?? '',
+        lastName: s.lastName ?? '',
+        rollNumber: s.rollNumber ?? '',
+        photoUrl: (s as any).profilePhotoUrl ?? (s as any).photoUrl ?? null,
+      }));
+    }),
 
   submitBulkAttendance: (
     payload: BulkAttendancePayload,
@@ -247,13 +329,48 @@ export const teacherApi = {
     apiClient.post('/leavemanagement/requests', data),
 
   getOwnLeaves: (): Promise<OwnLeaveApplication[]> =>
-    apiClient.get('/leavemanagement/my-requests'),
+    (apiClient.get('/leavemanagement/my-requests') as Promise<unknown>).then((res) => {
+      if (Array.isArray(res)) return res as OwnLeaveApplication[];
+      if (res && typeof res === 'object') {
+        const obj = res as Record<string, unknown>;
+        const arr = obj.items ?? obj.requests ?? obj.data ?? obj.leaves ?? [];
+        return Array.isArray(arr) ? (arr as OwnLeaveApplication[]) : [];
+      }
+      return [];
+    }),
 
   getLeaveTypes: (): Promise<LeaveType[]> =>
-    apiClient.get('/leavemanagement/types'),
+    (apiClient.get('/leavemanagement/types') as Promise<unknown>).then((res) => {
+      if (Array.isArray(res)) return res as LeaveType[];
+      if (res && typeof res === 'object') {
+        const obj = res as Record<string, unknown>;
+        const arr = obj.items ?? obj.types ?? obj.data ?? [];
+        return Array.isArray(arr) ? (arr as LeaveType[]) : [];
+      }
+      return [];
+    }),
+
+  getLeaveBalance: (): Promise<LeaveBalanceResponse[]> =>
+    (apiClient.get('/leavemanagement/my-balance') as Promise<unknown>).then((res) => {
+      if (Array.isArray(res)) return res as LeaveBalanceResponse[];
+      if (res && typeof res === 'object') {
+        const obj = res as Record<string, unknown>;
+        const arr = obj.items ?? obj.balances ?? obj.data ?? [];
+        return Array.isArray(arr) ? (arr as LeaveBalanceResponse[]) : [];
+      }
+      return [];
+    }),
 
   getNotifications: (page: number): Promise<PaginatedResponse<AppNotification>> =>
-    apiClient.get('/notifications/my', { params: { page, pageSize: 20 } }),
+    (apiClient.get('/notifications/my', { params: { page, pageSize: 20 } }) as Promise<Record<string, unknown>>).then(
+      (res) => ({
+        items: (res?.notifications ?? res?.items ?? []) as AppNotification[],
+        totalCount: (res?.total ?? res?.totalCount ?? 0) as number,
+        page: (res?.page ?? page) as number,
+        pageSize: (res?.pageSize ?? 20) as number,
+        totalPages: (res?.totalPages ?? 1) as number,
+      }),
+    ),
 
   markNotificationRead: (id: string): Promise<void> =>
     apiClient.put(`/notifications/${id}/read`),
@@ -288,7 +405,29 @@ export const teacherApi = {
   // ── Assignments ───────────────────────────────────────────────────────────
 
   getMyAssignments: (): Promise<AssignmentDto[]> =>
-    apiClient.get('/assignments'),
+    (apiClient.get('/assignments') as Promise<{
+      assignments: Array<{
+        id: string; title: string; description: string | null;
+        subjectName: string | null; className: string | null;
+        dueDate: string; maxMarks: number | null; status: string;
+        submissionCount: number; gradedCount: number; createdAt: string;
+      }>;
+    }>).then((res) => {
+      const list = res?.assignments ?? [];
+      return list.map((a) => ({
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        subjectName: a.subjectName,
+        className: a.className,
+        dueDate: a.dueDate,
+        maxMarks: a.maxMarks,
+        status: a.status ?? '',
+        submissionCount: a.submissionCount ?? 0,
+        pendingGradingCount: Math.max(0, (a.submissionCount ?? 0) - (a.gradedCount ?? 0)),
+        createdAt: a.createdAt,
+      }));
+    }),
 
   createAssignment: (data: CreateAssignmentPayload): Promise<AssignmentDto> =>
     apiClient.post('/assignments', data),

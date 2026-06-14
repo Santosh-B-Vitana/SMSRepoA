@@ -20,17 +20,26 @@ import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { queryClient } from '@/api/queryClient';
 
+const AUDIENCES = [
+  { key: 'Parents', label: 'Parents' },
+  { key: 'Students', label: 'Students' },
+  { key: 'All', label: 'All' },
+] as const;
+
+type Audience = (typeof AUDIENCES)[number]['key'];
+
 const schema = z.object({
   title: z
     .string()
     .min(3, 'Title must be at least 3 characters')
     .max(100, 'Title too long'),
-  body: z
+  content: z
     .string()
     .min(10, 'Message must be at least 10 characters')
     .max(4000, 'Message too long'),
   priority: z.enum(['Low', 'Normal', 'High', 'Urgent']),
-  classId: z.string().optional().nullable(),
+  targetAudience: z.enum(['Parents', 'Students', 'All']),
+  targetClassId: z.string().optional().nullable(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -64,22 +73,25 @@ export default function TeacherCreateAnnouncement() {
     resolver: zodResolver(schema),
     defaultValues: {
       priority: 'Normal',
-      classId: null,
+      targetAudience: 'Parents' as Audience,
+      targetClassId: null,
       title: '',
-      body: '',
+      content: '',
     },
   });
 
   const watchedPriority = watch('priority');
-  const watchedClassId = watch('classId');
+  const watchedClassId = watch('targetClassId');
+  const watchedAudience = watch('targetAudience');
 
   const mutation = useMutation({
     mutationFn: (data: FormData) =>
       communicationApi.createAnnouncement({
         title: data.title,
-        body: data.body,
+        content: data.content,
         priority: data.priority,
-        classId: data.classId ?? null,
+        targetAudience: data.targetAudience,
+        targetClassId: data.targetClassId ?? null,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['teacher-announcements'] });
@@ -92,10 +104,11 @@ export default function TeacherCreateAnnouncement() {
   });
 
   function onSubmit(data: FormData) {
-    const selectedClass = assignments.find((a) => a.classId === data.classId);
+    const selectedClass = assignments.find((a) => a.classId === data.targetClassId);
+    const audienceLabel = data.targetAudience === 'All' ? 'everyone' : data.targetAudience.toLowerCase();
     const recipientInfo = selectedClass
-      ? `parents of ${selectedClass.className}`
-      : 'all your classes';
+      ? `${audienceLabel} of ${selectedClass.className}`
+      : `all ${audienceLabel}`;
 
     if (data.priority === 'Urgent') {
       Alert.alert(
@@ -153,14 +166,14 @@ export default function TeacherCreateAnnouncement() {
             )}
           </View>
 
-          {/* Body */}
+          {/* Content */}
           <View className="mb-5">
             <Text className="text-gray-700 font-medium mb-1.5">
               Message <Text className="text-red-500">*</Text>
             </Text>
             <Controller
               control={control}
-              name="body"
+              name="content"
               render={({ field: { onChange, value } }) => (
                 <TextInput
                   value={value}
@@ -171,12 +184,12 @@ export default function TeacherCreateAnnouncement() {
                   numberOfLines={6}
                   textAlignVertical="top"
                   maxLength={4000}
-                  className={`border rounded-xl px-4 py-3 text-gray-900 bg-white h-36 ${errors.body ? 'border-red-400' : 'border-gray-200'}`}
+                  className={`border rounded-xl px-4 py-3 text-gray-900 bg-white h-36 ${errors.content ? 'border-red-400' : 'border-gray-200'}`}
                 />
               )}
             />
-            {errors.body && (
-              <Text className="text-red-500 text-xs mt-1">{errors.body.message}</Text>
+            {errors.content && (
+              <Text className="text-red-500 text-xs mt-1">{errors.content.message}</Text>
             )}
           </View>
 
@@ -225,13 +238,47 @@ export default function TeacherCreateAnnouncement() {
             )}
           </View>
 
+          {/* Audience selector */}
+          <View className="mb-5">
+            <Text className="text-gray-700 font-medium mb-2">Audience</Text>
+            <Controller
+              control={control}
+              name="targetAudience"
+              render={({ field: { onChange, value } }) => (
+                <View className="flex-row gap-2">
+                  {AUDIENCES.map(({ key, label }) => {
+                    const selected = value === key;
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        onPress={() => onChange(key)}
+                        className="flex-1 py-2.5 rounded-xl items-center border"
+                        style={{
+                          backgroundColor: selected ? colors.primary + '18' : 'white',
+                          borderColor: selected ? colors.primary : VITANA_COLORS.border,
+                        }}
+                      >
+                        <Text
+                          className="text-sm font-medium"
+                          style={{ color: selected ? colors.primary : VITANA_COLORS.textSecondary }}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            />
+          </View>
+
           {/* Class selector */}
           {assignments.length > 0 && (
             <View className="mb-7">
               <Text className="text-gray-700 font-medium mb-2">Send To</Text>
               <View className="flex-row flex-wrap gap-2">
                 <TouchableOpacity
-                  onPress={() => setValue('classId', null)}
+                  onPress={() => setValue('targetClassId', null)}
                   className="px-4 py-2 rounded-full border"
                   style={{
                     backgroundColor: !watchedClassId ? colors.primary : 'white',
@@ -250,7 +297,7 @@ export default function TeacherCreateAnnouncement() {
                   return (
                     <TouchableOpacity
                       key={a.classId}
-                      onPress={() => setValue('classId', a.classId)}
+                      onPress={() => setValue('targetClassId', a.classId)}
                       className="px-4 py-2 rounded-full border"
                       style={{
                         backgroundColor: selected ? colors.primary : 'white',

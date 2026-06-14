@@ -57,6 +57,8 @@ export default function ParentLayout() {
       <Tabs.Screen name="messages/[conversationId]" options={{ href: null }} />
       {/* Online Classes */}
       <Tabs.Screen name="online-classes/index" options={{ href: null }} />
+      {/* Transport */}
+      <Tabs.Screen name="transport/index" options={{ href: null }} />
     </Tabs>
     </FeatureErrorBoundary>
   );

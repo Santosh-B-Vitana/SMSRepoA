@@ -16,7 +16,7 @@ import { useSchoolStore } from '@/stores/schoolStore';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { VITANA_COLORS } from '@/theme/tokens';
-import type { MinimalStudent } from '@/api/endpoints/teacher';
+import type { MinimalStudent, TeacherAssignment } from '@/api/endpoints/teacher';
 
 export default function ClassDetail() {
   const { classId } = useLocalSearchParams<{ classId: string }>();
@@ -84,6 +84,16 @@ export default function ClassDetail() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: teacherAssignments } = useQuery({
+    queryKey: ['teacher-assignments'],
+    queryFn: teacherApi.getTeacherAssignments,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const classAssignment: TeacherAssignment | undefined = (teacherAssignments ?? []).find(
+    (a: TeacherAssignment) => a.classId === classId,
+  );
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
       {/* Header */}
@@ -136,6 +146,92 @@ export default function ClassDetail() {
         refreshControl={<RefreshControl refreshing={isLoadingStudents} onRefresh={loadStudents} />}
       >
         <View style={{ padding: 16, paddingBottom: 32, gap: 12 }}>
+          {/* Class Info Card */}
+          {classAssignment && (
+            <View
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: 12,
+                padding: 14,
+                borderWidth: 1,
+                borderColor: VITANA_COLORS.border,
+                gap: 10,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: VITANA_COLORS.text }}>
+                  {classAssignment.className}
+                </Text>
+                {classAssignment.isClassTeacher && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: `${primaryColor}18`,
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 20,
+                    }}
+                  >
+                    <Feather name="star" size={11} color={primaryColor} />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: primaryColor }}>
+                      Class Teacher
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {classAssignment.subjects && classAssignment.subjects.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, color: VITANA_COLORS.textSecondary, fontWeight: '500' }}>
+                    Your subjects:
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {classAssignment.subjects.map((subject: string) => (
+                      <View
+                        key={subject}
+                        style={{
+                          backgroundColor: VITANA_COLORS.surface,
+                          borderRadius: 8,
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                          borderWidth: 1,
+                          borderColor: VITANA_COLORS.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, color: VITANA_COLORS.text, fontWeight: '500' }}>
+                          {subject}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+              <View style={{ flexDirection: 'row', gap: 14, paddingTop: 4 }}>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/(teacher)/marks' })}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
+                  <Feather name="edit-3" size={13} color={primaryColor} />
+                  <Text style={{ fontSize: 12, color: primaryColor, fontWeight: '600' }}>
+                    Enter Marks
+                  </Text>
+                  <Feather name="chevron-right" size={12} color={primaryColor} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/(teacher)/performance/index' })}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
+                  <Feather name="bar-chart-2" size={13} color="#7c3aed" />
+                  <Text style={{ fontSize: 12, color: '#7c3aed', fontWeight: '600' }}>
+                    Performance
+                  </Text>
+                  <Feather name="chevron-right" size={12} color="#7c3aed" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {/* Stats */}
           {stats && (
             <View
