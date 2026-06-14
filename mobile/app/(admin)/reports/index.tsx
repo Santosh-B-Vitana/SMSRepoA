@@ -10,15 +10,19 @@ import { formatINR } from '@vitana/shared-utils';
 
 // Lazy-load victory-native so a missing Skia binary shows a fallback
 // instead of crashing the entire route at import time.
+// Handle both ESM default-export and CommonJS direct-export formats.
 let CartesianChart: any, Line: any, Bar: any, Area: any;
 let skiaAvailable = false;
 try {
-  const victoryNative = require('victory-native');
-  CartesianChart = victoryNative.CartesianChart;
-  Line = victoryNative.Line;
-  Bar = victoryNative.Bar;
-  Area = victoryNative.Area;
-  skiaAvailable = true;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require('victory-native');
+  const ns = mod?.default ?? mod;
+  CartesianChart = ns?.CartesianChart;
+  Line = ns?.Line;
+  Bar = ns?.Bar;
+  Area = ns?.Area;
+  // Only mark available if all components actually resolved
+  skiaAvailable = !!(CartesianChart && Line && Bar && Area);
 } catch {
   skiaAvailable = false;
 }
@@ -73,24 +77,6 @@ export default function AnalyticsReports() {
     );
   }
 
-  if (!skiaAvailable) {
-    return (
-      <SafeAreaView className="flex-1 bg-background">
-        <View className="px-4 pt-4 pb-2">
-          <Text className="text-xl font-bold text-gray-900">Analytics & Reports</Text>
-          <Text className="text-gray-500 text-sm mt-0.5">School-wide performance overview</Text>
-        </View>
-        <View className="flex-1 items-center justify-center px-8">
-          <Text className="text-4xl mb-3">📊</Text>
-          <Text className="text-gray-700 font-semibold text-base text-center">Charts require updated app</Text>
-          <Text className="text-gray-400 text-sm text-center mt-1">
-            Install the latest build from the EAS dashboard to view analytics charts.
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   const attendanceTrend = data?.attendanceTrend ?? [];
   const feeBarChart = data?.feeBarChart ?? [];
   const classAttendance = data?.classAttendance ?? [];
@@ -112,6 +98,25 @@ export default function AnalyticsReports() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
+        {/* Overview Stats */}
+        <SectionTitle title="School Overview" />
+        <View className="flex-row flex-wrap gap-3 mb-4">
+          {[
+            { label: 'Students', value: data?.activeStudents ?? 0, total: data?.totalStudents },
+            { label: 'Staff', value: data?.activeStaff ?? 0, total: data?.totalStaff },
+            { label: 'Classes', value: data?.totalClasses ?? 0, total: undefined },
+            { label: 'Attendance', value: `${(data?.todayAttendancePercentage ?? 0).toFixed(1)}%`, total: undefined },
+          ].map((stat) => (
+            <View key={stat.label} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex-1 min-w-[45%]">
+              <Text className="text-2xl font-bold text-gray-900">{stat.value}</Text>
+              {stat.total !== undefined && (
+                <Text className="text-xs text-gray-400">of {stat.total} total</Text>
+              )}
+              <Text className="text-sm text-gray-500 mt-1">{stat.label}</Text>
+            </View>
+          ))}
+        </View>
+
         {/* 7-Day Attendance Trend */}
         <SectionTitle title="7-Day Attendance Trend" />
         <ChartCard isEmpty={attendanceChartData.length === 0}>

@@ -104,9 +104,22 @@ export interface ClassAttendancePoint {
 }
 
 export interface AnalyticsDashboard {
-  attendanceTrend: AttendanceTrendPoint[];
-  feeBarChart: FeeBarPoint[];
-  classAttendance: ClassAttendancePoint[];
+  // Overview stats from /analytics/overview
+  totalStudents?: number;
+  activeStudents?: number;
+  totalStaff?: number;
+  activeStaff?: number;
+  totalClasses?: number;
+  todayAttendancePercentage?: number;
+  totalBooks?: number;
+  booksIssued?: number;
+  pendingAdmissions?: number;
+  hostelOccupied?: number;
+  transportStudents?: number;
+  // Chart data (may be empty if backend doesn't provide)
+  attendanceTrend?: AttendanceTrendPoint[];
+  feeBarChart?: FeeBarPoint[];
+  classAttendance?: ClassAttendancePoint[];
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -161,7 +174,7 @@ export const adminApi = {
     apiClient.delete(`/announcements/${id}`),
 
   getAnalytics: (): Promise<AnalyticsDashboard> =>
-    apiClient.get('/analytics/dashboard'),
+    apiClient.get('/analytics/overview'),
 
   searchStudents: (
     query: string,
