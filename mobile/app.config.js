@@ -30,7 +30,7 @@ module.exports = ({ config }) => {
     orientation: 'portrait',
     userInterfaceStyle: 'automatic',
     scheme: 'vitanasms',
-    newArchEnabled: false,
+    newArchEnabled: true,
 
     icon: `${assetBase}/app-icon-1024.png`,
 
