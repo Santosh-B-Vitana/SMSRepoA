@@ -67,7 +67,7 @@ export default function AnalyticsReports() {
 
   if (isError) {
     return (
-      <SafeAreaView className="flex-1 bg-background">
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
         <EmptyState
           icon="alert-circle"
           title="Analytics unavailable"
@@ -87,32 +87,48 @@ export default function AnalyticsReports() {
   const classChartData = classAttendance.map((p, i) => ({ x: i, rate: p.rate, label: p.className }));
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <View className="px-4 pt-4 pb-2">
-        <Text className="text-xl font-bold text-gray-900">Analytics & Reports</Text>
-        <Text className="text-gray-500 text-sm mt-0.5">School-wide performance overview</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: '#111827' }}>Analytics & Reports</Text>
+        <Text style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>School-wide performance overview</Text>
       </View>
 
       <ScrollView
-        className="flex-1 px-4 pt-2"
+        style={{ flex: 1, paddingHorizontal: 16, paddingTop: 8 }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
         {/* Overview Stats */}
         <SectionTitle title="School Overview" />
-        <View className="flex-row flex-wrap gap-3 mb-4">
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           {[
             { label: 'Students', value: data?.activeStudents ?? 0, total: data?.totalStudents },
             { label: 'Staff', value: data?.activeStaff ?? 0, total: data?.totalStaff },
             { label: 'Classes', value: data?.totalClasses ?? 0, total: undefined },
             { label: 'Attendance', value: `${(data?.todayAttendancePercentage ?? 0).toFixed(1)}%`, total: undefined },
           ].map((stat) => (
-            <View key={stat.label} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex-1 min-w-[45%]">
-              <Text className="text-2xl font-bold text-gray-900">{stat.value}</Text>
+            <View
+              key={stat.label}
+              style={{
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#f3f4f6',
+                borderRadius: 12,
+                padding: 16,
+                flex: 1,
+                minWidth: '45%',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.06,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              <Text style={{ fontSize: 26, fontWeight: '700', color: '#111827' }}>{stat.value}</Text>
               {stat.total !== undefined && (
-                <Text className="text-xs text-gray-400">of {stat.total} total</Text>
+                <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>of {stat.total} total</Text>
               )}
-              <Text className="text-sm text-gray-500 mt-1">{stat.label}</Text>
+              <Text style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>{stat.label}</Text>
             </View>
           ))}
         </View>
