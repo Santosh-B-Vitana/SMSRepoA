@@ -102,7 +102,7 @@ export default function AnalyticsReports() {
       sub: data?.totalStudents ? `of ${data.totalStudents} total` : undefined,
       icon: 'users' as const,
       color: colors.primary,
-      onPress: () => router.push('/(admin)/approvals'),
+      onPress: () => router.push('/(admin)/students/index' as never),
     },
     {
       label: 'Staff',
@@ -110,7 +110,7 @@ export default function AnalyticsReports() {
       sub: data?.totalStaff ? `of ${data.totalStaff} total` : undefined,
       icon: 'briefcase' as const,
       color: '#7c3aed',
-      onPress: undefined,
+      onPress: () => router.push('/(admin)/staff/index' as never),
     },
     {
       label: 'Classes',
@@ -129,12 +129,12 @@ export default function AnalyticsReports() {
       onPress: undefined,
     },
     {
-      label: 'Library Books',
+      label: 'Library',
       value: data?.booksIssued ?? 0,
-      sub: data?.totalBooks ? `of ${data.totalBooks} available` : undefined,
+      sub: data?.totalBooks ? `of ${data.totalBooks} books` : undefined,
       icon: 'book' as const,
       color: '#0891b2',
-      onPress: undefined,
+      onPress: () => router.push('/(admin)/library/index' as never),
     },
     {
       label: 'Hostel Occupied',

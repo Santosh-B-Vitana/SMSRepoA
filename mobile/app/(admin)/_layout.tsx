@@ -84,6 +84,11 @@ export default function AdminLayout() {
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
       <Tabs.Screen name="announcements/create" options={{ href: null }} />
+      <Tabs.Screen name="staff/index" options={{ href: null }} />
+      <Tabs.Screen name="staff/[id]" options={{ href: null }} />
+      <Tabs.Screen name="students/index" options={{ href: null }} />
+      <Tabs.Screen name="students/[id]" options={{ href: null }} />
+      <Tabs.Screen name="library/index" options={{ href: null }} />
     </Tabs>
     </FeatureErrorBoundary>
   );
