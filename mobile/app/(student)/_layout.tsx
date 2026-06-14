@@ -67,6 +67,10 @@ export default function StudentLayout() {
       <Tabs.Screen name="notifications/index" options={{ href: null }} />
       <Tabs.Screen name="notifications/settings" options={{ href: null }} />
       <Tabs.Screen name="profile/index" options={{ href: null }} />
+      {/* Online Classes */}
+      <Tabs.Screen name="online-classes/index" options={{ href: null }} />
+      <Tabs.Screen name="online-classes/[id]/index" options={{ href: null }} />
+      <Tabs.Screen name="online-classes/meeting" options={{ href: null }} />
     </Tabs>
     </FeatureErrorBoundary>
   );
