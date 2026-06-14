@@ -19,6 +19,9 @@ export const authApi = {
   refresh: (accessToken: string, refreshToken: string): Promise<RefreshTokenResponse> =>
     apiClient.post('/auth/refresh', { accessToken, refreshToken }),
 
+  refreshToken: (refreshToken: string): Promise<{ token: string; refreshToken: string }> =>
+    apiClient.post('/auth/refresh', { refreshToken }),
+
   logout: (refreshToken: string): Promise<void> =>
     apiClient.post('/auth/logout', { refreshToken }),
 

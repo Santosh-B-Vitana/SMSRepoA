@@ -83,38 +83,65 @@ export default function LoginScreen() {
     async function checkBiometricAvailability() {
       const biometricEnabled = await SecureStore.getItemAsync('biometric_enabled');
       if (biometricEnabled !== 'true') return;
+
+      // Only offer biometric unlock if the user still has a stored session.
+      // If user explicitly logged out, user/refreshToken are cleared and
+      // biometric makes no sense — they must enter credentials again.
+      const { user, refreshToken } = useAuthStore.getState();
+      if (!user || !refreshToken) return;
+
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      if (hasHardware && isEnrolled) {
-        setShowBiometricHint(true);
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: 'Sign in to Vitana SMS',
-          fallbackLabel: 'Use Password',
-          cancelLabel: 'Cancel',
-        });
-        if (result.success) {
-          track('biometric_unlock');
-          const { user } = useAuthStore.getState();
-          if (user) {
-            router.replace(getRoleRoute(user.role) as Parameters<typeof router.replace>[0]);
-          }
+      if (!hasHardware || !isEnrolled) return;
+
+      setShowBiometricHint(true);
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: `Sign in as ${user.firstName}`,
+        fallbackLabel: 'Use Password',
+        cancelLabel: 'Cancel',
+        disableDeviceFallback: false,
+      });
+
+      if (result.success) {
+        track('biometric_unlock');
+        // Biometric verified — restore the session using the stored refresh token
+        try {
+          const refreshResponse = await authApi.refreshToken(refreshToken);
+          const { updateTokens } = useAuthStore.getState();
+          updateTokens(refreshResponse.token, refreshResponse.refreshToken);
+          router.replace(getRoleRoute(user.role) as Parameters<typeof router.replace>[0]);
+        } catch {
+          // Refresh token expired — clear stale auth, user must log in manually
+          useAuthStore.getState().clearAuth();
+          setShowBiometricHint(false);
+          setApiError('Session expired. Please log in again.');
         }
+      } else {
+        setShowBiometricHint(false);
       }
     }
     void checkBiometricAvailability();
   }, []);
 
   const attemptBiometricUnlock = useCallback(async () => {
+    const { user, refreshToken } = useAuthStore.getState();
+    if (!user || !refreshToken) return;
+
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Sign in to Vitana SMS',
+      promptMessage: `Sign in as ${user.firstName}`,
       fallbackLabel: 'Use Password',
       cancelLabel: 'Cancel',
+      disableDeviceFallback: false,
     });
     if (result.success) {
       track('biometric_unlock');
-      const { user } = useAuthStore.getState();
-      if (user) {
+      try {
+        const refreshResponse = await authApi.refreshToken(refreshToken);
+        useAuthStore.getState().updateTokens(refreshResponse.token, refreshResponse.refreshToken);
         router.replace(getRoleRoute(user.role) as Parameters<typeof router.replace>[0]);
+      } catch {
+        useAuthStore.getState().clearAuth();
+        setApiError('Session expired. Please log in again.');
       }
     }
   }, []);
