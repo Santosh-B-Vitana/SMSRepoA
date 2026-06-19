@@ -3,6 +3,7 @@ using MediatR;
 using SmsApi.Application.Common.Behaviors;
 using SmsApi.Infrastructure.Resilience;
 using SmsApi.Services;
+using SmsApi.Services.AI;
 using SmsApi.Services.Cashfree;
 using SmsApi.Services.WhatsApp;
 
@@ -22,6 +23,10 @@ public static class ApplicationServicesExtensions
         // ── Multi-tenancy ──────────────────────────────────────────────────
         services.AddHttpContextAccessor();
         services.AddScoped<ITenantContext, TenantContextAccessor>();
+
+        // ── AI (Groq) — used for WhatsApp message formatting ──────────────
+        services.AddHttpClient("Groq");
+        services.AddScoped<IGroqAiService, GroqAiService>();
 
         // ── CRM: school config lookup with 6-hour cache ────────────────────
         services.AddScoped<ISchoolConfigService, SchoolConfigService>();

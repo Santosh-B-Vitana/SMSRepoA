@@ -152,6 +152,36 @@ export interface CreateAnnouncementRequest {
   isPinned?: boolean;
 }
 
+export interface WhatsAppBroadcastResult {
+  success: boolean;
+  recipientsQueued: number;
+  totalContacts?: number;
+  skipped?: number;
+  aiFormatted: boolean;
+  messagePreview: string;
+  templateCategory: string;
+  message?: string;
+}
+
+export interface CrmBroadcastRequest {
+  /** Phone numbers in E.164 or local format — backend normalises */
+  recipients: string[];
+  /** Free-form message — AI converts to WhatsApp utility format */
+  message: string;
+  /** Optional subject/title used as announcement heading */
+  subject?: string;
+  /** Recipient display name (shown in template greeting) */
+  recipientName?: string;
+}
+
+export interface CrmParent {
+  id: string;
+  name: string;
+  phone: string;
+  studentName?: string;
+  className?: string;
+}
+
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
 export interface AttendanceTrendPoint {
@@ -340,6 +370,20 @@ export const adminApi = {
 
   editAnnouncement: (id: string, data: CreateAnnouncementRequest): Promise<Announcement> =>
     apiClient.put(`/announcements/${id}`, data),
+
+  /**
+   * AI-format the announcement via Groq, then queue WhatsApp utility messages
+   * for all relevant parents / staff. Returns queue stats.
+   */
+  broadcastAnnouncementWhatsApp: (id: string): Promise<WhatsAppBroadcastResult> =>
+    apiClient.post(`/announcements/${id}/broadcast-whatsapp`),
+
+  /**
+   * Send a targeted WhatsApp utility message to a custom list of phone numbers.
+   * Groq AI formats the raw message. Used for CRM-style admin broadcasts.
+   */
+  crmBroadcastWhatsApp: (request: CrmBroadcastRequest): Promise<WhatsAppBroadcastResult> =>
+    apiClient.post('/whatsapp/crm-broadcast', request),
 
   getAnalytics: (): Promise<AnalyticsDashboard> =>
     apiClient.get('/analytics/overview'),

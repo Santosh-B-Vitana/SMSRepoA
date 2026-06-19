@@ -11,6 +11,7 @@ import { apiClient } from '@/api/client';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { AdminAlertBanner } from '@/components/admin/AdminAlertBanner';
 
 interface StaffMember {
   id: string;
@@ -100,6 +101,7 @@ export default function StaffDirectoryScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SubScreenHeader title="Staff Directory" />
+      <AdminAlertBanner context="staff" />
 
       {/* Search */}
       <View style={styles.searchWrap}>

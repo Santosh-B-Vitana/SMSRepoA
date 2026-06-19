@@ -87,6 +87,8 @@ builder.Services.ConfigureDataProtection(builder.Environment, builder.Configurat
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    // appsettings.Local.json — gitignored, developer machine overrides (real credentials, SkipMigrations, etc.)
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables()
     .AddUserSecrets<Program>(optional: !builder.Environment.IsProduction());
 
@@ -316,11 +318,15 @@ static async Task ApplyDatabaseMigrationsAsync(WebApplication app)
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Failed to apply database migrations at startup.");
-        throw;
+        logger.LogError(ex,
+            "Failed to apply main database migrations at startup — " +
+            "set SkipMigrations=true in appsettings.Local.json to bypass, or run: dotnet ef database update");
+        throw; // Main DB migration failure is fatal — the API cannot function without the schema.
     }
 
     // ── CRM database migrations ─────────────────────────────────────────────
+    // Non-fatal: if the CRM DB user lacks DDL permissions the API still starts.
+    // Run migrations manually or grant ALTER/CREATE TABLE to the service account.
     var crmDb = scope.ServiceProvider.GetService<SmsApi.Data.CrmDbContext>();
     if (crmDb != null)
     {
@@ -331,8 +337,10 @@ static async Task ApplyDatabaseMigrationsAsync(WebApplication app)
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to apply CRM database migrations at startup.");
-            throw;
+            logger.LogError(ex,
+                "Failed to apply CRM database migrations at startup — CRM features may be degraded. " +
+                "Grant ALTER / CREATE TABLE on SMS_CRM to the service account, or set SkipMigrations=true in appsettings.Local.json.");
+            // Do NOT rethrow — the main API must keep running even if CRM schema is stale.
         }
     }
 }

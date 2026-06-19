@@ -12,6 +12,7 @@ import { adminApi } from '@/api/endpoints/admin';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { AdminAlertBanner } from '@/components/admin/AdminAlertBanner';
 
 interface Student {
   id: string; admissionNumber: string; name: string;
@@ -64,7 +65,7 @@ export default function StudentDirectoryScreen() {
       queryKey: ['admin-students', debouncedSearch, classFilter],
       queryFn: ({ pageParam = 1 }) =>
         apiClient.get('/students', {
-          params: { page: pageParam, pageSize: 20, search: debouncedSearch || undefined, class: classFilter || undefined },
+          params: { page: pageParam, pageSize: 20, search: debouncedSearch || undefined, classFilter: classFilter || undefined },
         }) as Promise<{ students: Student[]; totalCount: number }>,
       initialPageParam: 1,
       getNextPageParam: (lastPage, pages) =>
@@ -92,6 +93,7 @@ export default function StudentDirectoryScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SubScreenHeader title="Student Directory" />
+      <AdminAlertBanner context="students" />
 
       <View style={styles.searchWrap}>
         <Feather name="search" size={16} color={VITANA_COLORS.textSecondary} style={{ marginLeft: 12 }} />

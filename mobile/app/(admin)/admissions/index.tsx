@@ -11,6 +11,7 @@ import { adminApi, type AdmissionApplication, type AdmissionStatus } from '@/api
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { AdminAlertBanner } from '@/components/admin/AdminAlertBanner';
 
 // ─── Status colours ───────────────────────────────────────────────────────────
 
@@ -27,6 +28,19 @@ const STATUS_COLORS: Record<AdmissionStatus, { bg: string; text: string }> = {
 
 const STATUS_FILTERS: (AdmissionStatus | 'All')[] = ['All', 'Inquiry', 'Applied', 'Shortlisted', 'Interview', 'Approved', 'Enrolled', 'Rejected'];
 
+/** Normalize backend status (may be lowercase) to the capitalized form used by STATUS_COLORS / NEXT_STATUSES */
+function normalizeStatus(raw: string): AdmissionStatus {
+  const s = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  return s as AdmissionStatus;
+}
+
+/** True when a status has no further moves — the admission journey is complete */
+function isTerminalStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  // Enrolled CAN move to Withdrawn; Rejected and Withdrawn are truly final
+  return s === 'rejected' || s === 'withdrawn';
+}
+
 // ─── Admission card ───────────────────────────────────────────────────────────
 
 function AdmissionCard({
@@ -35,7 +49,8 @@ function AdmissionCard({
   item: AdmissionApplication;
   onUpdateStatus: (item: AdmissionApplication) => void;
 }) {
-  const sc = STATUS_COLORS[item.status] ?? { bg: '#f3f4f6', text: '#374151' };
+  const normalizedStatus = normalizeStatus(item.status);
+  const sc = STATUS_COLORS[normalizedStatus] ?? { bg: '#f3f4f6', text: '#374151' };
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -45,7 +60,7 @@ function AdmissionCard({
           {item.gradeApplied && <Text style={styles.cardMeta}>Grade: {item.gradeApplied}</Text>}
         </View>
         <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-          <Text style={[styles.statusText, { color: sc.text }]}>{item.status}</Text>
+          <Text style={[styles.statusText, { color: sc.text }]}>{normalizedStatus}</Text>
         </View>
       </View>
       {item.parentName && (
@@ -65,7 +80,7 @@ function AdmissionCard({
           const d = new Date(raw);
           return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
         })()}</Text>
-        {item.status !== 'Enrolled' && item.status !== 'Rejected' && item.status !== 'Withdrawn' && (
+        {!isTerminalStatus(item.status) && (
           <TouchableOpacity
             style={styles.updateBtn}
             onPress={() => onUpdateStatus(item)}
@@ -167,7 +182,7 @@ export default function AdmissionsScreen() {
     Shortlisted: ['Interview', 'Rejected', 'Withdrawn'],
     Interview:   ['Approved', 'Rejected', 'Withdrawn'],
     Approved:    ['Enrolled', 'Rejected'],
-    Enrolled:    [],
+    Enrolled:    ['Withdrawn'],   // allow withdrawal even after enrollment
     Rejected:    [],
     Withdrawn:   [],
   };
@@ -175,6 +190,7 @@ export default function AdmissionsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SubScreenHeader title="Admissions" />
+      <AdminAlertBanner context="admissions" />
 
       {/* Filter row */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}>
@@ -261,10 +277,10 @@ export default function AdmissionsScreen() {
           {showStatusModal && (
             <ScrollView contentContainerStyle={{ padding: 20 }}>
               <Text style={styles.statusSubtitle}>
-                {showStatusModal.studentName} · Current: {showStatusModal.status}
+                {showStatusModal.studentName} · Current: {normalizeStatus(showStatusModal.status)}
               </Text>
               <Text style={styles.statusPrompt}>Move to:</Text>
-              {(NEXT_STATUSES[showStatusModal.status] ?? []).map((s) => {
+              {(NEXT_STATUSES[normalizeStatus(showStatusModal.status)] ?? []).map((s) => {
                 const sc = STATUS_COLORS[s];
                 return (
                   <TouchableOpacity

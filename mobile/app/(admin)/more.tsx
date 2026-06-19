@@ -52,7 +52,8 @@ const ACADEMICS_SECTION: NavItem[] = [
 const SETTINGS_SECTION: NavItem[] = [
   { label: 'Notifications', icon: 'bell', color: '#6366f1', route: '/(admin)/notifications' },
   { label: 'Send Notif.', icon: 'send', color: '#dc2626', route: '/(admin)/notifications/compose' },
-  { label: 'SMS/WhatsApp', icon: 'message-square', color: '#25d366', route: '/(admin)/communication' },
+  { label: 'WhatsApp', icon: 'message-circle', color: '#25d366', route: '/(admin)/communication' },
+  { label: 'Send to Parents', icon: 'send', color: '#25d366', route: '/(admin)/communication/broadcast', badge: 'AI' },
   { label: 'Notif. Settings', icon: 'settings', color: '#64748b', route: '/(admin)/notifications/settings' },
 ];
 

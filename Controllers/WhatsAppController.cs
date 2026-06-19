@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SmsApi.Models.Constants;
 using SmsApi.Services;
+using SmsApi.Services.AI;
 using SmsApi.Services.WhatsApp;
 
 namespace SmsApi.Controllers;
@@ -19,6 +21,7 @@ public class WhatsAppController : ControllerBase
     private readonly IWhatsAppTemplateService _templates;
     private readonly IWhatsAppQuotaService _quota;
     private readonly IWhatsAppContactResolver _contacts;
+    private readonly IGroqAiService _groqAi;
     private readonly ITenantContext _tenant;
     private readonly ILogger<WhatsAppController> _logger;
 
@@ -27,6 +30,7 @@ public class WhatsAppController : ControllerBase
         IWhatsAppTemplateService templates,
         IWhatsAppQuotaService quota,
         IWhatsAppContactResolver contacts,
+        IGroqAiService groqAi,
         ITenantContext tenant,
         ILogger<WhatsAppController> logger)
     {
@@ -34,6 +38,7 @@ public class WhatsAppController : ControllerBase
         _templates = templates;
         _quota = quota;
         _contacts = contacts;
+        _groqAi = groqAi;
         _tenant = tenant;
         _logger = logger;
     }
@@ -433,6 +438,80 @@ public class WhatsAppController : ControllerBase
 
         return Ok(new { stats, deliveryByEvent });
     }
+
+    // ── CRM Broadcast (Admin → specific parents) ───────────────────────────────
+
+    /// <summary>
+    /// Admin sends a custom message to a list of phone numbers from the mobile app.
+    /// Groq AI formats the raw message into a WhatsApp-friendly utility template body.
+    /// Cost note: always uses Utility category for lowest per-message cost.
+    /// </summary>
+    [HttpPost("crm-broadcast")]
+    [Authorize(Roles = "Admin,Principal")]
+    public async Task<IActionResult> CrmBroadcast(
+        [FromBody] CrmBroadcastRequest request, CancellationToken ct)
+    {
+        if (request.Recipients == null || request.Recipients.Count == 0)
+            return BadRequest(new { message = "At least one recipient phone is required." });
+
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return BadRequest(new { message = "Message content is required." });
+
+        var schoolId = SchoolId;
+
+        // ── 1. AI-format the message ──────────────────────────────────────
+        var formatted = await _groqAi.FormatAnnouncementAsync(
+            title:    request.Subject ?? "Message from School",
+            content:  request.Message,
+            audience: "Parents",
+            priority: "Normal",
+            ct: ct);
+
+        // ── 2. Queue messages for each recipient ──────────────────────────
+        int queued   = 0;
+        int skipped  = 0;
+        var entityId = Guid.NewGuid(); // shared entity ID for dedup tracking
+
+        foreach (var rawPhone in request.Recipients.Distinct())
+        {
+            var phone = _contacts.NormalizeToE164(rawPhone);
+            if (phone == null) { skipped++; continue; }
+
+            var success = await _whatsApp.QueueMessageAsync(
+                schoolId:       schoolId,
+                eventKey:       "crm.admin_broadcast",
+                entityId:       entityId,
+                entityType:     "CrmBroadcast",
+                recipientPhone: phone,
+                recipientName:  request.RecipientName ?? "Parent",
+                recipientType:  "Parent",
+                placeholders: new Dictionary<string, string>
+                {
+                    { "{{ParentName}}",           request.RecipientName ?? "Parent" },
+                    { "{{Message}}",              formatted.Body },
+                    { "{{AnnouncementTitle}}",    request.Subject ?? "Message from School" },
+                    { "{{SchoolName}}",           "" }
+                },
+                priority: 3, // Utility = lowest priority = cheapest
+                ct: ct);
+
+            if (success) queued++;
+        }
+
+        _logger.LogInformation(
+            "CRM broadcast by {UserId}: queued {Queued}, skipped {Skipped} — school {SchoolId}",
+            _tenant.UserId, queued, skipped, schoolId);
+
+        return Ok(new
+        {
+            success          = queued > 0,
+            recipientsQueued = queued,
+            skipped,
+            aiFormatted      = true,
+            messagePreview   = formatted.Preview,
+            templateCategory = "Utility"
+        });
+    }
 }
 
 // ── Request DTOs ──────────────────────────────────────────────────────────────
@@ -441,3 +520,17 @@ public record UpdateTemplateMappingRequest(Guid TemplateId, bool IsEnabled, stri
 public record TestMessageRequest(string TemplateName, string RecipientPhone, Dictionary<string, string> Placeholders);
 public record BlacklistRequest(string Reason);
 public record UpdateWhatsAppSettingsRequest(bool IsEnabled, bool AutoSendOnEvents, string? DefaultLanguage = null);
+
+/// <summary>
+/// Request body for admin CRM broadcast from the mobile app.
+/// </summary>
+public record CrmBroadcastRequest(
+    /// <summary>List of recipient phone numbers (E.164 preferred; the API normalises if needed).</summary>
+    List<string> Recipients,
+    /// <summary>Raw message text — Groq AI formats it into WhatsApp utility style.</summary>
+    string Message,
+    /// <summary>Optional subject / title used as the announcement title in the template.</summary>
+    string? Subject = null,
+    /// <summary>Recipient display name when sending to a single person.</summary>
+    string? RecipientName = null
+);

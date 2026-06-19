@@ -45,6 +45,7 @@ namespace SmsApi.Services
         Task SeedStudentDocumentsAsync();
         Task EnsureTodayAttendanceAsync();
         Task EnsureOverdueFeeRecordsAsync();
+        Task EnsureAdminStaffLinkAsync();
         Task SeedLibraryIssuesAsync();
         Task SeedVisitorEntriesAsync();
         Task SeedHostelAttendanceAsync();
@@ -128,6 +129,7 @@ namespace SmsApi.Services
                 await SeedStudentDocumentsAsync();
                 await EnsureTodayAttendanceAsync();
                 await EnsureOverdueFeeRecordsAsync();
+                await EnsureAdminStaffLinkAsync();
                 await SeedBehaviourRecordsAsync();
                 await SeedPtmDataAsync();
                 return;
@@ -170,6 +172,7 @@ namespace SmsApi.Services
                 await SeedStudentDocumentsAsync();
                 await EnsureTodayAttendanceAsync();
                 await EnsureOverdueFeeRecordsAsync();
+                await EnsureAdminStaffLinkAsync();
                 await SeedLibraryIssuesAsync();
                 await SeedVisitorEntriesAsync();
                 await SeedHostelAttendanceAsync();
@@ -3179,6 +3182,76 @@ namespace SmsApi.Services
             _context.PtmSlots.AddRange(slots);
             await _context.SaveChangesAsync();
             _logger.LogInformation("✅ Seeded 1 PTM session with {Count} slots", slots.Count);
+        }
+
+        // ─── Ensure Admin user has a linked StaffMember ───────────────────────────────
+        // Without this, the admin cannot create announcements because the announcements
+        // controller requires a non-null CreatedByStaffId with a valid FK reference.
+        public async Task EnsureAdminStaffLinkAsync()
+        {
+            _logger.LogInformation("🔗 Ensuring admin user has a linked staff member...");
+
+            if (_schoolId == Guid.Empty)
+                _schoolId = Guid.Parse("550E8400-E29B-41D4-A716-446655440000");
+
+            var adminLogin = await _context.UserLogins
+                .FirstOrDefaultAsync(u => u.SchoolId == _schoolId && u.Role == "admin" && !u.IsDeleted);
+
+            if (adminLogin == null)
+            {
+                _logger.LogInformation("⚠️ No admin user found, skipping");
+                return;
+            }
+
+            // Admin already has a linked staff member — nothing to do
+            if (adminLogin.LinkedEntityId.HasValue && adminLogin.LinkedEntityId != Guid.Empty)
+            {
+                var existing = await _context.StaffMembers.AnyAsync(s => s.Id == adminLogin.LinkedEntityId.Value && !s.IsDeleted);
+                if (existing)
+                {
+                    _logger.LogInformation("✅ Admin user already linked to a staff member");
+                    return;
+                }
+            }
+
+            // Check if a StaffMember already exists with the admin's email
+            var existingStaff = await _context.StaffMembers
+                .FirstOrDefaultAsync(s => s.SchoolId == _schoolId && s.Email == adminLogin.Email && !s.IsDeleted);
+
+            Guid staffId;
+            if (existingStaff != null)
+            {
+                staffId = existingStaff.Id;
+            }
+            else
+            {
+                // Create a staff member for the admin user
+                var adminStaff = new Staff
+                {
+                    Id          = Guid.NewGuid(),
+                    SchoolId    = _schoolId,
+                    EmployeeId  = "ADMIN001",
+                    FirstName   = adminLogin.FirstName ?? "School",
+                    LastName    = adminLogin.LastName ?? "Admin",
+                    Email       = adminLogin.Email,
+                    Designation = "Administrator",
+                    Department  = "Administration",
+                    Status      = "active",
+                    JoiningDate = DateTime.UtcNow.AddYears(-1),
+                    CreatedAt   = DateTime.UtcNow,
+                    UpdatedAt   = DateTime.UtcNow,
+                };
+                _context.StaffMembers.Add(adminStaff);
+                await _context.SaveChangesAsync();
+                staffId = adminStaff.Id;
+                _logger.LogInformation("✅ Created staff member for admin user");
+            }
+
+            // Link the admin UserLogin to the staff member
+            adminLogin.LinkedEntityId = staffId;
+            adminLogin.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("✅ Admin user linked to StaffMember {StaffId}", staffId);
         }
     }
 }

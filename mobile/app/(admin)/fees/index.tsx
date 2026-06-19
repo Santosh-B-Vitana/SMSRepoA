@@ -12,6 +12,7 @@ import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
 import { formatINR } from '@vitana/shared-utils';
+import { AdminAlertBanner } from '@/components/admin/AdminAlertBanner';
 
 interface FeeRecord {
   id: string;
@@ -100,6 +101,7 @@ export default function FeeCollectionScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SubScreenHeader title="Fee Collection" />
+      <AdminAlertBanner context="fees" />
 
       {/* Stats */}
       {stats && (

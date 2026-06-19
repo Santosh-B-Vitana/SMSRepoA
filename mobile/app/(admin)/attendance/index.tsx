@@ -10,6 +10,7 @@ import { apiClient } from '@/api/client';
 import { useSchoolTheme } from '@/theme/useSchoolTheme';
 import { VITANA_COLORS } from '@/theme/tokens';
 import { SubScreenHeader } from '@/components/ui/SubScreenHeader';
+import { AdminAlertBanner } from '@/components/admin/AdminAlertBanner';
 
 interface AttendanceRecord {
   id: string;
@@ -126,6 +127,7 @@ export default function AdminAttendanceScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SubScreenHeader title="Attendance Overview" />
+      <AdminAlertBanner context="attendance" />
 
       {/* Date Picker */}
       <DatePicker date={selectedDate} onChange={setSelectedDate} />

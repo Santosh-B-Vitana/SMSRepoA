@@ -204,24 +204,190 @@ gcloud run deploy sms-api \
 
 ---
 
+## Secrets Configuration Reference
+
+> **Golden rule:** Real credentials go ONLY in `appsettings.Local.json` (gitignored) or as
+> environment variables on the server. Never commit real keys to git.
+
+### Which file goes where?
+
+| File | Committed? | Use for |
+|------|-----------|---------|
+| `appsettings.json` | ✅ Yes | Default structure, empty values |
+| `appsettings.Development.json` | ✅ Yes | Dev-safe overrides (no real secrets) |
+| `appsettings.Local.json` | ❌ No (gitignored) | **Your local real credentials** |
+| `appsettings.Production.example.json` | ✅ Yes | Template showing all required keys |
+| `appsettings.Production.json` | ❌ No (gitignored) | Production real values (use env vars instead) |
+
+---
+
+### Step 1 — Local development (`appsettings.Local.json`)
+
+Copy and fill in `appsettings.Local.json` (already gitignored). This file overrides all others locally.
+
+#### AWS S3 (vitana-website-bucket, eu-north-1 / Stockholm)
+```json
+"Aws": {
+  "AccessKey":  "<IAM access key ID — from team vault>",
+  "SecretKey":  "<IAM secret access key — from team vault>",
+  "Region":     "eu-north-1",
+  "BucketName": "vitana-website-bucket",
+  "RootFolder": "SMS-Test"
+}
+```
+
+#### LiveKit (vitana-sms project, cloud.livekit.io)
+```json
+"LiveKit": {
+  "ServerUrl": "wss://vitana-sms-o1k8det2.livekit.cloud",
+  "ApiKey":    "<LiveKit API key — from team vault>",
+  "ApiSecret": "<LiveKit API secret — from team vault>",
+  "RecordingS3Bucket": "vitana-website-bucket",
+  "RecordingS3Prefix": "online-class-recordings/",
+  "TokenExpiryMinutes": 15
+}
+```
+
+#### Groq AI (llama-4-scout, used for WhatsApp message formatting)
+```json
+"Groq": {
+  "ApiKey": "<from team vault — starts with gsk_>",
+  "Model":  "llama-4-scout-17b-16e-instruct"
+}
+```
+
+#### WhatsApp Business API (Meta)
+```json
+"WhatsApp": {
+  "SharedPhoneNumberId": "<Phone Number ID from Meta Business Manager>",
+  "SharedWabaId":        "<WABA ID>",
+  "SharedAccessToken":   "<Permanent token>",
+  "AppSecret":           "<App Secret>",
+  "WebhookVerifyToken":  "vitana-sms-webhook-verify-token-change-me"
+}
+```
+
+---
+
+### Step 2 — Staging / Production environment variables
+
+Set these on your server (AWS Elastic Beanstalk, App Service, ECS task definition, etc.).
+ASP.NET Core maps `__` double-underscore to nested JSON sections.
+
+```bash
+# ── Database ──────────────────────────────────────────────────────────────────
+ConnectionStrings__DefaultConnection="Server=<host>;Database=SMS_Prod;User Id=<user>;Password=<pass>;TrustServerCertificate=true"
+ConnectionStrings__CRMConnection="Server=<host>;Database=SMS_CRM;User Id=<user>;Password=<pass>;TrustServerCertificate=true"
+ConnectionStrings__Redis="<redis-host>:6379,password=<pass>"
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+JwtSettings__Secret="$(openssl rand -base64 48)"   # generate a strong random key
+JwtSettings__ExpirationInMinutes="60"
+
+# ── AWS S3 (vitana-website-bucket, eu-north-1) ────────────────────────────────
+Aws__AccessKey="<IAM access key ID — from team vault>"
+Aws__SecretKey="<IAM secret access key — from team vault>"
+Aws__Region="eu-north-1"
+Aws__BucketName="vitana-website-bucket"
+Aws__RootFolder="SMS-Prod"
+
+# ── LiveKit (vitana-sms project) ──────────────────────────────────────────────
+LiveKit__ServerUrl="wss://vitana-sms-o1k8det2.livekit.cloud"
+LiveKit__ApiKey="<LiveKit API key — from team vault>"
+LiveKit__ApiSecret="<LiveKit API secret — from team vault>"
+LiveKit__RecordingS3Bucket="vitana-website-bucket"
+LiveKit__RecordingS3Prefix="online-class-recordings/"
+LiveKit__TokenExpiryMinutes="15"
+LiveKit__WebhookSecret="<generate a random string>"
+
+# ── Groq AI (WhatsApp message formatting) ────────────────────────────────────
+Groq__ApiKey="<gsk_... from https://console.groq.com/keys>"
+Groq__Model="llama-4-scout-17b-16e-instruct"
+
+# ── WhatsApp Business API (Meta) ─────────────────────────────────────────────
+WhatsApp__SharedPhoneNumberId="<Phone Number ID>"
+WhatsApp__SharedWabaId="<WABA ID>"
+WhatsApp__SharedAccessToken="<Permanent access token>"
+WhatsApp__AppSecret="<App Secret>"
+WhatsApp__WebhookVerifyToken="<random string — must match Meta webhook config>"
+WhatsApp__AccessTokenEncryptionKey="<32-char random string for token encryption>"
+
+# ── Email (SES) ───────────────────────────────────────────────────────────────
+Email__SenderEmail="noreply@vitanaschools.in"
+Email__SenderPassword="<SES SMTP password>"
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+DefaultAdmin__Password="<strong password>"
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+ASPNETCORE_ENVIRONMENT="Production"
+ASPNETCORE_URLS="http://+:5092"
+```
+
+---
+
+### Step 3 — Service-by-service setup checklist
+
+#### AWS S3
+- [ ] Bucket `vitana-website-bucket` exists in `eu-north-1`
+- [ ] IAM user has `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on the bucket
+- [ ] CORS configured on bucket for API domain
+- [ ] Bucket policy blocks public access (uploads served via signed URLs)
+
+#### LiveKit
+- [ ] Project `vitana-sms` created at [cloud.livekit.io](https://cloud.livekit.io)
+- [ ] API key/secret copied from project Settings → Keys
+- [ ] Recording S3 integration configured (bucket: `vitana-website-bucket`, prefix: `online-class-recordings/`)
+- [ ] Webhook URL set: `https://your-api-domain.com/api/online-classes/livekit-webhook`
+
+#### Groq AI
+- [ ] Account created at [console.groq.com](https://console.groq.com)
+- [ ] API key generated (starts with `gsk_`)
+- [ ] Model `llama-4-scout-17b-16e-instruct` confirmed available (run `/api/groq-health` if implemented)
+- [ ] Key stored in `appsettings.Local.json` locally, env var in production
+
+#### WhatsApp Business API
+- [ ] Meta Business Manager account with WhatsApp Business API enabled
+- [ ] Phone number verified
+- [ ] `announcements.general` template created as **Utility** category and approved
+- [ ] `crm.admin_broadcast` template created as **Utility** category and approved
+- [ ] Webhook URL registered: `https://your-api-domain.com/api/whatsapp/webhook`
+- [ ] Webhook verify token matches `WhatsApp__WebhookVerifyToken`
+
+---
+
 ## Environment Variables (Production)
 
 ```bash
 # Database
-export ConnectionStrings__DefaultConnection="Host=db.example.com;Database=sms_prod;Username=sms_user;Password=<vault>;SSL Mode=Require"
+export ConnectionStrings__DefaultConnection="Server=db.example.com;Database=sms_prod;..."
 
 # JWT
 export JwtSettings__Secret="$(openssl rand -base64 48)"
 export JwtSettings__ExpirationInMinutes="120"
 
 # Redis
-export Redis__ConnectionString="redis-prod.example.com:6379,password=<vault>"
+export ConnectionStrings__Redis="redis-prod.example.com:6379,password=<vault>"
 
-# AWS S3 (file storage)
-export Aws__AccessKey="AKIAIOSFODNN7EXAMPLE"
-export Aws__SecretKey="<vault>"
-export Aws__BucketName="sms-files-prod"
-export Aws__Region="ap-south-1"
+# AWS S3
+export Aws__AccessKey="<IAM access key ID — from team vault>"
+export Aws__SecretKey="<IAM secret access key — from team vault>"
+export Aws__BucketName="vitana-website-bucket"
+export Aws__Region="eu-north-1"
+
+# LiveKit
+export LiveKit__ServerUrl="wss://vitana-sms-o1k8det2.livekit.cloud"
+export LiveKit__ApiKey="<LiveKit API key — from team vault>"
+export LiveKit__ApiSecret="<LiveKit API secret — from team vault>"
+
+# Groq AI
+export Groq__ApiKey="<vault>"
+export Groq__Model="llama-4-scout-17b-16e-instruct"
+
+# WhatsApp
+export WhatsApp__SharedPhoneNumberId="<vault>"
+export WhatsApp__SharedWabaId="<vault>"
+export WhatsApp__SharedAccessToken="<vault>"
 
 # Cashfree Payments
 export Cashfree__MerchantId="<vault>"

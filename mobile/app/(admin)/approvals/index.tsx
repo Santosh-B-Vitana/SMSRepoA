@@ -186,31 +186,52 @@ export default function LeaveApprovals() {
   const rejectModal = useRejectModal();
   const remarkModal = useRemarkModal();
 
-  // Fetch all leave counts upfront so tabs can show badges
-  const { data: staffLeaves, isLoading: staffLoading, refetch: refetchStaff } = useQuery<AdminLeaveRequest[]>({
+  // Fetch leave requests for both tabs.
+  // retry: false prevents multiple failed requests from each triggering the global error toast.
+  // throwOnError: false keeps the error contained in the query — we show our own error state.
+  const {
+    data: staffLeaves, isLoading: staffLoading, isError: staffError, refetch: refetchStaff,
+  } = useQuery<AdminLeaveRequest[]>({
     queryKey: ['pending-leaves', 'staff'],
     queryFn: () => adminApi.getPendingLeaves('staff'),
     staleTime: 2 * 60 * 1000,
+    retry: false,
+    throwOnError: false,
   });
 
-  const { data: studentLeaves, isLoading: studentLoading, refetch: refetchStudent } = useQuery<AdminLeaveRequest[]>({
+  const {
+    data: studentLeaves, isLoading: studentLoading, isError: studentError, refetch: refetchStudent,
+  } = useQuery<AdminLeaveRequest[]>({
     queryKey: ['pending-leaves', 'student'],
     queryFn: () => adminApi.getPendingLeaves('student'),
     staleTime: 2 * 60 * 1000,
+    retry: false,
+    throwOnError: false,
   });
 
+  // Secondary queries: only fetch when tab is active, errors are silent (badge-count only).
   const { data: pendingDocs, isLoading: docsLoading, refetch: docsRefetch } = useQuery<PendingDocument[]>({
     queryKey: ['pending-documents'],
     queryFn: () =>
       (apiClient.get('/documents', { params: { verificationStatus: 'pending', pageSize: 50 } }) as Promise<any>)
-        .then((r: any) => r?.items ?? r?.data ?? r ?? []),
+        .then((r: any) => {
+          const arr = r?.items ?? r?.data ?? r;
+          return Array.isArray(arr) ? arr : [];
+        })
+        .catch(() => [] as PendingDocument[]),  // silent — docs 403 must not block the whole screen
+    enabled: activeTab === 'documents',
     staleTime: 2 * 60 * 1000,
+    retry: false,
+    throwOnError: false,
   });
 
   const { data: admissionsData } = useQuery<any>({
     queryKey: ['pending-admissions-approvals'],
-    queryFn: () => adminApi.getAdmissions(1, 'Pending'),
+    queryFn: () => adminApi.getAdmissions(1, 'Pending').catch(() => ({ items: [], totalCount: 0 })),
+    enabled: activeTab === 'admissions',
     staleTime: 2 * 60 * 1000,
+    retry: false,
+    throwOnError: false,
   });
 
   const verifyDocMutation = useMutation({
@@ -273,9 +294,12 @@ export default function LeaveApprovals() {
 
   const isPending = approveMutation.isPending || rejectMutation.isPending;
 
-  const staffCount = staffLeaves?.length ?? 0;
-  const studentCount = studentLeaves?.length ?? 0;
-  const docsCount = Array.isArray(pendingDocs) ? pendingDocs.length : 0;
+  // Use live query data for all counts; lazy-loaded tabs default to 0 until active.
+  const staffCount     = staffLeaves?.length ?? 0;
+  const studentCount   = studentLeaves?.length ?? 0;
+  const docsCount      = activeTab === 'documents' && Array.isArray(pendingDocs)
+    ? pendingDocs.length
+    : 0;
   const admissionCount = admissionsData?.items?.length ?? admissionsData?.totalCount ?? 0;
 
   const totalPending = staffCount + studentCount + docsCount + admissionCount;
@@ -289,6 +313,7 @@ export default function LeaveApprovals() {
 
   const activeLeaves = activeTab === 'staff' ? staffLeaves : studentLeaves;
   const activeLoading = activeTab === 'staff' ? staffLoading : studentLoading;
+  const activeError   = activeTab === 'staff' ? staffError  : studentError;
   const activeRefetch = activeTab === 'staff' ? refetchStaff : refetchStudent;
 
   return (
@@ -337,6 +362,25 @@ export default function LeaveApprovals() {
         activeLoading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color={colors.primary} size="large" />
+          </View>
+        ) : activeError ? (
+          // Show a proper error state so admin knows data failed to load
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 }}>
+            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="wifi-off" size={26} color="#dc2626" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: VITANA_COLORS.text }}>Could not load requests</Text>
+            <Text style={{ fontSize: 13, color: VITANA_COLORS.textSecondary, textAlign: 'center', lineHeight: 19 }}>
+              Unable to fetch {activeTab === 'staff' ? 'staff' : 'student'} leave requests.
+              Check your connection to the server and try again.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 11, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              onPress={() => activeTab === 'staff' ? refetchStaff() : refetchStudent()}
+            >
+              <Feather name="refresh-cw" size={15} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Retry</Text>
+            </TouchableOpacity>
           </View>
         ) : !activeLeaves || activeLeaves.length === 0 ? (
           <EmptyState

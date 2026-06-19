@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { adminApi, type AnalyticsDashboard } from '@/api/endpoints/admin';
+import { AdminAlertBanner } from '@/components/admin/AdminAlertBanner';
 import { useAppTheme } from '@/theme';
 import { VITANA_COLORS } from '@/theme/tokens';
 
@@ -388,6 +389,7 @@ export default function AnalyticsReports() {
           <Feather name="share" size={18} color={colors.primary} />
         </TouchableOpacity>
       </View>
+      <AdminAlertBanner context="reports" />
 
       <ScrollView
         style={{ flex: 1 }}

@@ -6,7 +6,10 @@ using Microsoft.EntityFrameworkCore;
 using SmsApi.Data;
 using SmsApi.Models.DTOs;
 using SmsApi.Services;
+using SmsApi.Services.AI;
+using SmsApi.Services.WhatsApp;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace SmsApi.Controllers
@@ -19,18 +22,27 @@ namespace SmsApi.Controllers
         private readonly IAnnouncementService _svc;
         private readonly ITenantContext _tenant;
         private readonly AppDbContext _db;
+        private readonly IGroqAiService _groqAi;
+        private readonly IWhatsAppService _whatsApp;
+        private readonly IWhatsAppContactResolver _contacts;
         private readonly ILogger<AnnouncementsController> _logger;
 
         public AnnouncementsController(
             IAnnouncementService svc,
             ITenantContext tenant,
             AppDbContext db,
+            IGroqAiService groqAi,
+            IWhatsAppService whatsApp,
+            IWhatsAppContactResolver contacts,
             ILogger<AnnouncementsController> logger)
         {
-            _svc    = svc;
-            _tenant = tenant;
-            _db     = db;
-            _logger = logger;
+            _svc      = svc;
+            _tenant   = tenant;
+            _db       = db;
+            _groqAi   = groqAi;
+            _whatsApp = whatsApp;
+            _contacts = contacts;
+            _logger   = logger;
         }
 
         /// <summary>Resolves Staff.Id from the current JWT (UserLogin.LinkedEntityId or email fallback).</summary>
@@ -160,10 +172,20 @@ namespace SmsApi.Controllers
             {
                 var schoolId = _tenant.GetEffectiveSchoolId();
 
-                // Always resolve the author from the JWT — never trust a client-supplied ID.
+                // Resolve the author from the JWT.
+                // Admin users may not have a linked StaffMember — fall back to the first
+                // active Principal/Admin staff in the school so the FK is always satisfied.
                 var staffId = await ResolveStaffIdAsync();
-                if (staffId == null || staffId == Guid.Empty)
-                    return Unauthorized(new { message = "Could not resolve your staff profile. Ensure your account is linked to a staff record." });
+                if (!staffId.HasValue || staffId == Guid.Empty)
+                {
+                    staffId = await _db.StaffMembers
+                        .Where(s => s.SchoolId == schoolId && !s.IsDeleted)
+                        .OrderBy(s => s.Designation == "Principal" ? 0 : 1)
+                        .Select(s => (Guid?)s.Id)
+                        .FirstOrDefaultAsync();
+                }
+                if (!staffId.HasValue || staffId == Guid.Empty)
+                    return Unauthorized(new { message = "No staff profile found for this school. Please seed staff data first." });
 
                 request.CreatedByStaffId = staffId.Value;
 
@@ -321,6 +343,137 @@ namespace SmsApi.Controllers
             {
                 _logger.LogError(ex, "Unexpected error getting recipients for announcement {Id}", announcementId);
                 return StatusCode(500, new { message = "An unexpected error occurred." });
+            }
+        }
+
+        // ──────────────────────────────────────────────────
+        // POST /api/announcements/{id}/broadcast-whatsapp
+        // AI-formats the announcement via Groq then queues
+        // WhatsApp utility messages to all relevant parents.
+        // Cost note: uses Utility template type (cheaper).
+        // ──────────────────────────────────────────────────
+        [HttpPost("{id}/broadcast-whatsapp")]
+        [Authorize(Roles = StatusConstants.RoleGroups.AdminPrincipal)]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(404)]
+        public async Task<ActionResult> BroadcastViaWhatsApp(Guid id, CancellationToken ct)
+        {
+            try
+            {
+                var schoolId     = _tenant.GetEffectiveSchoolId();
+                var announcement = await _svc.GetAnnouncementByIdAsync(id, schoolId);
+                if (announcement == null)
+                    return NotFound(new { message = "Announcement not found." });
+
+                // ── 1. AI-format the message ──────────────────────────────
+                var formatted = await _groqAi.FormatAnnouncementAsync(
+                    announcement.Title,
+                    announcement.Content,
+                    announcement.TargetAudience,
+                    announcement.Priority,
+                    ct);
+
+                // ── 2. Collect parent contacts by audience ─────────────────
+                var contacts = new List<(string Phone, string Name, Guid StudentId)>();
+
+                if (announcement.TargetAudience is "All" or "Parents")
+                {
+                    var students = await _db.Students
+                        .Where(s => s.SchoolId == schoolId && !s.IsDeleted
+                                    && !string.IsNullOrEmpty(s.GuardianPhone))
+                        .Select(s => new { s.Id, s.GuardianPhone, s.GuardianName })
+                        .ToListAsync(ct);
+
+                    foreach (var s in students)
+                    {
+                        var phone = _contacts.NormalizeToE164(s.GuardianPhone!);
+                        if (phone != null)
+                            contacts.Add((phone, s.GuardianName ?? "Parent", s.Id));
+                    }
+                }
+
+                if (announcement.TargetAudience is "All" or "Staff")
+                {
+                    var staff = await _db.StaffMembers
+                        .Where(s => s.SchoolId == schoolId && !s.IsDeleted
+                                    && !string.IsNullOrEmpty(s.Phone))
+                        .Select(s => new { s.Id, s.Phone, s.Name })
+                        .ToListAsync(ct);
+
+                    foreach (var s in staff)
+                    {
+                        var phone = _contacts.NormalizeToE164(s.Phone!);
+                        if (phone != null)
+                            contacts.Add((phone, s.Name, s.Id));
+                    }
+                }
+
+                // Deduplicate by phone number
+                var uniqueContacts = contacts
+                    .GroupBy(c => c.Phone)
+                    .Select(g => g.First())
+                    .ToList();
+
+                if (uniqueContacts.Count == 0)
+                {
+                    return Ok(new
+                    {
+                        success = false,
+                        message = "No eligible contacts found for this announcement audience.",
+                        recipientsQueued = 0
+                    });
+                }
+
+                // ── 3. Queue WhatsApp utility messages ────────────────────
+                // Uses "announcements.general" event key — map this to a
+                // Utility-category template in WhatsApp → Template Mappings.
+                // Utility messages are cheaper than Marketing on the Meta API.
+                var eventKey = announcement.Priority == "Urgent"
+                    ? "announcements.urgent"
+                    : "announcements.general";
+
+                int queued = 0;
+                foreach (var (phone, name, studentId) in uniqueContacts)
+                {
+                    var success = await _whatsApp.QueueMessageAsync(
+                        schoolId:       schoolId,
+                        eventKey:       eventKey,
+                        entityId:       id,
+                        entityType:     "Announcement",
+                        recipientPhone: phone,
+                        recipientName:  name,
+                        recipientType:  "Parent",
+                        placeholders: new Dictionary<string, string>
+                        {
+                            { "{{ParentName}}",         name },
+                            { "{{AnnouncementTitle}}", announcement.Title },
+                            { "{{Message}}",            formatted.Body },
+                            { "{{SchoolName}}",         "" }
+                        },
+                        priority: announcement.Priority == "Urgent" ? 1 : 3,
+                        ct: ct);
+
+                    if (success) queued++;
+                }
+
+                _logger.LogInformation(
+                    "WhatsApp broadcast for announcement {Id}: queued {Queued}/{Total} messages",
+                    id, queued, uniqueContacts.Count);
+
+                return Ok(new
+                {
+                    success          = true,
+                    recipientsQueued = queued,
+                    totalContacts    = uniqueContacts.Count,
+                    aiFormatted      = true,
+                    messagePreview   = formatted.Preview,
+                    templateCategory = "Utility"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting announcement {Id} via WhatsApp", id);
+                return StatusCode(500, new { message = "Failed to broadcast via WhatsApp." });
             }
         }
     }

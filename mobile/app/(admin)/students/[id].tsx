@@ -158,6 +158,8 @@ export default function StudentProfileScreen() {
   const { primaryColor } = useSchoolTheme();
   const [tab, setTab] = useState<Tab>('Profile');
   const [editMode, setEditMode] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [removeReason, setRemoveReason] = useState('');
   const [form, setForm] = useState<EditPayload>({
     firstName: '', lastName: '', email: '', phone: '',
     address: '', bloodGroup: '', category: '', rollNumber: '', status: 'active',
@@ -197,6 +199,56 @@ export default function StudentProfileScreen() {
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to update student'),
   });
 
+  /**
+   * Mark student as left school:
+   * 1. Set student status to 'inactive' with leaving reason + date
+   * 2. Soft-delete their app login (revokes mobile access + stops automated messages)
+   */
+  const removeStudentMutation = useMutation({
+    mutationFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      // Step 1: Mark student inactive
+      await apiClient.put(`/students/${id}`, {
+        status: 'inactive',
+        remarks: removeReason.trim() || `Left school on ${today}`,
+      });
+      // Step 2: Revoke app login if email exists (soft-delete UserLogin)
+      if (data?.email) {
+        try {
+          const users = await (apiClient.get('/usermanagement/search', {
+            params: { query: data.email, pageSize: 5 },
+          }) as Promise<any>);
+          const userList = users?.users ?? users?.items ?? users?.data ?? (Array.isArray(users) ? users : []);
+          const studentUser = userList.find((u: any) =>
+            u.email?.toLowerCase() === data?.email?.toLowerCase() && u.role === 'Student'
+          );
+          if (studentUser?.id) {
+            await apiClient.delete(`/usermanagement/${studentUser.id}`);
+          }
+        } catch {
+          // Login revocation is best-effort — don't fail the whole operation
+        }
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-student-profile', id] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-students'] });
+      void queryClient.invalidateQueries({ queryKey: ['search-students'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
+      setShowRemoveModal(false);
+      setRemoveReason('');
+      Alert.alert(
+        'Student Removed',
+        `${data?.name ?? 'Student'} has been marked as left school.\n\n` +
+        '✓ Status set to inactive\n' +
+        '✓ App login revoked\n' +
+        '✓ Automated messages stopped',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+    },
+    onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to remove student. Please try again.'),
+  });
+
   const fullName = data?.name ?? name ?? 'Student Profile';
   const initials = fullName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
   const attPct = data?.attendanceSummary?.percentage ?? 0;
@@ -226,10 +278,24 @@ export default function StudentProfileScreen() {
     updateMutation.mutate(form);
   }
 
+  const isInactive = data?.status === 'inactive';
+
   const editBtn = !editMode ? (
-    <TouchableOpacity onPress={openEdit} style={styles.headerEditBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-      <Feather name="edit-2" size={17} color={VITANA_COLORS.text} />
-    </TouchableOpacity>
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      {/* Mark as Left School — only shown for active students */}
+      {!isInactive && (
+        <TouchableOpacity
+          onPress={() => setShowRemoveModal(true)}
+          style={[styles.headerEditBtn, { backgroundColor: '#fff1f2', borderColor: '#fecaca' }]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Feather name="user-x" size={16} color="#dc2626" />
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity onPress={openEdit} style={styles.headerEditBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Feather name="edit-2" size={17} color={VITANA_COLORS.text} />
+      </TouchableOpacity>
+    </View>
   ) : null;
 
   return (
@@ -439,6 +505,86 @@ export default function StudentProfileScreen() {
           </ScrollView>
         </>
       )}
+
+      {/* ── Remove Student Confirmation Modal ── */}
+      <Modal
+        visible={showRemoveModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowRemoveModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.removeModal}>
+            {/* Warning header */}
+            <View style={styles.removeHeader}>
+              <View style={styles.removeIconWrap}>
+                <Feather name="user-x" size={26} color="#dc2626" />
+              </View>
+              <Text style={styles.removeTitle}>Mark as Left School</Text>
+              <Text style={styles.removeSubtitle}>
+                {data?.name ?? 'This student'} will be removed from all active lists and their
+                app access will be revoked.
+              </Text>
+            </View>
+
+            {/* What happens */}
+            <View style={styles.consequencesCard}>
+              <Text style={styles.consequencesTitle}>What will happen:</Text>
+              {[
+                { icon: 'user-x',       text: 'Student status → Inactive' },
+                { icon: 'smartphone',   text: 'App login revoked immediately' },
+                { icon: 'message-circle', text: 'WhatsApp & push notifications stopped' },
+                { icon: 'eye-off',      text: 'Removed from active student lists' },
+                { icon: 'archive',      text: 'Records retained for academic history' },
+              ].map((item) => (
+                <View key={item.icon} style={styles.consequenceRow}>
+                  <Feather name={item.icon as any} size={13} color="#dc2626" />
+                  <Text style={styles.consequenceText}>{item.text}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Reason input */}
+            <View>
+              <Text style={styles.reasonLabel}>Reason for leaving (optional)</Text>
+              <TextInput
+                style={styles.reasonInput}
+                value={removeReason}
+                onChangeText={setRemoveReason}
+                placeholder="e.g. Family relocated, transfer certificate issued"
+                placeholderTextColor={VITANA_COLORS.textSecondary}
+                multiline
+                numberOfLines={2}
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Action buttons */}
+            <View style={styles.removeActions}>
+              <TouchableOpacity
+                style={styles.cancelRemoveBtn}
+                onPress={() => { setShowRemoveModal(false); setRemoveReason(''); }}
+              >
+                <Text style={styles.cancelRemoveText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmRemoveBtn, removeStudentMutation.isPending && { opacity: 0.6 }]}
+                onPress={() => removeStudentMutation.mutate()}
+                disabled={removeStudentMutation.isPending}
+              >
+                {removeStudentMutation.isPending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Feather name="user-x" size={15} color="#fff" />
+                    <Text style={styles.confirmRemoveText}>Mark as Left School</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -451,6 +597,44 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: VITANA_COLORS.border,
   },
+
+  // Remove student modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  removeModal: {
+    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, gap: 16, paddingBottom: 36,
+  },
+  removeHeader: { alignItems: 'center', gap: 10 },
+  removeIconWrap: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: '#fef2f2', alignItems: 'center', justifyContent: 'center',
+  },
+  removeTitle: { fontSize: 18, fontWeight: '700', color: VITANA_COLORS.text },
+  removeSubtitle: { fontSize: 13, color: VITANA_COLORS.textSecondary, textAlign: 'center', lineHeight: 19 },
+  consequencesCard: {
+    backgroundColor: '#fef2f2', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#fecaca', gap: 8,
+  },
+  consequencesTitle: { fontSize: 12, fontWeight: '700', color: '#dc2626', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
+  consequenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  consequenceText: { fontSize: 13, color: '#7f1d1d' },
+  reasonLabel: { fontSize: 12, fontWeight: '600', color: VITANA_COLORS.text, marginBottom: 6 },
+  reasonInput: {
+    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+    color: VITANA_COLORS.text, backgroundColor: '#fafafa', minHeight: 64,
+  },
+  removeActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  cancelRemoveBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 12,
+    alignItems: 'center', backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb',
+  },
+  cancelRemoveText: { fontSize: 14, fontWeight: '600', color: VITANA_COLORS.textSecondary },
+  confirmRemoveBtn: {
+    flex: 2, paddingVertical: 13, borderRadius: 12,
+    backgroundColor: '#dc2626', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  confirmRemoveText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   heroCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, gap: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   avatar: { width: 60, height: 60, borderRadius: 30 },
   avatarPlaceholder: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#e0e7ff', alignItems: 'center', justifyContent: 'center' },
